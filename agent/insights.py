@@ -1,15 +1,14 @@
 """
-Session Insights Engine for Hermes Agent.
+Hermes Agent 的会话洞察引擎。
 
-Analyzes historical session data from the SQLite state database to produce
-comprehensive usage insights — token consumption, cost estimates, tool usage
-patterns, activity trends, model/platform breakdowns, and session metrics.
+分析来自 SQLite 状态数据库的历史会话数据，生成全面的使用洞察 —
+token 消耗、成本估算、工具使用模式、活动趋势、模型/平台分布
+以及会话指标。
 
-Inspired by Claude Code's /insights command, adapted for Hermes Agent's
-multi-platform architecture with additional cost estimation and platform
-breakdown capabilities.
+灵感来自 Claude Code 的 /insights 命令，针对 Hermes Agent 的
+多平台架构进行了适配，并增加了成本估算和平台分布功能。
 
-Usage:
+用法:
     from agent.insights import InsightsEngine
     engine = InsightsEngine(db)
     report = engine.generate(days=30)
@@ -42,7 +41,7 @@ def _estimate_cost(
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> tuple[float, str]:
-    """Estimate the USD cost for a session row or a model/token tuple."""
+    """估算一个会话行或一个 model/token 组合的 USD 成本。"""
     if isinstance(session_or_model, dict):
         session = session_or_model
         model = session.get("model") or ""
@@ -74,7 +73,7 @@ def _estimate_cost(
 
 
 def _bar_chart(values: List[int], max_width: int = 20) -> List[str]:
-    """Create simple horizontal bar chart strings from values."""
+    """从数值创建简单的水平柱状图字符串。"""
     peak = max(values) if values else 1
     if peak == 0:
         return ["" for _ in values]
@@ -83,36 +82,36 @@ def _bar_chart(values: List[int], max_width: int = 20) -> List[str]:
 
 class InsightsEngine:
     """
-    Analyzes session history and produces usage insights.
+    分析会话历史并生成使用洞察。
 
-    Works directly with a SessionDB instance (or raw sqlite3 connection)
-    to query session and message data.
+    直接使用 SessionDB 实例（或原始 sqlite3 连接）
+    查询会话和消息数据。
     """
 
     def __init__(self, db):
         """
-        Initialize with a SessionDB instance.
+        使用 SessionDB 实例初始化。
 
         Args:
-            db: A SessionDB instance (from hermes_state.py)
+            db: SessionDB 实例（来自 hermes_state.py）
         """
         self.db = db
         self._conn = db._conn
 
     def generate(self, days: int = 30, source: str = None) -> Dict[str, Any]:
         """
-        Generate a complete insights report.
+        生成完整的洞察报告。
 
         Args:
-            days: Number of days to look back (default: 30)
-            source: Optional filter by source platform
+            days: 向前追溯的天数（默认：30）
+            source: 按来源平台筛选（可选）
 
         Returns:
-            Dict with all computed insights
+            包含所有计算洞察的 Dict
         """
         cutoff = time.time() - (days * 86400)
 
-        # Gather raw data
+        # 收集原始数据
         sessions = self._get_sessions(cutoff, source)
         tool_usage = self._get_tool_usage(cutoff, source)
         skill_usage = self._get_skill_usage(cutoff, source)
@@ -140,7 +139,7 @@ class InsightsEngine:
                 "top_sessions": [],
             }
 
-        # Compute insights
+        # 计算洞察
         overview = self._compute_overview(sessions, message_stats)
         models = self._compute_model_breakdown(sessions)
         platforms = self._compute_platform_breakdown(sessions)
@@ -164,18 +163,18 @@ class InsightsEngine:
         }
 
     # =========================================================================
-    # Data gathering (SQL queries)
+    # 数据收集（SQL 查询）
     # =========================================================================
 
-    # Columns we actually need (skip system_prompt, model_config blobs)
+    # 实际需要的列（跳过 system_prompt、model_config 等大字段）
     _SESSION_COLS = ("id, source, model, started_at, ended_at, "
                      "message_count, tool_call_count, input_tokens, output_tokens, "
                      "cache_read_tokens, cache_write_tokens, billing_provider, "
                      "billing_base_url, billing_mode, estimated_cost_usd, "
                      "actual_cost_usd, cost_status, cost_source")
 
-    # Pre-computed query strings — f-string evaluated once at class definition,
-    # not at runtime, so no user-controlled value can alter the query structure.
+    # 预计算的查询字符串 — f-string 在类定义时求值一次，
+    # 而非在运行时，因此没有用户控制的值能改变查询结构。
     _GET_SESSIONS_WITH_SOURCE = (
         f"SELECT {_SESSION_COLS} FROM sessions"
         " WHERE started_at >= ? AND source = ?"
@@ -188,7 +187,7 @@ class InsightsEngine:
     )
 
     def _get_sessions(self, cutoff: float, source: str = None) -> List[Dict]:
-        """Fetch sessions within the time window."""
+        """获取时间窗口内的会话。"""
         if source:
             cursor = self._conn.execute(self._GET_SESSIONS_WITH_SOURCE, (cutoff, source))
         else:

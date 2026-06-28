@@ -1,38 +1,37 @@
 """
-Browser Provider ABC
+浏览器提供商抽象基类
 ====================
 
-Defines the pluggable-backend interface for cloud browser providers
-(Browserbase, Browser Use, Firecrawl, …). Providers register instances via
-:meth:`PluginContext.register_browser_provider`; the active one (selected via
-``browser.cloud_provider`` in ``config.yaml``) services every cloud-mode
-``browser_*`` tool call.
+定义云浏览器提供商的可插拔后端接口
+(Browserbase、Browser Use、Firecrawl 等)。提供商通过
+:meth:`PluginContext.register_browser_provider` 注册实例；选定的一个
+(通过 ``config.yaml`` 中的 ``browser.cloud_provider`` 选择)为每个云模式
+``browser_*`` 工具调用提供服务。
 
-Providers live in ``<repo>/plugins/browser/<name>/`` (built-in, auto-loaded as
-``kind: backend``) or ``~/.hermes/plugins/browser/<name>/`` (user, opt-in via
-``plugins.enabled``).
+提供商位于 ``<repo>/plugins/browser/<name>/`` (内置,作为
+``kind: backend`` 自动加载) 或 ``~/.hermes/plugins/browser/<name>/``
+(用户自定义,通过 ``plugins.enabled`` 选择使用)。
 
-This ABC mirrors :class:`agent.web_search_provider.WebSearchProvider` (PR
-#25182) — same shape, same registration flow, same picker integration. The
-legacy in-tree ``tools.browser_providers.base.CloudBrowserProvider`` ABC was
-deleted in PR #25214 (this work) along with the per-vendor inline modules in
-``tools/browser_providers/``; the lifecycle contract documented below is
-preserved bit-for-bit so the tool wrapper (:mod:`tools.browser_tool`) does
-not have to translate.
+此 ABC 与 :class:`agent.web_search_provider.WebSearchProvider` 镜像相同
+(PR #25182) — 相同的形状、相同的注册流程、相同的选择器集成。
+旧的内部 ``tools.browser_providers.base.CloudBrowserProvider`` ABC 已在
+PR #25214 (本工作) 中删除,同时也删除了 ``tools/browser_providers/``
+中每个供应商的内联模块；下面记录的生命周期合约逐位保留,因此工具包装器
+(:mod:`tools.browser_tool`) 无需翻译即可工作。
 
-Session metadata contract (preserved from the legacy ``CloudBrowserProvider``)::
+会话元数据合约(保留自旧的 ``CloudBrowserProvider``)::
 
     {
-        "session_name": str,        # unique name for agent-browser --session
-        "bb_session_id": str,       # provider session ID (for close/cleanup)
+        "session_name": str,        # agent-browser --session 的唯一名称
+        "bb_session_id": str,       # 提供商会话 ID (用于关闭/清理)
         "cdp_url": str,             # CDP websocket URL
-        "features": dict,           # feature flags that were enabled
-        "external_call_id": str,    # optional, managed-gateway billing key
+        "features": dict,           # 启用的功能标志
+        "external_call_id": str,    # 可选,托管网关计费密钥
     }
 
-``bb_session_id`` is a legacy key name kept verbatim for backward compat with
-:mod:`tools.browser_tool` — it holds the provider's session ID regardless of
-which provider is in use.
+``bb_session_id`` 是保留的旧键名,用于与
+:mod:`tools.browser_tool` 向后兼容 — 它无论哪个提供商在使用,
+都保存提供商的会话 ID。
 """
 
 from __future__ import annotations
@@ -42,99 +41,94 @@ from typing import Any, Dict
 
 
 # ---------------------------------------------------------------------------
-# ABC
+# 抽象基类
 # ---------------------------------------------------------------------------
 
 
 class BrowserProvider(abc.ABC):
-    """Abstract base class for a cloud browser backend.
+    """云浏览器后端的抽象基类。
 
-    Subclasses must implement :meth:`name`, :meth:`is_available`, and the
-    three lifecycle methods: :meth:`create_session`, :meth:`close_session`,
-    :meth:`emergency_cleanup`.
+    子类必须实现 :meth:`name`、:meth:`is_available` 和三个生命周期方法:
+    :meth:`create_session`、:meth:`close_session`、:meth:`emergency_cleanup`。
 
-    The lifecycle shape preserves the legacy ``CloudBrowserProvider`` contract
-    bit-for-bit so the dispatcher in :mod:`tools.browser_tool` is a pure
-    registry lookup — no per-provider conditionals, no shape translation.
+    生命周期形状逐位保留旧的 ``CloudBrowserProvider`` 合约,因此
+    :mod:`tools.browser_tool` 中的调度程序是纯注册表查找 — 无需每个提供商的
+    条件判断,无需形状转换。
     """
 
     @property
     @abc.abstractmethod
     def name(self) -> str:
-        """Stable short identifier used in the ``browser.cloud_provider``
-        config key.
+        """``browser.cloud_provider`` 配置键中使用的稳定短标识符。
 
-        Lowercase, hyphens permitted to preserve existing user-visible names.
-        Examples: ``browserbase``, ``browser-use``, ``firecrawl``.
+        允许小写、连字符以保留现有的用户可见名称。
+        示例: ``browserbase``、``browser-use``、``firecrawl``。
         """
 
     @property
     def display_name(self) -> str:
-        """Human-readable label shown in ``hermes tools``. Defaults to ``name``."""
+        """``hermes tools`` 中显示的可读标签。默认为 ``name``。"""
         return self.name
 
     @abc.abstractmethod
     def is_available(self) -> bool:
-        """Return True when this provider can service calls.
+        """当此提供商可以服务调用时返回 True。
 
-        Typically a cheap check (env var present, managed-gateway token
-        readable, optional Python dep importable). Must NOT make network
-        calls — this runs at tool-registration time and on every
-        ``hermes tools`` paint.
+        通常是一个廉价检查(存在环境变量、可读托管网关令牌、可选的 Python 依赖可导入)。
+        绝不能进行网络调用 — 这在工具注册时间和每次 ``hermes tools`` 绘制时运行。
 
-        Mirrors the legacy ``CloudBrowserProvider.is_configured()`` method;
-        renamed for parity with :class:`agent.web_search_provider.WebSearchProvider`.
+        镜像旧的 ``CloudBrowserProvider.is_configured()`` 方法;
+        为了与 :class:`agent.web_search_provider.WebSearchProvider` 一致而重命名。
         """
 
     @abc.abstractmethod
     def create_session(self, task_id: str) -> Dict[str, object]:
-        """Create a cloud browser session and return session metadata.
+        """创建云浏览器会话并返回会话元数据。
 
-        Must return a dict with at least::
+        必须返回至少包含以下内容的字典::
 
             {
-                "session_name": str,    # unique name for agent-browser --session
-                "bb_session_id": str,   # provider session ID (for close/cleanup)
+                "session_name": str,    # agent-browser --session 的唯一名称
+                "bb_session_id": str,   # 提供商会话 ID (用于关闭/清理)
                 "cdp_url": str,         # CDP websocket URL
-                "features": dict,       # feature flags that were enabled
+                "features": dict,       # 启用的功能标志
             }
 
-        ``bb_session_id`` is a legacy key name kept for backward compat with
-        the rest of :mod:`tools.browser_tool` — it holds the provider's
-        session ID regardless of which provider is in use.
+        ``bb_session_id`` 是保留的旧键名,用于与
+        :mod:`tools.browser_tool` 的其余部分向后兼容 — 它保存提供商的
+        会话 ID,无论哪个提供商在使用。
 
-        May raise ``ValueError`` (missing credentials) or ``RuntimeError``
-        (network / API failure); the dispatcher surfaces these to the user.
+        可能抛出 ``ValueError``(缺少凭证)或 ``RuntimeError``
+        (网络/API 失败);调度程序将这些呈现给用户。
         """
 
     @abc.abstractmethod
     def close_session(self, session_id: str) -> bool:
-        """Release / terminate a cloud session by its provider session ID.
+        """通过提供商会话 ID 释放/终止云会话。
 
-        Returns True on success, False on failure. Should not raise — log and
-        return False on any exception so the dispatcher's cleanup loop keeps
-        moving across sessions.
+        成功返回 True,失败返回 False。不应抛出异常 — 记录日志并
+        在任何异常时返回 False,以便调度程序的清理循环跨会话继续移动。
         """
 
     @abc.abstractmethod
     def emergency_cleanup(self, session_id: str) -> None:
-        """Best-effort session teardown during process exit.
+        """进程退出时的最佳会话清理。
 
-        Called from atexit / signal handlers. Must tolerate missing
-        credentials, network errors, etc. — log and move on. Must not raise.
+        从 atexit/信号处理程序调用。必须容忍缺失凭证、网络错误等 —
+        记录日志并继续。绝不能抛出异常。
         """
 
     def get_setup_schema(self) -> Dict[str, Any]:
-        """Return provider metadata for the ``hermes tools`` picker.
+        """返回 ``hermes tools`` 选择器的提供商元数据。
 
-        Used by :mod:`hermes_cli.tools_config` to inject this provider as a
-        row in the Browser Automation picker. Shape mirrors the existing
-        hardcoded entries in ``TOOL_CATEGORIES["browser"]``::
+        由 :mod:`hermes_cli.tools_config` 使用,将此提供商作为一行注入
+        浏览器自动化选择器中。形状镜像 ``TOOL_CATEGORIES["browser"]``
+        中的现有硬编码条目::
 
             {
                 "name": "Browserbase",
                 "badge": "paid",
-                "tag": "Cloud browser with stealth and proxies",
+                "tag": "具有隐身和代理的云浏览器",
                 "env_vars": [
                     {"key": "BROWSERBASE_API_KEY",
                      "prompt": "Browserbase API key",
@@ -143,9 +137,9 @@ class BrowserProvider(abc.ABC):
                 "post_setup": "agent_browser",
             }
 
-        Default: minimal entry derived from :attr:`display_name`. Override to
-        expose API key prompts, badges, managed-Nous gating, and the
-        ``post_setup`` install hook.
+        默认:从 :attr:`display_name` 派生的最小条目。
+        覆盖以公开 API 密钥提示、徽章、托管 Nous 门控以及
+        ``post_setup`` 安装钩子。
         """
         return {
             "name": self.display_name,
@@ -155,21 +149,20 @@ class BrowserProvider(abc.ABC):
         }
 
     # ------------------------------------------------------------------
-    # Backward-compat shims for the legacy CloudBrowserProvider API
+    # 旧的 CloudBrowserProvider API 的向后兼容填充
     # ------------------------------------------------------------------
     #
-    # The pre-PR-#25214 ABC exposed ``is_configured()`` and ``provider_name()``;
-    # ``tools.browser_tool`` has ~6 callers that still use those names. Rather
-    # than churn every callsite (and break out-of-tree downstream code that
-    # subclassed CloudBrowserProvider), we expose the old names as thin
-    # delegations to the new API. Subclasses MUST implement :meth:`is_available`
-    # and :attr:`name`; they may override ``is_configured`` / ``provider_name``
-    # for compatibility with the legacy ABC but it is not required.
+    # 旧的 PR-#25214 ABC 暴露了 ``is_configured()`` 和 ``provider_name()``;
+    # ``tools.browser_tool`` 有约 6 个调用者仍然使用这些名称。而不是
+    # 更改每个调用点(并破坏对 CloudBrowserProvider 进行子类的下游代码),
+    # 我们将旧名称作为新的 API 的精简委托公开。子类必须实现
+    # :meth:`is_available` 和 :attr:`name`;它们可以覆盖 ``is_configured`` /
+    # ``provider_name`` 以与旧 ABC 兼容,但这不是必需的。
 
     def is_configured(self) -> bool:
-        """Backward-compat alias for :meth:`is_available`."""
+        """:meth:`is_available` 的向后兼容别名。"""
         return self.is_available()
 
     def provider_name(self) -> str:
-        """Backward-compat alias returning :attr:`display_name`."""
+        """返回 :attr:`display_name` 的向后兼容别名。"""
         return self.display_name

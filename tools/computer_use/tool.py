@@ -1,39 +1,39 @@
-"""Entry point for the `computer_use` tool.
+"""`computer_use` 工具的入口。
 
-Universal (any-model) desktop control across macOS, Windows, and Linux via
-cua-driver's background computer-use primitive. Replaces #4562's
-Anthropic-native `computer_20251124` approach — the schema here is standard
-OpenAI function-calling so every tool-capable model can drive it.
+通用的（任意模型皆可）桌面控制，覆盖 macOS、Windows 和 Linux，通过
+cua-driver 的后台 computer-use 原语实现。替代了 #4562 中 Anthropic
+原生的 `computer_20251124` 方案——这里的 schema 是标准的 OpenAI
+函数调用格式，因此任何一个支持工具调用的模型都能驱动它。
 
-Linux is the most recent runtime (X11 + Wayland, via cua-driver-rs's
-AT-SPI tree path); it is enabled here alongside macOS and Windows. When a
-host's display server or accessibility stack isn't reachable, cua-driver's
-`health_report` (surfaced by `hermes computer-use doctor`) reports the
-exact blocked check rather than the toolset silently failing.
+Linux 是最近加入的运行时（X11 + Wayland，通过 cua-driver-rs 的
+AT-SPI 树路径）；它在这里与 macOS、Windows 一并启用。当某台主机的
+显示服务器或无障碍栈不可达时，cua-driver 的 `health_report`
+（由 `hermes computer-use doctor` 暴露）会报告具体哪一项检查被阻塞，
+而不是让整个工具集静默失败。
 
-Return contract
----------------
-For text-only results (wait, key, list_apps, focus_app, failures, etc.):
-  JSON string.
+返回约定
+-------
+对于纯文本结果（wait、key、list_apps、focus_app、失败等）：
+  JSON 字符串。
 
-For captures / actions with `capture_after=True`:
-  A dict wrapped as the OpenAI-style multi-part tool-message content:
+对于带 `capture_after=True` 的截图/动作：
+  一个字典，包装为 OpenAI 风格的多分片工具消息内容：
 
       {
         "_multimodal": True,
         "content": [
-            {"type": "text", "text": "<human-readable summary + SOM index>"},
+            {"type": "text", "text": "<人类可读摘要 + SOM 索引>"},
             {"type": "image_url",
              "image_url": {"url": "data:image/png;base64,<b64>"}},
         ],
-        "text_summary": "<text used for fallback string content>",
+        "text_summary": "<用于回退字符串内容的文本>",
       }
 
-  run_agent.py's tool-message builder inspects `_multimodal` and emits a
-  list-shaped `content` for OpenAI-compatible providers. The Anthropic
-  adapter splices the base64 image into a `tool_result` block (see
-  `agent/anthropic_adapter.py`). Every provider that supports multi-part
-  tool content gets the image; text-only providers see the summary only.
+  run_agent.py 的工具消息构建器会检查 `_multimodal`，并为兼容 OpenAI 的
+  provider 发出列表形式的 `content`。Anthropic 适配器会把 base64 图片
+  拼接进一个 `tool_result` 块（见 `agent/anthropic_adapter.py`）。每一个
+  支持多分片工具内容的 provider 都能拿到图片；仅支持文本的 provider 只
+  会看到摘要。
 """
 
 from __future__ import annotations
@@ -59,43 +59,42 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Approval & safety
+# 审批与安全
 # ---------------------------------------------------------------------------
 
 _approval_callback = None
 
 
 def set_approval_callback(cb) -> None:
-    """Register a callback for computer_use approval prompts (used by CLI).
+    """注册一个用于 computer_use 审批提示的回调（CLI 使用）。
 
-    Matches the terminal_tool._approval_callback pattern. The callback
-    receives (action, args, summary) and returns one of:
-      "approve_once" | "approve_session" | "always_approve" | "deny".
+    与 terminal_tool._approval_callback 的模式一致。回调接收
+    (action, args, summary)，并返回以下之一：
+      "approve_once" | "approve_session" | "always_approve" | "deny"。
     """
     global _approval_callback
     _approval_callback = cb
 
 
-# Actions that read, not mutate. Always allowed.
+# 只读、不修改状态的动作。始终允许。
 _SAFE_ACTIONS = frozenset({"capture", "wait", "list_apps"})
 
-# Actions that mutate user-visible state. Go through approval.
+# 会修改用户可见状态的动作。需要经过审批。
 _DESTRUCTIVE_ACTIONS = frozenset({
     "click", "double_click", "right_click", "middle_click",
     "drag", "scroll", "type", "key", "set_value", "focus_app",
 })
 
-# Hard-blocked key combinations. Mirrored from #4562 — these are destructive
-# regardless of approval level (e.g. logout kills the session Hermes runs in).
+# 被硬性屏蔽的按键组合。镜像自 #4562 —— 无论审批级别如何，这些组合都是
+# 破坏性的（例如注销会杀掉 Hermes 运行所在的会话）。
 _BLOCKED_KEY_COMBOS = {
-    frozenset({"cmd", "shift", "backspace"}),   # empty trash
-    frozenset({"cmd", "option", "backspace"}),   # force delete
-    frozenset({"cmd", "ctrl", "q"}),             # lock screen
-    frozenset({"cmd", "shift", "q"}),            # log out
-    frozenset({"cmd", "option", "shift", "q"}),  # force log out
-    # Windows secure/session shortcuts. The Windows driver accepts Win-key
-    # combos, and Alt is canonicalized to option below, so block the
-    # destructive variants before any backend sees them.
+    frozenset({"cmd", "shift", "backspace"}),   # 清空废纸篓
+    frozenset({"cmd", "option", "backspace"}),   # 强制删除
+    frozenset({"cmd", "ctrl", "q"}),             # 锁屏
+    frozenset({"cmd", "shift", "q"}),            # 注销
+    frozenset({"cmd", "option", "shift", "q"}),  # 强制注销
+    # Windows 安全/会话快捷键。Windows 驱动接受 Win 键组合，而 Alt 在下面
+    # 会被规范化为 option，因此要在任何后端看到之前先屏蔽这些破坏性变体。
     frozenset({"win", "l"}),
     frozenset({"ctrl", "option", "delete"}),
     frozenset({"ctrl", "option", "del"}),
@@ -114,14 +113,14 @@ def _canon_key_combo(keys: str) -> frozenset:
     return frozenset(parts)
 
 
-# Dangerous text patterns for the `type` action. Same list as #4562.
+# `type` 动作的危险文本模式。与 #4562 中的列表相同。
 _BLOCKED_TYPE_PATTERNS = [
     re.compile(r"curl\s+[^|]*\|\s*bash", re.IGNORECASE),
     re.compile(r"curl\s+[^|]*\|\s*sh", re.IGNORECASE),
     re.compile(r"wget\s+[^|]*\|\s*bash", re.IGNORECASE),
     re.compile(r"\bsudo\s+rm\s+-[rf]", re.IGNORECASE),
     re.compile(r"\brm\s+-rf\s+/\s*$", re.IGNORECASE),
-    re.compile(r":\s*\(\)\s*\{\s*:\|:\s*&\s*\}", re.IGNORECASE),  # fork bomb
+    re.compile(r":\s*\(\)\s*\{\s*:\|:\s*&\s*\}", re.IGNORECASE),  # fork 炸弹
 ]
 
 
@@ -133,15 +132,15 @@ def _is_blocked_type(text: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Backend selection — env-swappable for tests
+# 后端选择 —— 可通过环境变量替换，便于测试
 # ---------------------------------------------------------------------------
 
-# Per-process cached backend; lazily instantiated on first call.
+# 进程级缓存的后端；在首次调用时懒加载。
 _backend_lock = threading.Lock()
 _backend: Optional[ComputerUseBackend] = None
-# Session-scoped approval state.
+# 会话级审批状态。
 _session_auto_approve = False
-_always_allow: set = set()  # action names the user unlocked for the session
+_always_allow: set = set()  # 用户为本会话解锁的动作名
 
 
 def _get_backend() -> ComputerUseBackend:
@@ -159,17 +158,15 @@ def _get_backend() -> ComputerUseBackend:
             try:
                 _backend.start()
             except Exception:
-                # Don't cache a backend whose start() failed (e.g. a lazy
-                # dependency install was declined / failed). The next call
-                # retries cleanly instead of returning a half-initialised
-                # backend.
+                # 不要缓存一个 start() 失败的后端（例如懒安装依赖被拒绝/失败）。
+                # 下一次调用会干净地重试，而不是返回一个半初始化的后端。
                 _backend = None
                 raise
         return _backend
 
 
 def reset_backend_for_tests() -> None:  # pragma: no cover
-    """Test helper — tear down the cached backend."""
+    """测试辅助 —— 拆除缓存的后端。"""
     global _backend, _session_auto_approve, _always_allow
     with _backend_lock:
         if _backend is not None:
@@ -183,7 +180,7 @@ def reset_backend_for_tests() -> None:  # pragma: no cover
 
 
 class _NoopBackend(ComputerUseBackend):  # pragma: no cover
-    """Test/CI stub. Records calls; returns trivial results."""
+    """测试/CI 桩。记录调用；返回平凡结果。"""
 
     def __init__(self) -> None:
         self.calls: List[Tuple[str, Dict[str, Any]]] = []
@@ -232,20 +229,20 @@ class _NoopBackend(ComputerUseBackend):  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# 分发
 # ---------------------------------------------------------------------------
 
 def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
-    """Main entry point — dispatched by tools.registry.
+    """主入口 —— 由 tools.registry 分发。
 
-    Returns either a JSON string (text-only) or a dict marked `_multimodal`
-    (image + summary) which run_agent.py wraps into the tool message.
+    返回一个 JSON 字符串（纯文本）或一个带 `_multimodal` 标记的字典
+    （图片 + 摘要），后者由 run_agent.py 包装进工具消息。
     """
     action = (args.get("action") or "").strip().lower()
     if not action:
         return json.dumps({"error": "missing `action`"})
 
-    # Safety: validate actions before approval prompt.
+    # 安全：在审批提示之前先校验动作。
     if action == "type":
         text = args.get("text", "")
         pat = _is_blocked_type(text)
@@ -265,13 +262,13 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
                     "hint": "Destructive system shortcuts are hard-blocked.",
                 })
 
-    # Approval gate (destructive actions only).
+    # 审批闸门（仅针对破坏性动作）。
     if action in _DESTRUCTIVE_ACTIONS:
         err = _request_approval(action, args)
         if err is not None:
             return err
 
-    # Dispatch to backend.
+    # 分发到后端。
     try:
         backend = _get_backend()
     except Exception as e:
@@ -289,7 +286,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
 
 
 def _request_approval(action: str, args: Dict[str, Any]) -> Optional[str]:
-    """Return None if approved, or a JSON error string if denied."""
+    """已批准则返回 None，被拒绝则返回一个 JSON 错误字符串。"""
     global _session_auto_approve, _always_allow
     if _session_auto_approve:
         return None
@@ -297,8 +294,8 @@ def _request_approval(action: str, args: Dict[str, Any]) -> Optional[str]:
         return None
     cb = _approval_callback
     if cb is None:
-        # No CLI approval wired — default allow. Gateway approval is handled
-        # one layer out via the normal tool-approval infra.
+        # 未接入 CLI 审批 —— 默认允许。网关审批由外层一层的常规工具审批
+        # 基础设施处理。
         return None
     summary = _summarize_action(action, args)
     try:
@@ -435,7 +432,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: Dict[str, Any]) ->
 
 
 # ---------------------------------------------------------------------------
-# Response shaping
+# 响应整形
 # ---------------------------------------------------------------------------
 
 def _text_response(res: ActionResult) -> str:
@@ -447,24 +444,22 @@ def _text_response(res: ActionResult) -> str:
     return json.dumps(payload)
 
 
-# Default cap for the AX `elements` array returned by capture. Dense UIs
-# (Electron apps, Obsidian, JetBrains IDEs) can publish 500+ AX nodes, which
-# can exhaust session context after a single capture. The model-facing
-# `max_elements` argument lets callers raise this when they need the full tree.
+# capture 返回的 AX `elements` 数组的默认上限。密集的 UI（Electron 应用、
+# Obsidian、JetBrains IDE）可能发布 500+ 个 AX 节点，单次截图就能耗尽
+# 会话上下文。面向模型的 `max_elements` 参数允许调用方在需要完整树时调高。
 _DEFAULT_MAX_ELEMENTS = 100
-# Hard upper bound on caller-supplied `max_elements`. Without this, a tool
-# call passing a very large integer would silently disable the safeguard and
-# reintroduce the original unbounded behavior.
+# 调用方提供的 `max_elements` 的硬性上限。没有这个限制的话，传入一个非常
+# 大整数的工具调用会静默禁用这个保护，重新引入原本的无界行为。
 _MAX_ALLOWED_MAX_ELEMENTS = 1000
 _MIN_PROVIDER_IMAGE_DIMENSION = 8
 
 
 def _image_dimensions_from_b64(image_b64: str) -> Optional[Tuple[int, int]]:
-    """Return (width, height) for common inline screenshot formats.
+    """返回常见内联截图格式的 (width, height)。
 
-    Some providers reject images below 8x8 before the model sees the tool
-    result. Inspecting the encoded bytes here lets computer_use fall back to
-    its AX/SOM text payload instead of sending an unusable placeholder.
+    一些 provider 会在模型看到工具结果之前就拒绝小于 8x8 的图片。在这里
+    检查编码后的字节，可以让 computer_use 回退到它的 AX/SOM 文本载荷，
+    而不是发送一个无法使用的占位图。
     """
     if not image_b64:
         return None
@@ -473,7 +468,7 @@ def _image_dimensions_from_b64(image_b64: str) -> Optional[Tuple[int, int]]:
     except Exception:
         return None
 
-    # PNG: signature + IHDR width/height.
+    # PNG：签名 + IHDR 宽/高。
     if raw.startswith(b"\x89PNG\r\n\x1a\n") and len(raw) >= 24:
         try:
             width, height = struct.unpack(">II", raw[16:24])
@@ -481,7 +476,7 @@ def _image_dimensions_from_b64(image_b64: str) -> Optional[Tuple[int, int]]:
         except Exception:
             return None
 
-    # JPEG: scan for SOF markers that carry dimensions.
+    # JPEG：扫描携带尺寸信息的 SOF 标记。
     if raw.startswith(b"\xff\xd8") and len(raw) > 4:
         i = 2
         while i + 9 < len(raw):
@@ -514,13 +509,12 @@ def _image_dimensions_from_b64(image_b64: str) -> Optional[Tuple[int, int]]:
 
 
 def _coerce_max_elements(value: Any) -> int:
-    """Validate the caller-supplied ``max_elements``.
+    """校验调用方提供的 ``max_elements``。
 
-    Falls back to :data:`_DEFAULT_MAX_ELEMENTS` for missing / non-integer /
-    sub-1 inputs so the cap can never be silently disabled by a malformed
-    tool-call argument. Clamps oversized values to
-    :data:`_MAX_ALLOWED_MAX_ELEMENTS` so a caller cannot bypass the
-    safeguard by passing a very large integer.
+    对于缺失 / 非整数 / 小于 1 的输入，回退到 :data:`_DEFAULT_MAX_ELEMENTS`，
+    这样上限永远不会因为一个格式错误的工具调用参数而被静默禁用。将过大
+    的值钳制到 :data:`_MAX_ALLOWED_MAX_ELEMENTS`，使调用方无法通过传入
+    极大整数来绕过保护。
     """
     if value is None:
         return _DEFAULT_MAX_ELEMENTS
@@ -550,10 +544,9 @@ def _capture_response(cap: CaptureResult, max_elements: int = _DEFAULT_MAX_ELEME
         )
     )
 
-    # Index only what's actually surfaced in the response — otherwise the
-    # human-readable summary references element indices the model cannot
-    # find in the JSON `elements` array (e.g. max_elements=10 vs the default
-    # 40-line index window).
+    # 只对响应中实际呈现的内容建立索引——否则人类可读摘要会引用模型在
+    # JSON `elements` 数组里找不到的元素索引（例如 max_elements=10 vs
+    # 默认 40 行的索引窗口）。
     element_index = _format_elements(visible_elements)
     summary_lines = [
         f"capture mode={cap.mode} {response_width}x{response_height}"
@@ -563,11 +556,11 @@ def _capture_response(cap: CaptureResult, max_elements: int = _DEFAULT_MAX_ELEME
     ]
     if element_index:
         summary_lines.extend(element_index)
-    # Multimodal and AX paths both reference `summary`; build it once up-front
-    # so the aux-vision routing branch (which fires before either path is
-    # selected) has a valid value to hand to _route_capture_through_aux_vision.
-    # The AX path appends the "truncated to N of M" note to summary_lines
-    # below and rebuilds; the multimodal path keeps this version untouched.
+    # 多模态路径和 AX 路径都会引用 `summary`，因此预先构建一次，这样辅助
+    # 视觉路由分支（它在两条路径被选定之前触发）就有一个有效值可以交给
+    # _route_capture_through_aux_vision。AX 路径会在下方把"已截断为 M 个
+    # 中的 N 个"提示追加到 summary_lines 并重建；多模态路径则保持此版本
+    # 不变。
     if image_too_small:
         summary_lines.append(
             f"  (screenshot omitted: {image_dimensions[0]}x{image_dimensions[1]} "
@@ -577,22 +570,18 @@ def _capture_response(cap: CaptureResult, max_elements: int = _DEFAULT_MAX_ELEME
     summary = "\n".join(summary_lines)
 
     if cap.png_b64 and cap.mode != "ax" and not image_too_small:
-        # Decide whether to hand the screenshot to the auxiliary.vision
-        # pipeline (text-only result) or keep the multimodal envelope (main
-        # model handles vision natively). Issue #24015: previously the
-        # multimodal envelope was returned unconditionally, so non-vision
-        # main models tripped HTTP 404 / 400 at the provider boundary even
-        # when auxiliary.vision was explicitly configured to handle this.
+        # 决定是把截图交给 auxiliary.vision 管线（纯文本结果），还是保留
+        # 多模态封装（主模型原生处理视觉）。Issue #24015：以前多模态封装
+        # 被无条件返回，因此非视觉主模型即使在显式配置了 auxiliary.vision
+        # 来处理此情况时，也会在 provider 边界触发 HTTP 404 / 400。
         if _should_route_through_aux_vision():
             routed = _route_capture_through_aux_vision(cap, summary)
             if routed is not None:
                 return routed
-            # Aux routing was requested but failed (vision node down, aux call
-            # raised, empty analysis, etc.). Routing being requested means the
-            # main model may not be able to consume images; falling through to
-            # the multimodal envelope can break the capture with a provider
-            # error. Degrade to the AX/SOM text payload instead so element
-            # indices remain usable while vision is unavailable.
+            # 辅助路由被请求但失败了（视觉节点宕机、辅助调用抛异常、分析
+            # 为空等）。请求路由意味着主模型可能无法消费图片；此时落入
+            # 多模态封装可能会因 provider 错误而破坏截图。改为降级到
+            # AX/SOM 文本载荷，这样在视觉不可用时元素索引仍然可用。
             summary_lines.append(
                 "  (vision unavailable: the auxiliary vision model could not "
                 "be reached; screenshot omitted. Element-index actions still "
@@ -619,18 +608,17 @@ def _capture_response(cap: CaptureResult, max_elements: int = _DEFAULT_MAX_ELEME
                 payload["truncated_elements"] = truncated_elements
             return json.dumps(payload)
 
-        # Prefer the explicit MIME type cua-driver attaches to its image
-        # parts (Surface 7 of NousResearch/hermes-agent#47072 — trycua/cua#1961
-        # made `mimeType` part of every MCP image-part response). Fall back
-        # to base64-prefix sniffing for older cua-driver builds that didn't
-        # carry the field. JPEG base64 starts with /9j/; PNG with iVBOR.
+        # 优先使用 cua-driver 为其图片分片附带的显式 MIME 类型
+        #（NousResearch/hermes-agent#47072 的 Surface 7 —— trycua/cua#1961
+        # 让 `mimeType` 成为每个 MCP image-part 响应的一部分）。对于不带
+        # 该字段的旧 cua-driver 构建，回退到 base64 前缀嗅探。JPEG base64
+        # 以 /9j/ 开头；PNG 以 iVBOR 开头。
         _mime = cap.image_mime_type
         if not _mime:
             _b64_prefix = cap.png_b64[:8]
             _mime = "image/jpeg" if _b64_prefix.startswith("/9j/") else "image/png"
-        # The multimodal response carries the screenshot, not the AX
-        # elements array, so a "response truncated to N of M elements"
-        # note would be inaccurate — skip it on this branch.
+        # 多模态响应携带的是截图，而不是 AX elements 数组，因此"响应已
+        # 截断为 M 个中的 N 个元素"的提示在这里是不准确的——在此分支跳过。
         return {
             "_multimodal": True,
             "content": [
@@ -642,8 +630,8 @@ def _capture_response(cap: CaptureResult, max_elements: int = _DEFAULT_MAX_ELEME
             "meta": {"mode": cap.mode, "width": response_width, "height": response_height,
                      "elements": total_elements, "png_bytes": cap.png_bytes_len},
         }
-    # AX-only (or image-missing fallback): text path actually carries the
-    # `elements` array, so the truncation note applies here.
+    # 仅 AX（或图片缺失时的回退）：文本路径实际上携带 `elements` 数组，
+    # 因此截断提示适用于此处。
     if truncated_elements:
         summary_lines.append(
             f"  (response truncated to {len(visible_elements)} of {total_elements} elements; "
@@ -666,21 +654,21 @@ def _capture_response(cap: CaptureResult, max_elements: int = _DEFAULT_MAX_ELEME
 
 
 # ---------------------------------------------------------------------------
-# auxiliary.vision routing for captured screenshots (#24015)
+# 截图的 auxiliary.vision 路由（#24015）
 # ---------------------------------------------------------------------------
 
-# Longest image side handed to the aux vision model. Full-resolution desktop
-# captures tokenize heavily and can overflow small local-model context windows;
-# ~1456px keeps SOM badges legible while cutting per-capture vision latency.
+# 交给辅助视觉模型的图片最长边。全分辨率桌面截图 tokenize 严重，可能
+# 溢出小型本地模型的上下文窗口；约 1456px 既能保持 SOM 徽标可读，又能
+# 降低每次截图的视觉延迟。
 _MAX_VISION_DIM = 1456
 
 
 def _shrink_capture_for_vision(raw: bytes, ext: str,
                                max_dim: int = _MAX_VISION_DIM) -> bytes:
-    """Downscale encoded image bytes so the longest side is <= max_dim.
+    """对编码后的图片字节做缩放，使最长边 <= max_dim。
 
-    Returns the original bytes unchanged when the image already fits or when
-    Pillow is unavailable/fails — no worse than the pre-shrink behavior.
+    当图片已经符合尺寸，或 Pillow 不可用/失败时，原样返回原始字节——
+    不会比缩放前的行为更差。
     """
     try:
         from io import BytesIO
@@ -697,13 +685,12 @@ def _shrink_capture_for_vision(raw: bytes, ext: str,
         return raw
 
 def _should_route_through_aux_vision() -> bool:
-    """Return True when ``_capture_response`` should hand the PNG to aux vision.
+    """当 ``_capture_response`` 应把 PNG 交给辅助视觉时返回 True。
 
-    Reads the active main provider/model and the loaded config and asks the
-    routing helper. Any failure (config import, runtime override missing,
-    etc.) returns False so the existing multimodal envelope continues to be
-    returned — fail open on the routing decision so a broken config can
-    never silently drop the screenshot for vision-capable main models.
+    读取当前活跃的主 provider/model 和已加载的配置，并询问路由辅助函数。
+    任何失败（配置导入、运行时覆盖缺失等）都返回 False，从而继续返回
+    现有的多模态封装——在路由决策上采取失败放行（fail open），这样一
+    个损坏的配置永远不会为具备视觉能力的主模型静默丢弃截图。
     """
     try:
         from agent.auxiliary_client import _read_main_model, _read_main_provider
@@ -732,18 +719,16 @@ def _route_capture_through_aux_vision(
     cap: CaptureResult,
     summary: str,
 ) -> Optional[str]:
-    """Pre-analyse the captured PNG via ``vision_analyze`` and return a text result.
+    """通过 ``vision_analyze`` 预分析截取的 PNG 并返回一个文本结果。
 
-    The captured base64 PNG is materialised to ``$HERMES_HOME/cache/vision/``
-    and handed to ``vision_analyze_tool`` with a generic describe prompt.
-    The resulting text description is merged into the existing AX/SOM
-    summary so the main model receives a single text payload that mentions
-    every interactable element AND a description of what the screenshot
-    looked like.
+    截取的 base64 PNG 会被物化到 ``$HERMES_HOME/cache/vision/``，并以一个
+    通用的描述提示交给 ``vision_analyze_tool``。得到的文本描述会被合并进
+    现有的 AX/SOM 摘要，使主模型收到一个单一文本载荷，其中既提到每一个
+    可交互元素，又包含截图外观的描述。
 
-    Returns:
-      A JSON-encoded text response on success.
-      ``None`` on failure (caller falls back to the multimodal envelope).
+    返回：
+      成功时返回一个 JSON 编码的文本响应。
+      失败时返回 ``None``（调用方回退到多模态封装）。
     """
     if not cap.png_b64:
         return None
@@ -767,9 +752,9 @@ def _route_capture_through_aux_vision(
             logger.debug("computer_use: failed to decode capture base64: %s", exc)
             return None
 
-        # Pick an extension that matches the on-disk bytes so vision_analyze's
-        # MIME sniffing returns the right content-type.
-        # Surface 7: prefer the explicit MIME type cua-driver supplied.
+        # 选择一个与磁盘字节匹配的扩展名，以便 vision_analyze 的 MIME
+        # 嗅探返回正确的 content-type。
+        # Surface 7：优先使用 cua-driver 提供的显式 MIME 类型。
         _mime_for_ext = cap.image_mime_type or ""
         if _mime_for_ext == "image/jpeg" or (not _mime_for_ext and cap.png_b64[:8].startswith("/9j/")):
             ext = ".jpg"
@@ -838,28 +823,27 @@ def _maybe_follow_capture(
 ) -> Any:
     if not do_capture:
         return _text_response(res)
-    # Skip the follow-up capture when the action itself failed: showing a
-    # normal-looking screenshot after a failure misleads the model into thinking
-    # the action succeeded. Return the error text instead.
+    # 当动作本身失败时跳过后续截图：在失败后展示一张看起来正常的截图
+    # 会误导模型以为动作成功了。改为返回错误文本。
     if not res.ok:
         return _text_response(res)
     try:
-        # Preserve the app context established by the preceding capture/focus_app so
-        # that capture_after=True re-captures the same app rather than the frontmost
-        # window (which may have changed if the action caused a focus shift).
+        # 保留前一次 capture/focus_app 建立的应用上下文，使 capture_after=True
+        # 重新截取的是同一个应用，而不是最前窗口（如果动作导致了焦点切换，
+        # 最前窗口可能已经变了）。
         last_app = getattr(backend, "_last_app", None)
         cap = backend.capture(mode="som", app=last_app)
     except Exception as e:
         logger.warning("follow-up capture failed: %s", e)
         return _text_response(res)
-    # Combine action summary with the capture.
+    # 将动作摘要与截图合并。
     resp = _capture_response(cap)
     if isinstance(resp, dict) and resp.get("_multimodal"):
         prefix = f"[{res.action}] ok={res.ok}" + (f" — {res.message}" if res.message else "")
         resp["content"][0]["text"] = prefix + "\n\n" + resp["content"][0]["text"]
         resp["text_summary"] = prefix + "\n\n" + resp["text_summary"]
         return resp
-    # Fallback: action + text capture merged.
+    # 回退：动作 + 文本截图合并。
     try:
         data = json.loads(resp)
     except (TypeError, json.JSONDecodeError):
@@ -893,18 +877,17 @@ def _element_to_dict(e: UIElement) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Availability check (used by the tool registry check_fn)
+# 可用性检查（供工具注册表的 check_fn 使用）
 # ---------------------------------------------------------------------------
 
 def check_computer_use_requirements() -> bool:
-    """Return True iff computer_use can run on this host.
+    """当且仅当 computer_use 可以在当前主机上运行时返回 True。
 
-    Conditions: macOS, Windows, or Linux + cua-driver binary installed (or
-    override via env). cua-driver runs on all three; the Linux path is
-    headed/X11 today (Wayland via XWayland), pure-Wayland progress tracked
-    upstream. Linux users see specific blocked checks via
-    `hermes computer-use doctor` if their session is incomplete (e.g. no
-    DISPLAY set).
+    条件：macOS、Windows 或 Linux + 已安装 cua-driver 二进制（或通过
+    环境变量覆盖）。cua-driver 在三者上都能运行；Linux 路径目前是
+    有头/X11（Wayland 通过 XWayland），纯 Wayland 的进展在上游跟进中。
+    如果 Linux 用户的会话不完整（例如未设置 DISPLAY），他们会通过
+    `hermes computer-use doctor` 看到具体的阻塞检查。
     """
     if sys.platform not in ("darwin", "win32", "linux"):
         return False

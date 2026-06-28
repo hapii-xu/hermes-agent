@@ -1,8 +1,8 @@
-"""Hermes middleware contract helpers.
+"""Hermes 中间件契约辅助工具。
 
-Observer hooks report what happened. Middleware can change what happens by
-rewriting a request or wrapping the actual execution callback. Keep the small
-contract helpers here so agent-loop call sites and plugins share one vocabulary.
+观察者钩子报告发生的事件。中间件可以通过重写请求或包装实际执行回调来改变
+发生的行为。将这些小型契约辅助工具放在这里，以便 agent 循环调用点和插件
+共享统一的术语。
 """
 
 from __future__ import annotations

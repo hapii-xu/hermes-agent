@@ -1,31 +1,29 @@
-"""``hermes gateway enroll`` — enroll a self-hosted gateway with a relay connector.
+"""``hermes gateway enroll`` — 使用 relay connector 注册自托管 gateway。
 
-The connector⇄gateway channel is authenticated (the gateway may be
-customer-managed and internet-exposed). This command is the gateway half of the
-zero-touch enrollment in the connector repo's
-``docs/connector-gateway-auth-design.md``:
+connector⇄gateway 通道经过身份验证（gateway 可能由客户管理并暴露在公网上）。
+此命令是 connector 仓库 ``docs/connector-gateway-auth-design.md`` 中
+零接触注册流程的 gateway 端：
 
-  1. Resolve a fresh Nous Portal access token from the existing login
-     (``~/.hermes/auth.json``) — the same path ``hermes dashboard register``
-     uses (``resolve_nous_access_token``). This proves *which Nous org (tenant)*
-     the caller owns; the connector derives the authoritative tenant from it via
-     ``GET /api/oauth/account`` (never from anything the gateway asserts).
-  2. POST ``{enrollmentToken, gatewayId}`` to the connector's ``/relay/enroll``
-     with that token in the ``Authorization`` header, over TLS.
-  3. The connector verifies the enrollment token (signature + single-use +
-     tenant match), mints a per-gateway secret, get-or-creates the per-tenant
-     delivery key, and returns both ONCE.
-  4. Persist ``GATEWAY_RELAY_ID`` / ``GATEWAY_RELAY_SECRET`` /
-     ``GATEWAY_RELAY_DELIVERY_KEY`` (+ ``GATEWAY_RELAY_URL`` if supplied) into
-     ``~/.hermes/.env``. The per-gateway secret authenticates the WS upgrade;
-     the per-tenant delivery key verifies signed inbound deliveries.
+  1. 从现有登录（``~/.hermes/auth.json``）中解析一个新鲜的 Nous Portal 访问
+     token — 与 ``hermes dashboard register`` 使用的路径相同
+     （``resolve_nous_access_token``）。这证明了*调用者拥有哪个 Nous org
+     （租户）*；connector 通过 ``GET /api/oauth/account`` 从中获取权威租户
+     （绝不依赖 gateway 断言的任何内容）。
+  2. 将该 token 放在 ``Authorization`` 头中，通过 TLS 向 connector 的
+     ``/relay/enroll`` POST ``{enrollmentToken, gatewayId}``。
+  3. connector 验证注册 token（签名 + 一次性使用 + 租户匹配），铸造一个
+     每 gateway 密钥，获取或创建每租户 delivery key，并一次性返回两者。
+  4. 将 ``GATEWAY_RELAY_ID`` / ``GATEWAY_RELAY_SECRET`` /
+     ``GATEWAY_RELAY_DELIVERY_KEY``（以及 ``GATEWAY_RELAY_URL``（如果提供））
+     持久化到 ``~/.hermes/.env``。每 gateway 密钥用于认证 WS 升级；
+     每租户 delivery key 用于验证签名的入站投递。
 
-Managed/hosted installs do NOT self-enroll: the orchestrator (NAS) mints the
-secret directly and stamps it into the container env, so this command refuses to
-run under ``is_managed()`` (mirrors ``dashboard register``).
+托管/主机安装不会自行注册：编排器（NAS）直接铸造密钥并将其注入容器环境
+变量，因此此命令在 ``is_managed()`` 下拒绝运行（与 ``dashboard register``
+一致）。
 
-EXPERIMENTAL: the relay auth scheme may change without a deprecation cycle until
-≥2 Class-1 platforms validate the contract.
+实验性：relay 认证方案可能会在没有弃用周期的情况下发生变化，直到
+≥2 个 Class-1 平台验证该合约。
 """
 
 from __future__ import annotations
@@ -40,11 +38,11 @@ from typing import Optional
 
 
 def _default_gateway_id() -> str:
-    """A stable-ish default gateway instance id: ``<hostname>-<pid-free slug>``.
+    """一个相对稳定的默认 gateway 实例 id：``<hostname>-<pid-free slug>``。
 
-    The gatewayId identifies this enrolled instance for kill-switch granularity
-    (the connector indexes its secret verify list by it). Default to the host
-    name so a human can recognize it; overridable via ``--gateway-id``.
+    gatewayId 用于标识此已注册的实例，以实现 kill-switch 粒度控制
+    （connector 通过它索引密钥验证列表）。默认使用主机名以便人工识别；
+    可通过 ``--gateway-id`` 覆盖。
     """
     host = ""
     try:
@@ -55,12 +53,12 @@ def _default_gateway_id() -> str:
 
 
 def _resolve_connector_url(override: Optional[str]) -> Optional[str]:
-    """Resolve the connector base URL (no trailing slash) for enrollment.
+    """解析用于注册的 connector 基础 URL（无尾部斜杠）。
 
-    Precedence: explicit ``--connector-url`` flag > ``GATEWAY_RELAY_URL`` env >
-    ``gateway.relay_url`` in config.yaml. The relay URL is a ``ws(s)://`` dial
-    target; enrollment is an ``http(s)://`` POST to the same host, so we map the
-    scheme. Returns None when nothing is configured (the user must supply one).
+    优先级：显式 ``--connector-url`` 参数 > ``GATEWAY_RELAY_URL`` 环境变量 >
+    config.yaml 中的 ``gateway.relay_url``。relay URL 是 ``ws(s)://`` 拨号
+    目标；注册是向同一主机的 ``http(s)://`` POST，因此我们映射 scheme。
+    当没有配置任何内容时返回 None（用户必须提供一个）。
     """
     raw = (override or os.environ.get("GATEWAY_RELAY_URL", "")).strip()
     if not raw:
@@ -74,12 +72,12 @@ def _resolve_connector_url(override: Optional[str]) -> Optional[str]:
     if not raw:
         return None
     raw = raw.rstrip("/")
-    # The relay dial URL is ws(s)://…/relay; enrollment posts to http(s)://…/relay/enroll.
+    # relay 拨号 URL 为 ws(s)://…/relay；注册向 http(s)://…/relay/enroll 发送 POST。
     if raw.startswith("ws://"):
         raw = "http://" + raw[len("ws://"):]
     elif raw.startswith("wss://"):
         raw = "https://" + raw[len("wss://"):]
-    # Strip a trailing /relay path segment if the user pasted the dial URL.
+    # 如果用户粘贴了拨号 URL，去掉尾部的 /relay 路径段。
     if raw.endswith("/relay"):
         raw = raw[: -len("/relay")]
     return raw
@@ -93,11 +91,11 @@ def _post_enroll(
     gateway_id: str,
     timeout: float = 15.0,
 ) -> dict:
-    """POST to the connector's ``/relay/enroll`` and return the JSON body.
+    """向 connector 的 ``/relay/enroll`` 发送 POST 并返回 JSON 响应体。
 
-    Raises RuntimeError with a user-facing message on any non-2xx / transport
-    failure. The connector returns ``{secret, deliveryKey, tenant, gatewayId}``
-    on success, ``{error}`` at 400/401/403.
+    在任何非 2xx / 传输失败时抛出 RuntimeError 并附带面向用户的消息。
+    connector 成功时返回 ``{secret, deliveryKey, tenant, gatewayId}``，
+    400/401/403 时返回 ``{error}``。
     """
     url = f"{connector_base_url.rstrip('/')}/relay/enroll"
     data = json.dumps({"enrollmentToken": enrollment_token, "gatewayId": gateway_id}).encode("utf-8")
@@ -144,14 +142,13 @@ def _post_enroll(
 
 
 def cmd_gateway_enroll(args) -> None:
-    """Enroll this gateway with a relay connector; persist the auth creds to .env."""
+    """将此 gateway 注册到 relay connector；将认证凭据持久化到 .env。"""
     from hermes_cli.auth import AuthError, resolve_nous_access_token
     from hermes_cli.config import is_managed, save_env_value
 
-    # Managed installs get GATEWAY_RELAY_* stamped in by the orchestrator (NAS
-    # mints the secret directly per the design's managed shape). Self-enrolling
-    # from inside such a container is a mistake — and save_env_value refuses to
-    # write anyway.
+    # 托管安装的 GATEWAY_RELAY_* 由编排器注入（NAS 根据设计中的托管模式
+    # 直接铸造密钥）。在此类容器内自行注册是错误的 — 而且 save_env_value
+    # 无论如何也拒绝写入。
     if is_managed():
         print(
             "✗ `hermes gateway enroll` is not available in a managed/hosted install.\n"
@@ -179,7 +176,7 @@ def cmd_gateway_enroll(args) -> None:
 
     gateway_id = (getattr(args, "gateway_id", None) or _default_gateway_id()).strip()
 
-    # 1. Resolve a fresh Nous access token (the tenant-proving identity).
+    # 1. 解析一个新鲜的 Nous 访问 token（证明租户身份的凭据）。
     try:
         access_token = resolve_nous_access_token()
     except AuthError as exc:
@@ -193,7 +190,7 @@ def cmd_gateway_enroll(args) -> None:
         print(f"✗ Could not resolve a Nous Portal access token: {exc}")
         sys.exit(1)
 
-    # 2-3. Redeem the enrollment token at the connector.
+    # 2-3. 在 connector 处兑换注册 token。
     try:
         result = _post_enroll(
             connector_base_url=connector_base_url,
@@ -210,23 +207,23 @@ def cmd_gateway_enroll(args) -> None:
     tenant = str(result.get("tenant") or "")
     resolved_gateway_id = str(result.get("gatewayId") or gateway_id)
 
-    # 4. Persist the creds idempotently. The secret + delivery key are sensitive;
-    #    save_env_value writes them to ~/.hermes/.env (0600 dir) and never logs.
+    # 4. 幂等地持久化凭据。secret + delivery key 是敏感信息；
+    #    save_env_value 将它们写入 ~/.hermes/.env（0600 权限目录），且绝不记录日志。
     to_write = {
         "GATEWAY_RELAY_ID": resolved_gateway_id,
         "GATEWAY_RELAY_SECRET": secret,
         "GATEWAY_RELAY_DELIVERY_KEY": delivery_key,
     }
-    # Persist the connector URL too (as the ws(s):// dial target) when supplied
-    # explicitly, so the runtime can dial without re-specifying it.
+    # 如果显式提供了 connector URL（作为 ws(s):// 拨号目标），也持久化它，
+    # 以便运行时可以在不重新指定的情况下进行拨号。
     explicit_url = (getattr(args, "connector_url", None) or "").strip()
     if explicit_url:
         to_write["GATEWAY_RELAY_URL"] = explicit_url.rstrip("/")
 
-    # Phase 5 §5.2: persist the wake URL so self_provision_relay forwards it to
-    # the connector (which pokes it to wake this gateway when buffered work
-    # arrives while it's idle). Optional — omitted ⇒ the connector can't wake it,
-    # but the gateway still drains on its next reconnect.
+    # Phase 5 §5.2：持久化 wake URL，以便 self_provision_relay 将其转发给
+    # connector（当缓冲的工作在 gateway 空闲时到达时，connector 通过它唤醒
+    # 此 gateway）。可选 — 省略则 connector 无法唤醒它，但 gateway 仍会在
+    # 下次重连时排空队列。
     explicit_wake_url = (getattr(args, "wake_url", None) or "").strip()
     if explicit_wake_url:
         to_write["GATEWAY_RELAY_WAKE_URL"] = explicit_wake_url.rstrip("/")

@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
-"""Propagate agent-turn context into worker threads that dispatch Hermes tools.
+"""把 agent 轮次的上下文传播到派发 Hermes 工具的工作线程中。
 
-A bare ``threading.Thread`` / ``ThreadPoolExecutor`` worker starts with an
-empty ``contextvars.Context`` and no thread-local approval/sudo callbacks.
-Tool dispatch inside such a thread therefore silently loses:
+一个裸的 ``threading.Thread`` / ``ThreadPoolExecutor`` 工作线程启动时
+带有一个空的 ``contextvars.Context``，也没有线程本地的 approval/sudo 回调。
+因此，在这种线程内部派发工具会悄悄丢失：
 
-  * the approval *session/platform* ContextVars (``tools.approval`` /
-    ``gateway.session_context``) — so gateway sessions fall into
-    ``check_dangerous_command``'s non-interactive auto-approve branch and
-    dangerous commands run without prompting (#33057, #30882);
-  * the thread-local CLI approval/sudo callbacks (``tools.terminal_tool``) —
-    so ``prompt_dangerous_approval`` cannot reach the user
-    (GHSA-qg5c-hvr5-hjgr, #15216).
+  * approval 的 *会话/平台* ContextVars（``tools.approval`` /
+    ``gateway.session_context``）—— 于是 gateway 会话落入
+    ``check_dangerous_command`` 的非交互式自动批准分支，
+    危险命令不经提示就运行（#33057、#30882）；
+  * 线程本地的 CLI approval/sudo 回调（``tools.terminal_tool``）——
+    于是 ``prompt_dangerous_approval`` 无法触达用户
+    （GHSA-qg5c-hvr5-hjgr、#15216）。
 
-This helper factors out that capture/install/clear lifecycle so the several
-places that fan tool dispatch onto worker threads (``agent.tool_executor`` and
-the ``execute_code`` RPC threads) share one audited implementation instead of
-divergent copies.
+本辅助函数把"捕获/安装/清理"这一生命周期抽取出来，让若干把工具派发
+分摊到工作线程的地方（``agent.tool_executor`` 和
+``execute_code`` RPC 线程）共用一套经过审计的实现，而不是各自分叉。
 
-Usage — call :func:`propagate_context_to_thread` **on the parent thread**
-(it snapshots the parent's ContextVars and callbacks at call time) and use the
-returned callable as the worker's target::
+用法 —— 在**父线程**上调用 :func:`propagate_context_to_thread`
+（它在调用时对父线程的 ContextVars 和回调做快照），并把返回的可调用对象
+作为工作线程的 target::
 
     t = threading.Thread(target=propagate_context_to_thread(loop_fn), args=(...))
-    # or
+    # 或
     executor.submit(propagate_context_to_thread(worker_fn), *args)
 
-Approval/sudo callbacks are installed for the worker's lifetime and **always
-cleared on exit**, so a recycled thread never holds a stale reference to a
-disposed CLI instance.
+Approval/sudo 回调在工作线程的整个生命周期内都被安装，并且**总是在退出时
+清理**，所以一个被复用的线程绝不会持有一个已销毁 CLI 实例的过期引用。
 """
 
 from __future__ import annotations
@@ -41,11 +39,11 @@ logger = logging.getLogger(__name__)
 
 
 def _callback_api():
-    """Resolve the terminal_tool callback getters/setters.
+    """解析 terminal_tool 的回调 getter/setter。
 
-    Imported lazily: ``tools.terminal_tool`` imports ``tools.approval`` at
-    module load, so a top-level import here would risk an import cycle for
-    callers that live in ``tools.approval``.
+    延迟导入：``tools.terminal_tool`` 在模块加载时就会导入 ``tools.approval``，
+    所以这里在顶层导入会为位于 ``tools.approval`` 中的调用方
+    带来导入循环的风险。
     """
     from tools.terminal_tool import (
         _get_approval_callback,
@@ -62,18 +60,17 @@ def _callback_api():
 
 
 def propagate_context_to_thread(target: Callable) -> Callable:
-    """Wrap *target* for execution on a worker thread with the *current*
-    thread's ContextVars and approval/sudo callbacks propagated.
+    """包装 *target*，使其在工作线程上执行时能传播*当前*线程的
+    ContextVars 和 approval/sudo 回调。
 
-    Call this on the parent thread; pass the returned callable as the
-    thread/executor target.  The returned callable forwards its positional
-    and keyword arguments to *target* and returns its result.
+    在父线程上调用本函数；把返回的可调用对象作为
+    线程/执行器的 target。返回的可调用对象会把它的位置参数和
+    关键字参数转发给 *target*，并返回其结果。
 
-    Fail-closed: if callback installation raises, the callbacks are left
-    unset (``None``).  That is the safe outcome — ``prompt_dangerous_approval``
-    denies dangerous commands when no callback is registered in an interactive
-    context, and the gateway approval queue blocks when its notify callback is
-    absent.
+    故障关闭（fail-closed）：如果回调安装抛出异常，回调会保持未设置
+    （``None``）状态。这是安全的结果 —— 当交互式上下文中没有注册回调时，
+    ``prompt_dangerous_approval`` 会拒绝危险命令，而当 gateway
+    approval 队列缺少 notify 回调时会阻塞。
     """
     ctx = contextvars.copy_context()
     parent_approval_cb = parent_sudo_cb = None

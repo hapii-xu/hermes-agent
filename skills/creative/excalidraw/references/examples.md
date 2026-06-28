@@ -1,25 +1,25 @@
-# Excalidraw Diagram Examples
+# Excalidraw 图表示例
 
-Complete, copy-pasteable examples. Wrap each in the `.excalidraw` envelope before saving:
+完整的、可直接复制粘贴的示例。保存前请将每个示例包裹在 `.excalidraw` 信封中：
 
 ```json
 {
   "type": "excalidraw",
   "version": 2,
   "source": "hermes-agent",
-  "elements": [ ...elements from examples below... ],
+  "elements": [ ...下面示例中的元素... ],
   "appState": { "viewBackgroundColor": "#ffffff" }
 }
 ```
 
-> **IMPORTANT:** All text labels on shapes and arrows use container binding (`containerId` + `boundElements`).
-> Do NOT use the non-existent `"label"` property -- it will be silently ignored, producing blank shapes.
+> **重要：** 形状和箭头上的所有文本标签都使用容器绑定（`containerId` + `boundElements`）。
+> 不要使用不存在的 `"label"` 属性——它会被静默忽略，从而产生空白形状。
 
 ---
 
-## Example 1: Two Connected Labeled Boxes
+## 示例 1：两个相连的带标签方框
 
-A minimal flowchart with two boxes and an arrow between them.
+一个最小化的流程图，包含两个方框以及它们之间的一条箭头。
 
 ```json
 [
@@ -34,9 +34,9 @@ A minimal flowchart with two boxes and an arrow between them.
 
 ---
 
-## Example 2: Photosynthesis Process Diagram
+## 示例 2：光合作用过程图
 
-A larger diagram with background zones, multiple nodes, and directional arrows showing inputs/outputs.
+一张更大的图表，包含背景区域、多个节点以及显示输入/输出的方向箭头。
 
 ```json
 [
@@ -89,9 +89,9 @@ A larger diagram with background zones, multiple nodes, and directional arrows s
 
 ---
 
-## Example 3: Sequence Diagram (UML-style)
+## 示例 3：时序图（UML 风格）
 
-Demonstrates a sequence diagram with actors, dashed lifelines, and message arrows.
+演示一张包含参与者、虚线生命线和消息箭头的时序图。
 
 ```json
 [
@@ -128,14 +128,14 @@ Demonstrates a sequence diagram with actors, dashed lifelines, and message arrow
 
 ---
 
-## Common Mistakes to Avoid
+## 需要避免的常见错误
 
-- **Do NOT use `"label"` property** -- this is the #1 mistake. It is NOT part of the Excalidraw file format and will be silently ignored, producing blank shapes with no visible text. Always use container binding (`containerId` + `boundElements`) as shown in the examples above.
-- **Every bound text needs both sides linked** -- the shape needs `boundElements: [{"id": "t_xxx", "type": "text"}]` AND the text needs `containerId: "shape_id"`. If either is missing, the binding won't work.
-- **Include `originalText` and `autoResize: true`** on all text elements -- Excalidraw uses these for proper text reflow.
-- **Include `fontFamily: 1`** on all text elements -- without it, text may not render with the expected hand-drawn font.
-- **Elements overlap when y-coordinates are close** -- always check that text, boxes, and labels don't stack on top of each other
-- **Arrow labels need space** -- long labels like "ATP + NADPH" overflow short arrows. Keep labels short or make arrows wider
-- **Center titles relative to the diagram** -- estimate total width and center the title text over it
-- **Draw decorations LAST** -- cute illustrations (sun, stars, icons) should appear at the end of the array so they're drawn on top
+- **不要使用 `"label"` 属性**——这是头号错误。它不是 Excalidraw 文件格式的一部分，会被静默忽略，从而产生没有可见文本的空白形状。始终使用容器绑定（`containerId` + `boundElements`），如上面的示例所示。
+- **每个绑定文本都需要双向链接**——形状需要 `boundElements: [{"id": "t_xxx", "type": "text"}]`，而文本需要 `containerId: "shape_id"`。缺少任何一方，绑定都不会生效。
+- **在所有文本元素上包含 `originalText` 和 `autoResize: true`**——Excalidraw 用它们来实现正确的文本重排。
+- **在所有文本元素上包含 `fontFamily: 1`**——缺少它，文本可能无法以预期的手绘字体渲染。
+- **当 y 坐标接近时元素会重叠**——始终检查文本、方框和标签不会堆叠在一起
+- **箭头标签需要空间**——像 "ATP + NADPH" 这样长的标签会溢出短箭头。保持标签简短，或者把箭头加宽
+- **标题要相对于图表居中**——估算总宽度，并将标题文本居中放置于其上
+- **最后再绘制装饰**——可爱的插图（太阳、星星、图标）应放在数组的末尾，这样它们会被绘制在最上层
 

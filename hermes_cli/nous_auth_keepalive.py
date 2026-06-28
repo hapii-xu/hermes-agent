@@ -1,4 +1,4 @@
-"""Background keepalive for long-lived Nous Portal sessions."""
+"""长生命周期 Nous Portal 会话的后台保活机制。"""
 
 from __future__ import annotations
 
@@ -48,10 +48,10 @@ def _refresh_selected_pool_entry(
     *,
     min_key_ttl_seconds: int,
 ) -> Optional[bool]:
-    """Refresh the current Nous credential pool entry when it is stale.
+    """当凭证过期时刷新当前 Nous 凭证池条目。
 
-    Returns True when a pool entry exists and is usable/refreshed, False when a
-    pool exists but no entry can be used, and None when no Nous pool exists.
+    当凭证池条目存在且可用/已刷新时返回 True，当凭证池存在但没有可用条目时返回 False，
+    当不存在 Nous 凭证池时返回 None。
     """
     try:
         from agent.credential_pool import load_pool
@@ -93,7 +93,7 @@ def refresh_nous_auth_keepalive_once(
     min_key_ttl_seconds: int = NOUS_INVOKE_JWT_MIN_TTL_SECONDS,
     timeout_seconds: Optional[float] = None,
 ) -> bool:
-    """Refresh Nous auth once if credentials are configured."""
+    """如果已配置凭证，刷新一次 Nous 认证。"""
     min_key_ttl_seconds = max(60, int(min_key_ttl_seconds))
 
     pool_result = _refresh_selected_pool_entry(
@@ -149,7 +149,7 @@ def start_nous_auth_keepalive(
     min_key_ttl_seconds: int = NOUS_INVOKE_JWT_MIN_TTL_SECONDS,
     timeout_seconds: Optional[float] = None,
 ) -> Optional[threading.Thread]:
-    """Start the process-wide Nous auth keepalive thread."""
+    """启动进程级的 Nous 认证保活线程。"""
     if interval_seconds <= 0:
         return None
 
@@ -177,7 +177,7 @@ def start_nous_auth_keepalive(
 
 
 def stop_nous_auth_keepalive(timeout: float = 5.0) -> None:
-    """Stop the keepalive thread. Intended for graceful shutdown/tests."""
+    """停止保活线程。用于优雅关闭/测试。"""
     global _keepalive_thread
     with _keepalive_lock:
         thread = _keepalive_thread

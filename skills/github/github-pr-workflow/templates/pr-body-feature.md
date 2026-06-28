@@ -1,33 +1,33 @@
-## Summary
+## 摘要（Summary）
 
-<!-- 1-3 bullet points describing what this PR does -->
+<!-- 1-3 个要点，描述本 PR 做了什么 -->
 
 -
 
-## Motivation
+## 动机（Motivation）
 
-<!-- Why is this change needed? Link to issue if applicable -->
+<!-- 为什么需要这个改动？如有相关 issue 请附链接 -->
 
 Closes #
 
-## Changes
+## 改动（Changes）
 
-<!-- Detailed list of changes made -->
+<!-- 改动的详细清单 -->
 
 -
 
-## Test Plan
+## 测试计划
 
-<!-- How was this tested? Checklist of verification steps -->
+<!-- 如何测试的？验证步骤清单 -->
 
-- [ ] Unit tests pass (`pytest`)
-- [ ] Manual testing of new functionality
-- [ ] No regressions in existing behavior
+- [ ] 单元测试通过（`pytest`）
+- [ ] 对新功能做了手动测试
+- [ ] 现有行为无回归
 
-## Screenshots / Examples
+## 截图 / 示例
 
-<!-- If UI changes or new output, show before/after -->
+<!-- 如有 UI 改动或新输出，展示前后对比 -->
 
-## Notes for Reviewers
+## 给审查者的注意事项
 
-<!-- Anything reviewers should pay special attention to -->
+<!-- 有什么需要审查者特别留意的 -->

@@ -1,21 +1,17 @@
-"""Container-boot reconciliation of per-profile gateway s6 services.
+"""每个 profile 的 gateway s6 服务的容器启动协调。
 
-Service directories under /run/service/ live on **tmpfs** and are wiped
-on every container restart. Profile directories under
-``$HERMES_HOME/profiles/<name>/`` live on the persistent VOLUME, and
-each one records its gateway's last state in ``gateway_state.json``.
-This module bridges the two: on every container boot, walk the
-persistent profiles, recreate the s6 service slots, and auto-start
-only those whose last recorded state was ``running``.
+/run/service/ 下的服务目录位于 **tmpfs** 上，每次容器重启时都会被清空。
+``$HERMES_HOME/profiles/<name>/`` 下的 profile 目录位于持久化 VOLUME 上，
+每个目录的 ``gateway_state.json`` 中记录了其 gateway 的最后状态。
+本模块负责桥接两者：在每次容器启动时，遍历持久化的 profile，
+重建 s6 服务槽，并仅自动启动最后记录状态为 ``running`` 的 gateway。
 
-Wired into the image as /etc/cont-init.d/02-reconcile-profiles by the
-Dockerfile (Phase 4 Task 4.0). Runs as root after 01-hermes-setup
-(the stage2 hook) has chowned the volume and seeded $HERMES_HOME, but
-before s6-rc starts user services.
+通过 Dockerfile（Phase 4 Task 4.0）以 /etc/cont-init.d/02-reconcile-profiles
+的形式接入镜像。在 01-hermes-setup（stage2 hook）完成 volume chown
+和 $HERMES_HOME 初始化之后、s6-rc 启动用户服务之前，以 root 身份运行。
 
-Without this module, every ``docker restart`` would silently wipe
-every per-profile gateway, even though the user's profiles still
-exist on disk.
+若无此模块，每次 ``docker restart`` 将静默清空所有 profile 的 gateway，
+即使用户的 profile 仍在磁盘上。
 """
 from __future__ import annotations
 
@@ -28,20 +24,17 @@ from typing import Literal, Sequence
 
 log = logging.getLogger(__name__)
 
-# Only this desired state triggers automatic restart. Everything else
-# (startup_failed, starting, stopped, missing) registers the slot in
-# the down state and waits for explicit user action — this avoids the
-# crash-loop where a broken gateway keeps being restarted across
-# `docker restart` cycles. Older installs only have gateway_state;
-# newer lifecycle commands persist desired_state separately so a transient
-# runtime state (draining/startup_failed) does not erase the operator's
-# durable start/stop intent across pod/container recreation.
+# 只有此期望状态才会触发自动重启。其他状态
+#（startup_failed、starting、stopped、missing）将槽位注册为 down 状态，
+# 等待用户显式操作 — 这避免了崩溃循环，即损坏的 gateway 在
+# `docker restart` 周期中不断被重启。旧版安装只有 gateway_state；
+# 新版生命周期命令单独持久化 desired_state，以防瞬时运行时状态
+#（draining/startup_failed）在 pod/容器重建后抹去操作者的持久启停意图。
 _AUTOSTART_STATES = frozenset({"running"})
 
-# Stale runtime files we sweep before recreating service slots. These
-# all hold container-namespaced state (PIDs, process tables) that's
-# garbage post-restart — a numerically-equal PID in the new container
-# is a different process. See the Risk Register in the plan.
+# 在重建服务槽之前清扫的陈旧运行时文件。这些文件保存的是
+# 容器命名空间中的状态（PID、进程表），重启后即为垃圾 ——
+# 新容器中数值相等的 PID 是不同的进程。参见计划中的风险登记。
 _STALE_RUNTIME_FILES = ("gateway.pid", "processes.json")
 
 ReconcileActionLabel = Literal["started", "registered", "skipped"]
@@ -49,7 +42,7 @@ ReconcileActionLabel = Literal["started", "registered", "skipped"]
 
 @dataclass(frozen=True)
 class ReconcileAction:
-    """One profile's outcome from a single reconciliation pass."""
+    """单次协调过程中某个 profile 的结果。"""
     profile: str
     prior_state: str | None
     action: ReconcileActionLabel
@@ -62,46 +55,42 @@ def reconcile_profile_gateways(
     dry_run: bool = False,
     container_argv: Sequence[str] | None = None,
 ) -> list[ReconcileAction]:
-    """Recreate s6 service registrations for every persistent profile.
+    """为每个持久化 profile 重建 s6 服务注册。
 
-    Always registers a ``gateway-default`` slot for the root profile
-    (the implicit profile that lives at the top of ``$HERMES_HOME``,
-    not under ``profiles/``). The dispatcher in ``hermes_cli.gateway``
-    maps an empty profile suffix to ``gateway-default``, so this slot
-    is what ``hermes gateway start`` (no ``-p``) targets. Without it,
-    bare ``hermes gateway start`` inside the container would land on
-    ``s6-svc -u /run/service/gateway-default`` → uncaught
-    ``CalledProcessError`` → traceback to the user (PR #30136 review).
+    始终为根 profile 注册 ``gateway-default`` 槽位
+    （位于 ``$HERMES_HOME`` 顶层而非 ``profiles/`` 下的隐式 profile）。
+    ``hermes_cli.gateway`` 中的分发器将空 profile 后缀映射到 ``gateway-default``，
+    因此该槽位是 ``hermes gateway start``（无 ``-p``）的目标。
+    若无此槽位，容器内裸的 ``hermes gateway start`` 将落到
+    ``s6-svc -u /run/service/gateway-default`` → 未捕获的
+    ``CalledProcessError`` → 堆栈跟踪暴露给用户（PR #30136 review）。
 
-    The default slot's prior state is read from
-    ``$HERMES_HOME/gateway_state.json`` (sibling to the profile root,
-    not under ``profiles/``); stale runtime files there are swept the
-    same way as for named profiles.
+    默认槽位的先前状态从
+    ``$HERMES_HOME/gateway_state.json`` 读取（与 profile 根目录同级，
+    不在 ``profiles/`` 下）；其中的陈旧运行时文件的清扫方式与命名 profile 相同。
 
     Args:
-        hermes_home: The container's HERMES_HOME (typically /opt/data).
-            Profiles live under ``<hermes_home>/profiles/<name>/``;
-            the default profile lives at ``<hermes_home>`` itself.
-        scandir: The s6 dynamic scandir (typically /run/service). Service
-            directories are created at ``<scandir>/gateway-<profile>/``.
-        dry_run: When True, walk and return the action list without
-            touching the filesystem. For tests and `--dry-run` debug.
-        container_argv: Optional container PID 1 argv override. Production
-            reads ``/proc/1/cmdline``; tests inject it directly.
+        hermes_home: 容器的 HERMES_HOME（通常为 /opt/data）。
+            Profile 位于 ``<hermes_home>/profiles/<name>/`` 下；
+            默认 profile 位于 ``<hermes_home>`` 本身。
+        scandir: s6 动态 scandir（通常为 /run/service）。服务
+            目录创建在 ``<scandir>/gateway-<profile>/`` 下。
+        dry_run: 为 True 时，遍历并返回操作列表，不触及文件系统。
+            用于测试和 `--dry-run` 调试。
+        container_argv: 可选的容器 PID 1 argv 覆盖值。生产环境
+            读取 ``/proc/1/cmdline``；测试直接注入。
 
     Returns:
-        One :class:`ReconcileAction` per profile, in this order:
-        ``default`` first, then named profiles in directory order.
+        每个 profile 对应一个 :class:`ReconcileAction`，顺序为：
+        先 ``default``，然后按目录顺序的命名 profile。
     """
     actions: list[ReconcileAction] = []
 
-    # Default profile — always register, even if nothing has ever
-    # populated the root profile dir. The slot exists so
-    # ``hermes gateway start`` (no ``-p``) has somewhere to land;
-    # auto-up only when the prior state was "running" (same rule as
-    # named profiles). If the container was launched with the legacy
-    # `gateway run` command and no state exists yet, seed that intent
-    # as `running` so the s6 reconciler preserves the pre-s6 behavior.
+    # 默认 profile — 始终注册，即使根 profile 目录从未被填充过。
+    # 该槽位存在是为了让 ``hermes gateway start``（无 ``-p``）有地方落；
+    # 仅当先前状态为 "running" 时才自动启动（与命名 profile 规则相同）。
+    # 若容器以旧版 `gateway run` 命令启动且尚无状态，
+    # 则将该意图种入为 `running`，使 s6 协调器保持 pre-s6 行为。
     legacy_default_state = _maybe_migrate_legacy_gateway_run_state(
         hermes_home,
         container_argv=container_argv,
@@ -123,18 +112,16 @@ def reconcile_profile_gateways(
         for entry in sorted(profiles_root.iterdir()):
             if not entry.is_dir():
                 continue
-            # SOUL.md is always seeded by `hermes profile create` (config.yaml
-            # is not — that comes later via `hermes setup`). Use it as the
-            # "real profile" marker so stray dirs (backups, manual mkdir)
-            # aren't picked up.
+            # SOUL.md 始终由 `hermes profile create` 生成（config.yaml 不是 ——
+            # 那在之后通过 `hermes setup` 生成）。将其用作"真实 profile"的标记，
+            # 以防止误抓 stray 目录（备份、手动 mkdir）。
             if not (entry / "SOUL.md").exists():
                 continue
-            # The "default" service name is reserved for the root
-            # profile (above) — if a user has somehow created a
-            # ``profiles/default/`` directory, skip it to avoid the
-            # slot collision. Their gateway would still be reachable
-            # via ``hermes -p default-named gateway start`` if they
-            # rename the directory; we don't try to disambiguate here.
+            # "default" 服务名为根 profile（上方）保留 ——
+            # 若用户以某种方式创建了 ``profiles/default/`` 目录，
+            # 则跳过以避免槽位冲突。如果他们重命名目录，
+            # 其 gateway 仍可通过 ``hermes -p default-named gateway start`` 访问；
+            # 我们不在此尝试消除歧义。
             if entry.name == "default":
                 log.warning(
                     "profiles/default/ exists — skipping to avoid colliding "
@@ -166,15 +153,14 @@ def _maybe_migrate_legacy_gateway_run_state(
     container_argv: Sequence[str] | None,
     dry_run: bool,
 ) -> str | None:
-    """Seed root gateway_state for pre-s6 `gateway run` containers.
+    """为 pre-s6 的 `gateway run` 容器初始化根 gateway_state。
 
-    The tini image let Docker users run the gateway as the container
-    command (`docker run ... gateway run`). After the s6 migration,
-    profile gateways are restored from persisted gateway_state.json; a
-    legacy container with no state file would therefore register the
-    default service down and never start. Only synthesize state when no
-    root gateway_state.json exists so explicit stopped/failed states keep
-    winning across restarts.
+    tini 镜像允许 Docker 用户将 gateway 作为容器命令运行
+    （`docker run ... gateway run`）。在 s6 迁移后，
+    profile gateway 从持久化的 gateway_state.json 恢复；
+    没有状态文件的旧版容器因此会将默认服务注册为 down 且永不启动。
+    仅在不存在根 gateway_state.json 时才合成状态，
+    以确保显式的已停止/已失败状态在重启后保持优先。
     """
     state_file = hermes_home / "gateway_state.json"
     if state_file.exists():
@@ -220,8 +206,8 @@ def _read_container_argv() -> tuple[str, ...]:
     except OSError:
         pass
 
-    # Slow path: s6-overlay v3 — PID 1 is s6-svscan; find the
-    # rc.init-launched process whose argv contains main-wrapper.sh.
+    # 慢速路径：s6-overlay v3 — PID 1 为 s6-svscan；
+    # 查找 argv 中包含 main-wrapper.sh 的 rc.init 启动进程。
     try:
         proc_dir = Path("/proc")
         for entry in proc_dir.iterdir():
@@ -245,32 +231,29 @@ def _read_container_argv() -> tuple[str, ...]:
 
 
 def _strip_container_argv_prefix(argv: Sequence[str]) -> list[str]:
-    """Strip the s6/wrapper prefix off the container argv, leaving the hermes args.
+    """剥离容器 argv 的 s6/wrapper 前缀，仅保留 hermes 参数。
 
-    Two container-command argv shapes are handled:
+    处理两种容器命令 argv 形态：
 
-    * **s6-overlay v2 / tini:** PID 1 argv is
-      ``/init /opt/hermes/docker/main-wrapper.sh <subcommand> [args...]``.
-    * **s6-overlay v3:** PID 1 is ``s6-svscan`` and the command lives on the
-      rc.init-launched process as ``/bin/sh -e
+    * **s6-overlay v2 / tini：** PID 1 argv 为
+      ``/init /opt/hermes/docker/main-wrapper.sh <subcommand> [args...]``。
+    * **s6-overlay v3：** PID 1 为 ``s6-svscan``，命令位于
+      rc.init 启动进程上，形如 ``/bin/sh -e
       /run/s6/basedir/scripts/rc.init top /opt/hermes/docker/main-wrapper.sh
-      <subcommand> [args...]`` (see :func:`_read_container_argv`).
+      <subcommand> [args...]``（参见 :func:`_read_container_argv`）。
 
-    Rather than peel each leading token positionally (which silently breaks
-    the moment s6 changes its launcher shape again — exactly what happened
-    in the v2→v3 bump), drop everything up to and including the
-    ``main-wrapper.sh`` token: that wrapper path is the stable boundary the
-    image owns, and the subcommand always follows it. Pre-s6 / direct
-    ``hermes`` invocations carry no wrapper, so fall back to peeling a bare
-    ``init`` prefix. The wrapper re-execs ``hermes <subcommand>``, so an
-    explicit leading ``hermes`` is peeled too. Shared by the legacy-gateway
-    and dashboard role detectors.
+    不按位置逐个剥离前导 token（s6 一旦改变其 launcher 形态即会静默失效 ——
+    v2→v3 就是这种情况），而是丢弃 ``main-wrapper.sh`` token 及其之前的所有内容：
+    该 wrapper 路径是镜像拥有的稳定边界，子命令始终紧随其后。
+    pre-s6 / 直接 ``hermes`` 调用不带 wrapper，则退回剥离裸 ``init`` 前缀。
+    wrapper 重新执行 ``hermes <subcommand>``，因此显式的前导 ``hermes`` 也会被剥离。
+    被 legacy-gateway 和 dashboard 角色检测器共用。
     """
     args = list(argv)
 
-    # Preferred boundary: everything through main-wrapper.sh is launcher
-    # prefix. Covers s6-overlay v2 (`/init …main-wrapper.sh …`) and v3
-    # (`/bin/sh -e …rc.init top …main-wrapper.sh …`) with one rule.
+    # 首选边界：main-wrapper.sh 之前（含）的所有内容均为 launcher 前缀。
+    # 用一条规则同时覆盖 s6-overlay v2 (`/init …main-wrapper.sh …`)
+    # 和 v3 (`/bin/sh -e …rc.init top …main-wrapper.sh …`)。
     wrapper_idx = next(
         (i for i, a in enumerate(args) if a.endswith("main-wrapper.sh")),
         None,
@@ -278,17 +261,17 @@ def _strip_container_argv_prefix(argv: Sequence[str]) -> list[str]:
     if wrapper_idx is not None:
         args = args[wrapper_idx + 1 :]
     elif args and Path(args[0]).name == "init":
-        # Defensive: an `init` prefix with no wrapper token in argv.
+        # 防御性处理：argv 中有 `init` 前缀但无 wrapper token。
         args = args[1:]
 
-    # The wrapper re-execs `hermes <subcommand>`; peel an explicit hermes.
+    # wrapper 重新执行 `hermes <subcommand>`；剥离显式的 hermes。
     if args and Path(args[0]).name == "hermes":
         args = args[1:]
     return args
 
 
 def _is_legacy_gateway_run_request(argv: Sequence[str]) -> bool:
-    """Return True for Docker commands equivalent to `gateway run`."""
+    """若 Docker 命令等同于 `gateway run`，则返回 True。"""
     args = _strip_container_argv_prefix(argv)
     if "--no-supervise" in args:
         return False
@@ -296,36 +279,34 @@ def _is_legacy_gateway_run_request(argv: Sequence[str]) -> bool:
 
 
 def _is_dashboard_container(argv: Sequence[str]) -> bool:
-    """Return True when the container's command is the dashboard.
+    """若容器命令为 dashboard，则返回 True。
 
-    A dashboard-only container (``hermes dashboard ...``) never spawns or
-    supervises per-profile gateways — that is the gateway container's job.
-    Reconciling profile gateway s6 slots there is not just wasted work: when
-    the gateway and dashboard containers share a bind-mounted HERMES_HOME,
-    both race to ``flock()`` the same ``logs/gateways/<profile>/lock`` files,
-    producing "Resource busy" failures and an s6-log restart storm. So the
-    dashboard container skips reconciliation entirely.
+    纯 dashboard 容器（``hermes dashboard ...``）从不生成或管理
+    per-profile gateway — 那是 gateway 容器的职责。
+    在那里协调 profile gateway s6 槽位不仅是无用功：
+    当 gateway 与 dashboard 容器共享绑定挂载的 HERMES_HOME 时，
+    两者会竞争 ``flock()`` 同一 ``logs/gateways/<profile>/lock`` 文件，
+    产生 "Resource busy" 错误并引发 s6-log 重启风暴。
+    因此 dashboard 容器完全跳过协调。
 
-    Detected from PID 1 argv (``/proc/1/cmdline``) rather than an operator
-    flag: the role is a fact about the container's command, not a tunable,
-    and a flag can be forgotten in a hand-written compose/k8s manifest —
-    reintroducing the exact storm this prevents. Mirrors the argv handling
-    in :func:`_is_legacy_gateway_run_request`.
+    从 PID 1 argv（``/proc/1/cmdline``）检测，而非操作者标志：
+    角色是容器命令的固有事实，不可调整；标志可能在手写的
+    compose/k8s manifest 中被遗忘 — 恰恰重新引入本函数所预防的风暴。
+    与 :func:`_is_legacy_gateway_run_request` 的 argv 处理方式相同。
     """
     args = _strip_container_argv_prefix(argv)
     return bool(args) and args[0] == "dashboard"
 
 
 def _read_desired_state(profile_dir: Path) -> str | None:
-    """Read the persisted gateway desired state for reconciliation.
+    """读取持久化的 gateway 期望状态以供协调使用。
 
-    Newer state files carry ``desired_state``: operator intent written by
-    s6 lifecycle commands. Older files only carry ``gateway_state``; keep
-    that as a compatibility fallback so existing running/stopped profiles
-    preserve their behavior until the next explicit start/stop.
+    较新的状态文件携带 ``desired_state``：由 s6 生命周期命令写入的操作者意图。
+    旧版文件只有 ``gateway_state``；保留其作为兼容性回退，
+    以确保现有运行/停止的 profile 在下次显式启停前保持原有行为。
 
-    Missing or unparseable files count as "no desired state" so we don't
-    bork the whole reconciliation on a corrupt file.
+    文件缺失或无法解析时，视为"无期望状态"，
+    以防止因损坏文件而阻断整个协调过程。
     """
     state_file = profile_dir / "gateway_state.json"
     if not state_file.exists():

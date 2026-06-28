@@ -1,8 +1,8 @@
-# Typography
+# 字体排版（Typography）
 
-## Loading Fonts
+## 加载字体
 
-### System Fonts
+### 系统字体
 
 ```javascript
 textFont('Helvetica');
@@ -10,14 +10,14 @@ textFont('Georgia');
 textFont('monospace');
 ```
 
-### Custom Fonts (OTF/TTF/WOFF2)
+### 自定义字体（OTF/TTF/WOFF2）
 
 ```javascript
 let myFont;
 
 function preload() {
   myFont = loadFont('path/to/font.otf');
-  // Requires local server or CORS-enabled URL
+  // 需要本地服务器或开启了 CORS 的 URL
 }
 
 function setup() {
@@ -25,7 +25,7 @@ function setup() {
 }
 ```
 
-### Google Fonts via CSS
+### 通过 CSS 使用 Google Fonts
 
 ```html
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -36,11 +36,11 @@ function setup() {
 </script>
 ```
 
-Google Fonts work without `loadFont()` but only for `text()` — not for `textToPoints()`. For particle text, you need `loadFont()` with an OTF/TTF file.
+Google Fonts 无需 `loadFont()` 即可使用，但只适用于 `text()`——不适用于 `textToPoints()`。要做粒子文字，必须用 `loadFont()` 加载 OTF/TTF 文件。
 
-## Text Rendering
+## 文本渲染
 
-### Basic Text
+### 基础文本
 
 ```javascript
 textSize(32);
@@ -48,61 +48,61 @@ textAlign(CENTER, CENTER);
 text('Hello World', width/2, height/2);
 ```
 
-### Text Properties
+### 文本属性
 
 ```javascript
-textSize(48);                    // pixel size
-textAlign(LEFT, TOP);            // horizontal: LEFT, CENTER, RIGHT
-                                 // vertical: TOP, CENTER, BOTTOM, BASELINE
-textLeading(40);                 // line spacing (for multi-line text)
-textStyle(BOLD);                 // NORMAL, BOLD, ITALIC, BOLDITALIC
-textWrap(WORD);                  // WORD or CHAR (for text() with max width)
+textSize(48);                    // 像素大小
+textAlign(LEFT, TOP);            // 水平：LEFT、CENTER、RIGHT
+                                 // 垂直：TOP、CENTER、BOTTOM、BASELINE
+textLeading(40);                 // 行距（用于多行文本）
+textStyle(BOLD);                 // NORMAL、BOLD、ITALIC、BOLDITALIC
+textWrap(WORD);                  // WORD 或 CHAR（用于带最大宽度的 text()）
 ```
 
-### Text Metrics
+### 文本度量
 
 ```javascript
-let w = textWidth('Hello');      // pixel width of string
-let a = textAscent();            // height above baseline
-let d = textDescent();           // height below baseline
-let totalH = a + d;              // full line height
+let w = textWidth('Hello');      // 字符串的像素宽度
+let a = textAscent();            // 基线以上的高度
+let d = textDescent();           // 基线以下的高度
+let totalH = a + d;              // 完整行高
 ```
 
-### Text Bounding Box
+### 文本边界框
 
 ```javascript
 let bounds = myFont.textBounds('Hello', x, y, size);
 // bounds = { x, y, w, h }
-// Useful for positioning, collision, background rectangles
+// 可用于定位、碰撞检测、背景矩形
 ```
 
-### Multi-Line Text
+### 多行文本
 
 ```javascript
-// With max width — auto wraps
+// 给定最大宽度——自动换行
 textWrap(WORD);
 text('Long text that wraps within the given width', x, y, maxWidth);
 
-// With max width AND height — clips
+// 同时给定最大宽度和高度——裁剪
 text('Very long text', x, y, maxWidth, maxHeight);
 ```
 
-## textToPoints() — Text as Particles
+## textToPoints()——把文字变成粒子
 
-Convert text outline to array of points. Requires a loaded font (OTF/TTF via `loadFont()`).
+把文字轮廓转换为点数组。需要加载字体（通过 `loadFont()` 加载 OTF/TTF）。
 
 ```javascript
 let font;
 let points;
 
 function preload() {
-  font = loadFont('font.otf');  // MUST be loadFont, not CSS
+  font = loadFont('font.otf');  // 必须是 loadFont，不能用 CSS
 }
 
 function setup() {
   createCanvas(1200, 600);
   points = font.textToPoints('HELLO', 100, 400, 200, {
-    sampleFactor: 0.1,  // lower = more points (0.1-0.5 typical)
+    sampleFactor: 0.1,  // 越小点越多（典型范围 0.1-0.5）
     simplifyThreshold: 0
   });
 }
@@ -118,7 +118,7 @@ function draw() {
 }
 ```
 
-### Particle Text Class
+### 文字粒子类
 
 ```javascript
 class TextParticle {
@@ -166,7 +166,7 @@ class TextParticle {
   }
 }
 
-// Usage: particles form text, scatter from mouse
+// 用法：粒子组成文字，遇鼠标后散开
 let textParticles = [];
 for (let pt of points) {
   textParticles.push(new TextParticle(pt));
@@ -183,9 +183,9 @@ function draw() {
 }
 ```
 
-## Kinetic Typography
+## 动态字体（Kinetic Typography）
 
-### Wave Text
+### 波浪文字
 
 ```javascript
 function waveText(str, x, y, size, amplitude, frequency) {
@@ -200,7 +200,7 @@ function waveText(str, x, y, size, amplitude, frequency) {
 }
 ```
 
-### Typewriter Effect
+### 打字机效果
 
 ```javascript
 class Typewriter {
@@ -208,7 +208,7 @@ class Typewriter {
     this.str = str;
     this.x = x;
     this.y = y;
-    this.speed = speed;  // ms per character
+    this.speed = speed;  // 每个字符的毫秒数
     this.startTime = millis();
     this.cursor = true;
   }
@@ -221,7 +221,7 @@ class Typewriter {
     textAlign(LEFT, TOP);
     text(visible, this.x, this.y);
 
-    // Blinking cursor
+    // 闪烁的光标
     if (chars < this.str.length && floor(millis() / 500) % 2 === 0) {
       let cursorX = this.x + textWidth(visible);
       line(cursorX, this.y, cursorX, this.y + textAscent() + textDescent());
@@ -232,7 +232,7 @@ class Typewriter {
 }
 ```
 
-### Character-by-Character Animation
+### 逐字符动画
 
 ```javascript
 function animatedText(str, x, y, size, delay = 50) {
@@ -258,7 +258,7 @@ function animatedText(str, x, y, size, delay = 50) {
 }
 ```
 
-## Text as Mask
+## 文字作为遮罩
 
 ```javascript
 let textBuffer;
@@ -274,29 +274,29 @@ function setup() {
 }
 
 function draw() {
-  // Draw content
+  // 绘制内容
   background(0);
-  // ... render something colorful
+  // ... 渲染一些彩色的东西
 
-  // Apply text mask (show content only where text is white)
+  // 应用文字遮罩（仅在文字为白色的地方显示内容）
   loadPixels();
   textBuffer.loadPixels();
   for (let i = 0; i < pixels.length; i += 4) {
-    let maskVal = textBuffer.pixels[i];  // white = show, black = hide
-    pixels[i + 3] = maskVal;  // set alpha from mask
+    let maskVal = textBuffer.pixels[i];  // 白色 = 显示，黑色 = 隐藏
+    pixels[i + 3] = maskVal;  // 根据遮罩设置 alpha
   }
   updatePixels();
 }
 ```
 
-## Responsive Text Sizing
+## 响应式文字大小
 
 ```javascript
 function responsiveTextSize(baseSize, baseWidth = 1920) {
   return baseSize * (width / baseWidth);
 }
 
-// Usage
+// 用法
 textSize(responsiveTextSize(48));
 text('Scales with canvas', width/2, height/2);
 ```

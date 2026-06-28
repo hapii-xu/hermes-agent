@@ -112,10 +112,10 @@ describe('slash parity matrix', () => {
   })
 
   it('/q alias resolves to queue, not quit (#31983)', () => {
-    // Regression for #31983: the TUI `quit` command used to carry alias `q`,
-    // which collided with the Python-side `/queue` alias. TUI-local commands
-    // dispatch before the backend, so `/q` resolved to /quit (session.die)
-    // instead of queueing a prompt.
+    // 回归测试 #31983：TUI 的 `quit` 命令曾经有别名 `q`，
+    // 这与 Python 端的 `/queue` 别名冲突。TUI 本地命令
+    // 在后端之前分发，因此 `/q` 被解析为 /quit（session.die）
+    // 而不是队列化 prompt。
     const cmd = findSlashCommand('q')
     expect(cmd, '/q must resolve to a command').toBeDefined()
     expect(cmd!.name).toBe('queue')

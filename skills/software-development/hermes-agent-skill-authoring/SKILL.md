@@ -1,6 +1,6 @@
 ---
 name: hermes-agent-skill-authoring
-description: "Author in-repo SKILL.md: frontmatter, validator, structure, and writing-quality principles."
+description: "编写仓库内 SKILL.md：frontmatter、校验器、结构和写作质量原则。"
 version: 1.1.0
 author: Hermes Agent
 license: MIT
@@ -11,37 +11,37 @@ metadata:
     related_skills: [plan, requesting-code-review]
 ---
 
-# Authoring Hermes-Agent Skills (in-repo)
+# 编写 hermes-agent 的 Skill（仓库内）
 
-## Overview
+## 概览
 
-There are two places a SKILL.md can live:
+SKILL.md 可以放在两个地方：
 
-1. **User-local:** `~/.hermes/skills/<maybe-category>/<name>/SKILL.md` — personal, not shared. Created via `skill_manage(action='create')`.
-2. **In-repo (this skill is about this case):** `/home/bb/hermes-agent/skills/<category>/<name>/SKILL.md` — committed, shipped with the package. Use `write_file` + `git add`. `skill_manage(action='create')` does NOT target this tree.
+1. **用户本地：** `~/.hermes/skills/<可能含分类>/<name>/SKILL.md` —— 私人、不共享。通过 `skill_manage(action='create')` 创建。
+2. **仓库内（本 skill 讨论的就是这种情况）：** `/home/bb/hermes-agent/skills/<category>/<name>/SKILL.md` —— 提交进仓库，随包发布。用 `write_file` + `git add`。`skill_manage(action='create')` 不会指向这个目录树。
 
-## When to Use
+## 何时使用
 
-- User asks you to add a skill "in this branch / repo / commit"
-- You're committing a reusable workflow that should ship with hermes-agent
-- You're editing an existing skill under `/home/bb/hermes-agent/skills/` (use `patch` for small edits, `write_file` for rewrites; `skill_manage` still works for patch on in-repo skills, but not for `create`)
+- 用户让你把一个 skill 加到「这个分支 / 仓库 / 提交」里
+- 你正在提交一个应该随 hermes-agent 一起发布的可复用工作流
+- 你在编辑 `/home/bb/hermes-agent/skills/` 下的某个已有 skill（小改动用 `patch`，重写用 `write_file`；`skill_manage` 在仓库内 skill 上仍可做 patch，但不能 `create`）
 
-## Required Frontmatter
+## 必需的 frontmatter
 
-Source of truth: `tools/skill_manager_tool.py::_validate_frontmatter`. Hard requirements:
+权威来源：`tools/skill_manager_tool.py::_validate_frontmatter`。硬性要求：
 
-- Starts with `---` as the first bytes (no leading blank line).
-- Closes with `\n---\n` before the body.
-- Parses as a YAML mapping.
-- `name` field present.
-- `description` field present, ≤ **1024 chars** (`MAX_DESCRIPTION_LENGTH`).
-- Non-empty body after the closing `---`.
+- 以 `---` 作为最开头的字节（没有前导空行）。
+- 在正文之前以 `\n---\n` 闭合。
+- 能解析为 YAML mapping。
+- 存在 `name` 字段。
+- 存在 `description` 字段，且 ≤ **1024 字符**（`MAX_DESCRIPTION_LENGTH`）。
+- 闭合的 `---` 之后有非空正文。
 
-Peer-matched shape used by every skill under `skills/software-development/`:
+`skills/software-development/` 下每个 skill 都采用的同类对齐结构：
 
 ```yaml
 ---
-name: my-skill-name               # lowercase, hyphens, ≤64 chars (MAX_NAME_LENGTH)
+name: my-skill-name               # 小写、连字符、≤64 字符 (MAX_NAME_LENGTH)
 description: Use when <trigger>. <one-line behavior>.
 version: 1.1.0
 author: Hermes Agent
@@ -53,88 +53,88 @@ metadata:
 ---
 ```
 
-`version` / `author` / `license` / `metadata` are NOT enforced by the validator, but every peer has them — omit and your skill sticks out.
+`version` / `author` / `license` / `metadata` 不会被校验器强制要求，但每个同类 skill 都有 —— 省略会让你的 skill 显得格格不入。
 
-## Size Limits
+## 大小限制
 
-- Description: ≤ 1024 chars (enforced).
-- Full SKILL.md: ≤ 100,000 chars (enforced as `MAX_SKILL_CONTENT_CHARS`, ~36k tokens).
-- Peer skills in `software-development/` sit at **8-14k chars**. Aim for that range. If you're pushing past 20k, split into `references/*.md` and reference them from SKILL.md.
+- description：≤ 1024 字符（强制）。
+- 整个 SKILL.md：≤ 100,000 字符（以 `MAX_SKILL_CONTENT_CHARS` 强制，约 36k tokens）。
+- `software-development/` 下的同类 skill 大多在 **8-14k 字符**。瞄准这个区间。如果要超过 20k，就拆出 `references/*.md` 并在 SKILL.md 中引用。
 
-## Writing Quality Principles
+## 写作质量原则
 
-A skill exists to make the agent's process more predictable. Predictability does **not** mean identical output every run; it means the agent reliably follows the same useful discipline.
+一个 skill 的存在，是为了让 agent 的过程更可预测。可预测性**不**等于每次输出都一模一样；它意味着 agent 能可靠地遵循同一套有用的纪律。
 
-Use these quality checks when writing or editing any skill:
+在编写或编辑任何 skill 时，请用这些质量检查：
 
-1. **Optimize for process predictability.** Ask: what behavior should change when this skill loads? If a line does not change behavior, cut it.
-2. **Choose the right context load.** A model-invoked Hermes skill pays for its description every turn. Keep descriptions focused on trigger classes and the skill's distinctive behavior. Put details in the body or linked references.
-3. **Use an information hierarchy.** Put always-needed steps in `SKILL.md`; put branch-specific or bulky reference material in `references/`, `templates/`, or `scripts/` and point to it only when needed.
-4. **End steps with completion criteria.** Each ordered step should say how the agent knows it is done. Good criteria are checkable and, when it matters, exhaustive: "every modified file accounted for" beats "summarize changes."
-5. **Co-locate rules with the concept they govern.** Avoid scattering one idea across the file. Keep definition, caveats, examples, and verification near each other.
-6. **Use strong leading words.** Prefer compact concepts the model already knows — e.g. "tight loop," "tracer bullet," "root cause," "regression test" — over long repeated explanations. A good leading word saves tokens and anchors behavior.
-7. **Prune duplication and no-ops.** Keep each meaning in one source of truth. Sentence by sentence, ask whether the sentence changes agent behavior versus the default. If not, delete it rather than polishing it.
-8. **Watch for premature completion.** If agents tend to rush a step, first sharpen that step's completion criterion. Split the sequence only when later steps distract from doing the current step well.
+1. **为过程的可预测性而优化。** 问自己：当这个 skill 加载后，什么行为应当改变？如果某一行不能改变行为，就删掉。
+2. **选择合适的上下文加载方式。** 一个由模型调用的 Hermes skill，每一轮都要为它的 description 付代价。让 description 聚焦于触发类别和该 skill 独特的行为。细节放进正文或链接的 references 里。
+3. **使用信息层次。** 把总是需要的步骤放进 `SKILL.md`；把分支专用或体量较大的参考资料放进 `references/`、`templates/` 或 `scripts/`，并只在需要时指向它。
+4. **让步骤以完成标准收尾。** 每个有序步骤都应说明 agent 如何知道它已完成。好的标准是可检查的，并且在重要时是穷尽的：「每个修改过的文件都已 accounted for」胜过「总结改动」。
+5. **把规则和它治理的概念放在一起。** 不要把同一个想法散落在文件各处。把定义、注意事项、示例和验证彼此靠近。
+6. **使用强有力的引导词。** 优先选用模型已熟知的紧凑概念 —— 例如「tight loop」「tracer bullet」「root cause」「regression test」—— 而不是冗长的重复解释。一个好的引导词既省 token 又锚定行为。
+7. **删掉重复和无操作内容。** 让每个含义只有一个权威来源。逐句自问：这句话相对于默认行为，是否改变了 agent 的行为。如果没有，删掉它，而不是打磨它。
+8. **警惕过早完成。** 如果 agent 容易在某一步赶进度，先锐化那一步的完成标准。只有当后续步骤会干扰把当前步骤做好时，才拆分序列。
 
-Common quality failures:
+常见的质量失败：
 
-- **Premature completion** — the skill lets the agent move on before the work is genuinely done.
-- **Duplication** — the same rule appears in multiple places and drifts.
-- **Sediment** — stale lines remain because adding felt safer than deleting.
-- **Sprawl** — too much always-visible material; push branch-specific reference behind pointers.
-- **No-op prose** — generic advice the agent would already follow without the skill.
+- **过早完成** —— skill 让 agent 在工作真正完成之前就继续往下走。
+- **重复** —— 同一条规则出现在多处并发生漂移。
+- **沉积** —— 过时的行留着，因为加比删更让人觉得安全。
+- **膨胀** —— 总是可见的材料太多；把分支专用的参考推到指针后面。
+- **无操作正文** —— 没有 skill 时 agent 本来也会遵循的通用建议。
 
-## Peer-Matched Structure
+## 同类对齐结构
 
-Every in-repo skill follows roughly:
+每个仓库内 skill 大致遵循：
 
 ```
-# <Title>
+# <标题>
 
-## Overview
-One or two paragraphs: what and why.
+## 概览（Overview）
+一两段话：是什么、为什么。
 
-## When to Use
-- Bulleted triggers
-- "Don't use for:" counter-triggers
+## 何时使用（When to Use）
+- 项目符号形式的触发条件
+- "Don't use for:" 反向触发
 
-## <Topic sections specific to the skill>
-- Quick-reference tables are common
-- Code blocks with exact commands
-- Hermes-specific recipes (tests via scripts/run_tests.sh, ui-tui paths, etc.)
+## <针对该 skill 的主题小节>
+- 常用速查表
+- 带确切命令的代码块
+- hermes 专属的配方（通过 scripts/run_tests.sh 跑测试、ui-tui 路径等）
 
-## Common Pitfalls
-Numbered list of mistakes and their fixes.
+## 常见陷阱（Common Pitfalls）
+编号列表：错误及其修复。
 
-## Verification Checklist
-- [ ] Checkbox list of post-action verifications
+## 验证清单（Verification Checklist）
+- [ ] 操作后验证项的复选框清单
 
-## One-Shot Recipes (optional)
-Named scenarios → concrete command sequences.
+## 一键配方（One-Shot Recipes，可选）
+命名场景 → 具体命令序列。
 ```
 
-Not every section is mandatory, but `Overview` + `When to Use` + actionable body + pitfalls are the minimum for the skill to feel like a peer.
+并非每个小节都是强制的，但 `Overview` + `When to Use` + 可执行的正文 + 陷阱，是让这个 skill 看起来像同类成员的最低要求。
 
-## Directory Placement
+## 目录放置
 
 ```
 skills/<category>/<skill-name>/SKILL.md
 ```
 
-Categories currently in repo (confirm with `ls skills/`): `autonomous-ai-agents`, `creative`, `data-science`, `devops`, `dogfood`, `email`, `gaming`, `github`, `leisure`, `mcp`, `media`, `mlops/*`, `note-taking`, `productivity`, `red-teaming`, `research`, `smart-home`, `social-media`, `software-development`.
+仓库中现有的分类（用 `ls skills/` 确认）：`autonomous-ai-agents`、`creative`、`data-science`、`devops`、`dogfood`、`email`、`gaming`、`github`、`leisure`、`mcp`、`media`、`mlops/*`、`note-taking`、`productivity`、`red-teaming`、`research`、`smart-home`、`social-media`、`software-development`。
 
-Pick the closest existing category. Don't invent new top-level categories casually.
+选最贴近的已有分类。不要随意发明新的顶级分类。
 
-## Workflow
+## 工作流
 
-1. **Survey peers** in the target category:
+1. **考察同类** 在目标分类下：
    ```
    ls skills/<category>/
    ```
-   Read 2-3 peer SKILL.md files to match tone and structure.
-2. **Check validator constraints** in `tools/skill_manager_tool.py` if unsure.
-3. **Draft** with `write_file` to `skills/<category>/<name>/SKILL.md`.
-4. **Validate locally**:
+   读 2-3 个同类 SKILL.md，匹配语气和结构。
+2. **核实校验器约束**，不确定时看 `tools/skill_manager_tool.py`。
+3. **起草**，用 `write_file` 写到 `skills/<category>/<name>/SKILL.md`。
+4. **本地校验**：
    ```python
    import yaml, re, pathlib
    content = pathlib.Path("skills/<category>/<name>/SKILL.md").read_text()
@@ -145,52 +145,52 @@ Pick the closest existing category. Don't invent new top-level categories casual
    assert len(fm["description"]) <= 1024
    assert len(content) <= 100_000
    ```
-5. **Git add + commit** on the active branch.
-6. **Note:** the CURRENT session's skill loader is cached — `skill_view` / `skills_list` will not see the new skill until a new session. This is expected, not a bug.
+5. **git add + commit** 到当前活动分支。
+6. **注意：** 当前会话的 skill 加载器是缓存的 —— `skill_view` / `skills_list` 在新会话之前看不到新 skill。这是预期行为，不是 bug。
 
-## Cross-Referencing Other Skills
+## 交叉引用其他 skill
 
-`metadata.hermes.related_skills` unions both trees (`skills/` in-repo and `~/.hermes/skills/`) at load time. You CAN reference a user-local skill from an in-repo skill, but it won't resolve for other users who clone the repo fresh. Prefer referencing only in-repo skills from in-repo skills. If a frequently-referenced skill lives only in `~/.hermes/skills/`, consider promoting it to the repo.
+`metadata.hermes.related_skills` 在加载时合并两棵树（仓库内 `skills/` 和 `~/.hermes/skills/`）。你可以从仓库内 skill 引用一个用户本地 skill，但对于重新 clone 仓库的其他用户它不会解析。从仓库内 skill 出发，最好只引用仓库内的 skill。如果某个被频繁引用的 skill 只存在于 `~/.hermes/skills/`，考虑把它提升进仓库。
 
-## Editing Existing In-Repo Skills
+## 编辑已有的仓库内 skill
 
-- **Small fix (typo, added pitfall, tightened trigger):** `skill_manage(action='patch', name=..., old_string=..., new_string=...)` works fine on in-repo skills.
-- **Major rewrite:** `write_file` the whole SKILL.md. `skill_manage(action='edit')` also works but requires supplying the full new content.
-- **Adding supporting files:** `write_file` to `skills/<category>/<name>/references/<file>.md`, `templates/<file>`, or `scripts/<file>`. `skill_manage(action='write_file')` also works and enforces the references/templates/scripts/assets subdir allowlist.
-- **Always commit** the edit — in-repo skills are source, not runtime state.
+- **小修（错别字、新增陷阱、收紧触发条件）：** `skill_manage(action='patch', name=..., old_string=..., new_string=...)` 在仓库内 skill 上工作正常。
+- **大重写：** 用 `write_file` 写整个 SKILL.md。`skill_manage(action='edit')` 也可以，但需要提供完整的新内容。
+- **新增辅助文件：** 用 `write_file` 写到 `skills/<category>/<name>/references/<file>.md`、`templates/<file>` 或 `scripts/<file>`。`skill_manage(action='write_file')` 也可以，并会强制 references/templates/scripts/assets 子目录白名单。
+- **务必提交**改动 —— 仓库内 skill 是源码，不是运行时状态。
 
-## Common Pitfalls
+## 常见陷阱
 
-1. **Using `skill_manage(action='create')` for an in-repo skill.** It writes to `~/.hermes/skills/`, not the repo tree. Use `write_file` for in-repo creation.
+1. **对仓库内 skill 使用 `skill_manage(action='create')`。** 它写到 `~/.hermes/skills/`，而不是仓库目录树。仓库内创建请用 `write_file`。
 
-2. **Leading whitespace before `---`.** The validator checks `content.startswith("---")`; any leading blank line or BOM fails validation.
+2. **`---` 前有前导空白。** 校验器检查 `content.startswith("---")`；任何前导空行或 BOM 都会通不过校验。
 
-3. **Description too generic.** Peer descriptions start with "Use when ..." and describe the *trigger class*, not the one task. "Use when debugging X" > "Debug X".
+3. **description 过于泛化。** 同类 skill 的 description 以 "Use when ..." 开头，描述的是*触发类别*，而不是某一个任务。"Use when debugging X" 胜过 "Debug X"。
 
-4. **Forgetting the author/license/metadata block.** Not validator-enforced, but every peer has it; omitting makes the skill look half-finished.
+4. **漏掉 author/license/metadata 块。** 虽不被校验器强制，但每个同类都有；省略会让 skill 显得半成品。
 
-5. **Writing a skill that duplicates a peer.** Before creating, `ls skills/<category>/` and open 2-3 peers. Prefer extending an existing skill to creating a narrow sibling.
+5. **写一个与同类重复的 skill。** 创建前，`ls skills/<category>/` 并打开 2-3 个同类。优先扩展现有 skill，而不是新建一个狭窄的兄弟 skill。
 
-6. **Expecting the current session to see the new skill.** It won't. The skill loader is initialized at session start. Verify in a fresh session or via `skill_view` using the exact path.
+6. **指望当前会话能看到新 skill。** 看不到。skill 加载器在会话开始时初始化。在全新会话中验证，或用确切路径走 `skill_view`。
 
-7. **Letting skills accumulate sediment.** A skill should get shorter or sharper over time. When adding a rule, remove the old wording it replaces; don't layer advice forever.
+7. **任由 skill 累积沉积。** 一个 skill 应当随时间变得更短或更锐利。添加一条规则时，删掉它替换掉的旧措辞；不要永远叠加建议。
 
-8. **Writing no-op prose.** "Be careful," "be thorough," and "use best practices" rarely change model behavior. Replace with a checkable completion criterion or a stronger leading word.
+8. **写无操作正文。** "Be careful"、"be thorough"、"use best practices" 很少改变模型行为。换成可检查的完成标准或更强的引导词。
 
-9. **Linking to skills that don't exist in-repo.** `related_skills: [some-user-local-skill]` works for you but breaks for other clones. Prefer only in-repo links.
+9. **链接到仓库内并不存在的 skill。** `related_skills: [some-user-local-skill]` 对你有效，但对其他 clone 会失效。最好只用仓库内链接。
 
-## Verification Checklist
+## 验证清单
 
-- [ ] File is at `skills/<category>/<name>/SKILL.md` (not in `~/.hermes/skills/`)
-- [ ] Frontmatter starts at byte 0 with `---`, closes with `\n---\n`
-- [ ] `name`, `description`, `version`, `author`, `license`, `metadata.hermes.{tags, related_skills}` all present
-- [ ] Name ≤ 64 chars, lowercase + hyphens
-- [ ] Description ≤ 1024 chars and starts with "Use when ..."
-- [ ] Total file ≤ 100,000 chars (aim for 8-15k)
-- [ ] Structure: `# Title` → `## Overview` → `## When to Use` → body → `## Common Pitfalls` → `## Verification Checklist`
-- [ ] Each ordered step has a checkable completion criterion
-- [ ] Description is trigger-focused and avoids duplicated body content
-- [ ] Bulky or branch-specific reference is progressively disclosed in linked files
-- [ ] No-op prose and duplicated rules removed
-- [ ] `related_skills` references resolve in-repo (or are explicitly OK to be user-local)
-- [ ] `git add skills/<category>/<name>/ && git commit` completed on the intended branch
+- [ ] 文件位于 `skills/<category>/<name>/SKILL.md`（不在 `~/.hermes/skills/`）
+- [ ] frontmatter 从字节 0 开始为 `---`，以 `\n---\n` 闭合
+- [ ] `name`、`description`、`version`、`author`、`license`、`metadata.hermes.{tags, related_skills}` 全部存在
+- [ ] name ≤ 64 字符，小写 + 连字符
+- [ ] description ≤ 1024 字符，并以 "Use when ..." 开头
+- [ ] 文件总计 ≤ 100,000 字符（目标 8-15k）
+- [ ] 结构：`# Title` → `## Overview` → `## When to Use` → 正文 → `## Common Pitfalls` → `## Verification Checklist`
+- [ ] 每个有序步骤都有可检查的完成标准
+- [ ] description 以触发条件为核心，避免与正文内容重复
+- [ ] 体量较大或分支专用的参考内容渐进式地披露到链接文件中
+- [ ] 无操作正文和重复规则已删除
+- [ ] `related_skills` 的引用在仓库内可解析（或明确允许是用户本地）
+- [ ] 在目标分支上完成了 `git add skills/<category>/<name>/ && git commit`

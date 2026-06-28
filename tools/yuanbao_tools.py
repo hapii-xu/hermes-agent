@@ -12,8 +12,8 @@ yuanbao_tools.py - 元宝平台工具集
 LLM 应先用 search_sticker 找到合适的 sticker_id（或直接传中文 name），再用 send_sticker
 发送。不要在文本中夹杂裸的 Unicode emoji 当作贴纸。
 
-The active adapter singleton lives in ``gateway.platforms.yuanbao`` and is
-accessed via ``get_active_adapter()``.
+当前激活的适配器单例位于 ``gateway.platforms.yuanbao``，通过
+``get_active_adapter()`` 访问。
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_active_adapter():
-    """Lazy import to avoid ImportError when gateway.platforms.yuanbao is unavailable."""
+    """懒加载导入，以避免 gateway.platforms.yuanbao 不可用时引发 ImportError。"""
     try:
         from gateway.platforms.yuanbao import get_active_adapter
         return get_active_adapter()
@@ -156,7 +156,7 @@ async def query_group_members(
                 **hint,
             }
 
-        # list_all (default)
+        # list_all（默认）
         return {
             "success": True,
             "msg": f"Found {len(all_members)} member(s).",
@@ -213,13 +213,13 @@ async def send_sticker(
     """
     向 chat_id（缺省取当前会话）发送一张内置贴纸（TIMFaceElem）。
 
-    Args:
+    参数：
         sticker:   贴纸名称（如 "六六六"）或 sticker_id（如 "278"）。为空时随机发送一张。
         chat_id:   目标会话；缺省时使用当前会话上下文（HERMES_SESSION_CHAT_ID）。
                    格式：``direct:{account_id}`` / ``group:{group_code}`` / 或裸 account_id。
         reply_to:  群聊场景的引用消息 ID（可选）。
 
-    Returns: ``{"success": bool, ...}``
+    返回： ``{"success": bool, ...}``
     """
     from gateway.session_context import get_session_env
     from gateway.platforms.yuanbao_sticker import (
@@ -283,7 +283,7 @@ async def send_sticker(
     }
 
 
-# Image extensions for media dispatch (mirrors MessageSender.IMAGE_EXTS)
+# 图片扩展名，用于媒体分发（镜像自 MessageSender.IMAGE_EXTS）
 _IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"})
 
 
@@ -295,21 +295,21 @@ async def send_dm(
     media_files: Optional[List[Tuple[str, bool]]] = None,
 ) -> dict:
     """
-    Send a DM (private chat message) to a group member, with optional media.
+    向群成员发送一条私信（私聊消息），可附带媒体文件。
 
-    Workflow:
-      1. If user_id is provided, send directly.
-      2. Otherwise, search the group member list by name to resolve user_id.
-      3. Send text via adapter.send_dm(), then iterate media_files by extension.
+    工作流程：
+      1. 若提供了 user_id，则直接发送。
+      2. 否则，按 name 在群成员列表中搜索以解析出 user_id。
+      3. 通过 adapter.send_dm() 发送文本，随后按扩展名逐一处理 media_files。
 
-    Args:
-        group_code: The group where the target user belongs.
-        name: Target user's nickname (partial match, case-insensitive).
-        message: The message text to send.
-        user_id: (Optional) If already known, skip the member lookup.
-        media_files: (Optional) List of (file_path, is_voice) tuples to send
-                     after the text message.  Images are sent via
-                     send_image_file; everything else via send_document.
+    参数：
+        group_code: 目标用户所在的群。
+        name: 目标用户的昵称（部分匹配，不区分大小写）。
+        message: 要发送的消息文本。
+        user_id:（可选）若已知，则跳过成员查找。
+        media_files:（可选）(file_path, is_voice) 元组列表，在文本消息
+                     之后发送。图片通过 send_image_file 发送；
+                     其他文件通过 send_document 发送。
     """
     if not message and not media_files:
         return {"success": False, "error": "message or media_files is required"}
@@ -321,7 +321,7 @@ async def send_dm(
     resolved_user_id = user_id.strip() if user_id else ""
     resolved_nickname = name.strip()
 
-    # Step 1: Resolve user_id from group member list if not provided
+    # 第 1 步：若未提供 user_id，则从群成员列表中解析
     if not resolved_user_id:
         if not group_code:
             return {"success": False, "error": "group_code is required when user_id is not provided"}
@@ -346,7 +346,7 @@ async def send_dm(
                     "error": f'No member matching "{name}" found in group {group_code}.',
                 }
             if len(matched) > 1:
-                # Multiple matches — return candidates for disambiguation
+                # 多个匹配 —— 返回候选项供消歧
                 candidates = [
                     {
                         "user_id": m.get("user_id", ""),
@@ -369,7 +369,7 @@ async def send_dm(
     if not resolved_user_id:
         return {"success": False, "error": "Could not resolve user_id"}
 
-    # Step 2: Send text DM + media
+    # 第 2 步：发送文本私信 + 媒体
     chat_id = f"direct:{resolved_user_id}"
     last_result = None
     errors: list[str] = []
@@ -379,7 +379,7 @@ async def send_dm(
             if not last_result.success:
                 errors.append(last_result.error or "text send failed")
 
-        # Step 3: Send media files
+        # 第 3 步：发送媒体文件
         for media_path, _is_voice in media_files or []:
             ext = Path(media_path).suffix.lower()
             if ext in _IMAGE_EXTS:
@@ -411,14 +411,14 @@ async def send_dm(
 
 
 # ---------------------------------------------------------------------------
-# Registry registration
+# 注册表注册
 # ---------------------------------------------------------------------------
 
 from tools.registry import registry, tool_result  # noqa: E402
 
 
 def _check_yuanbao():
-    """Toolset availability check — True when running in a yuanbao gateway session."""
+    """工具集可用性检查 —— 当运行于元宝 gateway 会话中时返回 True。"""
     try:
         from gateway.session_context import get_session_env
         if get_session_env("HERMES_SESSION_PLATFORM", "") == "yuanbao":
@@ -444,19 +444,19 @@ async def _handle_yb_query_group_members(args, **kw):
 
 
 async def _handle_yb_send_dm(args, **kw):
-    # Resolve group_code: prefer explicit arg, fallback to session context.
+    # 解析 group_code：优先使用显式参数，否则回退到会话上下文。
     group_code = args.get("group_code", "")
     if not group_code:
         try:
             from gateway.session_context import get_session_env
             chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "")
-            # chat_id format: "group:<code>" → extract the code part
+            # chat_id 格式："group:<code>" → 提取 code 部分
             if chat_id.startswith("group:"):
                 group_code = chat_id.split(":", 1)[1]
         except Exception:
             pass
 
-    # Parse media_files: list of {{"path": str, "is_voice": bool}} → List[Tuple[str, bool]]
+    # 解析 media_files：{{"path": str, "is_voice": bool}} 列表 → List[Tuple[str, bool]]
     raw_media = args.get("media_files") or []
     media_files = []
     for item in raw_media:
@@ -465,8 +465,8 @@ async def _handle_yb_send_dm(args, **kw):
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             media_files.append((str(item[0]), bool(item[1])))
 
-    # Extract MEDIA:<path> tags embedded in the message text (LLM often puts
-    # file paths there instead of using the media_files parameter).
+    # 提取嵌入在消息文本中的 MEDIA:<path> 标签（LLM 经常把文件路径放在
+    # 这里，而不是使用 media_files 参数）。
     message = args.get("message", "")
     from gateway.platforms.base import BasePlatformAdapter
     embedded_media, message = BasePlatformAdapter.extract_media(message)

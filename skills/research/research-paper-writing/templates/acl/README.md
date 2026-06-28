@@ -1,50 +1,38 @@
-# *ACL Paper Styles
+# *ACL 论文样式
 
-This directory contains the latest LaTeX templates for *ACL conferences.
+本目录包含 *ACL 系列会议的最新 LaTeX 模板。
 
-## Instructions for authors
+## 致作者说明
 
-Paper submissions to *ACL conferences must use the official ACL style
-templates.
+向 *ACL 系列会议投稿必须使用官方 ACL 样式模板。
 
-The LaTeX style files are available
+LaTeX 样式文件可通过以下途径获取：
 
-- as an [Overleaf template](https://www.overleaf.com/latex/templates/association-for-computational-linguistics-acl-conference/jvxskxpnznfj)
-- in this repository
-- as a [.zip file](https://github.com/acl-org/acl-style-files/archive/refs/heads/master.zip)
+- 作为 [Overleaf 模板](https://www.overleaf.com/latex/templates/association-for-computational-linguistics-acl-conference/jvxskxpnznfj)
+- 在本仓库中
+- 作为 [.zip 文件](https://github.com/acl-org/acl-style-files/archive/refs/heads/master.zip)
 
-Please see [`acl_latex.tex`](https://github.com/acl-org/acl-style-files/blob/master/acl_latex.tex) for an example.
+示例请参见 [`acl_latex.tex`](https://github.com/acl-org/acl-style-files/blob/master/acl_latex.tex)。
 
-Please follow the paper formatting guidelines general to *ACL
-conferences:
+请遵循 *ACL 系列会议通用的论文排版指南：
 
-- [Paper formatting guidelines](https://acl-org.github.io/ACLPUB/formatting.html)
+- [论文排版指南](https://acl-org.github.io/ACLPUB/formatting.html)
 
-Authors may not modify these style files or use templates designed for
-other conferences.
+作者不得修改这些样式文件，也不得使用为其他会议设计的模板。
 
-## Instructions for publications chairs
+## 致出版主席（publications chairs）说明
 
-To adapt the style files for your conference, please fork this repository and
-make necessary changes. Minimally, you'll need to update the name of
-the conference and rename the files.
+如需为你的会议调整样式文件，请 fork 本仓库并做必要修改。最基本地，你需要更新会议名称并重命名文件。
 
-If you make improvements to the templates that should be propagated to
-future conferences, please submit a pull request. Thank you in
-advance!
+如果你对模板做出了应当推广到未来会议的改进，请提交 pull request。提前致谢！
 
-In older versions of the templates, authors were asked to fill in the
-START submission ID so that it would be stamped at the top of each
-page of the anonymized version. This is no longer needed, because it
-is now possible to do this stamping automatically within
-START. Currently, the way to do this is for the program chair to email
-support@softconf.com and request it.
+在旧版模板中，作者被要求填写 START 投稿 ID，以便在匿名版本的每一页顶部加盖印记。这已不再需要，因为现在可以在 START 内部自动完成此加盖。目前的做法是，由程序主席发邮件给 support@softconf.com 提出请求。
 
-## Instructions for making changes to style files
+## 修改样式文件的说明
 
-- merge pull request in github, or push to github
-- git pull from github to a local repository
-- then, git push from your local repository to overleaf project 
-    - Overleaf project is https://www.overleaf.com/project/5f64f1fb97c4c50001b60549
-    - Overleaf git url is https://git.overleaf.com/5f64f1fb97c4c50001b60549
-- then, click "Submit" and then "Submit as Template" in overleaf in order to ask overleaf to update the overleaf template from the overleaf project 
+- 在 github 上合并 pull request，或推送到 github
+- 从 github 拉取（git pull）到本地仓库
+- 然后，从你的本地仓库推送到 overleaf 项目
+    - Overleaf 项目地址是 https://www.overleaf.com/project/5f64f1fb97c4c50001b60549
+    - Overleaf git 地址是 https://git.overleaf.com/5f64f1fb97c4c50001b60549
+- 然后，在 overleaf 中点击「Submit」，再点击「Submit as Template」，以请求 overleaf 从 overleaf 项目更新 overleaf 模板

@@ -1,4 +1,4 @@
-"""Generic managed-tool gateway helpers for Nous-hosted vendor passthroughs."""
+"""Nous 托管厂商透传的通用托管工具网关辅助函数。"""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class ManagedToolGatewayConfig:
 
 
 def auth_json_path():
-    """Return the Hermes auth store path, respecting HERMES_HOME overrides."""
+    """返回 Hermes 的 auth 存储路径，遵循 HERMES_HOME 覆盖。"""
     return get_hermes_home() / "auth.json"
 
 
@@ -73,14 +73,13 @@ def _access_token_is_expiring(expires_at: object, skew_seconds: int) -> bool:
 
 
 def peek_nous_access_token() -> Optional[str]:
-    """Cheap probe for a Nous gateway token without triggering refresh.
+    """在不触发刷新的前提下，低开销地探测 Nous 网关 token。
 
-    Availability scans (`hermes tools`, banner/status paint, provider
-    `is_available()` checks) must stay off the synchronous OAuth refresh path.
-    This helper therefore only inspects the explicit env override and the
-    cached auth-store token, without checking expiry and without making any
-    network calls. Truthful refresh handling stays in request/session paths
-    that call :func:`read_nous_access_token`.
+    可用性扫描（``hermes tools``、banner/状态绘制、provider 的
+    ``is_available()`` 检查）必须避开同步 OAuth 刷新路径。因此本辅助函数
+    只检查显式的环境变量覆盖与已缓存的 auth-store token，既不检查过期，
+    也不发起任何网络调用。真正可靠的刷新处理留在调用
+    :func:`read_nous_access_token` 的请求/会话路径中。
     """
     explicit = os.getenv("TOOL_GATEWAY_USER_TOKEN")
     if isinstance(explicit, str) and explicit.strip():
@@ -94,7 +93,7 @@ def peek_nous_access_token() -> Optional[str]:
 
 
 def read_nous_access_token() -> Optional[str]:
-    """Read a Nous Subscriber OAuth access token from auth store or env override."""
+    """从 auth 存储或环境变量覆盖中读取 Nous Subscriber OAuth access token。"""
     explicit = os.getenv("TOOL_GATEWAY_USER_TOKEN")
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
@@ -122,7 +121,7 @@ def read_nous_access_token() -> Optional[str]:
 
 
 def get_tool_gateway_scheme() -> str:
-    """Return configured shared gateway URL scheme."""
+    """返回已配置的共享网关 URL scheme。"""
     scheme = os.getenv("TOOL_GATEWAY_SCHEME", "").strip().lower()
     if not scheme:
         return _DEFAULT_TOOL_GATEWAY_SCHEME
@@ -134,7 +133,7 @@ def get_tool_gateway_scheme() -> str:
 
 
 def build_vendor_gateway_url(vendor: str) -> str:
-    """Return the gateway origin for a specific vendor."""
+    """返回某个具体厂商的网关 origin。"""
     vendor_key = f"{vendor.upper().replace('-', '_')}_GATEWAY_URL"
     explicit_vendor_url = os.getenv(vendor_key, "").strip().rstrip("/")
     if explicit_vendor_url:
@@ -153,7 +152,7 @@ def resolve_managed_tool_gateway(
     gateway_builder: Optional[Callable[[str], str]] = None,
     token_reader: Optional[Callable[[], Optional[str]]] = None,
 ) -> Optional[ManagedToolGatewayConfig]:
-    """Resolve shared managed-tool gateway config for a vendor."""
+    """为某个厂商解析共享的托管工具网关配置。"""
     if not managed_nous_tools_enabled():
         return None
 
@@ -178,12 +177,12 @@ def is_managed_tool_gateway_ready(
     gateway_builder: Optional[Callable[[str], str]] = None,
     token_reader: Optional[Callable[[], Optional[str]]] = None,
 ) -> bool:
-    """Return True when gateway URL and a likely-usable Nous token are present.
+    """当存在网关 URL 且很可能可用的 Nous token 时返回 True。
 
-    Defaults to :func:`peek_nous_access_token` so read-only availability scans
-    avoid synchronous OAuth refresh. Callers that are about to make a real
-    gateway request should use :func:`resolve_managed_tool_gateway` (which
-    still defaults to the refresh-aware :func:`read_nous_access_token`).
+    默认使用 :func:`peek_nous_access_token`，使只读的可用性扫描避免同步
+    OAuth 刷新。即将发起真实网关请求的调用方应使用
+    :func:`resolve_managed_tool_gateway`（它仍默认使用感知刷新的
+    :func:`read_nous_access_token`）。
     """
     return resolve_managed_tool_gateway(
         vendor,

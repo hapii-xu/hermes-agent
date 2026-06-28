@@ -1,61 +1,61 @@
 #!/usr/bin/env python3
 """
-Hermes CLI - Main entry point.
+Hermes CLI - 主入口。
 
-Usage:
-    hermes                     # Interactive chat (default)
-    hermes chat                # Interactive chat
-    hermes gateway             # Run gateway in foreground
-    hermes gateway start       # Start gateway as service
-    hermes gateway stop        # Stop gateway service
-    hermes gateway status      # Show gateway status
-    hermes gateway install     # Install gateway service
-    hermes gateway uninstall   # Uninstall gateway service
-    hermes setup               # Interactive setup wizard
-    hermes logout              # Clear stored authentication
-    hermes status              # Show status of all components
-    hermes cron                # Manage cron jobs
-    hermes cron list           # List cron jobs
-    hermes cron status         # Check if cron scheduler is running
-    hermes doctor              # Check configuration and dependencies
-    hermes honcho setup                    # Configure Honcho AI memory integration
-    hermes honcho status                   # Show Honcho config and connection status
-    hermes honcho sessions                 # List directory → session name mappings
-    hermes honcho map <name>               # Map current directory to a session name
-    hermes honcho peer                     # Show peer names and dialectic settings
-    hermes honcho peer --user NAME         # Set user peer name
-    hermes honcho peer --ai NAME           # Set AI peer name
-    hermes honcho peer --reasoning LEVEL   # Set dialectic reasoning level
-    hermes honcho mode                     # Show current memory mode
-    hermes honcho mode [hybrid|honcho|local]  # Set memory mode
-    hermes honcho tokens                   # Show token budget settings
-    hermes honcho tokens --context N       # Set session.context() token cap
-    hermes honcho tokens --dialectic N     # Set dialectic result char cap
-    hermes honcho identity                 # Show AI peer identity representation
-    hermes honcho identity <file>          # Seed AI peer identity from a file (SOUL.md etc.)
-    hermes honcho migrate                  # Step-by-step migration guide: OpenClaw native → Hermes + Honcho
-    hermes version             Show version
-    hermes update              Update to latest version
-    hermes uninstall           Uninstall Hermes Agent
-    hermes acp                 Run as an ACP server for editor integration
-    hermes sessions browse     Interactive session picker with search
+用法:
+    hermes                     # 交互式聊天（默认）
+    hermes chat                # 交互式聊天
+    hermes gateway             # 在前台运行 gateway
+    hermes gateway start       # 以服务方式启动 gateway
+    hermes gateway stop        # 停止 gateway 服务
+    hermes gateway status      # 显示 gateway 状态
+    hermes gateway install     # 安装 gateway 服务
+    hermes gateway uninstall   # 卸载 gateway 服务
+    hermes setup               # 交互式设置向导
+    hermes logout              # 清除已存储的认证信息
+    hermes status              # 显示所有组件的状态
+    hermes cron                # 管理定时任务
+    hermes cron list           # 列出定时任务
+    hermes cron status         # 检查定时调度器是否正在运行
+    hermes doctor              # 检查配置和依赖
+    hermes honcho setup                    # 配置 Honcho AI 记忆集成
+    hermes honcho status                   # 显示 Honcho 配置和连接状态
+    hermes honcho sessions                 # 列出目录 → 会话名称映射
+    hermes honcho map <name>               # 将当前目录映射到会话名称
+    hermes honcho peer                     # 显示 peer 名称和辩证推理设置
+    hermes honcho peer --user NAME         # 设置用户 peer 名称
+    hermes honcho peer --ai NAME           # 设置 AI peer 名称
+    hermes honcho peer --reasoning LEVEL   # 设置辩证推理级别
+    hermes honcho mode                     # 显示当前记忆模式
+    hermes honcho mode [hybrid|honcho|local]  # 设置记忆模式
+    hermes honcho tokens                   # 显示 token 预算设置
+    hermes honcho tokens --context N       # 设置 session.context() token 上限
+    hermes honcho tokens --dialectic N     # 设置辩证结果字符上限
+    hermes honcho identity                 # 显示 AI peer 身份表示
+    hermes honcho identity <file>          # 从文件加载 AI peer 身份（SOUL.md 等）
+    hermes honcho migrate                  # 分步迁移指南: OpenClaw 原生 → Hermes + Honcho
+    hermes version             显示版本
+    hermes update              更新到最新版本
+    hermes uninstall           卸载 Hermes Agent
+    hermes acp                 # 作为 ACP 服务器运行以集成编辑器
+    hermes sessions browse     # 带搜索的交互式会话选择器
 
-    hermes claw migrate --dry-run  # Preview migration without changes
+    hermes claw migrate --dry-run  # 预览迁移而不做更改
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — it sets up
-# UTF-8 stdio on Windows so print()/subprocess children don't hit
-# UnicodeEncodeError with non-ASCII characters.  No-op on POSIX.
+# 重要: hermes_bootstrap 必须是第一个导入 — 它在 Windows 上设置
+# UTF-8 stdio，使 print()/subprocess 子进程不会因非 ASCII 字符而
+# 触发 UnicodeEncodeError。在 POSIX 上无操作。
 #
-# Guarded against ModuleNotFoundError because ``hermes_bootstrap`` is a
-# top-level module registered via pyproject.toml's ``py-modules`` list.
-# When the user upgrades code via ``git pull`` (or ``hermes update``
-# crashes between ``git reset --hard`` and ``uv pip install -e .``), the
-# new code references ``hermes_bootstrap`` but the editable install's
-# ``.pth`` file still points at the old set of top-level modules.  Without
-# this guard, hermes crashes on import and the user can't run
-# ``hermes update`` to recover.  Missing the bootstrap means UTF-8 stdio
-# setup is skipped on Windows — degraded, not broken.  POSIX is unaffected.
+# 使用 ModuleNotFoundError 保护，因为 ``hermes_bootstrap`` 是通过
+# pyproject.toml 的 ``py-modules`` 列表注册的顶级模块。
+# 当用户通过 ``git pull`` 升级代码（或 ``hermes update``
+# 在 ``git reset --hard`` 和 ``uv pip install -e .`` 之间崩溃）时，
+# 新代码引用了 ``hermes_bootstrap``，但可编辑安装的 ``.pth`` 文件
+# 仍指向旧的顶级模块集。没有此保护，hermes 会在导入时崩溃，
+# 用户无法运行 ``hermes update`` 来恢复。缺少 bootstrap 意味着
+# Windows 上的 UTF-8 stdio 设置会被跳过 — 降级，但不会损坏。
+# POSIX 不受影响。
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
@@ -66,20 +66,20 @@ import sys
 
 
 def _set_process_title() -> None:
-    """Set the process title to 'hermes' so tools like 'ps', 'top', and
-    'htop' show the app name instead of 'python3.xx'.
+    """将进程标题设置为 'hermes'，使 'ps'、'top' 和 'htop' 等工具
+    显示应用名称而不是 'python3.xx'。
 
-    Purely cosmetic — non-fatal on any platform.
+    纯装饰性 — 在任何平台上都是非致命的。
 
-    Strategy (try in order):
-      1. ``setproctitle`` (opt-in dep — installed via ``hermes tools`` or
-         ``pip install setproctitle``, or bundled in a future release).
-      2. ctypes ``prctl(PR_SET_NAME)`` (Linux only, 15-char limit).
-      3. ctypes ``pthread_setname_np`` (macOS only, kernel thread name —
-         changes lldb/top but not ``ps aux``).
-      4. No-op on Windows (the .exe name is already ``hermes.exe``).
+    策略（按顺序尝试）:
+      1. ``setproctitle``（可选依赖 — 通过 ``hermes tools`` 或
+         ``pip install setproctitle`` 安装，或在未来版本中捆绑）。
+      2. ctypes ``prctl(PR_SET_NAME)``（仅 Linux，15 字符限制）。
+      3. ctypes ``pthread_setname_np``（仅 macOS，内核线程名称 —
+         更改 lldb/top 但不更改 ``ps aux``）。
+      4. Windows 上无操作（.exe 名称已经是 ``hermes.exe``）。
     """
-    # Strategy 1: setproctitle (best — works on macOS, Linux, BSD)
+    # 策略 1: setproctitle（最佳 — 在 macOS、Linux、BSD 上可用）
     try:
         import setproctitle  # type: ignore[import-untyped]
 
@@ -88,7 +88,7 @@ def _set_process_title() -> None:
     except ImportError:
         pass
 
-    # Strategy 2/3: platform-specific ctypes fallback
+    # 策略 2/3: 特定平台的 ctypes 后备方案
     import ctypes
     import platform
 
@@ -100,22 +100,22 @@ def _set_process_title() -> None:
         elif system == "Darwin":
             libc = ctypes.CDLL("libc.dylib", use_errno=True)
             libc.pthread_setname_np(b"hermes")
-        # Windows: the .exe name is already ``hermes.exe`` — nothing to do.
+        # Windows: .exe 名称已经是 ``hermes.exe`` — 无需操作。
     except Exception:
         pass
 
 
-# Cheap, dependency-free read of `display.interface` from config.yaml for the
-# earliest hot-path decisions (mouse-residue suppression, Termux fast launch)
-# that run *before* hermes_cli.config is importable. Mirrors the explicit
-# precedence used everywhere else: `--cli` always wins, then `--tui`/env, then
-# this config value. Cached so the multiple early callers don't re-parse YAML.
+# 无依赖地从 config.yaml 读取 `display.interface`，用于最早的
+# 热路径决策（鼠标残留抑制、Termux 快速启动），这些决策在
+# hermes_cli.config 可导入*之前*运行。遵循其他地方使用的显式
+# 优先级: `--cli` 总是优先，然后是 `--tui`/env，最后是此配置值。
+# 缓存，使多个早期调用者不会重新解析 YAML。
 _EARLY_INTERFACE_CACHE: "list | None" = None
 
 
 def _config_default_interface_early() -> str:
-    """Return the configured default interface ("cli"/"tui") via a minimal
-    YAML read. Best-effort: any error falls back to "cli" (legacy behavior)."""
+    """通过最小化 YAML 读取返回已配置的默认界面 ("cli"/"tui")。
+    尽力而为: 任何错误都会回退到 "cli"（传统行为）。"""
     global _EARLY_INTERFACE_CACHE
     if _EARLY_INTERFACE_CACHE is not None:
         return _EARLY_INTERFACE_CACHE[0]
@@ -137,16 +137,16 @@ def _config_default_interface_early() -> str:
                 if isinstance(iface, str) and iface.strip().lower() == "tui":
                     value = "tui"
     except Exception:
-        value = "cli"  # best-effort — default to classic REPL on any error
+        value = "cli"  # 尽力而为 — 任何错误时回退到经典 REPL
     _EARLY_INTERFACE_CACHE = [value]
     return value
 
 
 def _wants_tui_early(argv: "list[str] | None" = None) -> bool:
-    """Earliest TUI decision, usable before argparse/config imports.
+    """最早的 TUI 决策，可在 argparse/config 导入之前使用。
 
-    Precedence: explicit ``--cli`` wins (forces classic REPL), then
-    ``--tui``/``HERMES_TUI=1``, then ``display.interface`` in config.
+    优先级: 显式 ``--cli`` 优先（强制经典 REPL），然后是
+    ``--tui``/``HERMES_TUI=1``，最后是配置中的 ``display.interface``。
     """
     if argv is None:
         argv = sys.argv[1:]
@@ -157,27 +157,25 @@ def _wants_tui_early(argv: "list[str] | None" = None) -> bool:
     return _config_default_interface_early() == "tui"
 
 
-# Mouse-tracking residue suppression — runs BEFORE every other import on the
-# TUI hot path so the terminal stops emitting SGR/X10 mouse reports while the
-# Python launcher is still doing imports (≈100–300ms in cooked + echo mode,
-# before the Node TUI takes stdin into raw mode). During that window any
-# incoming bytes are echoed straight back to the user's shell scrollback as
-# ``^[[<…M`` text. The TUI itself runs `resetTerminalModes()` again in
-# `entry.tsx`; this is just the earlier cousin. ``HERMES_TUI_NO_EARLY_DISABLE``
-# escapes the behaviour for diagnostics.
+# 鼠标跟踪残留抑制 — 在 TUI 热路径上的所有其他导入*之前*运行，
+# 使终端停止发出 SGR/X10 鼠标报告，而此时 Python 启动器仍在进行导入
+# （在 cooked + echo 模式下约 100–300ms，在 Node TUI 将 stdin 切换到
+# 原始模式之前）。在该窗口期间，任何传入的字节都会直接回显到用户的
+# shell 滚动缓冲区，显示为 ``^[[<…M`` 文本。TUI 本身在
+# `entry.tsx` 中再次运行 `resetTerminalModes()`；这只是更早的版本。
+# ``HERMES_TUI_NO_EARLY_DISABLE`` 可跳过此行为用于诊断。
 def _suppress_mouse_residue_early() -> None:
     if os.environ.get("HERMES_TUI_NO_EARLY_DISABLE") == "1":
         return
     if not _wants_tui_early():
         return
     try:
-        # Skip when stdout is redirected (`hermes --tui … >log`, CI capture):
-        # the bytes can't reach the terminal anyway and would just pollute
-        # the log with raw CSI.
+        # 当 stdout 被重定向时跳过（`hermes --tui … >log`、CI 捕获）:
+        # 字节无论如何无法到达终端，只会用原始 CSI 污染日志。
         if not os.isatty(1):
             return
-        # Disable every mouse-tracking variant we know about. Idempotent and
-        # safe to send even when no tracking is currently asserted.
+        # 禁用我们所知的每种鼠标跟踪变体。幂等操作，
+        # 即使当前未断言跟踪也可以安全发送。
         os.write(
             1,
             b"\x1b[?1003l\x1b[?1002l\x1b[?1001l\x1b[?1000l\x1b[?9l"
@@ -191,7 +189,7 @@ _suppress_mouse_residue_early()
 
 
 def _is_termux_startup_environment_fast() -> bool:
-    """Tiny Termux check for pre-import startup shortcuts."""
+    """用于预导入启动快捷方式的轻量 Termux 检查。"""
     prefix = os.environ.get("PREFIX", "")
     return bool(
         os.environ.get("TERMUX_VERSION")
@@ -205,7 +203,7 @@ def _is_termux_fast_version_argv(argv: list[str]) -> bool:
 
 
 def _read_openai_version_fast() -> str | None:
-    """Read OpenAI SDK version without importing ``importlib.metadata``."""
+    """在不导入 ``importlib.metadata`` 的情况下读取 OpenAI SDK 版本。"""
     for base in sys.path:
         if not base:
             base = os.getcwd()
@@ -237,7 +235,7 @@ def _print_fast_version_info() -> None:
 
 
 def _try_termux_ultrafast_version() -> bool:
-    """Handle ``hermes --version`` before config/logging imports on Termux."""
+    """在 Termux 上在配置/日志导入之前处理 ``hermes --version``。"""
     if os.environ.get("HERMES_TERMUX_DISABLE_FAST_CLI") == "1":
         return False
     if not _is_termux_startup_environment_fast():
@@ -303,11 +301,11 @@ from hermes_cli.subcommands.claw import build_claw_parser
 
 
 def _require_tty(command_name: str) -> None:
-    """Exit with a clear error if stdin is not a terminal.
+    """如果 stdin 不是终端，以明确的错误退出。
 
-    Interactive TUI commands (hermes tools, hermes setup, hermes model) use
-    curses or input() prompts that spin at 100% CPU when stdin is a pipe.
-    This guard prevents accidental non-interactive invocation.
+    交互式 TUI 命令（hermes tools、hermes setup、hermes model）使用
+    curses 或 input() 提示，当 stdin 是管道时会 100% CPU 空转。
+    此保护可防止意外的非交互式调用。
     """
     if not sys.stdin.isatty():
         print(
@@ -319,33 +317,33 @@ def _require_tty(command_name: str) -> None:
         sys.exit(1)
 
 
-# Add project root to path
+# 将项目根目录添加到路径
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # ---------------------------------------------------------------------------
-# Profile override — MUST happen before any hermes module import.
+# Profile 覆盖 — 必须在任何 hermes 模块导入之前发生。
 #
-# Many modules cache HERMES_HOME at import time (module-level constants).
-# We intercept --profile/-p from sys.argv here and set the env var so that
-# every subsequent ``os.getenv("HERMES_HOME", ...)`` resolves correctly.
-# The flag is stripped from sys.argv so argparse never sees it.
-# Falls back to ~/.hermes/active_profile for sticky default.
+# 许多模块在导入时缓存 HERMES_HOME（模块级常量）。
+# 我们在此从 sys.argv 拦截 --profile/-p 并设置环境变量，使
+# 每个后续的 ``os.getenv("HERMES_HOME", ...)`` 都能正确解析。
+# 该标志从 sys.argv 中移除，使 argparse 永远不会看到它。
+# 回退到 ~/.hermes/active_profile 以获取粘性默认值。
 # ---------------------------------------------------------------------------
 def _apply_profile_override() -> None:
-    """Pre-parse --profile/-p and set HERMES_HOME before imports."""
+    """在导入之前预解析 --profile/-p 并设置 HERMES_HOME。"""
     argv = sys.argv[1:]
     profile_name = None
     consume = 0
     profile_index = None
 
     def _inside_mcp_add_args(index: int) -> bool:
-        """True once argv reaches `hermes mcp add ... --args <command argv>`.
+        """当 argv 到达 `hermes mcp add ... --args <command argv>` 时返回 True。
 
-        ``mcp add --args`` is command-argv passthrough. Flags after that point
-        belong to the child MCP command (for example Docker MCP Toolkit's
-        ``--profile``), not to Hermes' own profile selector.
+        ``mcp add --args`` 是命令 argv 透传。此后的标志属于子 MCP
+        命令（例如 Docker MCP Toolkit 的 ``--profile``），而非 Hermes
+        自己的 profile 选择器。
         """
         try:
             mcp_index = argv.index("mcp", 0, index)

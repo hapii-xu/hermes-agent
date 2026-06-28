@@ -37,8 +37,8 @@ describe('approvalAction — pure key dispatch for ApprovalPrompt', () => {
   })
 
   it('Esc beats numeric/return — denying is always the first interpretation', () => {
-    // If a terminal somehow delivers Esc + a digit in the same event, deny
-    // wins.  Documents the precedence so a future refactor doesn't flip it.
+    // 如果终端以某种方式在同一事件中传递 Esc + 数字，deny
+    // 优先。记录此优先级，防止未来重构时将其翻转。
     expect(approvalAction('1', { escape: true }, 0)).toEqual({ kind: 'choose', choice: 'deny' })
     expect(approvalAction('', { escape: true, return: true }, 1)).toEqual({ kind: 'choose', choice: 'deny' })
   })
@@ -49,8 +49,8 @@ describe('approvalAction — pure key dispatch for ApprovalPrompt', () => {
   })
 
   it('respects a reduced option set when permanent allow is disabled', () => {
-    // tirith content-security warning present → no "always"; the 3-item set is
-    // once/session/deny, so 3 maps to deny and 4 is out of range.
+    // tirith content-security 警告存在 → 没有 "always"；3 项选项集为
+    // once/session/deny，因此 3 映射到 deny，4 超出范围。
     const opts = ['once', 'session', 'deny'] as const
 
     expect(approvalAction('3', {}, 0, opts)).toEqual({ kind: 'choose', choice: 'deny' })

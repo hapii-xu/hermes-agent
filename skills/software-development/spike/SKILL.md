@@ -1,6 +1,6 @@
 ---
 name: spike
-description: "Throwaway experiments to validate an idea before build."
+description: "在正式构建前用一次性实验验证某个想法。"
 version: 1.0.0
 author: Hermes Agent (adapted from gsd-build/get-shit-done)
 license: MIT
@@ -11,25 +11,25 @@ metadata:
     related_skills: [sketch, subagent-driven-development, plan]
 ---
 
-# Spike
+# Spike（探针实验）
 
-Use this skill when the user wants to **feel out an idea** before committing to a real build — validating feasibility, comparing approaches, or surfacing unknowns that no amount of research will answer. Spikes are disposable by design. Throw them away once they've paid their debt.
+当用户想在正式投入构建之前**先摸清一个想法**——验证可行性、对比方案，或暴露出再多研究也回答不了的未知——时，使用本 skill。Spike 天生是一次性的。一旦还清了它的"信息债"就扔掉。
 
-Load this when the user says things like "let me try this", "I want to see if X works", "spike this out", "before I commit to Y", "quick prototype of Z", "is this even possible?", or "compare A vs B".
+当用户说类似 "let me try this"、"I want to see if X works"、"spike this out"、"before I commit to Y"、"quick prototype of Z"、"is this even possible?"、"compare A vs B" 时加载本 skill。
 
-## When NOT to use this
+## 什么时候不要用
 
-- The answer is knowable from docs or reading code — just do research, don't build
-- The work is production path — use the `plan` skill instead
-- The idea is already validated — jump straight to implementation
+- 答案能从文档或读代码中得到——那就做研究，不要构建
+- 工作是生产路径——改用 `plan` skill
+- 想法已经验证过——直接进入实现
 
-## If the user has the full GSD system installed
+## 如果用户安装了完整的 GSD 系统
 
-If `gsd-spike` shows up as a sibling skill (installed via `npx get-shit-done-cc --hermes`), prefer **`gsd-spike`** when the user wants the full GSD workflow: persistent `.planning/spikes/` state, MANIFEST tracking across sessions, Given/When/Then verdict format, and commit patterns that integrate with the rest of GSD. This skill is the lightweight standalone version for users who don't have (or don't want) the full system.
+如果 `gsd-spike` 作为兄弟 skill 出现（通过 `npx get-shit-done-cc --hermes` 安装），当用户想要完整 GSD 工作流时优先使用 **`gsd-spike`**：持久化的 `.planning/spikes/` 状态、跨会话的 MANIFEST 追踪、Given/When/Then 裁决格式，以及与 GSD 其余部分集成的提交模式。本 skill 是为没有（或不想要）完整系统的用户准备的轻量独立版本。
 
-## Core method
+## 核心方法
 
-Regardless of scale, every spike follows this loop:
+不论规模大小，每个 spike 都遵循这个循环：
 
 ```
 decompose  →  research  →  build  →  verdict
@@ -37,56 +37,56 @@ decompose  →  research  →  build  →  verdict
                   iterate on findings
 ```
 
-### 1. Decompose
+### 1. Decompose（拆解）
 
-Break the user's idea into **2-5 independent feasibility questions**. Each question is one spike. Present them as a table with Given/When/Then framing:
+把用户的想法拆成 **2-5 个独立的可行性问题**。每个问题就是一个 spike。用 Given/When/Then 框架以表格形式呈现：
 
-| # | Spike | Validates (Given/When/Then) | Risk |
+| # | Spike | 验证内容（Given/When/Then） | 风险 |
 |---|-------|----------------------------|------|
-| 001 | websocket-streaming | Given a WS connection, when LLM streams tokens, then client receives chunks < 100ms | High |
-| 002a | pdf-parse-pdfjs | Given a multi-page PDF, when parsed with pdfjs, then structured text is extractable | Medium |
-| 002b | pdf-parse-camelot | Given a multi-page PDF, when parsed with camelot, then structured text is extractable | Medium |
+| 001 | websocket-streaming | 给定一条 WS 连接，当 LLM 流式输出 token 时，客户端在 100ms 内收到分块 | 高 |
+| 002a | pdf-parse-pdfjs | 给定一份多页 PDF，用 pdfjs 解析时，能提取出结构化文本 | 中 |
+| 002b | pdf-parse-camelot | 给定一份多页 PDF，用 camelot 解析时，能提取出结构化文本 | 中 |
 
-**Spike types:**
-- **standard** — one approach answering one question
-- **comparison** — same question, different approaches (shared number, letter suffix `a`/`b`/`c`)
+**Spike 类型：**
+- **standard（标准）** —— 一种方案回答一个问题
+- **comparison（对比）** —— 同一个问题，不同方案（共享编号，加字母后缀 `a`/`b`/`c`）
 
-**Good spike questions:** specific feasibility with observable output.
-**Bad spike questions:** too broad, no observable output, or just "read the docs about X".
+**好的 spike 问题：** 具体的可行性，且有可观察的输出。
+**坏的 spike 问题：** 太宽泛、无可观察输出，或只是 "读一下 X 的文档"。
 
-**Order by risk.** The spike most likely to kill the idea runs first. No point prototyping the easy parts if the hard part doesn't work.
+**按风险排序。** 最可能扼杀想法的 spike 先跑。如果难的部分根本行不通，做简单的部分也没意义。
 
-**Skip decomposition** only if the user already knows exactly what they want to spike and says so. Then take their idea as a single spike.
+**跳过拆解**——仅当用户已经明确知道要 spike 什么并说出口时。此时把他们的想法当作单个 spike。
 
-### 2. Align (for multi-spike ideas)
+### 2. Align（对齐，针对多 spike 的想法）
 
-Present the spike table. Ask: "Build all in this order, or adjust?" Let the user drop, reorder, or re-frame before you write any code.
+展示 spike 表格。问："按这个顺序全部做，还是要调整？" 在你写任何代码之前，让用户删减、重排或重新定义。
 
-### 3. Research (per spike, before building)
+### 3. Research（研究，每个 spike 在构建前都要做）
 
-Spikes are not research-free — you research enough to pick the right approach, then you build. Per spike:
+Spike 并非不做研究——你要研究到足以选出正确方案，然后再构建。每个 spike：
 
-1. **Brief it.** 2-3 sentences: what this spike is, why it matters, key risk.
-2. **Surface competing approaches** if there's real choice:
+1. **简述。** 2-3 句话：这个 spike 是什么、为什么重要、关键风险。
+2. **列出竞争方案**，如果有真正的选择余地：
 
-   | Approach | Tool/Library | Pros | Cons | Status |
+   | 方案 | 工具/库 | 优点 | 缺点 | 状态 |
    |----------|-------------|------|------|--------|
-   | ... | ... | ... | ... | maintained / abandoned / beta |
+   | ... | ... | ... | ... | 维护中 / 已弃置 / beta |
 
-3. **Pick one.** State why. If 2+ are credible, build quick variants within the spike.
-4. **Skip research** for pure logic with no external dependencies.
+3. **选定一个。** 说明理由。如果有 2 个以上都可信，就在 spike 内部快速做几个变体。
+4. **跳过研究**，如果是纯逻辑且无外部依赖。
 
-Use Hermes tools for the research step:
+用 Hermes 工具做研究这一步：
 
-- `web_search("python websocket streaming libraries 2025")` — find candidates
-- `web_extract(urls=["https://websockets.readthedocs.io/..."])` — read the actual docs (returns markdown)
-- `terminal("pip show websockets | grep Version")` — check what's installed in the project's venv
+- `web_search("python websocket streaming libraries 2025")` —— 找候选
+- `web_extract(urls=["https://websockets.readthedocs.io/..."])` —— 读真实文档（返回 markdown）
+- `terminal("pip show websockets | grep Version")` —— 检查项目 venv 里装了什么
 
-For libraries without docs pages, clone and read their `README.md` / `examples/` via `read_file`. Context7 MCP (if the user has it configured) is also a good source — `mcp_*_resolve-library-id` then `mcp_*_query-docs`.
+对于没有文档页的库，通过 `read_file` 克隆并阅读它们的 `README.md` / `examples/`。Context7 MCP（如果用户配置了）也是好来源——先 `mcp_*_resolve-library-id` 再 `mcp_*_query-docs`。
 
-### 4. Build
+### 4. Build（构建）
 
-One directory per spike. Keep it standalone.
+每个 spike 一个目录。保持独立。
 
 ```
 spikes/
@@ -101,28 +101,28 @@ spikes/
     └── parse.py
 ```
 
-**Bias toward something the user can interact with.** Spikes fail when the only output is a log line that says "it works." The user wants to *feel* the spike working. Default choices, in order of preference:
+**偏向于做出用户能交互的东西。** 当 spike 的唯一输出只是一行写着 "it works" 的日志时，spike 就失败了。用户想要*感受*到 spike 起作用。默认选择，按偏好排序：
 
-1. A runnable CLI that takes input and prints observable output
-2. A minimal HTML page that demonstrates the behavior
-3. A small web server with one endpoint
-4. A unit test that exercises the question with recognizable assertions
+1. 一个能接收输入并打印可观察输出的可运行 CLI
+2. 一个展示行为的极简 HTML 页面
+3. 一个带单一端点的小型 web 服务器
+4. 一个用可识别断言检验问题的单元测试
 
-**Depth over speed.** Never declare "it works" after one happy-path run. Test edge cases. Follow surprising findings. The verdict is only trustworthy when the investigation was honest.
+**深度优先于速度。** 永远不要在一次顺利路径跑通后就宣布 "it works"。测试边界情况。追查意外的发现。只有当调查是诚实的，裁决才可信。
 
-**Avoid** unless the spike specifically requires it: complex package management, build tools/bundlers, Docker, env files, config systems. Hardcode everything — it's a spike.
+**避免**，除非 spike 明确需要：复杂的包管理、构建工具/打包器、Docker、env 文件、配置系统。把一切硬编码——这只是个 spike。
 
-**Building one spike** — a typical tool sequence:
+**构建单个 spike** —— 典型的工具序列：
 
 ```
 terminal("mkdir -p spikes/001-websocket-streaming")
 write_file("spikes/001-websocket-streaming/README.md", "# 001: websocket-streaming\n\n...")
 write_file("spikes/001-websocket-streaming/main.py", "...")
 terminal("cd spikes/001-websocket-streaming && python3 main.py")
-# Observe output, iterate.
+# 观察输出，迭代。
 ```
 
-**Parallel comparison spikes (002a / 002b) — delegate.** When two approaches can run in parallel and both need real engineering (not 10-line prototypes), fan out with `delegate_task`:
+**并行对比 spike（002a / 002b）—— 委派。** 当两种方案可以并行跑且都需要真正的工程量（不是 10 行原型）时，用 `delegate_task` 展开：
 
 ```
 delegate_task(tasks=[
@@ -131,11 +131,11 @@ delegate_task(tasks=[
 ])
 ```
 
-Each subagent returns its own verdict; you write the head-to-head.
+每个子代理返回自己的裁决；由你来写正面 PK。
 
-### 5. Verdict
+### 5. Verdict（裁决）
 
-Each spike's `README.md` closes with:
+每个 spike 的 `README.md` 以如下内容收尾：
 
 ```markdown
 ## Verdict: VALIDATED | PARTIAL | INVALIDATED
@@ -153,45 +153,45 @@ Each spike's `README.md` closes with:
 - ...
 ```
 
-**VALIDATED** = the core question was answered yes, with evidence.
-**PARTIAL** = it works under constraints X, Y, Z — document them.
-**INVALIDATED** = doesn't work, for this reason. This is a successful spike.
+**VALIDATED** = 核心问题以证据回答了"是"。
+**PARTIAL** = 在 X、Y、Z 约束下可行——把它们记下来。
+**INVALIDATED** = 行不通，原因是这个。这也是一次成功的 spike。
 
-## Comparison spikes
+## 对比 spike
 
-When two approaches answer the same question (002a / 002b), build them **back to back**, then do a head-to-head comparison at the end:
+当两种方案回答同一个问题（002a / 002b）时，**背靠背**地构建它们，最后做一次正面 PK：
 
 ```markdown
 ## Head-to-head: pdfjs vs camelot
 
-| Dimension | pdfjs (002a) | camelot (002b) |
+| 维度 | pdfjs (002a) | camelot (002b) |
 |-----------|--------------|----------------|
-| Extraction quality | 9/10 structured | 7/10 table-only |
-| Setup complexity | npm install, 1 line | pip + ghostscript |
-| Perf on 100-page PDF | 3s | 18s |
-| Handles rotated text | no | yes |
+| 提取质量 | 9/10 结构化 | 7/10 仅表格 |
+| 搭建复杂度 | npm install，1 行 | pip + ghostscript |
+| 100 页 PDF 性能 | 3s | 18s |
+| 处理旋转文字 | 否 | 是 |
 
-**Winner:** pdfjs for our use case. Camelot if we need table-first extraction later.
+**胜者：** 对我们的用例是 pdfjs。如果以后需要表格优先的提取，再用 Camelot。
 ```
 
-## Frontier mode (picking what to spike next)
+## Frontier 模式（选择下一个 spike 目标）
 
-If spikes already exist and the user says "what should I spike next?", walk the existing directories and look for:
+如果 spike 已经存在，而用户问 "我接下来该 spike 什么？"，遍历现有目录，寻找：
 
-- **Integration risks** — two validated spikes that touch the same resource but were tested independently
-- **Data handoffs** — spike A's output was assumed compatible with spike B's input; never proven
-- **Gaps in the vision** — capabilities assumed but unproven
-- **Alternative approaches** — different angles for PARTIAL or INVALIDATED spikes
+- **集成风险** —— 两个已验证的 spike 触碰同一资源，但当时是独立测试的
+- **数据交接** —— spike A 的输出被假设与 spike B 的输入兼容；从未被证明
+- **愿景中的空缺** —— 被假设但未被证明的能力
+- **替代方案** —— 针对 PARTIAL 或 INVALIDATED spike 的不同角度
 
-Propose 2-4 candidates as Given/When/Then. Let the user pick.
+以 Given/When/Then 形式提出 2-4 个候选。让用户挑选。
 
-## Output
+## 输出
 
-- Create `spikes/` (or `.planning/spikes/` if the user is using GSD conventions) in the repo root
-- One dir per spike: `NNN-descriptive-name/`
-- `README.md` per spike captures question, approach, results, verdict
-- Keep the code throwaway — a spike that takes 2 days to "clean up for production" was a bad spike
+- 在仓库根目录创建 `spikes/`（如果用户使用 GSD 约定则是 `.planning/spikes/`）
+- 每个 spike 一个目录：`NNN-descriptive-name/`
+- 每个 spike 的 `README.md` 记录问题、方案、结果、裁决
+- 让代码保持一次性——一个要花 2 天 "为生产清理" 的 spike，本身就是一个坏 spike
 
-## Attribution
+## 出处
 
-Adapted from the GSD (Get Shit Done) project's `/gsd-spike` workflow — MIT © 2025 Lex Christopherson ([gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)). The full GSD system offers persistent spike state, MANIFEST tracking, and integration with a broader spec-driven development pipeline; install with `npx get-shit-done-cc --hermes --global`.
+改编自 GSD（Get Shit Done）项目的 `/gsd-spike` 工作流——MIT © 2025 Lex Christopherson（[gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)）。完整的 GSD 系统提供持久化的 spike 状态、MANIFEST 追踪，以及与更广泛的规范驱动开发流水线的集成；用 `npx get-shit-done-cc --hermes --global` 安装。

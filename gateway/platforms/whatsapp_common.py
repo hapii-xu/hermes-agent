@@ -1,23 +1,23 @@
 """
-Transport-agnostic WhatsApp behavior shared by the Baileys bridge adapter
-and the official WhatsApp Cloud API adapter.
+传输无关的 WhatsApp 行为，由 Baileys bridge 适配器和
+官方 WhatsApp Cloud API 适配器共享。
 
-The mixin provides:
-- Allow-list / DM / group gating
-- Mention detection (explicit @-mentions + configurable regex patterns)
-- Quoted-reply-to-bot detection
-- Broadcast / Channel / Newsletter filtering
-- WhatsApp-flavored markdown conversion
-- Outgoing chunk length budgeting
+该 mixin 提供：
+- 白名单 / DM / 群组门控
+- mention 检测（显式 @-mention + 可配置的 regex 模式）
+- 引用回复到 bot 的检测
+- 广播 / Channel / Newsletter 过滤
+- WhatsApp 风格的 Markdown 转换
+- 出站分块长度预算
 
-It is the *behavior layer*. Transport-specific concerns (subprocess management,
-HTTP webhooks, Graph API calls, media upload protocols) live in each adapter.
+它是 *行为层*。传输相关的关注点（子进程管理、HTTP webhook、
+Graph API 调用、媒体上传协议）位于各适配器中。
 
-Mixin contract — the adapter must set these on ``self`` before any of the
-mixin's methods are called (typically in ``__init__``):
+Mixin 契约 —— 适配器必须在调用 mixin 的任何方法之前在 ``self`` 上
+设置以下属性（通常在 ``__init__`` 中）：
 
     self.config        # gateway.config.PlatformConfig
-    self.name          # str — adapter name (used in log lines)
+    self.name          # str — 适配器名称（用于日志行）
     self._dm_policy             # str: "open" | "allowlist" | "disabled"
     self._allow_from            # set[str]
     self._group_policy          # str: "open" | "allowlist" | "disabled"
@@ -25,8 +25,8 @@ mixin's methods are called (typically in ``__init__``):
     self._mention_patterns      # list[re.Pattern]
     self._reply_prefix          # Optional[str]
 
-Class attributes ``MAX_MESSAGE_LENGTH`` and ``DEFAULT_REPLY_PREFIX`` are
-defined on the mixin and may be overridden per-adapter if needed.
+类属性 ``MAX_MESSAGE_LENGTH`` 和 ``DEFAULT_REPLY_PREFIX`` 定义在 mixin
+上，如果需要可在各适配器中覆盖。
 """
 
 from __future__ import annotations
@@ -42,32 +42,31 @@ logger = logging.getLogger(__name__)
 
 
 class WhatsAppBehaviorMixin:
-    """Shared behavior for all WhatsApp adapters (Baileys + Cloud API).
+    """所有 WhatsApp 适配器（Baileys + Cloud API）的共享行为。
 
-    See module docstring for the attribute contract the host adapter must
-    satisfy. This mixin owns no state of its own — every value it touches
-    is either a class attribute or set by the adapter's ``__init__``.
+    属性契约见模块 docstring —— 宿主适配器必须满足。该 mixin 自身不持有
+    任何状态 —— 它访问的每个值要么是类属性，要么由适配器的 ``__init__``
+    设置。
     """
 
-    # WhatsApp message limits — practical UX limit, not protocol max.
-    # WhatsApp allows ~65K but long messages are unreadable on mobile.
+    # WhatsApp 消息长度上限 —— 实际的 UX 限制，而非协议最大值。
+    # WhatsApp 允许约 65K，但长消息在移动端不可读。
     MAX_MESSAGE_LENGTH: int = 4096
-    supports_code_blocks = True  # WhatsApp renders fenced code blocks (monospace)
+    supports_code_blocks = True  # WhatsApp 渲染围栏代码块（monospace）
 
     DEFAULT_REPLY_PREFIX: str = "⚕ *Hermes Agent*\n────────────\n"
 
     @property
     def enforces_own_access_policy(self) -> bool:
-        """WhatsApp gates DM/group access at intake via dm_policy/group_policy."""
+        """WhatsApp 在入口处通过 dm_policy/group_policy 对 DM/群组访问进行门控。"""
         return True
 
     # ------------------------------------------------------------------ config
     def _effective_reply_prefix(self) -> str:
-        """Return the prefix to add to outgoing replies in self-chat mode.
+        """返回在 self-chat 模式下要附加到出站回复的前缀。
 
-        Subclasses that don't have a self-chat concept (the Cloud API
-        adapter) can override this to always return ``""`` or apply a
-        different policy.
+        没有 self-chat 概念的子类（Cloud API 适配器）可覆盖此方法，
+        使其始终返回 ``""`` 或应用不同的策略。
         """
         whatsapp_mode = os.getenv("WHATSAPP_MODE", "self-chat")
         if whatsapp_mode != "self-chat":
@@ -80,10 +79,10 @@ class WhatsAppBehaviorMixin:
         return self.DEFAULT_REPLY_PREFIX
 
     def _outgoing_chunk_limit(self) -> int:
-        """Reserve room for the reply prefix so the final message fits."""
+        """为回复前缀预留空间，使最终消息能完整放入。"""
         prefix_len = len(self._effective_reply_prefix())
-        # Keep enough space for truncate_message's pagination indicator and
-        # code-fence repair even if a user configures a very long prefix.
+        # 即使配置了很长的前缀，也要为 truncate_message 的分页指示符和
+        # 代码围栏修复保留足够空间。
         return max(1024, self.MAX_MESSAGE_LENGTH - prefix_len)
 
     def _whatsapp_require_mention(self) -> bool:
@@ -109,7 +108,7 @@ class WhatsAppBehaviorMixin:
 
     @staticmethod
     def _coerce_allow_list(raw) -> set[str]:
-        """Parse allow_from / group_allow_from from config or env var."""
+        """从 config 或环境变量解析 allow_from / group_allow_from。"""
         if raw is None:
             return set()
         if isinstance(raw, list):
@@ -128,41 +127,41 @@ class WhatsAppBehaviorMixin:
 
     @staticmethod
     def _is_broadcast_chat(chat_id: str) -> bool:
-        """True for WhatsApp pseudo-chats that aren't real conversations.
+        """针对 WhatsApp 中并非真实会话的伪聊天返回 True。
 
-        Covers Status updates (Stories) and Channel/Newsletter broadcasts.
-        These show up as inbound messages on Baileys but the agent should
-        never reply — answering a Story update spams the contact's status
-        feed, and Channel posts aren't addressable in the first place.
+        覆盖 Status 更新（Stories）和 Channel/Newsletter 广播。
+        它们在 Baileys 上显示为入站消息，但 agent 永远不应回复 ——
+        回复 Story 更新会向联系人的状态 feed 发送垃圾信息，
+        而 Channel 帖子本身也不可寻址。
         """
         if not chat_id:
             return False
         cid = chat_id.strip().lower()
         if cid == "status@broadcast":
             return True
-        # @broadcast suffix covers status@broadcast plus any future
-        # broadcast-list variants. @newsletter is the Channel JID suffix.
+        # @broadcast 后缀覆盖 status@broadcast 以及任何未来的
+        # 广播列表变体。@newsletter 是 Channel 的 JID 后缀。
         if cid.endswith("@broadcast") or cid.endswith("@newsletter"):
             return True
         return False
 
     # ------------------------------------------------------------------ gating
     def _is_dm_allowed(self, sender_id: str) -> bool:
-        """Check whether a DM from the given sender should be processed."""
+        """检查是否应处理来自指定发送者的 DM。"""
         if self._dm_policy == "disabled":
             return False
         if self._dm_policy == "allowlist":
             return sender_id in self._allow_from
-        # "open" — all DMs allowed
+        # "open" —— 允许所有 DM
         return True
 
     def _is_group_allowed(self, chat_id: str) -> bool:
-        """Check whether a group chat should be processed."""
+        """检查是否应处理某个群组会话。"""
         if self._group_policy == "disabled":
             return False
         if self._group_policy == "allowlist":
             return chat_id in self._group_allow_from
-        # "open" — all groups allowed
+        # "open" —— 允许所有群组
         return True
 
     def _compile_mention_patterns(self):
@@ -266,10 +265,9 @@ class WhatsAppBehaviorMixin:
 
     def _should_process_message(self, data: Dict[str, Any]) -> bool:
         chat_id_raw = str(data.get("chatId") or "")
-        # WhatsApp uses pseudo-chats for Status updates (Stories) and
-        # Channel/Newsletter broadcasts. These are not real conversations
-        # and the agent should never reply to them — even in self-chat mode
-        # where the bridge may surface them as "fromMe" events.
+        # WhatsApp 用伪聊天来承载 Status 更新（Stories）和
+        # Channel/Newsletter 广播。这些不是真实会话，agent 永远不应回复 ——
+        # 即使在 self-chat 模式下 bridge 可能将它们呈现为 "fromMe" 事件。
         if self._is_broadcast_chat(chat_id_raw):
             return False
         is_group = data.get("isGroup", False)
@@ -281,9 +279,9 @@ class WhatsAppBehaviorMixin:
             sender_id = str(data.get("senderId") or data.get("from") or "")
             if not self._is_dm_allowed(sender_id):
                 return False
-            # DMs that pass the policy gate are always processed
+            # 通过策略门控的 DM 总是被处理
             return True
-        # Group messages: check mention / free-response settings
+        # 群组消息：检查 mention / free-response 设置
         chat_id = str(data.get("chatId") or "")
         if chat_id in self._whatsapp_free_response_chats():
             return True
@@ -300,19 +298,19 @@ class WhatsAppBehaviorMixin:
 
     # ------------------------------------------------------------------ formatting
     def format_message(self, content: str) -> str:
-        """Convert standard markdown to WhatsApp-compatible formatting.
+        """将标准 Markdown 转换为 WhatsApp 兼容的格式。
 
-        WhatsApp supports: *bold*, _italic_, ~strikethrough~, ```code```,
-        and monospaced `inline`. Standard markdown uses different syntax
-        for bold/italic/strikethrough, so we convert here.
+        WhatsApp 支持：*bold*、_italic_、~strikethrough~、```code```，
+        以及 monospace 的 `inline`。标准 Markdown 对
+        bold/italic/strikethrough 使用不同的语法，因此在此转换。
 
-        Code blocks (``` fenced) and inline code (`) are protected from
-        conversion via placeholder substitution.
+        代码块（``` 围栏）和 inline code（`）通过占位符替换
+        免受转换影响。
         """
         if not content:
             return content
 
-        # --- 1. Protect fenced code blocks from formatting changes ---
+        # --- 1. 保护围栏代码块免受格式化改动 ---
         _FENCE_PH = "\x00FENCE"
         fences: list[str] = []
 
@@ -322,7 +320,7 @@ class WhatsAppBehaviorMixin:
 
         result = re.sub(r"```[\s\S]*?```", _save_fence, content)
 
-        # --- 2. Protect inline code ---
+        # --- 2. 保护 inline code ---
         _CODE_PH = "\x00CODE"
         codes: list[str] = []
 
@@ -332,19 +330,19 @@ class WhatsAppBehaviorMixin:
 
         result = re.sub(r"`[^`\n]+`", _save_code, result)
 
-        # --- 3. Convert markdown formatting to WhatsApp syntax ---
-        # Bold: **text** or __text__ → *text*
+        # --- 3. 将 Markdown 格式转换为 WhatsApp 语法 ---
+        # Bold：**text** 或 __text__ → *text*
         result = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result)
         result = re.sub(r"__(.+?)__", r"*\1*", result)
-        # Strikethrough: ~~text~~ → ~text~
+        # Strikethrough：~~text~~ → ~text~
         result = re.sub(r"~~(.+?)~~", r"~\1~", result)
-        # Italic: *text* is already WhatsApp italic — leave as-is
-        # _text_ is already WhatsApp italic — leave as-is
+        # Italic：*text* 已是 WhatsApp italic —— 保持不变
+        # _text_ 已是 WhatsApp italic —— 保持不变
 
-        # --- 4. Convert markdown headers to bold text ---
-        # # Header → *Header*. Strip any *...* wrapping already produced
-        # by step 3 (e.g. "# **Title**" → "*Title*", not "**Title**",
-        # which WhatsApp renders with literal asterisks).
+        # --- 4. 将 Markdown 标题转换为 bold 文本 ---
+        # # Header → *Header*。去掉第 3 步已生成的 *...* 包裹
+        # （例如 "# **Title**" → "*Title*"，而不是 "**Title**"，
+        # 后者 WhatsApp 会渲染出字面的星号）。
         def _header_to_bold(m: re.Match) -> str:
             inner = m.group(1).strip()
             while len(inner) > 1 and inner.startswith("*") and inner.endswith("*"):
@@ -355,10 +353,10 @@ class WhatsAppBehaviorMixin:
             r"^#{1,6}\s+(.+)$", _header_to_bold, result, flags=re.MULTILINE
         )
 
-        # --- 5. Convert markdown links: [text](url) → text (url) ---
+        # --- 5. 转换 Markdown 链接：[text](url) → text (url) ---
         result = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", result)
 
-        # --- 6. Restore protected sections ---
+        # --- 6. 恢复被保护的区段 ---
         for i, fence in enumerate(fences):
             result = result.replace(f"{_FENCE_PH}{i}\x00", fence)
         for i, code in enumerate(codes):
@@ -368,30 +366,30 @@ class WhatsAppBehaviorMixin:
 
 
 # ---------------------------------------------------------------------------
-# Shared bridge directory resolution for CLI and adapter
+# CLI 和适配器共享的 bridge 目录解析
 # ---------------------------------------------------------------------------
 
 def resolve_whatsapp_bridge_dir() -> Path:
-    """Resolve the WhatsApp bridge directory, mirroring to HERMES_HOME if needed.
+    """解析 WhatsApp bridge 目录，必要时镜像到 HERMES_HOME。
 
-    When the install tree is read-only (e.g., Docker /opt/hermes), this function
-    mirrors the bridge source to a writable HERMES_HOME location and returns that
-    path. This ensures npm install works in Docker environments.
+    当安装目录只读时（例如 Docker /opt/hermes），此函数将 bridge 源码
+    镜像到一个可写的 HERMES_HOME 位置并返回该路径。
+    这确保 npm install 能在 Docker 环境中正常工作。
 
-    Returns the resolved bridge directory path.
+    返回解析后的 bridge 目录路径。
     """
     import shutil
     from pathlib import Path as _Path
 
-    # Default location in install tree (may be read-only)
+    # 安装目录中的默认位置（可能只读）
     from hermes_constants import get_hermes_home
     install_bridge = _Path(__file__).resolve().parents[2] / "scripts" / "whatsapp-bridge"
 
-    # Try HERMES_HOME location first
+    # 优先尝试 HERMES_HOME 位置
     hermes_home = get_hermes_home()
     hermes_home_bridge = hermes_home / "scripts" / "whatsapp-bridge"
 
-    # Check if install dir is writable
+    # 检查安装目录是否可写
     try:
         test_file = install_bridge / ".write_test"
         test_file.touch()
@@ -403,11 +401,11 @@ def resolve_whatsapp_bridge_dir() -> Path:
     if install_writable:
         return install_bridge
 
-    # Install dir is read-only, mirror to HERMES_HOME if needed
+    # 安装目录只读，必要时镜像到 HERMES_HOME
     if hermes_home_bridge.exists():
         return hermes_home_bridge
 
-    # Mirror the bridge source to HERMES_HOME
+    # 将 bridge 源码镜像到 HERMES_HOME
     try:
         hermes_home_bridge.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(

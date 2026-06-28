@@ -1,3 +1,3 @@
-# Template
+# 模板
 
-Template and style files for CoLM 2025
+CoLM 2025 的模板与样式文件。

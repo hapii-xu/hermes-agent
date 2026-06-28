@@ -1,41 +1,41 @@
 # funnel
 
-Narrowing stages showing conversion, filtering, or refinement process.
+逐层收窄的阶段，展示转化、筛选或精炼过程。
 
-## Structure
+## 结构
 
-- Wide top (input/start)
-- Narrow bottom (output/result)
-- Horizontal layers for stages
-- Progressive narrowing
-- 3-6 stages typically
+- 顶部宽（输入/起点）
+- 底部窄（输出/结果）
+- 水平分层表示各阶段
+- 逐层收窄
+- 通常 3-6 个阶段
 
-## Best For
+## 最适用于
 
-- Sales/marketing funnels
-- Conversion processes
-- Filtering/selection
-- Recruitment pipelines
-- Decision processes
+- 销售/营销漏斗
+- 转化流程
+- 筛选/选择
+- 招聘管道
+- 决策流程
 
-## Visual Elements
+## 视觉元素
 
-- Funnel shape clearly defined
-- Distinct colors per stage
-- Width indicates volume/quantity
-- Stage icons or symbols
-- Numbers/percentages per stage
+- 漏斗形状清晰
+- 各阶段颜色区分
+- 宽度表示数量/体量
+- 阶段图标或符号
+- 各阶段标注数字/百分比
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Stage names inside or beside
-- Metrics/numbers per stage
-- Input label at top
-- Output label at bottom
+- 标题置于顶部
+- 阶段名称置于内部或旁侧
+- 各阶段标注指标/数字
+- 顶部标注输入标签
+- 底部标注输出标签
 
-## Recommended Pairings
+## 推荐搭配
 
-- `corporate-memphis`: Marketing funnels
-- `isometric-3d`: Technical pipelines
-- `cartoon-hand-drawn`: Educational funnels
+- `corporate-memphis`：营销漏斗
+- `isometric-3d`：技术管道
+- `cartoon-hand-drawn`：教学型漏斗

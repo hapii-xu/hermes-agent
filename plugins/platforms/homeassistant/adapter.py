@@ -1,15 +1,14 @@
 """
-Home Assistant platform adapter.
+Home Assistant 平台适配器。
 
-Connects to the HA WebSocket API for real-time event monitoring.
-State-change events are converted to MessageEvent objects and forwarded
-to the agent for processing.  Outbound messages are delivered as HA
-persistent notifications.
+通过 HA WebSocket API 进行实时事件监控。
+状态变更事件会被转换为 MessageEvent 对象并转发
+给 agent 处理。出站消息以 HA 持久化通知的形式发送。
 
-Requires:
-- aiohttp (already in messaging extras)
-- HASS_TOKEN env var (Long-Lived Access Token)
-- HASS_URL env var (default: http://homeassistant.local:8123)
+依赖：
+- aiohttp（已在 messaging extras 中）
+- HASS_TOKEN 环境变量（长期访问令牌）
+- HASS_URL 环境变量（默认值：http://homeassistant.local:8123）
 """
 
 import asyncio
@@ -40,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 def check_ha_requirements() -> bool:
-    """Check if Home Assistant dependencies are available and configured."""
+    """检查 Home Assistant 依赖是否可用且已配置。"""
     if not AIOHTTP_AVAILABLE:
         return False
     if not os.getenv("HASS_TOKEN"):
@@ -50,47 +49,46 @@ def check_ha_requirements() -> bool:
 
 class HomeAssistantAdapter(BasePlatformAdapter):
     """
-    Home Assistant WebSocket adapter.
+    Home Assistant WebSocket 适配器。
 
-    Subscribes to ``state_changed`` events and forwards them as
-    MessageEvent objects.  Supports domain/entity filtering and
-    per-entity cooldowns to avoid event floods.
+    订阅 ``state_changed`` 事件并将其作为 MessageEvent 对象转发。
+    支持域/实体过滤和每个实体的冷却机制以避免事件洪泛。
     """
 
     MAX_MESSAGE_LENGTH = 4096
 
-    # Reconnection backoff schedule (seconds)
+    # 重连退避时间表（秒）
     _BACKOFF_STEPS = [5, 10, 30, 60]
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.HOMEASSISTANT)
 
-        # Connection state
+        # 连接状态
         self._session: Optional["aiohttp.ClientSession"] = None
         self._ws: Optional["aiohttp.ClientWebSocketResponse"] = None
         self._rest_session: Optional["aiohttp.ClientSession"] = None
         self._listen_task: Optional[asyncio.Task] = None
         self._msg_id: int = 0
 
-        # Configuration from extra
+        # 来自 extra 的配置
         extra = config.extra or {}
         token = config.token or os.getenv("HASS_TOKEN", "")
         url = extra.get("url") or os.getenv("HASS_URL", "http://homeassistant.local:8123")
         self._hass_url: str = url.rstrip("/")
         self._hass_token: str = token
 
-        # Event filtering
+        # 事件过滤
         self._watch_domains: Set[str] = set(extra.get("watch_domains", []))
         self._watch_entities: Set[str] = set(extra.get("watch_entities", []))
         self._ignore_entities: Set[str] = set(extra.get("ignore_entities", []))
         self._watch_all: bool = bool(extra.get("watch_all", False))
         self._cooldown_seconds: int = int(extra.get("cooldown_seconds", 30))
 
-        # Cooldown tracking: entity_id -> last_event_timestamp
+        # 冷却追踪：entity_id -> last_event_timestamp
         self._last_event_time: Dict[str, float] = {}
 
     def _next_id(self) -> int:
-        """Return the next WebSocket message ID."""
+        """返回下一个 WebSocket 消息 ID。"""
         self._msg_id += 1
         return self._msg_id
 

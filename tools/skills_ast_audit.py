@@ -1,13 +1,13 @@
 """
-AST-level deep audit for skill Python files — opt-in diagnostic, not a security gate.
+针对 skill Python 文件的 AST 级深度审计 —— 可选诊断工具，而非安全门禁。
 
-Per SECURITY.md §2.4, Skills Guard is in-process heuristics ("useful — not
-boundaries"). This module is a separate opt-in diagnostic that flags dynamic
-import / dynamic attribute access patterns operators may want to eyeball when
-reviewing third-party skill code. Every pattern flagged here has legitimate
-uses; findings are hints for human review, not verdicts.
+依据 SECURITY.md §2.4，Skills Guard 是进程内启发式判断（"有用 —— 但
+不是边界"）。本模块是一个独立的可选诊断工具，用于标记在评审第三方
+skill 代码时运维方可能想人工审视的动态导入 / 动态属性访问模式。
+此处标记的每个模式都有其合法用途；产出是供人工评审的提示，
+而非定论。
 
-CLI: ``hermes skills audit --deep``
+CLI：``hermes skills audit --deep``
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import ast
 from pathlib import Path
 from typing import List, Tuple
 
-# (file, line, pattern_id, description)
+# (文件、行号、模式 ID、描述)
 Finding = Tuple[str, int, str, str]
 
 _IGNORED_DIRS = {"__pycache__", ".venv", "venv", "node_modules"}
@@ -37,12 +37,12 @@ def _scan_source(content: str, rel_path: str) -> List[Finding]:
             if isinstance(f, ast.Attribute) and f.attr == "import_module":
                 findings.append((rel_path, node.lineno, "dynamic_import",
                                  "importlib.import_module() — loads arbitrary modules at runtime"))
-            # __import__(<computed>)
+            # __import__(<计算值>)
             elif isinstance(f, ast.Name) and f.id == "__import__":
                 if node.args and not isinstance(node.args[0], ast.Constant):
                     findings.append((rel_path, node.lineno, "dynamic_import_computed",
                                      "__import__ with non-literal module name"))
-            # getattr(obj, <computed>)
+            # getattr(obj, <计算值>)
             elif isinstance(f, ast.Name) and f.id == "getattr":
                 if len(node.args) >= 2 and not isinstance(node.args[1], ast.Constant):
                     findings.append((rel_path, node.lineno, "dynamic_getattr",
@@ -50,7 +50,7 @@ def _scan_source(content: str, rel_path: str) -> List[Finding]:
             self.generic_visit(node)
 
         def visit_Subscript(self, node):
-            # obj.__dict__[<computed>]
+            # obj.__dict__[<计算值>]
             if (isinstance(node.value, ast.Attribute)
                     and node.value.attr == "__dict__"
                     and not isinstance(node.slice, ast.Constant)):
@@ -75,17 +75,17 @@ def _scan_source(content: str, rel_path: str) -> List[Finding]:
     try:
         V().visit(tree)
     except (RecursionError, ValueError, RuntimeError):
-        # Hostile/pathological input: return what we collected so far.
+        # 恶意/病态输入：返回目前已收集到的结果。
         pass
 
     return findings
 
 
 def ast_scan_path(path: Path) -> List[Finding]:
-    """Scan a single .py file or recursively scan all .py under a directory.
+    """扫描单个 .py 文件，或递归扫描目录下所有 .py 文件。
 
-    Returns a list of (file, line, pattern_id, description) tuples. Empty for
-    non-Python paths, missing paths, or paths with no matching patterns.
+    返回 (文件、行号、模式 ID、描述) 元组的列表。对于非 Python
+    路径、缺失路径或没有匹配模式的路径，返回空列表。
     """
     if path.is_file():
         if path.suffix.lower() != ".py":
@@ -116,7 +116,7 @@ def ast_scan_path(path: Path) -> List[Finding]:
 
 
 def format_ast_report(findings: List[Finding], skill_name: str = "") -> str:
-    """Plain-text report (Rich-markup-free) grouped by file."""
+    """纯文本报告（不含 Rich 标记），按文件分组。"""
     header = f"AST deep scan: {skill_name}" if skill_name else "AST deep scan"
     if not findings:
         return f"{header}\n  No dynamic import/access patterns detected."

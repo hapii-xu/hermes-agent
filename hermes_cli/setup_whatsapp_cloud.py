@@ -1,35 +1,35 @@
 """
-Interactive setup wizard for the WhatsApp Cloud API adapter.
+WhatsApp Cloud API 适配器的交互式设置向导。
 
-Entry point: ``hermes whatsapp-cloud`` (dispatched from
-``cmd_whatsapp_cloud`` in ``hermes_cli/main.py``).
+入口点：``hermes whatsapp-cloud``（从
+``hermes_cli/main.py`` 中的 ``cmd_whatsapp_cloud`` 分发）。
 
-Walks the user through the 6 credentials Meta requires + recipient
-allowlist, auto-generates the verify token, and prints exact follow-up
-instructions for the parts that can't happen inside the wizard process
-(starting cloudflared, starting the gateway, configuring Meta's
-webhook dashboard, adding their phone to the recipient list).
+引导用户完成 Meta 要求的 6 项凭据 + 收件人
+白名单，自动生成 verify token，并打印精确的后续
+操作说明，说明哪些步骤无法在向导进程内完成
+（启动 cloudflared、启动 gateway、配置 Meta 的
+webhook 仪表盘、将手机号添加到收件人列表）。
 
-Heavy emphasis on field-shape validation to catch the most common
-configuration mistakes:
+重点强调字段格式验证，以捕获最常见的
+配置错误：
 
-- Putting the actual phone number in ``WHATSAPP_CLOUD_PHONE_NUMBER_ID``
-  (the field expects Meta's 15-17 digit internal ID, not a phone number).
-  This is the #1 trap — caught us during Phase 3 live testing.
-- Pasting tokens with trailing whitespace.
-- Pasting an OpenAI / Slack / GitHub key by mistake.
-- Confusing App ID with WABA ID with Phone Number ID.
+- 在 ``WHATSAPP_CLOUD_PHONE_NUMBER_ID`` 中填入了实际手机号
+  （该字段需要 Meta 的 15-17 位内部 ID，而非电话号码）。
+  这是第一个常见陷阱——在阶段 3 的实时测试中坑过我们。
+- 粘贴 token 时末尾带有空白字符。
+- 误粘贴了 OpenAI / Slack / GitHub 的 key。
+- 混淆了 App ID、WABA ID 和 Phone Number ID。
 
-Each prompt has contextual help showing exactly where to find the value
-in Meta's App Dashboard, with a one-line description and the field's
-expected shape ("starts with EAA", "15-17 digits", "32 hex chars", etc.).
+每个提示都有上下文帮助，精确说明在 Meta 的 App Dashboard 中
+哪里可以找到该值，附带一行描述和字段的
+预期格式（"以 EAA 开头"、"15-17 位数字"、"32 位十六进制字符" 等）。
 
-The wizard intentionally does NOT smoke-test the webhook itself — the
-Hermes gateway and the cloudflared tunnel both run in separate
-processes the user starts AFTER this wizard exits, so any in-wizard
-probe would fail by design. Instead the final SETUP COMPLETE block
-prints the exact curl command the user can run from a third terminal
-to verify the loop end-to-end once everything's running.
+该向导故意不对 webhook 本身进行冒烟测试——
+Hermes gateway 和 cloudflared 隧道都在独立的进程中运行，
+用户在本向导退出后才启动它们，因此向导内的任何
+探测按设计都会失败。相反，最终的 SETUP COMPLETE 区块
+打印了精确的 curl 命令，用户可以在第三个终端中运行，
+以便在所有服务运行后端到端地验证整个链路。
 """
 
 from __future__ import annotations
@@ -41,21 +41,21 @@ from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# Field-shape validators
+# 字段格式验证器
 # ---------------------------------------------------------------------------
 #
-# Each validator returns (ok, reason_if_not_ok). The wizard uses them to
-# reject obviously-malformed input before saving — saves users a round
-# trip with Meta's 401 / 400 errors.
+# 每个验证器返回 (ok, reason_if_not_ok)。向导使用它们在
+# 保存前拒绝明显格式错误的输入——避免用户被 Meta 的
+# 401 / 400 错误来回折腾。
 
 
 def _validate_phone_number_id(value: str) -> tuple[bool, Optional[str]]:
-    """Phone Number ID is a 15-17 digit numeric ID assigned by Meta.
+    """Phone Number ID 是 Meta 分配的 15-17 位数字 ID。
 
-    It's NOT a phone number. The #1 setup mistake is pasting the actual
-    phone number (e.g. ``15556422442``) into this field — that's only
-    10-11 digits and gets rejected by Graph as "Object with ID does
-    not exist."
+    它不是电话号码。最常见的设置错误是将实际的
+    电话号码（例如 ``15556422442``）粘贴到此字段——那只有
+    10-11 位数字，会被 Graph API 拒绝并返回 "Object with ID does
+    not exist"。
     """
     if not value:
         return False, "Phone Number ID is required"

@@ -1,12 +1,10 @@
-"""Hermes execution environment backends.
+"""Hermes 执行环境后端。
 
-Each backend provides the same interface (BaseEnvironment ABC) for running
-shell commands in a specific execution context: local, Docker, SSH,
-Singularity, Modal, or Daytona. (Modal additionally has direct and
-Nous-managed modes, selected via terminal.modal_mode.)
+每个后端都提供相同的接口（BaseEnvironment 抽象类），用于在特定的执行上下文中运行
+shell 命令：本地、Docker、SSH、Singularity、Modal 或 Daytona。（Modal 还额外支持
+直接模式和 Nous 托管模式，通过 terminal.modal_mode 选择。）
 
-The terminal_tool.py factory (_create_environment) selects the backend
-based on the TERMINAL_ENV configuration.
+terminal_tool.py 工厂函数（_create_environment）根据 TERMINAL_ENV 配置选择后端。
 """
 
 from tools.environments.base import BaseEnvironment

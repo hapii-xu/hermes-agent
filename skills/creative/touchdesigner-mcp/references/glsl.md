@@ -1,15 +1,15 @@
-# GLSL Reference
+# GLSL 参考
 
-## Uniforms
+## Uniform 变量
 
 ```
 TouchDesigner          GLSL
 ─────────────────────────────
 vec0name = 'uTime'  →  uniform float uTime;
-vec0valuex = 1.0    →  uTime value
+vec0valuex = 1.0    →  uTime 的值
 ```
 
-### Pass Time
+### 传递时间
 
 ```python
 glsl_op.par.vec0name = 'uTime'
@@ -22,62 +22,62 @@ uniform float uTime;
 void main() { float t = uTime * 0.5; }
 ```
 
-### Built-in Uniforms (TOP)
+### 内置 Uniform（TOP）
 
 ```glsl
-// Output resolution (always available)
+// 输出分辨率（始终可用）
 vec2 res = uTDOutputInfo.res.zw;
 
-// Input texture (only when inputs connected)
+// 输入纹理（仅在连入了输入时可用）
 vec2 inputRes = uTD2DInfos[0].res.zw;
 vec4 color = texture(sTD2DInputs[0], vUV.st);
 
-// UV coordinates
-vUV.st  // 0-1 texture coords
+// UV 坐标
+vUV.st  // 0-1 纹理坐标
 ```
 
-**IMPORTANT:** `uTD2DInfos` requires input textures. For standalone shaders use `uTDOutputInfo`.
+**重要：** `uTD2DInfos` 需要输入纹理。对于独立着色器请使用 `uTDOutputInfo`。
 
-## Built-in Utility Functions
+## 内置工具函数
 
 ```glsl
-// Noise
+// 噪声
 float TDPerlinNoise(vec2/vec3/vec4 v);
 float TDSimplexNoise(vec2/vec3/vec4 v);
 
-// Color conversion
+// 颜色转换
 vec3 TDHSVToRGB(vec3 c);
 vec3 TDRGBToHSV(vec3 c);
 
-// Matrix transforms
+// 矩阵变换
 mat4 TDTranslate(float x, float y, float z);
 mat3 TDRotateX/Y/Z(float radians);
 mat3 TDRotateOnAxis(float radians, vec3 axis);
 mat3 TDScale(float x, float y, float z);
 mat3 TDRotateToVector(vec3 forward, vec3 up);
-mat3 TDCreateRotMatrix(vec3 from, vec3 to);  // vectors must be normalized
+mat3 TDCreateRotMatrix(vec3 from, vec3 to);  // 向量必须归一化
 
-// Resolution struct
+// 分辨率结构体
 struct TDTexInfo {
   vec4 res;   // (1/width, 1/height, width, height)
   vec4 depth;
 };
 
-// Output (always use this — handles sRGB correctly)
+// 输出（始终使用这个——能正确处理 sRGB）
 fragColor = TDOutputSwizzle(color);
 
-// Instancing (MAT only)
+// 实例化（仅 MAT）
 int TDInstanceID();
 ```
 
 ## glslTOP
 
-Docked DATs created automatically:
-- `glsl1_pixel` — Pixel shader
-- `glsl1_compute` — Compute shader
-- `glsl1_info` — Compile info
+自动创建的停靠 DAT：
+- `glsl1_pixel` — 像素着色器
+- `glsl1_compute` — 计算着色器
+- `glsl1_info` — 编译信息
 
-### Pixel Shader Template
+### 像素着色器模板
 
 ```glsl
 out vec4 fragColor;
@@ -87,7 +87,7 @@ void main() {
 }
 ```
 
-### Compute Shader Template
+### 计算着色器模板
 
 ```glsl
 layout (local_size_x = 8, local_size_y = 8) in;
@@ -97,25 +97,25 @@ void main() {
 }
 ```
 
-### Update Shader
+### 更新着色器
 
 ```python
 op('/project1/glsl1_pixel').text = shader_code
 op('/project1/glsl1').cook(force=True)
-# Check errors:
+# 检查错误：
 print(op('/project1/glsl1_info').text)
 ```
 
 ## glslMAT
 
-Docked DATs:
-- `glslmat1_vertex` — Vertex shader (param: `vdat`)
-- `glslmat1_pixel` — Pixel shader (param: `pdat`)
-- `glslmat1_info` — Compile info
+停靠 DAT：
+- `glslmat1_vertex` — 顶点着色器（参数：`vdat`）
+- `glslmat1_pixel` — 像素着色器（参数：`pdat`）
+- `glslmat1_info` — 编译信息
 
-Note: MAT uses `vdat`/`pdat`, TOP uses `vertexdat`/`pixeldat`.
+注意：MAT 使用 `vdat`/`pdat`，TOP 使用 `vertexdat`/`pixeldat`。
 
-### Vertex Shader Template
+### 顶点着色器模板
 
 ```glsl
 uniform float uTime;
@@ -127,9 +127,9 @@ void main() {
 }
 ```
 
-## Bayer 8x8 Dither Matrix
+## Bayer 8x8 抖动矩阵
 
-Reusable ordered dither function for retro/print aesthetics:
+可复用的有序抖动函数，用于复古/印刷风格：
 
 ```glsl
 float bayer8(vec2 pos) {
@@ -146,6 +146,6 @@ float bayer8(vec2 pos) {
 
 ## glslPOP / glsladvancedPOP / glslcopyPOP
 
-All use compute shaders. Docked DATs follow naming convention:
+全部使用计算着色器。停靠 DAT 遵循命名约定：
 - `glsl1_compute` / `glsladv1_compute`
 - `glslcopy1_ptCompute` / `glslcopy1_vertCompute` / `glslcopy1_primCompute`

@@ -1,44 +1,44 @@
-# craft-handmade (DEFAULT)
+# craft-handmade（默认）
 
-Hand-drawn and paper craft aesthetic with warm, organic feel.
+手绘与纸艺美学，温暖、有机的质感。
 
-## Color Palette
+## 配色
 
-- Primary: Warm pastels, soft saturated colors, craft paper tones
-- Background: Light cream (#FFF8F0), textured paper (#F5F0E6)
-- Accents: Bold highlights, construction paper colors
+- 主色：温暖粉彩、柔和饱和色、手工纸色调
+- 背景：浅奶油色 (#FFF8F0)、纹理纸 (#F5F0E6)
+- 点缀：大胆高亮、彩纸颜色
 
-## Variants
+## 变体
 
-| Variant | Focus | Visual Emphasis |
+| 变体 | 重点 | 视觉强调 |
 |---------|-------|-----------------|
-| **Hand-drawn** | Cartoon illustration | Simple icons, slightly imperfect lines |
-| **Paper-cutout** | Layered paper craft | Drop shadows, torn edges, texture |
+| **手绘** | 卡通插画 | 简单图标、略不完美的线条 |
+| **剪纸** | 多层纸艺 | 投影、撕边、纹理 |
 
-## Visual Elements
+## 视觉元素
 
-- Hand-drawn or cut-paper quality
-- Organic, slightly imperfect shapes
-- Layered depth with shadows (paper variant)
-- Simple cartoon elements and icons
-- Character illustrations (people, personalities in cartoon form)
-- Ample whitespace, clean composition
-- Keywords and core concepts highlighted
-- **Strictly hand-drawn—no realistic or photographic elements**
+- 手绘或剪纸质感
+- 有机、略不完美的形状
+- 阴影营造分层深度（剪纸变体）
+- 简单的卡通元素和图标
+- 人物插画（人、以卡通形式呈现的个性）
+- 充足留白，干净构图
+- 关键词和核心概念高亮
+- **严格手绘——不含写实或摄影元素**
 
-## Style Enforcement
+## 风格执行
 
-- All imagery must maintain cartoon/illustrated aesthetic
-- Replace real photos or realistic figures with hand-drawn equivalents
-- Maintain consistent line weight and illustration style throughout
+- 所有图像必须保持卡通/插画美学
+- 用手绘等价物替换真实照片或写实人物
+- 全程保持一致的线宽和插画风格
 
-## Typography
+## 字体排印
 
-- Hand-drawn or casual font style
-- Clear, readable labels
-- Keywords emphasized with larger/bolder text
-- Cut-out letter style for paper variant
+- 手绘或随性字体风格
+- 清晰、易读的标签
+- 关键词用更大/更粗的文字强调
+- 剪纸变体用剪切字母风格
 
-## Best For
+## 最适用于
 
-Educational content, general explanations, friendly infographics, children's content, playful hierarchies
+教育内容、通用讲解、友好型信息图、儿童内容、活泼的层级结构

@@ -1,9 +1,9 @@
-"""Shell completion script generation for hermes CLI.
+"""Shell 补全脚本生成，用于 hermes CLI。
 
-Walks the live argparse parser tree to generate accurate, always-up-to-date
-completion scripts — no hardcoded subcommand lists, no extra dependencies.
+遍历活跃的 argparse 解析器树以生成准确、始终保持最新的
+补全脚本 —— 无硬编码的子命令列表，无额外依赖。
 
-Supports bash, zsh, and fish.
+支持 bash、zsh 和 fish。
 """
 
 from __future__ import annotations
@@ -13,18 +13,18 @@ from typing import Any
 
 
 def _walk(parser: argparse.ArgumentParser) -> dict[str, Any]:
-    """Recursively extract subcommands and flags from a parser.
+    """递归地从解析器中提取子命令和标志。
 
-    Uses _SubParsersAction._choices_actions to get canonical names (no aliases)
-    along with their help text.
+    使用 _SubParsersAction._choices_actions 获取规范名称（不含别名）
+    及其帮助文本。
     """
     flags: list[str] = []
     subcommands: dict[str, Any] = {}
 
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
-            # _choices_actions has one entry per canonical name; aliases are
-            # omitted, which keeps completion lists clean.
+            # _choices_actions 每个规范名称只有一个条目；别名被
+            # 省略，这使得补全列表保持干净。
             seen: set[str] = set()
             for pseudo in action._choices_actions:
                 name = pseudo.dest
@@ -44,12 +44,12 @@ def _walk(parser: argparse.ArgumentParser) -> dict[str, Any]:
 
 
 def _clean(text: str, maxlen: int = 60) -> str:
-    """Strip shell-unsafe characters and truncate."""
+    """去除 shell 不安全的字符并截断。"""
     return text.replace("'", "").replace('"', "").replace("\\", "")[:maxlen]
 
 
 # ---------------------------------------------------------------------------
-# Bash
+# Bash 补全
 # ---------------------------------------------------------------------------
 
 def generate_bash(parser: argparse.ArgumentParser) -> str:
@@ -60,8 +60,8 @@ def generate_bash(parser: argparse.ArgumentParser) -> str:
     for cmd in sorted(tree["subcommands"]):
         info = tree["subcommands"][cmd]
         if cmd == "profile" and info["subcommands"]:
-            # Profile subcommand: complete actions, then profile names for
-            # actions that accept a profile argument.
+            # Profile 子命令：补全 actions，然后补全接受
+            # profile 参数的 actions 对应的 profile 名称。
             subcmds = " ".join(sorted(info["subcommands"]))
             profile_actions = "use delete show alias rename export"
             cases.append(
@@ -97,8 +97,8 @@ def generate_bash(parser: argparse.ArgumentParser) -> str:
 
     cases_str = "\n".join(cases)
 
-    return f"""# Hermes Agent bash completion
-# Add to ~/.bashrc:
+    return f"""# Hermes Agent bash 补全
+# 添加到 ~/.bashrc:
 #   eval "$(hermes completion bash)"
 
 _hermes_profiles() {{
@@ -118,7 +118,7 @@ _hermes_completion() {{
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
 
-    # Complete profile names after -p / --profile
+    # 在 -p / --profile 之后补全 profile 名称
     if [[ "$prev" == "-p" || "$prev" == "--profile" ]]; then
         COMPREPLY=($(compgen -W "$(_hermes_profiles)" -- "$cur"))
         return
@@ -140,7 +140,7 @@ complete -F _hermes_completion hermes
 
 
 # ---------------------------------------------------------------------------
-# Zsh
+# Zsh 补全
 # ---------------------------------------------------------------------------
 
 def generate_zsh(parser: argparse.ArgumentParser) -> str:
@@ -158,8 +158,8 @@ def generate_zsh(parser: argparse.ArgumentParser) -> str:
         if not info["subcommands"]:
             continue
         if cmd == "profile":
-            # Profile subcommand: complete actions, then profile names for
-            # actions that accept a profile argument.
+            # Profile 子命令：补全 actions，然后补全接受
+            # profile 参数的 actions 对应的 profile 名称。
             sub_lines: list[str] = []
             for sc in sorted(info["subcommands"]):
                 sh = _clean(info["subcommands"][sc].get("help", ""))
@@ -200,8 +200,8 @@ def generate_zsh(parser: argparse.ArgumentParser) -> str:
     sub_cases_str = "\n".join(sub_cases)
 
     return f"""#compdef hermes
-# Hermes Agent zsh completion
-# Add to ~/.zshrc:
+# Hermes Agent zsh 补全
+# 添加到 ~/.zshrc:
 #   eval "$(hermes completion zsh)"
 
 _hermes_profiles() {{
@@ -245,7 +245,7 @@ compdef _hermes hermes
 
 
 # ---------------------------------------------------------------------------
-# Fish
+# Fish 补全
 # ---------------------------------------------------------------------------
 
 def generate_fish(parser: argparse.ArgumentParser) -> str:
@@ -254,11 +254,11 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
     top_cmds_str = " ".join(top_cmds)
 
     lines: list[str] = [
-        "# Hermes Agent fish completion",
-        "# Add to your config:",
+        "# Hermes Agent fish 补全",
+        "# 添加到你的配置中:",
         "#   hermes completion fish | source",
         "",
-        "# Helper: list available profiles",
+        "# 辅助函数：列出可用的 profiles",
         "function __hermes_profiles",
         "    echo default",
         "    if test -d $HOME/.hermes/profiles",
@@ -268,14 +268,14 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
         "    end",
         "end",
         "",
-        "# Disable file completion by default",
+        "# 默认禁用文件补全",
         "complete -c hermes -f",
         "",
-        "# Complete profile names after -p / --profile",
+        "# 在 -p / --profile 之后补全 profile 名称",
         "complete -c hermes -f -s p -l profile"
         " -d 'Profile name' -xa '(__hermes_profiles)'",
         "",
-        "# Top-level subcommands",
+        "# 顶层子命令",
     ]
 
     for cmd in top_cmds:
@@ -288,7 +288,7 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
         )
 
     lines.append("")
-    lines.append("# Subcommand completions")
+    lines.append("# 子命令补全")
 
     profile_name_actions = {"use", "delete", "show", "alias", "rename", "export"}
 
@@ -305,7 +305,7 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
                 f"-n '__fish_seen_subcommand_from {cmd}' "
                 f"-a {sc} -d '{sh}'"
             )
-        # For profile subcommand, complete profile names for relevant actions
+        # 对于 profile 子命令，为相关 actions 补全 profile 名称
         if cmd == "profile":
             for action in sorted(profile_name_actions):
                 lines.append(

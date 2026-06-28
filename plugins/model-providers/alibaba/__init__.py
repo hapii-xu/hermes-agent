@@ -1,4 +1,4 @@
-"""Alibaba Cloud DashScope provider profile."""
+"""阿里云 DashScope provider 配置文件。"""
 
 from providers import register_provider
 from providers.base import ProviderProfile

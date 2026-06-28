@@ -1,41 +1,41 @@
 # circular-flow
 
-Cyclic process showing continuous or recurring steps.
+展示持续或周期性步骤的循环流程。
 
-## Structure
+## 结构
 
-- Circular arrangement
-- Steps around the circle
-- Arrows showing direction
-- No clear start/end (continuous)
-- Center can hold main concept
+- 环形排布
+- 步骤环绕圆周
+- 箭头指示方向
+- 无明确起点/终点（持续循环）
+- 中心可承载主要概念
 
-## Best For
+## 最适用于
 
-- Recurring processes
-- Feedback loops
-- Lifecycle stages
-- Continuous improvement
-- Natural cycles
+- 周期性流程
+- 反馈回路
+- 生命周期阶段
+- 持续改进
+- 自然循环
 
-## Visual Elements
+## 视觉元素
 
-- Circle or ring shape
-- Directional arrows
-- Step nodes evenly spaced
-- Icons per step
-- Optional center element
+- 圆形或环形
+- 方向性箭头
+- 步骤节点等距分布
+- 每步配图标
+- 可选的中心元素
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Step labels at each node
-- Brief descriptions near nodes
-- Center concept if applicable
-- Cycle name
+- 标题置于顶部
+- 各节点处的步骤标签
+- 节点附近的简短描述
+- 如适用则标注中心概念
+- 循环名称
 
-## Recommended Pairings
+## 推荐搭配
 
-- `cartoon-hand-drawn`: Friendly cycles
-- `corporate-memphis`: Business processes
-- `subway-map`: Transit-style cycles
+- `cartoon-hand-drawn`：友好型循环
+- `corporate-memphis`：商业流程
+- `subway-map`：交通风格循环

@@ -1,11 +1,11 @@
 """
-Session management for the gateway.
+gateway 的会话管理。
 
-Handles:
-- Session context tracking (where messages come from)
-- Session storage (conversations persisted to disk)
-- Reset policy evaluation (when to start fresh)
-- Dynamic system prompt injection (agent knows its context)
+负责：
+- 会话上下文跟踪（消息来自哪里）
+- 会话存储（对话持久化到磁盘）
+- 重置策略评估（何时重新开始）
+- 动态系统提示注入（agent 了解自己的上下文）
 """
 
 import hashlib
@@ -23,26 +23,26 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    """Return the current local time."""
+    """返回当前本地时间。"""
     return datetime.now()
 
 
 # ---------------------------------------------------------------------------
-# PII redaction helpers
+# PII 脱敏辅助函数
 # ---------------------------------------------------------------------------
 
 def _hash_id(value: str) -> str:
-    """Deterministic 12-char hex hash of an identifier."""
+    """对标识符生成确定性的 12 字符十六进制哈希。"""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
 
 
 def _hash_sender_id(value: str) -> str:
-    """Hash a sender ID to ``user_<12hex>``."""
+    """把发送者 ID 哈希为 ``user_<12hex>`` 形式。"""
     return f"user_{_hash_id(value)}"
 
 
 def _hash_chat_id(value: str) -> str:
-    """Hash the numeric portion of a chat ID, preserving platform prefix.
+    """对 chat ID 的数字部分做哈希，保留平台前缀。
 
     ``telegram:12345`` → ``telegram:<hash>``
     ``12345``          → ``<hash>``
@@ -57,85 +57,78 @@ def _hash_chat_id(value: str) -> str:
 from .config import (
     Platform,
     GatewayConfig,
-    SessionResetPolicy,  # noqa: F401 — re-exported via gateway/__init__.py
+    SessionResetPolicy,  # noqa: F401 — 通过 gateway/__init__.py 重新导出
     HomeChannel,
 )
 from .whatsapp_identity import (
     canonical_whatsapp_identifier,
-    normalize_whatsapp_identifier,  # noqa: F401 - re-exported for gateway.session callers
+    normalize_whatsapp_identifier,  # noqa: F401 — 为 gateway.session 的调用方重新导出
 )
 from utils import atomic_replace
 
-# Session keys/ids flow into filesystem paths downstream (e.g.
-# ``sessions_dir / f"{session_id}.json"`` in hermes_state, request-dump
-# filenames in agent_runtime_helpers). Any value that could escape the
-# sessions directory as a path must be rejected at the entry boundary.
-# Rejects: parent traversal (``..``), a path separator anywhere (``/`` or
-# ``\``, so a non-leading Windows separator can't slip through), and a
-# leading Windows drive letter (``C:``). Legitimate session keys are
-# colon-delimited multi-segment ids (``agent:main:<platform>:...``) and
-# never contain these, so there are no false positives in practice.
+# session key/id 会在下游进入文件系统路径（例如 hermes_state 中的
+# ``sessions_dir / f"{session_id}.json"``，agent_runtime_helpers 中的请求 dump 文件名）。
+# 任何可能作为路径逃逸出 sessions 目录的值都必须在入口边界处被拒绝。
+# 拒绝项：父目录遍历（``..``）、任意位置出现的路径分隔符（``/`` 或 ``\``，这样非
+# 开头的 Windows 分隔符也无法漏过）、以及开头的 Windows 盘符（``C:``）。合法的
+# session key 是冒号分隔的多段 id（``agent:main:<platform>:...``），从不包含这些，
+# 因此实践中不会出现误报。
 def _is_path_unsafe(value: object) -> bool:
-    """Return True if ``value`` could traverse outside the sessions dir."""
+    """如果 ``value`` 可能遍历到 sessions 目录之外，则返回 True。"""
     if not value:
         return False
     s = str(value)
     if ".." in s or "/" in s or "\\" in s:
         return True
-    # Leading Windows drive path, e.g. "C:\..." or "d:/...". A bare "x:"
-    # with no following separator isn't a usable absolute path, and the
-    # separator forms are already caught above — but keep an explicit guard
-    # for the drive-letter prefix in case a separator was normalized away.
+    # 开头的 Windows 盘符路径，例如 "C:\..." 或 "d:/..."。不带后续分隔符的裸 "x:"
+    # 不是可用的绝对路径，分隔符形式在上面已被捕获 —— 但保留一个对盘符前缀的显式
+    # 守卫，以防某个分隔符被规范化掉。
     return len(s) >= 2 and s[0].isalpha() and s[1] == ":"
 
 
 @dataclass
 class SessionSource:
     """
-    Describes where a message originated from.
-    
-    This information is used to:
-    1. Route responses back to the right place
-    2. Inject context into the system prompt
-    3. Track origin for cron job delivery
+    描述一条消息的来源。
+
+    此信息用于：
+    1. 把响应路由回正确位置
+    2. 把上下文注入系统提示
+    3. 跟踪 cron job 投递的来源
     """
     platform: Platform
     chat_id: str
     chat_name: Optional[str] = None
-    chat_type: str = "dm"  # "dm", "group", "channel", "thread"
+    chat_type: str = "dm"  # "dm"、"group"、"channel"、"thread"
     user_id: Optional[str] = None
     user_name: Optional[str] = None
-    thread_id: Optional[str] = None  # For forum topics, Discord threads, etc.
-    chat_topic: Optional[str] = None  # Channel topic/description (Discord, Slack)
-    user_id_alt: Optional[str] = None  # Platform-specific stable alt ID (Signal UUID, Feishu union_id)
-    chat_id_alt: Optional[str] = None  # Signal group internal ID
-    is_bot: bool = False  # True when the message author is a bot/webhook (Discord)
-    guild_id: Optional[str] = None  # Discord guild / Slack workspace / Matrix server scope
-    parent_chat_id: Optional[str] = None  # Parent channel when chat_id refers to a thread
-    message_id: Optional[str] = None  # ID of the triggering message (for pin/reply/react)
-    role_authorized: bool = False  # True when adapter granted access via role (not user ID)
-    # Profile this inbound message is routed to in a multiplexing gateway
-    # (from the /p/<profile>/ URL prefix or per-credential adapter ownership).
-    # None => the gateway's active/default profile. Drives both session-key
-    # namespacing and the per-turn config/credential scope.
+    thread_id: Optional[str] = None  # 用于 forum topic、Discord thread 等
+    chat_topic: Optional[str] = None  # 频道 topic/描述（Discord、Slack）
+    user_id_alt: Optional[str] = None  # 平台相关的稳定备用 ID（Signal UUID、Feishu union_id）
+    chat_id_alt: Optional[str] = None  # Signal 群组内部 ID
+    is_bot: bool = False  # 当消息作者是 bot/webhook 时为 True（Discord）
+    guild_id: Optional[str] = None  # Discord guild / Slack workspace / Matrix server 作用域
+    parent_chat_id: Optional[str] = None  # 当 chat_id 指代一个 thread 时的父频道
+    message_id: Optional[str] = None  # 触发消息的 ID（用于置顶/回复/响应）
+    role_authorized: bool = False  # 当 adapter 通过角色（而非用户 ID）授予访问时为 True
+    # 在多路复用 gateway 中，本入站消息被路由到的 profile（来自 /p/<profile>/ URL
+    # 前缀，或按凭据的 adapter 归属）。None => gateway 的活动/默认 profile。同时驱动
+    # session-key 命名空间和 per-turn 的 config/credential 作用域。
     profile: Optional[str] = None
 
-    # Internal, wire-INVISIBLE trust signal: True when this event was delivered
-    # to the gateway over the per-instance-authenticated relay WebSocket (the
-    # Team Gateway connector). The connector authenticates the gateway's socket
-    # with a per-instance secret and resolves owner-only author bindings BEFORE
-    # delivering, so a relay-delivered event is already authorized as this
-    # instance's bound user. ``platform`` carries the UNDERLYING platform
-    # (e.g. ``discord``) for session-keying/egress, NOT ``relay`` — so authz
-    # must key the upstream-trust decision off THIS flag, not off ``platform``.
-    # Set locally by the relay transport (``ws_transport._event_from_wire``);
-    # deliberately excluded from ``to_dict``/``from_dict`` so a peer can never
-    # forge it across the wire or have it restored from persistence.
+    # 内部、对网络不可见的信任信号：当本事件是通过按实例认证的 relay WebSocket
+    #（Team Gateway connector）投递到 gateway 时为 True。connector 在投递之前，先用
+    # 按实例的密钥认证 gateway 的 socket，并解析仅属主的作者绑定，因此经 relay 投递
+    # 的事件已经作为本实例绑定的用户被授权。``platform`` 携带的是*底层*平台（例如
+    # ``discord``），用于 session-keying/egress，而不是 ``relay`` —— 因此 authz 必须以
+    # 此 flag 作为上游信任决策的依据，而非 ``platform``。由 relay 传输在本地设置
+    #（``ws_transport._event_from_wire``）；刻意从 ``to_dict``/``from_dict`` 中排除，
+    # 使对端永远无法在网络中伪造它，也无法从持久化中恢复它。
     delivered_via_upstream_relay: bool = False
 
     @property
     def description(self) -> str:
-        """Human-readable description of the source."""
+        """来源的人类可读描述。"""
         if self.platform == Platform.LOCAL:
             return "CLI terminal"
         
@@ -203,19 +196,19 @@ class SessionSource:
 @dataclass
 class SessionContext:
     """
-    Full context for a session, used for dynamic system prompt injection.
-    
-    The agent receives this information to understand:
-    - Where messages are coming from
-    - What platforms are available
-    - Where it can deliver scheduled task outputs
+    一个 session 的完整上下文，用于动态系统提示注入。
+
+    agent 接收此信息以了解：
+    - 消息来自哪里
+    - 有哪些可用平台
+    - 它可以把计划任务的输出发到哪里
     """
     source: SessionSource
     connected_platforms: List[Platform]
     home_channels: Dict[Platform, HomeChannel]
     shared_multi_user_session: bool = False
-    
-    # Session metadata
+
+    # 会话元数据
     session_key: str = ""
     session_id: str = ""
     created_at: Optional[datetime] = None
@@ -242,23 +235,21 @@ _PII_SAFE_PLATFORMS = frozenset({
     Platform.TELEGRAM,
     Platform.BLUEBUBBLES,
 })
-"""Platforms where user IDs can be safely redacted (no in-message mention system
-that requires raw IDs).  Discord is excluded because mentions use ``<@user_id>``
-and the LLM needs the real ID to tag users."""
+"""用户 ID 可以安全脱敏的平台（没有要求原始 ID 的消息内 @ 提及系统）。Discord 被排除，
+因为提及使用 ``<@user_id>``，LLM 需要真实 ID 才能 @ 用户。"""
 
 
 def _discord_tools_loaded() -> bool:
-    """True iff the agent will actually have Discord tools this session.
+    """当 agent 本次会话确实拥有 Discord 工具时返回 True。
 
-    Two conditions must hold:
-      1. The `discord` or `discord_admin` toolset is enabled for the
-         Discord platform via `hermes tools` (opt-in, default OFF).
-      2. `DISCORD_BOT_TOKEN` is set — the tool's `check_fn` gates on it
-         at registry time, so the toolset being enabled in config is not
-         enough if the token isn't configured.
+    需要同时满足两个条件：
+      1. 通过 `hermes tools` 为 Discord 平台启用了 `discord` 或 `discord_admin`
+         工具集（可选启用，默认关闭）。
+      2. `DISCORD_BOT_TOKEN` 已设置 —— 工具的 `check_fn` 在注册时以此做门控，
+         因此仅在 config 中启用工具集而未配置 token 是不够的。
 
-    Returns False (safe default — keeps the stale-API disclaimer) on any
-    error so a bad config can't silently promise tools the agent lacks.
+    任何错误时都返回 False（安全默认值 —— 保留过时 API 的免责声明），以免错误
+    的 config 静默地承诺 agent 并不具备的工具。
     """
     if not (os.environ.get("DISCORD_BOT_TOKEN") or "").strip():
         return False
@@ -278,21 +269,20 @@ def build_session_context_prompt(
     redact_pii: bool = False,
 ) -> str:
     """
-    Build the dynamic system prompt section that tells the agent about its context.
+    构建动态系统提示部分，告诉 agent 它的上下文。
 
-    This is injected into the system prompt so the agent knows:
-    - Where messages are coming from
-    - What platforms are connected
-    - Where it can deliver scheduled task outputs
+    这会被注入到系统提示中，使 agent 知道：
+    - 消息来自哪里
+    - 连接了哪些平台
+    - 它可以把计划任务输出发到哪里
 
-    When *redact_pii* is True **and** the source platform is in
-    ``_PII_SAFE_PLATFORMS``, phone numbers are stripped and user/chat IDs
-    are replaced with deterministic hashes before being sent to the LLM.
-    Platforms like Discord are excluded because mentions need real IDs.
-    Routing still uses the original values (they stay in SessionSource).
+    当 *redact_pii* 为 True **且** 来源平台属于 ``_PII_SAFE_PLATFORMS`` 时，电话
+    号码会被剥离，user/chat ID 在发送给 LLM 之前会被替换为确定性哈希。像 Discord
+    这样的平台被排除，因为提及需要真实 ID。路由仍使用原始值（它们保留在
+    SessionSource 中）。
     """
-    # Only apply redaction on platforms where IDs aren't needed for mentions.
-    # Check both the hardcoded set (builtins) and the plugin registry.
+    # 仅在不需 ID 用于提及的平台上应用脱敏。
+    # 同时检查硬编码集合（内置）和插件注册表。
     _is_pii_safe = context.source.platform in _PII_SAFE_PLATFORMS
     if not _is_pii_safe:
         try:
@@ -308,15 +298,15 @@ def build_session_context_prompt(
         "",
     ]
 
-    # Source info
+    # 来源信息
     platform_name = context.source.platform.value.title()
     if context.source.platform == Platform.LOCAL:
         lines.append(f"**Source:** {platform_name} (the machine running this agent)")
     else:
-        # Build a description that respects PII redaction
+        # 构建一个尊重 PII 脱敏的描述
         src = context.source
         if redact_pii:
-            # Build a safe description without raw IDs
+            # 构建一个不含原始 ID 的安全描述
             _uname = src.user_name or (
                 _hash_sender_id(src.user_id) if src.user_id else "user"
             )
@@ -333,7 +323,7 @@ def build_session_context_prompt(
             desc = src.description
         lines.append(f"**Source:** {platform_name} ({desc})")
 
-    # Channel topic (if available - provides context about the channel's purpose)
+    # 频道 topic（如果可用 —— 提供关于频道用途的上下文）
     if context.source.chat_topic:
         lines.append(f"**Channel Topic:** {context.source.chat_topic}")
 
@@ -353,13 +343,11 @@ def build_session_context_prompt(
             "about other Matrix rooms or projects unless the user explicitly says so."
         )
 
-    # User identity.
-    # In shared multi-user sessions (shared threads OR shared non-thread groups
-    # when group_sessions_per_user=False), multiple users contribute to the same
-    # conversation.  Don't pin a single user name in the system prompt — it
-    # changes per-turn and would bust the prompt cache.  Instead, note that
-    # this is a multi-user session; individual sender names are prefixed on
-    # each user message by the gateway.
+    # 用户身份。
+    # 在共享多用户会话中（共享 thread，或 group_sessions_per_user=False 时的共享
+    # 非 thread 群组），多个用户参与同一段对话。不要在系统提示中固定单个用户名 ——
+    # 它每个 turn 都会变，会让 prompt cache 失效。改为标注这是一个多用户会话；每个
+    # 用户消息的发送者名字由 gateway 加在前缀上。
     if context.shared_multi_user_session:
         session_label = "Multi-user thread" if context.source.thread_id else "Multi-user session"
         lines.append(
@@ -374,7 +362,7 @@ def build_session_context_prompt(
             uid = _hash_sender_id(uid)
         lines.append(f"**User ID:** {uid}")
 
-    # Platform-specific behavioral notes
+    # 平台相关的行为说明
     if context.source.platform == Platform.SLACK:
         lines.append("")
         lines.append(
@@ -386,11 +374,9 @@ def build_session_context_prompt(
             "you still cannot call Slack APIs yourself."
         )
     elif context.source.platform == Platform.DISCORD:
-        # Inject the Discord IDs block only when the agent actually has
-        # Discord tools loaded this session — i.e. the user opted into
-        # `discord` / `discord_admin` via `hermes tools` AND the bot
-        # token is configured.  Otherwise keep the stale-API disclaimer
-        # honest so we never promise tools the agent lacks.
+        # 仅当 agent 本次会话确实已加载 Discord 工具时才注入 Discord IDs 块 —— 即
+        # 用户通过 `hermes tools` 启用了 `discord` / `discord_admin` 且配置了 bot
+        # token。否则保留过时 API 的免责声明，以免承诺 agent 并不具备的工具。
         if _discord_tools_loaded():
             src = context.source
             id_lines = ["", "**Discord IDs (for the `discord` / `discord_admin` tools):**"]
@@ -435,7 +421,7 @@ def build_session_context_prompt(
             "are responding in."
         )
 
-    # Connected platforms
+    # 已连接平台
     platforms_list = ["local (files on this machine)"]
     for p in context.connected_platforms:
         if p != Platform.LOCAL:
@@ -443,7 +429,7 @@ def build_session_context_prompt(
 
     lines.append(f"**Connected Platforms:** {', '.join(platforms_list)}")
 
-    # Home channels
+    # home channel
     if context.home_channels:
         lines.append("")
         lines.append("**Home Channels (default destinations):**")
@@ -451,13 +437,13 @@ def build_session_context_prompt(
             hc_id = _hash_chat_id(home.chat_id) if redact_pii else home.chat_id
             lines.append(f"  - {platform.value}: {home.name} (ID: {hc_id})")
 
-    # Delivery options for scheduled tasks
+    # 计划任务的投递选项
     lines.append("")
     lines.append("**Delivery options for scheduled tasks:**")
 
     from hermes_constants import display_hermes_home
 
-    # Origin delivery
+    # 来源投递
     if context.source.platform == Platform.LOCAL:
         lines.append("- `\"origin\"` → Local output (saved to files)")
     else:
@@ -466,16 +452,16 @@ def build_session_context_prompt(
         )
         lines.append(f"- `\"origin\"` → Back to this chat ({_origin_label})")
 
-    # Local always available
+    # local 始终可用
     lines.append(
         f"- `\"local\"` → Save to local files only ({display_hermes_home()}/cron/output/)"
     )
 
-    # Platform home channels
+    # 平台 home channel
     for platform, home in context.home_channels.items():
         lines.append(f"- `\"{platform.value}\"` → Home channel ({home.name})")
 
-    # Note about explicit targeting
+    # 关于显式定向的说明
     lines.append("")
     lines.append("*For explicit targeting, use `\"platform:chat_id\"` format if the user provides a specific chat ID.*")
 
@@ -485,24 +471,24 @@ def build_session_context_prompt(
 @dataclass
 class SessionEntry:
     """
-    Entry in the session store.
-    
-    Maps a session key to its current session ID and metadata.
+    会话存储中的一条记录。
+
+    把一个 session key 映射到其当前 session ID 及元数据。
     """
     session_key: str
     session_id: str
     created_at: datetime
     updated_at: datetime
-    
-    # Origin metadata for delivery routing
+
+    # 用于投递路由的来源元数据
     origin: Optional[SessionSource] = None
-    
-    # Display metadata
+
+    # 展示元数据
     display_name: Optional[str] = None
     platform: Optional[Platform] = None
     chat_type: str = "dm"
-    
-    # Token tracking
+
+    # token 跟踪
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
@@ -510,46 +496,40 @@ class SessionEntry:
     total_tokens: int = 0
     estimated_cost_usd: float = 0.0
     cost_status: str = "unknown"
-    
-    # Last API-reported prompt tokens (for accurate compression pre-check)
-    last_prompt_tokens: int = 0
-    
-    # Set when a session was created because the previous one expired;
-    # consumed once by the message handler to inject a notice into context
-    was_auto_reset: bool = False
-    auto_reset_reason: Optional[str] = None  # "idle" or "daily"
-    reset_had_activity: bool = False  # whether the expired session had any messages
 
-    # Set by reset_session() when the user explicitly sends /new or /reset.
-    # Consumed once by _handle_message_with_agent to trigger topic/channel
-    # skill re-injection on the first message of the new session.  We can't
-    # reuse was_auto_reset for this because that flag fires the "session
-    # expired due to inactivity" user-facing notice and a misleading
-    # context-note prepend — both wrong for an explicit manual reset.
-    # See issue #6508.
+    # 上一次 API 上报的 prompt token 数（用于精确的压缩预检查）
+    last_prompt_tokens: int = 0
+
+    # 当一个 session 是因为前一个 session 过期而创建时设置；由消息处理器消费一次，
+    # 用于把通知注入上下文
+    was_auto_reset: bool = False
+    auto_reset_reason: Optional[str] = None  # "idle" 或 "daily"
+    reset_had_activity: bool = False  # 过期的 session 是否曾有消息
+
+    # 由 reset_session() 在用户显式发送 /new 或 /reset 时设置。由
+    # _handle_message_with_agent 消费一次，用于在新 session 的第一条消息上触发
+    # topic/channel skill 重新注入。我们不能复用 was_auto_reset，因为那个 flag 会触发
+    # 面向用户的"session 因不活跃而过期"通知，以及误导性的上下文备注前缀 —— 这两者
+    # 对于显式手动重置都是错误的。参见 issue #6508。
     is_fresh_reset: bool = False
-    
-    # Set by the background expiry watcher after it finalizes an expired
-    # session (invoking on_session_finalize hooks and evicting the cached
-    # agent).  Persisted to sessions.json so the flag survives gateway
-    # restarts — prevents redundant finalization runs.
+
+    # 由后台过期 watcher 在完成一个过期 session 的收尾（调用 on_session_finalize
+    # 钩子并驱逐缓存的 agent）之后设置。持久化到 sessions.json，使该 flag 能在
+    # gateway 重启后保留 —— 避免冗余的收尾运行。
     expiry_finalized: bool = False
 
-    # When True the next call to get_or_create_session() will auto-reset
-    # this session (create a new session_id) so the user starts fresh.
-    # Set by /stop to break stuck-resume loops (#7536).
+    # 为 True 时，下次调用 get_or_create_session() 会自动重置本 session（创建新的
+    # session_id），让用户从头开始。由 /stop 设置，用于打破卡住的 resume 循环
+    #（#7536）。
     suspended: bool = False
 
-    # When True the session was interrupted by a gateway restart/shutdown
-    # drain timeout, but recovery is still expected.  Unlike ``suspended``,
-    # ``resume_pending`` preserves the existing session_id on next access —
-    # the user stays on the same transcript and the agent auto-continues
-    # from where it left off.  Cleared after the next successful turn.
-    # Escalation to ``suspended`` is handled by the existing
-    # ``.restart_failure_counts`` stuck-loop counter (#7536), not by a
-    # parallel counter on this entry.
+    # 为 True 时表示该 session 被一次 gateway 重启/关机排空超时打断，但恢复仍可期。
+    # 与 ``suspended`` 不同，``resume_pending`` 在下次访问时保留现有 session_id ——
+    # 用户停留在同一份 transcript 上，agent 从中断处自动继续。在下一次成功的 turn
+    # 之后清除。升级为 ``suspended`` 由现有的 ``.restart_failure_counts`` 卡循环
+    # 计数器（#7536）处理，而非本记录上的并行计数器。
     resume_pending: bool = False
-    resume_reason: Optional[str] = None  # e.g. "restart_timeout"
+    resume_reason: Optional[str] = None  # 例如 "restart_timeout"
     last_resume_marked_at: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -611,7 +591,7 @@ class SessionEntry:
         session_key = data["session_key"]
         session_id = data["session_id"]
 
-        # Validate path-sensitive fields to prevent directory traversal (CWE-22)
+        # 校验对路径敏感的字段以防止目录遍历（CWE-22）
         for _field, _val in (("session_key", session_key), ("session_id", session_id)):
             if _is_path_unsafe(_val):
                 raise ValueError(
@@ -653,13 +633,13 @@ def is_shared_multi_user_session(
     group_sessions_per_user: bool = True,
     thread_sessions_per_user: bool = False,
 ) -> bool:
-    """Return True when a non-DM session is shared across participants.
+    """当非 DM 会话在参与者之间共享时返回 True。
 
-    Mirrors the isolation rules in :func:`build_session_key`:
-      - DMs are never shared.
-      - Threads are shared unless ``thread_sessions_per_user`` is True.
-      - Non-thread group/channel sessions are shared unless
-        ``group_sessions_per_user`` is True (default: True = isolated).
+    对应 :func:`build_session_key` 中的隔离规则：
+      - DM 从不共享。
+      - thread 除非 ``thread_sessions_per_user`` 为 True，否则共享。
+      - 非 thread 的群组/频道会话除非 ``group_sessions_per_user`` 为 True（默认：
+        True = 隔离），否则共享。
     """
     if source.chat_type == "dm":
         return False
@@ -669,19 +649,17 @@ def is_shared_multi_user_session(
 
 
 def _session_key_namespace(profile: Optional[str]) -> str:
-    """Return the ``agent:<ns>`` namespace prefix for a session key.
+    """返回 session key 的 ``agent:<ns>`` 命名空间前缀。
 
-    The historical key format is ``agent:main:<platform>:<chat_type>:...`` where
-    ``main`` is a static namespace literal (NOT a branch name — branching keys
-    off ``session_id``, not this slot). Multi-profile multiplexing reuses this
-    slot to carry the profile:
+    历史上的 key 格式是 ``agent:main:<platform>:<chat_type>:...``，其中 ``main``
+    是一个静态命名空间字面量（不是 branch 名 —— branch 的 key 取自
+    ``session_id``，而非此槽位）。多 profile 多路复用复用此槽位来承载 profile：
 
-    - default profile (or ``None``/``""``/``"default"``) → ``agent:main`` —
-      BYTE-IDENTICAL to every key ever generated, so existing sessions and all
-      positional parsers (``parts[2]`` == platform, etc.) are unaffected.
-    - named profile ``coder`` → ``agent:coder`` — keeps the same positional
-      layout, just a different namespace, so two profiles serving the same
-      platform/chat never collide.
+    - 默认 profile（或 ``None``/``""``/``"default"``）→ ``agent:main`` —— 与历来
+      生成的每个 key 字节完全一致，因此现有 session 和所有按位置解析的解析器
+      （``parts[2]`` == platform 等）都不受影响。
+    - 命名 profile ``coder`` → ``agent:coder`` —— 保持相同的位置布局，只是命名空间
+      不同，因此服务同一 platform/chat 的两个 profile 永不冲突。
     """
     if not profile or profile == "default":
         return "agent:main"
@@ -694,33 +672,30 @@ def build_session_key(
     thread_sessions_per_user: bool = False,
     profile: Optional[str] = None,
 ) -> str:
-    """Build a deterministic session key from a message source.
+    """根据消息来源构建确定性的 session key。
 
-    This is the single source of truth for session key construction.
+    这是 session key 构造的唯一真相来源。
 
-    ``profile`` selects the key namespace (see :func:`_session_key_namespace`).
-    It defaults to ``None`` ⇒ the legacy ``agent:main`` namespace, so callers
-    that don't multiplex produce byte-identical keys to before. Only the
-    multiplexing gateway passes a non-default profile.
+    ``profile`` 选择 key 命名空间（参见 :func:`_session_key_namespace`）。默认为
+    ``None`` ⇒ 旧版 ``agent:main`` 命名空间，不做多路复用的调用方生成与此前字节
+    完全一致的 key。只有多路复用 gateway 才传入非默认 profile。
 
-    DM rules:
-      - DMs include chat_id when present, so each private conversation is isolated.
-      - thread_id further differentiates threaded DMs within the same DM chat.
-      - Without chat_id, thread_id is used as a best-effort fallback.
-      - Without thread_id or chat_id, DMs share a single session.
+    DM 规则：
+      - DM 在有 chat_id 时包含 chat_id，使每个私聊会话相互隔离。
+      - thread_id 进一步区分同一 DM chat 内的 threaded DM。
+      - 没有 chat_id 时，thread_id 作为尽力而为的回退。
+      - 没有 thread_id 或 chat_id 时，DM 共享单个 session。
 
-    Group/channel rules:
-      - chat_id identifies the parent group/channel.
-      - user_id/user_id_alt isolates participants within that parent chat when available when
-        ``group_sessions_per_user`` is enabled.
-      - thread_id differentiates threads within that parent chat.  When
-        ``thread_sessions_per_user`` is False (default), threads are *shared* across all
-        participants — user_id is NOT appended, so every user in the thread
-        shares a single session.  This is the expected UX for threaded
-        conversations (Telegram forum topics, Discord threads, Slack threads).
-      - Without participant identifiers, or when isolation is disabled, messages fall back to one
-        shared session per chat.
-      - Without identifiers, messages fall back to one session per platform/chat_type.
+    群组/频道规则：
+      - chat_id 标识父群组/频道。
+      - 当启用 ``group_sessions_per_user`` 且可用时，user_id/user_id_alt 在该父
+        chat 内隔离参与者。
+      - thread_id 区分该父 chat 内的 thread。当 ``thread_sessions_per_user`` 为
+        False（默认）时，thread 在所有参与者之间 *共享* —— 不追加 user_id，因此
+        thread 中的每个用户共享单个 session。这是 threaded 对话（Telegram forum
+        topic、Discord thread、Slack thread）的预期 UX。
+      - 没有参与者标识符，或禁用隔离时，消息回退为每个 chat 一个共享 session。
+      - 没有标识符时，消息回退为每个 platform/chat_type 一个 session。
     """
     ns = _session_key_namespace(profile)
     platform = source.platform.value
@@ -733,12 +708,10 @@ def build_session_key(
             if source.thread_id:
                 return f"{ns}:{platform}:dm:{dm_chat_id}:{source.thread_id}"
             return f"{ns}:{platform}:dm:{dm_chat_id}"
-        # No chat_id — fall back to the sender's own identifier before the
-        # bare per-platform sink.  Without this, every DM from every user that
-        # arrives without a chat_id (non-standard adapters / synthetic sources)
-        # collapses into one shared "<ns>:<platform>:dm" session, and a
-        # single cached agent ends up serving multiple people's conversations —
-        # cross-user history bleed.  participant_id keeps DMs isolated per user.
+        # 没有 chat_id —— 在落到裸的 per-platform sink 之前，回退到发送者自己的
+        # 标识符。否则每个不带 chat_id 的用户的 DM（非标准 adapter / 合成来源）都会
+        # 塌缩进一个共享的 "<ns>:<platform>:dm" session，单个缓存的 agent 会同时服务
+        # 多人的对话 —— 跨用户历史泄漏。participant_id 让 DM 按用户隔离。
         dm_participant_id = source.user_id_alt or source.user_id
         if dm_participant_id and source.platform == Platform.WHATSAPP:
             dm_participant_id = (
@@ -755,9 +728,8 @@ def build_session_key(
 
     participant_id = source.user_id_alt or source.user_id
     if participant_id and source.platform == Platform.WHATSAPP:
-        # Same JID/LID-flip bug as the DM case: without canonicalisation, a
-        # single group member gets two isolated per-user sessions when the
-        # bridge reshuffles alias forms.
+        # 与 DM 情况相同的 JID/LID 翻转 bug：不做规范化时，当 bridge 重新打乱别名
+        # 形式时，单个群组成员会得到两个隔离的 per-user session。
         participant_id = canonical_whatsapp_identifier(str(participant_id)) or participant_id
     key_parts = [ns, platform, source.chat_type]
 
@@ -766,9 +738,8 @@ def build_session_key(
     if source.thread_id:
         key_parts.append(source.thread_id)
 
-    # In threads, default to shared sessions (all participants see the same
-    # conversation).  Per-user isolation only applies when explicitly enabled
-    # via thread_sessions_per_user, or when there is no thread (regular group).
+    # 在 thread 中，默认共享 session（所有参与者看到同一段对话）。仅当通过
+    # thread_sessions_per_user 显式启用、或没有 thread（普通群组）时才按用户隔离。
     isolate_user = group_sessions_per_user
     if source.thread_id and not thread_sessions_per_user:
         isolate_user = False
@@ -781,10 +752,10 @@ def build_session_key(
 
 class SessionStore:
     """
-    Manages session storage and retrieval.
-    
-    Uses SQLite (via SessionDB) for session metadata and message transcripts.
-    Falls back to legacy JSONL files if SQLite is unavailable.
+    管理会话存储与检索。
+
+    使用 SQLite（通过 SessionDB）存储会话元数据和消息 transcript。当 SQLite 不可用
+    时回退到旧版 JSONL 文件。
     """
     
     def __init__(self, sessions_dir: Path, config: GatewayConfig,
@@ -796,21 +767,21 @@ class SessionStore:
         self._lock = threading.Lock()
         self._has_active_processes_fn = has_active_processes_fn
         
-        # Initialize SQLite session database
+        # 初始化 SQLite 会话数据库
         self._db = None
         try:
             from hermes_state import SessionDB
             self._db = SessionDB()
         except Exception as e:
             print(f"[gateway] Warning: SQLite session store unavailable, falling back to JSONL: {e}")
-    
+
     def _ensure_loaded(self) -> None:
-        """Load sessions index from disk if not already loaded."""
+        """如果尚未从磁盘加载会话索引，则加载之。"""
         with self._lock:
             self._ensure_loaded_locked()
 
     def _ensure_loaded_locked(self) -> None:
-        """Load sessions index from disk. Must be called with self._lock held."""
+        """从磁盘加载会话索引。必须在持有 self._lock 时调用。"""
         if self._loaded:
             return
 
@@ -822,16 +793,15 @@ class SessionStore:
                 with open(sessions_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 for key, entry_data in data.items():
-                    # Keys starting with "_" are documentation/metadata sentinels
-                    # (e.g. the "_README" note written by _save), not session
-                    # entries. Skip them so they never reach SessionEntry.from_dict.
+                    # 以 "_" 开头的 key 是文档/元数据哨兵（例如 _save 写入的
+                    # "_README" 说明），不是会话记录。跳过它们，使其永远不会到达
+                    # SessionEntry.from_dict。
                     if key.startswith("_"):
                         continue
-                    # Skip non-dict entries (corrupted sessions.json, e.g. a
-                    # bare bool or string where a dict is expected). Without
-                    # this, from_dict raises TypeError on `"origin" in data`
-                    # which escapes the inner except (ValueError, KeyError) and
-                    # aborts loading ALL remaining sessions (#46994).
+                    # 跳过非 dict 记录（损坏的 sessions.json，例如本应是 dict 的地方
+                    # 出现裸 bool 或字符串）。否则 from_dict 会在 `"origin" in data`
+                    # 上抛出 TypeError，它会逃出内层 except（ValueError、KeyError）并
+                    # 中止加载所有剩余 session（#46994）。
                     if not isinstance(entry_data, dict):
                         logger.warning(
                             "Skipping invalid session entry %r: "
@@ -847,19 +817,18 @@ class SessionStore:
                 print(f"[gateway] Warning: Failed to load sessions: {e}")
 
         self._loaded = True
-    
+
     def _save(self) -> None:
-        """Save sessions index to disk (kept for session key -> ID mapping)."""
+        """把会话索引保存到磁盘（保留 session key -> ID 映射）。"""
         import tempfile
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         sessions_file = self.sessions_dir / "sessions.json"
 
         data = {key: entry.to_dict() for key, entry in self._entries.items()}
-        # Self-documenting sentinel so anyone who inspects this file directly
-        # understands what it is and where CLI/TUI sessions actually live. Keys
-        # starting with "_" are skipped on load (see _ensure_loaded_locked), so
-        # this never round-trips into a SessionEntry. Ordered first via a fresh
-        # dict so it renders at the top of the pretty-printed JSON.
+        # 自解释哨兵，使任何直接查看此文件的人都能理解它是什么，以及 CLI/TUI 会话实际
+        # 存在哪里。以 "_" 开头的 key 在加载时会被跳过（见
+        # _ensure_loaded_locked），因此这永远不会往返变成一个 SessionEntry。通过一个
+        # 全新 dict 把它排在最前，使其渲染在美化打印 JSON 的顶部。
         data = {
             "_README": (
                 "Gateway routing index ONLY: maps messaging session keys "
@@ -886,15 +855,14 @@ class SessionStore:
             except OSError as e:
                 logger.debug("Could not remove temp file %s: %s", tmp_path, e)
             raise
-    
-    def _resolve_profile_for_key(self, source: Optional[SessionSource] = None) -> Optional[str]:
-        """Return the profile namespace for session keys, or None when off.
 
-        When ``multiplex_profiles`` is disabled (default), returns ``None`` so
-        keys stay in the legacy ``agent:main`` namespace — byte-identical to
-        before. When enabled, prefers the profile the inbound source was routed
-        to (``source.profile`` — set by the /p/<profile>/ URL prefix or
-        per-credential adapter), falling back to the active profile name.
+    def _resolve_profile_for_key(self, source: Optional[SessionSource] = None) -> Optional[str]:
+        """返回用于 session key 的 profile 命名空间，关闭时返回 None。
+
+        当 ``multiplex_profiles`` 禁用时（默认），返回 ``None``，使 key 留在旧版
+        ``agent:main`` 命名空间 —— 与此前字节完全一致。启用时，优先使用入站来源被
+        路由到的 profile（``source.profile`` —— 由 /p/<profile>/ URL 前缀或按凭据
+        adapter 设置），回退到活动 profile 名。
         """
         if not getattr(self.config, "multiplex_profiles", False):
             return None
@@ -907,20 +875,20 @@ class SessionStore:
             return None
 
     def _generate_session_key(self, source: SessionSource) -> str:
-        """Generate a session key from a source."""
+        """根据来源生成 session key。"""
         return build_session_key(
             source,
             group_sessions_per_user=getattr(self.config, "group_sessions_per_user", True),
             thread_sessions_per_user=getattr(self.config, "thread_sessions_per_user", False),
             profile=self._resolve_profile_for_key(source),
         )
-    
+
     def _is_session_expired(self, entry: SessionEntry) -> bool:
-        """Check if a session has expired based on its reset policy.
-        
-        Works from the entry alone — no SessionSource needed.
-        Used by the background expiry watcher to proactively flush memories.
-        Sessions with active background processes are never considered expired.
+        """根据重置策略检查一个 session 是否已过期。
+
+        仅凭记录即可工作 —— 不需要 SessionSource。
+        供后台过期 watcher 用于主动刷新 memory。
+        有活动后台进程的 session 永远不算过期。
         """
         if self._has_active_processes_fn:
             if self._has_active_processes_fn(entry.session_key):
@@ -955,12 +923,12 @@ class SessionStore:
 
     def _should_reset(self, entry: SessionEntry, source: SessionSource) -> Optional[str]:
         """
-        Check if a session should be reset based on policy.
-        
-        Returns the reset reason ("idle" or "daily") if a reset is needed,
-        or None if the session is still valid.
-        
-        Sessions with active background processes are never reset.
+        根据策略检查一个 session 是否应被重置。
+
+        若需要重置则返回重置原因（"idle" 或 "daily"），否则返回 None（session 仍
+        有效）。
+
+        有活动后台进程的 session 永不重置。
         """
         if self._has_active_processes_fn:
             session_key = self._generate_session_key(source)
@@ -998,23 +966,22 @@ class SessionStore:
         return None
     
     def has_any_sessions(self) -> bool:
-        """Check if any sessions have ever been created (across all platforms).
+        """检查是否曾创建过任何 session（跨所有平台）。
 
-        Uses the SQLite database as the source of truth because it preserves
-        historical session records (ended sessions still count).  The in-memory
-        ``_entries`` dict replaces entries on reset, so ``len(_entries)`` would
-        stay at 1 for single-platform users — which is the bug this fixes.
+        以 SQLite 数据库为真相来源，因为它保留历史会话记录（已结束的 session 仍计数）。
+        内存中的 ``_entries`` 字典在重置时会替换记录，因此对单平台用户
+        ``len(_entries)`` 会一直停在 1 —— 这正是本修复所解决的 bug。
 
-        The current session is already in the DB by the time this is called
-        (get_or_create_session runs first), so we check ``> 1``.
+        当前 session 在调用此方法时已经位于 DB 中（get_or_create_session 先运行），
+        因此我们检查 ``> 1``。
         """
         if self._db:
             try:
                 return self._db.session_count() > 1
             except Exception:
-                pass  # fall through to heuristic
-        # Fallback: check if sessions.json was loaded with existing data.
-        # This covers the rare case where the DB is unavailable.
+                pass  # 落到启发式
+        # 回退：检查 sessions.json 加载时是否已有现存数据。
+        # 这覆盖了 DB 不可用的罕见情况。
         with self._lock:
             self._ensure_loaded_locked()
             return len(self._entries) > 1
@@ -1025,16 +992,16 @@ class SessionStore:
         force_new: bool = False
     ) -> SessionEntry:
         """
-        Get an existing session or create a new one.
+        获取现有 session，或创建新 session。
 
-        Evaluates reset policy to determine if the existing session is stale.
-        Creates a session record in SQLite when a new session starts.
+        评估重置策略以判断现有 session 是否已过期。新 session 启动时在 SQLite 中
+        创建会话记录。
         """
         session_key = self._generate_session_key(source)
         now = _now()
 
-        # SQLite calls are made outside the lock to avoid holding it during I/O.
-        # All _entries / _loaded mutations are protected by self._lock.
+        # SQLite 调用在锁之外进行，避免在 I/O 期间持有锁。
+        # 所有 _entries / _loaded 的修改都由 self._lock 保护。
         db_end_session_id = None
         db_create_kwargs = None
 
@@ -1044,21 +1011,17 @@ class SessionStore:
             if session_key in self._entries and not force_new:
                 entry = self._entries[session_key]
 
-                # Auto-reset sessions marked as suspended (e.g. after /stop
-                # broke a stuck loop — #7536).  ``suspended`` is the hard
-                # forced-wipe signal and always wins over ``resume_pending``,
-                # so repeated interrupted restarts that escalate via the
-                # existing ``.restart_failure_counts`` stuck-loop counter
-                # still converge to a clean slate.
+                # 自动重置被标记为 suspended 的 session（例如 /stop 打破了卡住的
+                # 循环 —— #7536）。``suspended`` 是硬性强制清除信号，总是优先于
+                # ``resume_pending``，因此通过现有 ``.restart_failure_counts`` 卡循环
+                # 计数器升级的反复中断重启仍会收敛到一个干净状态。
                 if entry.suspended:
                     reset_reason = "suspended"
                 elif entry.resume_pending:
-                    # Restart-interrupted session: preserve the session_id
-                    # and return the existing entry so the transcript
-                    # reloads intact.  ``resume_pending`` is cleared after
-                    # the NEXT successful turn completes (not here), which
-                    # means a re-interrupted retry keeps trying — the
-                    # stuck-loop counter handles terminal escalation.
+                    # 重启中断的 session：保留 session_id 并返回现有记录，使
+                    # transcript 完整重载。``resume_pending`` 在下一次成功的 turn 完成
+                    # 之后清除（不是此处），这意味着再次被中断的重试会持续尝试 ——
+                    # 卡循环计数器负责终局升级。
                     entry.updated_at = now
                     self._save()
                     return entry
@@ -1069,10 +1032,10 @@ class SessionStore:
                     self._save()
                     return entry
                 else:
-                    # Session is being auto-reset.
+                    # session 正在被自动重置。
                     was_auto_reset = True
                     auto_reset_reason = reset_reason
-                    # Track whether the expired session had any real conversation
+                    # 跟踪过期 session 是否曾有过真实对话
                     reset_had_activity = entry.total_tokens > 0
                     db_end_session_id = entry.session_id
             else:
@@ -1080,7 +1043,7 @@ class SessionStore:
                 auto_reset_reason = None
                 reset_had_activity = False
 
-            # Create new session
+            # 创建新 session
             session_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
             entry = SessionEntry(
@@ -1105,7 +1068,7 @@ class SessionStore:
                 "user_id": source.user_id,
             }
 
-        # SQLite operations outside the lock
+        # 在锁之外进行 SQLite 操作
         if self._db and db_end_session_id:
             try:
                 self._db.end_session(db_end_session_id, "session_reset")
@@ -1125,7 +1088,7 @@ class SessionStore:
         session_key: str,
         last_prompt_tokens: int = None,
     ) -> None:
-        """Update lightweight session metadata after an interaction."""
+        """在一次交互之后更新轻量级会话元数据。"""
         with self._lock:
             self._ensure_loaded_locked()
 
@@ -1137,11 +1100,10 @@ class SessionStore:
                 self._save()
 
     def suspend_session(self, session_key: str) -> bool:
-        """Mark a session as suspended so it auto-resets on next access.
+        """把一个 session 标记为 suspended，使其在下次访问时自动重置。
 
-        Used by ``/stop`` to prevent stuck sessions from being resumed
-        after a gateway restart (#7536).  Returns True if the session
-        existed and was marked.
+        由 ``/stop`` 使用，防止卡住的 session 在 gateway 重启后被恢复（#7536）。
+        如果 session 存在且已被标记，则返回 True。
         """
         with self._lock:
             self._ensure_loaded_locked()
@@ -1156,21 +1118,20 @@ class SessionStore:
         session_key: str,
         reason: str = "restart_timeout",
     ) -> bool:
-        """Mark a session as resumable after a restart interruption.
+        """在一次重启中断之后把一个 session 标记为可恢复。
 
-        Unlike ``suspend_session()``, this preserves the existing
-        ``session_id`` and the transcript.  The next call to
-        ``get_or_create_session()`` for this key returns the same entry
-        so the user auto-resumes on the same conversation lane.
+        与 ``suspend_session()`` 不同，此方法保留现有 ``session_id`` 和 transcript。
+        下次对该 key 调用 ``get_or_create_session()`` 时返回同一条记录，使用户在
+        同一条对话通道上自动恢复。
 
-        Returns True if the session existed and was marked.
+        如果 session 存在且已被标记，则返回 True。
         """
         with self._lock:
             self._ensure_loaded_locked()
             if session_key in self._entries:
                 entry = self._entries[session_key]
-                # Never override an explicit ``suspended`` — that is a hard
-                # forced-wipe signal (from /stop or stuck-loop escalation).
+                # 永不覆盖显式的 ``suspended`` —— 那是一个硬性强制清除信号（来自
+                # /stop 或卡循环升级）。
                 if entry.suspended:
                     return False
                 entry.resume_pending = True
@@ -1181,13 +1142,12 @@ class SessionStore:
         return False
 
     def clear_resume_pending(self, session_key: str) -> bool:
-        """Clear the resume-pending flag after a successful resumed turn.
+        """在一次成功的恢复 turn 之后清除 resume-pending flag。
 
-        Called from the gateway after ``run_conversation()`` returns a
-        final response for a session that had ``resume_pending=True``,
-        signalling that recovery succeeded.
+        由 gateway 在 ``run_conversation()`` 为某个曾设置 ``resume_pending=True``
+        的 session 返回最终响应之后调用，表示恢复成功。
 
-        Returns True if a flag was cleared.
+        如果清除了某个 flag，则返回 True。
         """
         with self._lock:
             self._ensure_loaded_locked()
@@ -1201,21 +1161,18 @@ class SessionStore:
             return True
 
     def prune_old_entries(self, max_age_days: int) -> int:
-        """Drop SessionEntry records older than max_age_days.
+        """丢弃超过 max_age_days 的 SessionEntry 记录。
 
-        Pruning is based on ``updated_at`` (last activity), not ``created_at``.
-        A session that's been active within the window is kept regardless of
-        how old it is.  Entries marked ``suspended`` are kept — the user
-        explicitly paused them for later resume.  Entries held by an active
-        process (via has_active_processes_fn) are also kept so long-running
-        background work isn't orphaned.
+        修剪基于 ``updated_at``（最后活动时间），而非 ``created_at``。在窗口内有活动
+        的 session 无论多旧都会保留。标记为 ``suspended`` 的记录会保留 —— 用户显式
+        暂停它们以备稍后恢复。由活动进程持有（通过 has_active_processes_fn）的记录也
+        会保留，使长时间运行的后台工作不会成为孤儿。
 
-        Pruning is functionally identical to a natural reset-policy expiry:
-        the transcript in SQLite stays, but the session_key → session_id
-        mapping is dropped and the user starts a fresh session on return.
+        修剪在功能上等价于一次自然的重置策略过期：SQLite 中的 transcript 保留，但
+        session_key → session_id 的映射被丢弃，用户回来时开启一个新 session。
 
-        ``max_age_days <= 0`` disables pruning; returns 0 immediately.
-        Returns the number of entries removed.
+        ``max_age_days <= 0`` 禁用修剪；立即返回 0。
+        返回被移除的记录数。
         """
         if max_age_days is None or max_age_days <= 0:
             return 0
@@ -1229,11 +1186,10 @@ class SessionStore:
             for key, entry in list(self._entries.items()):
                 if entry.suspended:
                     continue
-                # Never prune sessions with an active background process
-                # attached — the user may still be waiting on output.
-                # The callback is keyed by session_key (see process_registry.
-                # has_active_for_session); passing session_id here used to
-                # never match, so active sessions got pruned anyway.
+                # 永不修剪挂有活动后台进程的 session —— 用户可能仍在等待输出。
+                # 该回调以 session_key 为键（见 process_registry.
+                # has_active_for_session）；以前传 session_id 永远不会匹配，因此活动
+                # session 仍会被修剪。
                 if self._has_active_processes_fn is not None:
                     try:
                         if self._has_active_processes_fn(entry.session_key):
@@ -1258,22 +1214,19 @@ class SessionStore:
         return len(removed_keys)
 
     def suspend_recently_active(self, max_age_seconds: int = 120) -> int:
-        """Mark recently-active sessions as resumable after an unexpected exit.
+        """在一次意外退出之后，把最近活动的 session 标记为可恢复。
 
-        Called on gateway startup after a crash or fast restart to preserve
-        in-flight sessions instead of destroying their conversation history
-        (#7536).  Only marks sessions updated within *max_age_seconds* to
-        avoid touching long-idle sessions.  Sets ``resume_pending=True`` so
-        the next incoming message on the same session_key auto-resumes from
-        the existing transcript.
+        在 gateway 因崩溃或快速重启启动时调用，以保留进行中的 session 而不是销毁其
+        对话历史（#7536）。仅标记在 *max_age_seconds* 内有更新的 session，避免触碰
+        长期空闲的 session。设置 ``resume_pending=True``，使同一 session_key 上的
+        下一条入站消息从现有 transcript 自动恢复。
 
-        Entries already flagged ``resume_pending=True`` are skipped.  Entries
-        explicitly ``suspended=True`` (from /stop or stuck-loop escalation)
-        are also skipped.  Terminal escalation for genuinely stuck sessions
-        is still handled by the existing ``.restart_failure_counts`` counter
-        (threshold 3), which runs after this method and sets ``suspended=True``.
+        已标记 ``resume_pending=True`` 的记录被跳过。显式 ``suspended=True``（来自
+        /stop 或卡循环升级）的记录也被跳过。真正卡住 session 的终局升级仍由现有
+        ``.restart_failure_counts`` 计数器（阈值 3）处理，它在本次方法之后运行并设置
+        ``suspended=True``。
 
-        Returns the number of sessions marked resumable.
+        返回被标记为可恢复的 session 数。
         """
         from datetime import timedelta
 
@@ -1294,7 +1247,7 @@ class SessionStore:
         return count
 
     def reset_session(self, session_key: str, display_name: Optional[str] = None) -> Optional[SessionEntry]:
-        """Force reset a session, creating a new session ID."""
+        """强制重置一个 session，创建新的 session ID。"""
         db_end_session_id = None
         db_create_kwargs = None
         new_entry = None
@@ -1346,13 +1299,12 @@ class SessionStore:
         return new_entry
 
     def switch_session(self, session_key: str, target_session_id: str) -> Optional[SessionEntry]:
-        """Switch a session key to point at an existing session ID.
+        """把一个 session key 切换到指向一个现有 session ID。
 
-        Used by ``/resume`` to restore a previously-named session.
-        Ends the current session in SQLite (like reset), but instead of
-        generating a fresh session ID, re-uses ``target_session_id`` so the
-        old transcript is loaded on the next message. If the target session was
-        previously ended, re-open it so gateway resume semantics match the CLI.
+        由 ``/resume`` 使用，用于恢复之前命名的 session。在 SQLite 中结束当前
+        session（类似 reset），但不生成新的 session ID，而是复用
+        ``target_session_id``，使旧 transcript 在下一条消息时被加载。如果目标
+        session 此前已结束，则重新打开它，使 gateway 的恢复语义与 CLI 一致。
         """
         db_end_session_id = None
         new_entry = None
@@ -1365,7 +1317,7 @@ class SessionStore:
 
             old_entry = self._entries[session_key]
 
-            # Don't switch if already on that session
+            # 如果已在该 session 上则不切换
             if old_entry.session_id == target_session_id:
                 return old_entry
 
@@ -1401,7 +1353,7 @@ class SessionStore:
         return new_entry
 
     def list_sessions(self, active_minutes: Optional[int] = None) -> List[SessionEntry]:
-        """List all sessions, optionally filtered by activity."""
+        """列出所有 session，可选按活动时间过滤。"""
         with self._lock:
             self._ensure_loaded_locked()
             entries = list(self._entries.values())
@@ -1415,7 +1367,7 @@ class SessionStore:
         return entries
 
     def lookup_by_session_id(self, session_id: str) -> Optional[SessionEntry]:
-        """Return the active session entry for a persisted session ID, if any."""
+        """返回某个已持久化 session ID 对应的活动会话记录（如有）。"""
         if not session_id:
             return None
         with self._lock:
@@ -1424,15 +1376,14 @@ class SessionStore:
                 if entry.session_id == session_id:
                     return entry
         return None
-    
+
     def append_to_transcript(self, session_id: str, message: Dict[str, Any], skip_db: bool = False) -> None:
-        """Append a message to a session's transcript (SQLite).
+        """向一个 session 的 transcript 追加一条消息（SQLite）。
 
         Args:
-            skip_db: When True, skip the SQLite write. Used when the agent
-                     already persisted messages to SQLite via its own
-                     _flush_messages_to_session_db(), preventing the
-                     duplicate-write bug (#860).
+            skip_db: 为 True 时跳过 SQLite 写入。当 agent 已通过其自身的
+                     _flush_messages_to_session_db() 把消息持久化到 SQLite 时使用，
+                     以避免重复写入 bug（#860）。
         """
         if self._db and not skip_db:
             try:
@@ -1448,9 +1399,9 @@ class SessionStore:
                     reasoning_details=message.get("reasoning_details") if message.get("role") == "assistant" else None,
                     codex_reasoning_items=message.get("codex_reasoning_items") if message.get("role") == "assistant" else None,
                     codex_message_items=message.get("codex_message_items") if message.get("role") == "assistant" else None,
-                    # Platform-side message id (yuanbao msg_id, telegram update_id, …).
-                    # Accept either explicit ``platform_message_id`` or the legacy
-                    # ``message_id`` key the JSONL transcript used.
+                    # 平台侧消息 id（yuanbao msg_id、telegram update_id ……）。
+                    # 接受显式的 ``platform_message_id``，或旧 JSONL transcript 使用
+                    # 的 ``message_id`` key。
                     platform_message_id=(
                         message.get("platform_message_id") or message.get("message_id")
                     ),
@@ -1459,12 +1410,12 @@ class SessionStore:
                 )
             except Exception as e:
                 logger.debug("Session DB operation failed: %s", e)
-    
-    def rewrite_transcript(self, session_id: str, messages: List[Dict[str, Any]]) -> None:
-        """Replace the entire transcript for a session with new messages.
 
-        Used by /retry, /undo, and /compress to persist modified conversation
-        history. state.db is the canonical store.
+    def rewrite_transcript(self, session_id: str, messages: List[Dict[str, Any]]) -> None:
+        """用一个新消息集合替换某个 session 的整个 transcript。
+
+        由 /retry、/undo、/compress 使用，用于持久化修改后的对话历史。state.db 是
+        权威存储。
         """
         if self._db:
             try:
@@ -1473,11 +1424,10 @@ class SessionStore:
                 logger.debug("Failed to rewrite transcript in DB: %s", e)
 
     def load_transcript(self, session_id: str) -> List[Dict[str, Any]]:
-        """Load all messages from a session's transcript.
+        """加载一个 session 的 transcript 中的所有消息。
 
-        state.db is the canonical store. The legacy JSONL fallback was removed
-        in spec 002 — pre-DB sessions on existing disks have already been
-        migrated (their DB row holds the full message history).
+        state.db 是权威存储。旧版 JSONL 回退已在 spec 002 中移除 —— 现有磁盘上
+        DB 之前的 session 已被迁移（其 DB 行持有完整消息历史）。
         """
         if not self._db:
             return []
@@ -1488,16 +1438,15 @@ class SessionStore:
             return []
 
     def rewind_session(self, session_id: str, n: int = 1) -> Optional[Dict[str, Any]]:
-        """Back up ``n`` user turns via soft-delete, keeping rows for audit.
+        """通过软删除回退 ``n`` 个用户 turn，保留行供审计。
 
-        Unlike :meth:`rewrite_transcript` (a hard replace used by /retry),
-        this flips the truncated rows to ``active=0`` in state.db so they
-        survive for audit and stay hidden from re-prompts and search. Mirrors
-        the CLI/TUI ``/undo [N]`` behavior via ``SessionDB.rewind_to_message``.
+        与 :meth:`rewrite_transcript`（/retry 使用的硬替换）不同，此方法把被截断的
+        行在 state.db 中翻转为 ``active=0``，使其留待审计并对重新提示和搜索隐藏。
+        通过 ``SessionDB.rewind_to_message`` 对应 CLI/TUI 的 ``/undo [N]`` 行为。
 
-        Returns a dict ``{"rewound_count", "turns_undone", "target_text"}`` on
-        success, or ``None`` if there's no DB or no user message to back up to.
-        ``n`` clamps to the oldest user turn when it exceeds the turn count.
+        成功时返回 dict ``{"rewound_count", "turns_undone", "target_text"}``，没有
+        DB 或没有可回退的用户消息时返回 ``None``。当 ``n`` 超过 turn 数时会被钳制到
+        最旧的用户 turn。
         """
         if not self._db:
             return None
@@ -1546,9 +1495,9 @@ def build_session_context(
     session_entry: Optional[SessionEntry] = None
 ) -> SessionContext:
     """
-    Build a full session context from a source and config.
-    
-    This is used to inject context into the agent's system prompt.
+    根据来源和 config 构建完整会话上下文。
+
+    用于把上下文注入 agent 的系统提示。
     """
     connected = config.get_connected_platforms()
     

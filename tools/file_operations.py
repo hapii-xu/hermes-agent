@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-File Operations Module
+文件操作模块
 
-Provides file manipulation capabilities (read, write, patch, search) that work
-across all terminal backends (local, docker, ssh, singularity, modal, daytona).
+提供文件操作能力（读取、写入、打补丁、搜索），可跨所有终端后端工作
+（本地、docker、ssh、singularity、modal、daytona）。
 
-The key insight is that all file operations can be expressed as shell commands,
-so we wrap the terminal backend's execute() interface to provide a unified file API.
+核心思路是：所有文件操作都可以表达为 shell 命令，因此我们包装终端后端的
+execute() 接口，提供统一的文件 API。
 
-Usage:
+用法：
     from tools.file_operations import ShellFileOperations
     from tools.terminal_tool import _active_environments
-    
-    # Get file operations for a terminal environment
+
+    # 为某个终端环境获取文件操作对象
     file_ops = ShellFileOperations(terminal_env)
-    
-    # Read a file
+
+    # 读取文件
     result = file_ops.read_file("/path/to/file.py")
-    
-    # Write a file
+
+    # 写入文件
     result = file_ops.write_file("/path/to/new.py", "print('hello')")
-    
-    # Search for content
+
+    # 搜索内容
     result = file_ops.search("TODO", path=".", file_glob="*.py")
 """
 
@@ -42,7 +42,7 @@ from agent.file_safety import (
 
 
 # ---------------------------------------------------------------------------
-# Write-path deny list — blocks writes to sensitive system/credential files
+# 写入路径黑名单 —— 拦截对敏感系统/凭据文件的写入
 # ---------------------------------------------------------------------------
 
 _HOME = str(Path.home())
@@ -57,7 +57,7 @@ _FENCE_MARKER_RE = re.compile(r"'?\x07?__HERMES_FENCE_[A-Za-z0-9]+__\x07?'?")
 
 
 def _strip_terminal_fence_leaks(text: str) -> str:
-    """Strip leaked terminal fence wrappers from file read output."""
+    """从文件读取输出中剥离泄露的终端 fence 包装标记。"""
     if not text:
         return text
 
@@ -74,19 +74,17 @@ def _strip_terminal_fence_leaks(text: str) -> str:
 
 
 def _detect_line_ending(sample: str) -> Optional[str]:
-    """Return the dominant line ending in ``sample`` or None if undetermined.
+    """返回 ``sample`` 中占主导的换行符，若无法判定则返回 None。
 
-    Looks at the first few line breaks and picks ``\\r\\n`` if any are
-    present (Windows / DOS), otherwise ``\\n`` (Unix).  Returns ``None``
-    for empty / single-line content where we can't tell.  Used to
-    preserve the file's original line endings across write_file and
-    patch operations — without this the agent's bare-LF tool args
-    silently normalize Windows-line-ending files, and patch produces
-    mixed endings when only a substituted region changes.
+    检查前几个换行符，若出现 ``\\r\\n``（Windows / DOS）则选用它，
+    否则选用 ``\\n``（Unix）。对于无法判定的空内容/单行内容返回
+    ``None``。用于在 write_file 和 patch 操作之间保留文件原始换行符
+    ——否则 agent 工具参数里的裸 LF 会把 Windows 换行文件静默归一化，
+    而当只有被替换区域发生变化时，patch 会产生混合换行符。
     """
     if not sample:
         return None
-    # Look at the first chunk — enough to tell, cheap to scan.
+    # 检查第一段内容即可判定，且扫描代价很小。
     head = sample[:4096]
     if "\r\n" in head:
         return "\r\n"
@@ -96,15 +94,13 @@ def _detect_line_ending(sample: str) -> Optional[str]:
 
 
 def _normalize_line_endings(text: str, target: str) -> str:
-    """Convert all line endings in ``text`` to ``target`` (``\\n`` or ``\\r\\n``).
+    """将 ``text`` 中所有换行符转换为 ``target``（``\\n`` 或 ``\\r\\n``）。
 
-    Idempotent: ``_normalize_line_endings(_normalize_line_endings(x, "\\r\\n"), "\\r\\n") == _normalize_line_endings(x, "\\r\\n")``.
-    Strips lone ``\\r`` characters as well, so mixed-ending content is
-    homogenized in a single pass.
+    幂等：``_normalize_line_endings(_normalize_line_endings(x, "\\r\\n"), "\\r\\n") == _normalize_line_endings(x, "\\r\\n")``。
+    同时剥离孤立的 ``\\r`` 字符，因此混合换行的内容可一次性归一化。
     """
-    # First collapse to LF (handle CRLF and lone CR), then expand if target
-    # is CRLF.  Order matters: doing the replacements separately would
-    # double-convert a CRLF -> LFLF.
+    # 先归一到 LF（处理 CRLF 和孤立 CR），再在目标为 CRLF 时展开。
+    # 顺序很关键：分别替换会把 CRLF 双重转换成 LFLF。
     lf_normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     if target == "\n":
         return lf_normalized
@@ -113,25 +109,23 @@ def _normalize_line_endings(text: str, target: str) -> str:
     return text
 
 
-# UTF-8 byte order mark. Some Windows editors (Notepad, older Visual Studio,
-# some PowerShell redirects) prepend this invisible 3-byte marker
-# (EF BB BF == U+FEFF) to UTF-8 text files. It renders as nothing but is a
-# real character at the start of the decoded string, so without handling it:
-#   - read_file would surface a stray U+FEFF as the first character (the
-#     model sees a phantom char before `import ...`), and
-#   - patch matches against the true first line would miss, and write_file
-#     would silently drop or double the marker on rewrite.
-# We strip it on read so the model sees clean content, and restore it on
-# write when the original file had one — exactly mirroring the line-ending
-# preservation above (detect on disk, preserve across the edit).
+# UTF-8 字节顺序标记（BOM）。某些 Windows 编辑器（记事本、较旧的 Visual Studio、
+# 部分 PowerShell 重定向）会在 UTF-8 文本文件前加上这个不可见的 3 字节标记
+#（EF BB BF == U+FEFF）。它渲染为空白，但在解码字符串开头是一个真实字符，
+# 因此若不处理：
+#   - read_file 会把多余的 U+FEFF 作为第一个字符暴露出来（模型在 `import ...`
+#     之前看到一个幽灵字符），并且
+#   - patch 针对真实首行的匹配会落空，write_file 在重写时会静默丢弃或重复该标记。
+# 我们在读取时剥离它，使模型看到干净内容；在写入时若原文件有该标记则恢复它——
+# 与上面的换行符保留逻辑完全对应（在磁盘上检测，在编辑过程中保留）。
 _UTF8_BOM = "\ufeff"
 
 
 def _strip_bom(text: str) -> tuple[str, bool]:
-    """Return (text-without-leading-BOM, had_bom).
+    """返回 (去除开头 BOM 后的文本, 是否含有 BOM)。
 
-    Only a single leading BOM is stripped; a BOM appearing mid-content is
-    left alone (it's legitimate data there, not a file marker).
+    仅剥离开头的单个 BOM；出现在内容中间的 BOM 不作处理
+    （在那里它是合法数据，而非文件标记）。
     """
     if text and text.startswith(_UTF8_BOM):
         return text[len(_UTF8_BOM):], True
@@ -139,22 +133,22 @@ def _strip_bom(text: str) -> tuple[str, bool]:
 
 
 def _has_bom(text: Optional[str]) -> bool:
-    """True if ``text`` begins with a UTF-8 BOM."""
+    """若 ``text`` 以 UTF-8 BOM 开头则返回 True。"""
     return bool(text) and text.startswith(_UTF8_BOM)
 
 
 def _is_write_denied(path: str) -> bool:
-    """Return True if path is on the write deny list."""
+    """若路径在写入黑名单中则返回 True。"""
     return _shared_is_write_denied(path)
 
 
 # =============================================================================
-# Result Data Classes
+# 结果数据类
 # =============================================================================
 
 @dataclass
 class ReadResult:
-    """Result from reading a file."""
+    """读取文件的结果。"""
     content: str = ""
     total_lines: int = 0
     file_size: int = 0
@@ -164,7 +158,7 @@ class ReadResult:
     is_image: bool = False
     base64_content: Optional[str] = None
     mime_type: Optional[str] = None
-    dimensions: Optional[str] = None  # For images: "WIDTHxHEIGHT"
+    dimensions: Optional[str] = None  # 图片用："宽x高"
     error: Optional[str] = None
     similar_files: List[str] = field(default_factory=list)
     
@@ -174,16 +168,14 @@ class ReadResult:
 
 @dataclass
 class WriteResult:
-    """Result from writing a file."""
+    """写入文件的结果。"""
     bytes_written: int = 0
     dirs_created: bool = False
     lint: Optional[Dict[str, Any]] = None
-    # Semantic diagnostics from the LSP layer, when applicable.  Kept in
-    # its own field (not folded into ``lint``) so the model and any
-    # downstream parsers can read syntax errors and semantic errors as
-    # separate signals.  ``None`` when LSP is disabled, when the file
-    # isn't in a git workspace, or when no diagnostics were introduced
-    # by this edit.
+    # 来自 LSP 层的语义诊断（适用时）。单独放在一个字段里（不并入
+    # ``lint``），使模型和任何下游解析器能把语法错误与语义错误作为
+    # 两路独立信号读取。在以下情况为 ``None``：LSP 被禁用、文件不在
+    # git 工作区、或本次编辑未引入任何诊断。
     lsp_diagnostics: Optional[str] = None
     error: Optional[str] = None
     warning: Optional[str] = None
@@ -194,14 +186,14 @@ class WriteResult:
 
 @dataclass
 class PatchResult:
-    """Result from patching a file."""
+    """给文件打补丁的结果。"""
     success: bool = False
     diff: str = ""
     files_modified: List[str] = field(default_factory=list)
     files_created: List[str] = field(default_factory=list)
     files_deleted: List[str] = field(default_factory=list)
     lint: Optional[Dict[str, Any]] = None
-    # See :class:`WriteResult.lsp_diagnostics`.
+    # 参见 :class:`WriteResult.lsp_diagnostics`。
     lsp_diagnostics: Optional[str] = None
     error: Optional[str] = None
     
@@ -226,16 +218,16 @@ class PatchResult:
 
 @dataclass
 class SearchMatch:
-    """A single search match."""
+    """单条搜索匹配。"""
     path: str
     line_number: int
     content: str
-    mtime: float = 0.0  # Modification time for sorting
+    mtime: float = 0.0  # 修改时间，用于排序
 
 
 @dataclass
 class SearchResult:
-    """Result from searching."""
+    """搜索的结果。"""
     matches: List[SearchMatch] = field(default_factory=list)
     files: List[str] = field(default_factory=list)
     counts: Dict[str, int] = field(default_factory=dict)
@@ -245,36 +237,33 @@ class SearchResult:
     warning: Optional[str] = None
     error: Optional[str] = None
     
-    # Densify content-mode matches into a path-grouped text block above this
-    # many matches. Below it, the verbose array is already compact enough that
-    # the path-grouping header costs more than it saves.
+    # 当内容模式匹配数超过此阈值时，把匹配项压缩为按路径分组的文本块。
+    # 低于此阈值时，详尽数组本身已足够紧凑，分组表头反而得不偿失。
     _DENSIFY_MIN_MATCHES: ClassVar[int] = 5
 
     def _densify_matches(self) -> Optional[str]:
-        """Render content-mode matches as a compact, path-grouped text block.
+        """把内容模式匹配渲染为紧凑的、按路径分组的文本块。
 
-        The verbose form repeats the ``{"path","line","content"}`` keys and the
-        full path string for every match. This groups consecutive matches by
-        path (path printed once, then ``  <line>: <content>`` rows), which is
-        lossless — every path, line number, and content byte is preserved — and
-        readable by the model without any decode step.
+        尽尽形式会为每条匹配重复 ``{"path","line","content"}`` 键和完整路径
+        字符串。本方法将连续匹配按路径分组（路径仅打印一次，随后是
+        ``  <行号>: <内容>`` 行），该过程无损——每个路径、行号和内容字节
+        都保留——且模型无需任何解码步骤即可阅读。
 
-        Returns ``None`` when densification is not worthwhile (too few matches),
-        so the caller falls back to the verbose array.
+        当压缩得不偿失（匹配太少）时返回 ``None``，
+        使调用方回退到详尽数组。
         """
         if len(self.matches) < self._DENSIFY_MIN_MATCHES:
             return None
-        # ripgrep emits matches path-ordered (all hits in a file are
-        # consecutive), so grouping on path change collapses each file to a
-        # single header without reordering results.
+        # ripgrep 按路径顺序输出匹配（同一文件的所有命中是连续的），
+        # 因此在路径变化时分组即可把每个文件折叠为单个表头，且无需重排结果。
         lines: list[str] = []
         current_path: Optional[str] = None
         for m in self.matches:
             if m.path != current_path:
                 lines.append(m.path)
                 current_path = m.path
-            # rstrip trailing whitespace only; leading indentation in code is
-            # meaningful and preserved verbatim after the "<line>: " prefix.
+            # 仅 rstrip 尾部空白；代码中的前导缩进是有意义的，
+            # 在 "<行号>: " 前缀之后原样保留。
             lines.append(f"  {m.line_number}: {m.content.rstrip()}")
         return "\n".join(lines)
 
@@ -283,8 +272,7 @@ class SearchResult:
         if self.matches:
             dense = self._densify_matches() if densify else None
             if dense is not None:
-                # Self-describing: the format key tells the model how to read
-                # the block so it never has to guess the shape.
+                # 自描述：format 键告诉模型如何解读该文本块，使其无需猜测结构。
                 result["matches_format"] = (
                     "path-grouped: each file path on its own line, followed by "
                     "indented '<line>: <content>' rows for matches in that file"
@@ -312,7 +300,7 @@ class SearchResult:
 
 @dataclass
 class LintResult:
-    """Result from linting a file."""
+    """对文件做 lint 检查的结果。"""
     success: bool = True
     skipped: bool = False
     output: str = ""
@@ -329,7 +317,7 @@ class LintResult:
 
 @dataclass
 class ExecuteResult:
-    """Result from executing a shell command."""
+    """执行 shell 命令的结果。"""
     stdout: str = ""
     exit_code: int = 0
 
@@ -338,54 +326,49 @@ _SEARCH_TIMEOUT_MARKER_RE = re.compile(r"\n?\[Command timed out after \d+s\]\s*$
 
 
 def _search_stdout_and_limit(result: ExecuteResult) -> tuple[str, Optional[str]]:
-    """Return stdout cleaned for parsing and a limit reason for search timeouts."""
+    """返回清理后用于解析的 stdout，以及搜索超时的限制原因。"""
     if result.exit_code == 124:
         return _SEARCH_TIMEOUT_MARKER_RE.sub("", result.stdout), "search_timeout"
     return result.stdout, None
 
 
 def _split_tool_diagnostics(output: str) -> tuple[str, str]:
-    """Separate rg/grep diagnostic lines from real match output.
+    """把 rg/grep 的诊断行与真正的匹配输出分离。
 
-    ``_exec`` runs commands with ``stderr=subprocess.STDOUT``, so error and
-    warning text from ``rg``/``grep`` is interleaved with match lines in a
-    single stream. Diagnostics must not be parsed as matches, and on a hard
-    failure they are the error message to surface.
+    ``_exec`` 以 ``stderr=subprocess.STDOUT`` 运行命令，因此 ``rg``/``grep``
+    的错误和警告文本会与匹配行交错在同一股流里。诊断信息不能被当作匹配解析，
+    而在硬失败时它们就是需要暴露的错误消息。
 
-    Returns ``(diagnostics, payload)`` where ``payload`` contains only lines
-    that look like real search output — a match line (``file:line:content``),
-    a files-only path, a count line, or a context line/separator. Everything
-    else (tool-prefixed errors, rg's multi-line ``regex parse error`` block
-    with its indented carets, blank lines) is folded into ``diagnostics``.
+    返回 ``(diagnostics, payload)``，其中 ``payload`` 仅包含看起来像真正
+    搜索输出的行——匹配行（``file:line:content``）、仅文件路径、计数行、
+    或上下文行/分隔符。其余内容（带工具前缀的错误、rg 多行 ``regex parse
+    error`` 块及其缩脱的脱字符行、空行）都被归入 ``diagnostics``。
 
-    Classifying by *shape* rather than by error prefix is what lets the
-    exit-2 guard distinguish a pure failure (no usable payload → surface the
-    error) from a partial failure (some files matched, one was unreadable →
-    keep the matches). It also means error text can never be mis-parsed as a
-    match, a latent bug that predates the exit-code fix.
+    按*形状*而非按错误前缀分类，正是让 exit-2 守卫能区分纯失败
+    （无可用 payload → 暴露错误）与部分失败（部分文件匹配、某个文件不可读
+    → 保留匹配）的关键。这也意味着错误文本永远不会被误解析为匹配——
+    这是先于 exit-code 修复就存在的潜在 bug。
     """
     diagnostics: list[str] = []
     payload: list[str] = []
     for line in output.split('\n'):
         if not line.strip():
             continue
-        # Tool diagnostics always carry the "<tool>: " prefix (e.g.
-        # "rg: <file>: Permission denied", "grep: Invalid regular
-        # expression", "rg: regex parse error:"). Check this first: a real
-        # match path can legitimately contain "-<digit>" (e.g. a tmp dir like
-        # ".../pytest-686/..."), which the shape regex would otherwise treat
-        # as a match line.
+        # 工具诊断总是带 "<tool>: " 前缀（例如 "rg: <file>: Permission
+        # denied"、"grep: Invalid regular expression"、"rg: regex parse
+        # error:"）。先检查这一点：真实匹配路径里可能合法地包含
+        # "-<数字>"（例如临时目录 ".../pytest-686/..."），形状正则否则会
+        # 把它当作匹配行。
         stripped = line.lstrip()
         if stripped.startswith("rg: ") or stripped.startswith("grep: "):
             diagnostics.append(line)
             continue
-        # Otherwise classify by output shape. rg's regex-parse-error block
-        # also emits an indented caret line and a trailing "error: ..." line
-        # with no tool prefix; neither matches a search-output shape, so they
-        # fall through to diagnostics.
-        #   match / count : "<path>:<...>"   (has a colon; rg -c uses path:count)
-        #   files_only    : "<path>"         (no whitespace, no leading colon)
-        #   context line  : "<path>-<line>-" or the "--" group separator
+        # 否则按输出形状分类。rg 的 regex-parse-error 块还会输出一条
+        # 缩进的脱字符行和一条无工具前缀的 "error: ..." 尾行；二者都不符合
+        # 搜索输出形状，因此落入 diagnostics。
+        #   匹配 / 计数 : "<path>:<...>"   （含冒号；rg -c 用 path:count）
+        #   仅文件       : "<path>"         （无空白，无前导冒号）
+        #   上下文行     : "<path>-<line>-" 或 "--" 分组分隔符
         if line == "--" or _SEARCH_OUTPUT_RE.match(line):
             payload.append(line)
         else:
@@ -393,21 +376,20 @@ def _split_tool_diagnostics(output: str) -> tuple[str, str]:
     return '\n'.join(diagnostics), '\n'.join(payload)
 
 
-# A real rg/grep output line starts with a path token and is followed by a
-# ``:`` (match/count), a ``-`` (context), or nothing (files_only). Tool
-# diagnostics ("rg: ...", "grep: ...", "error: ...", indented carets) never
-# match because the path token forbids whitespace and a leading tool prefix
-# like "rg" is followed by ": " (space) which the negated class rejects.
+# 真正的 rg/grep 输出行以一个路径 token 开头，其后紧跟 ``:``（匹配/计数）、
+# ``-``（上下文）或无（仅文件）。工具诊断（"rg: ..."、"grep: ..."、
+# "error: ..."、缩进的脱字符）永远不会匹配，因为路径 token 禁止空白，
+# 且前导工具前缀如 "rg" 后跟 ": "（空格）会被否定字符类拒绝。
 _SEARCH_OUTPUT_RE = re.compile(r'^([A-Za-z]:)?[^\s:][^\n]*?[:\-]\d|^[^\s:][^\s]*$')
 
 
 def _parse_search_context_line(line: str) -> tuple[str, int, str] | None:
-    """Parse grep/rg context output in ``path-line-content`` format.
+    """解析 ``path-line-content`` 格式的 grep/rg 上下文输出。
 
-    Context lines are ambiguous because filenames may legitimately contain
-    ``-<digits>-`` segments. Prefer the rightmost numeric separator so a path
-    like ``dir/file-12-name.py-8-context`` resolves to
-    ``dir/file-12-name.py`` line ``8`` instead of truncating at ``file``.
+    上下文行存在歧义，因为文件名里可能合法地包含 ``-<数字>-`` 片段。
+    优先选取最右侧的数字分隔符，使类似 ``dir/file-12-name.py-8-context``
+    的路径解析为 ``dir/file-12-name.py`` 第 ``8`` 行，而不是在 ``file``
+    处截断。
     """
     if not line or line == "--":
         return None
@@ -427,53 +409,52 @@ def _parse_search_context_line(line: str) -> tuple[str, int, str] | None:
 
 
 # =============================================================================
-# Abstract Interface
+# 抽象接口
 # =============================================================================
 
 class FileOperations(ABC):
-    """Abstract interface for file operations across terminal backends."""
-    
+    """跨终端后端文件操作的抽象接口。"""
+
     @abstractmethod
     def read_file(self, path: str, offset: int = 1, limit: int = 500) -> ReadResult:
-        """Read a file with pagination support."""
+        """读取文件，支持分页。"""
         ...
 
     @abstractmethod
     def read_file_raw(self, path: str) -> ReadResult:
-        """Read the complete file content as a plain string.
+        """以纯字符串形式读取完整文件内容。
 
-        No pagination, no line-number prefixes, no per-line truncation.
-        Returns ReadResult with .content = full file text, .error set on
-        failure. Always reads to EOF regardless of file size.
+        无分页、无行号前缀、无逐行截断。返回 ReadResult，
+        其中 .content 为完整文件文本，失败时设置 .error。
+        无论文件大小，始终读到 EOF。
         """
         ...
 
     @abstractmethod
     def write_file(self, path: str, content: str) -> WriteResult:
-        """Write content to a file, creating directories as needed."""
+        """向文件写入内容，按需创建目录。"""
         ...
 
     @abstractmethod
     def patch_replace(self, path: str, old_string: str, new_string: str,
                       replace_all: bool = False) -> PatchResult:
-        """Replace text in a file using fuzzy matching."""
+        """使用模糊匹配替换文件中的文本。"""
         ...
 
     @abstractmethod
     def patch_v4a(self, patch_content: str) -> PatchResult:
-        """Apply a V4A format patch."""
+        """应用 V4A 格式的补丁。"""
         ...
 
     @abstractmethod
     def delete_file(self, path: str) -> WriteResult:
-        """Delete a file. Returns WriteResult with .error set on failure."""
+        """删除文件。失败时返回设置了 .error 的 WriteResult。"""
         ...
 
     def delete_path(self, path: str, recursive: bool = False) -> WriteResult:
-        """Cross-platform delete that handles files and (with recursive=True)
-        directory trees. Default implementation delegates to ``delete_file``
-        for the non-recursive case; backends with native recursive support
-        should override.
+        """跨平台删除，可处理文件，并在 recursive=True 时处理目录树。
+        默认实现把非递归情形委托给 ``delete_file``；具备原生递归支持
+        的后端应重写此方法。
         """
         if recursive:
             return WriteResult(error="Recursive delete not implemented for this backend")
@@ -481,27 +462,27 @@ class FileOperations(ABC):
 
     @abstractmethod
     def move_file(self, src: str, dst: str) -> WriteResult:
-        """Move/rename a file from src to dst. Returns WriteResult with .error set on failure."""
+        """把文件从 src 移动/重命名到 dst。失败时返回设置了 .error 的 WriteResult。"""
         ...
 
     @abstractmethod
     def search(self, pattern: str, path: str = ".", target: str = "content",
                file_glob: Optional[str] = None, limit: int = 50, offset: int = 0,
                output_mode: str = "content", context: int = 0) -> SearchResult:
-        """Search for content or files."""
+        """搜索内容或文件。"""
         ...
 
 
 # =============================================================================
-# Shell-based Implementation
+# 基于 shell 的实现
 # =============================================================================
 
-# Image extensions (subset of binary that we can return as base64)
+# 图片扩展名（二进制的一个子集，可作为 base64 返回）
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'}
 
-# Shell-based linters by file extension.  Invoked via _exec() with the
-# filesystem path.  Cover languages where a compile/type check needs an
-# external toolchain (py_compile, node, tsc, go vet, rustfmt).
+# 按文件扩展名索引的 shell linter。通过 _exec() 以文件系统路径调用。
+# 覆盖那些编译/类型检查需要外部工具链的语言
+#（py_compile、node、tsc、go vet、rustfmt）。
 LINTERS = {
     '.py': 'python -m py_compile {file} 2>&1',
     '.js': 'node --check {file} 2>&1',
@@ -510,72 +491,65 @@ LINTERS = {
     '.rs': 'rustfmt --check {file} 2>&1',
 }
 
-# Extensions where the per-file shell linter is structurally weaker than
-# a real LSP server AND produces phantom errors on real-world projects:
+# 这些扩展名的逐文件 shell linter 在结构上弱于真正的 LSP 服务器，且在真实
+# 项目中会产生幻影错误：
 #
-# - ``.ts``: ``tsc --noEmit FILE.ts`` ignores ``tsconfig.json`` and
-#   defaults to no-lib / ES5, so every ES2015+ stdlib reference
-#   (``Promise``, ``Map``, ``Set``, ``ReadonlySet``, ``Iterable``,
-#   ``Math.imul``, ``Number.isFinite``, etc.) reports as missing.  This
-#   floods the agent's lint field with 20K+ tokens of false positives on
-#   every edit.  No supported tsc flag fixes the single-file invocation;
-#   the canonical replacement is ``tsserver`` via LSP, which respects
-#   tsconfig and gives true diagnostics.
+# - ``.ts``：``tsc --noEmit FILE.ts`` 忽略 ``tsconfig.json``，并默认为
+#   no-lib / ES5，因此每个 ES2015+ 标准库引用（``Promise``、``Map``、
+#   ``Set``、``ReadonlySet``、``Iterable``、``Math.imul``、
+#   ``Number.isFinite`` 等）都会报告为缺失。这会在每次编辑时用 20K+
+#   token 的误报淹没 agent 的 lint 字段。没有受支持的 tsc 标志能修复单
+#   文件调用；标准替代方案是通过 LSP 调用 ``tsserver``，它会遵循
+#   tsconfig 并给出真实诊断。
 #
-#   ``.tsx`` is intentionally NOT in ``LINTERS`` (and therefore not
-#   here): it has no shell linter entry, so it falls through to the
-#   ``ext not in LINTERS`` skip case unchanged.  Pre-PR behavior:
-#   ``.tsx`` was implicitly ``skipped``.  Keeping it that way means
-#   ``.tsx`` edits with LSP disabled get no per-file syntax check
-#   (same as before this PR) instead of the broken ``tsc`` invocation
-#   that ``.ts`` used to get.  When LSP is enabled, ``.tsx`` is covered
-#   by the LSP tier via ``_maybe_lsp_diagnostics`` exactly as ``.ts``.
+#   ``.tsx`` 故意不在 ``LINTERS`` 中（因此也不在此处）：它没有 shell
+#   linter 条目，所以会原样落入 ``ext not in LINTERS`` 的跳过分支。本 PR
+#   之前的行为：``.tsx`` 隐式地 ``skipped``。保持这一行为意味着禁用 LSP
+#   时 ``.tsx`` 编辑不获得逐文件语法检查（与本 PR 之前一致），而不是像
+#   ``.ts`` 那样跑损坏的 ``tsc`` 调用。启用 LSP 时，``.tsx`` 由 LSP 层
+#   经 ``_maybe_lsp_diagnostics`` 覆盖，与 ``.ts`` 完全一致。
 #
-# - ``.go``: ``go vet FILE.go`` fails outside a module / GOPATH with
-#   "cannot find package" — already partially handled by
-#   ``_LINTER_UNUSABLE_PATTERNS`` but only when the package error is the
-#   ONLY output; mixed real+phantom output still leaks through.
-#   ``gopls`` is the canonical replacement.
+# - ``.go``：``go vet FILE.go`` 在模块 / GOPATH 之外会以 "cannot find
+#   package" 失败——已由 ``_LINTER_UNUSABLE_PATTERNS`` 部分处理，但仅
+#   当该包错误是唯一输出时；混合的真实+幻影输出仍会漏过。
+#   ``gopls`` 是标准替代方案。
 #
-# - ``.rs``: ``rustfmt --check FILE.rs`` is style, not type-checking, and
-#   rejects non-Cargo project files.  ``rust-analyzer`` is the canonical
-#   replacement.
+# - ``.rs``：``rustfmt --check FILE.rs`` 检查的是风格而非类型，且会拒绝
+#   非 Cargo 项目文件。``rust-analyzer`` 是标准替代方案。
 #
-# When the LSP service is configured AND ``enabled_for(path)`` for this
-# extension's file, ``_check_lint`` skips the shell linter for these
-# extensions — the ``lsp_diagnostics`` channel carries the real signal.
-# Everything else in ``LINTERS`` (Python ``py_compile``, ``node --check``)
-# is fast, file-local, and correct, so it runs unconditionally.
+# 当 LSP 服务已配置且对该扩展名文件 ``enabled_for(path)`` 为真时，
+# ``_check_lint`` 会跳过这些扩展名的 shell linter——由
+# ``lsp_diagnostics`` 通道承载真实信号。``LINTERS`` 中的其余项
+#（Python ``py_compile``、``node --check``）快速、文件局部且正确，
+# 因此无条件运行。
 _SHELL_LINTER_LSP_REDUNDANT = frozenset({'.ts', '.go', '.rs'})
 
 
-# Patterns that indicate the linter base command exists on PATH but
-# couldn't actually run — e.g. ``npx tsc`` when tsc isn't installed in
-# node_modules, or rustfmt complaining there's no Cargo project.  When
-# any of these substrings appears in the linter output, ``_check_lint``
-# returns ``skipped`` instead of ``error`` so:
+# 这些模式表示 linter 的基础命令存在于 PATH 中，但实际上无法运行——例如
+# ``npx tsc`` 在 tsc 未安装到 node_modules 时，或 rustfmt 抱怨没有 Cargo
+# 项目时。当 linter 输出中出现这些子串之一时，``_check_lint`` 返回
+# ``skipped`` 而非 ``error``，以便：
 #
-# 1. The write isn't flagged for a tooling problem the agent can't fix.
-# 2. The LSP semantic tier still runs (it gates on success/skipped).
+# 1. 写入不会因为 agent 无法修复的工具链问题而被标记。
+# 2. LSP 语义层仍会运行（它依据 success/skipped 放行）。
 #
-# Patterns are matched case-insensitively against linter stdout.
+# 这些模式对 linter stdout 做大小写不敏感匹配。
 _LINTER_UNUSABLE_PATTERNS = {
     'npx': (
-        # npx prints this banner when the package isn't installed locally
-        # AND it can't auto-install (no internet, registry off, etc.) or
-        # when the binary it tried to run is the wrong one.
+        # 当包未在本地安装且无法自动安装（无网络、注册表关闭等），
+        # 或它尝试运行的二进制不对时，npx 会打印此横幅。
         'this is not the tsc command you are looking for',
-        # npx with --no-install resolution failures
+        # npx 在 --no-install 解析失败时
         'could not determine executable to run',
         'not found in npm registry',
     ),
     'rustfmt': (
-        # rustfmt outside a Cargo project
+        # rustfmt 在 Cargo 项目之外运行
         'no input filename given',
         'error: not a workspace',
     ),
     'go': (
-        # ``go vet`` on a file outside a module / GOPATH
+        # ``go vet`` 作用于模块 / GOPATH 之外的文件
         'cannot find package',
         'go: cannot find main module',
     ),
@@ -583,13 +557,11 @@ _LINTER_UNUSABLE_PATTERNS = {
 
 
 def _looks_like_linter_unusable(base_cmd: str, output: str) -> bool:
-    """Return True iff ``output`` from ``base_cmd`` indicates the linter
-    itself couldn't run (a tooling gap), as opposed to a real lint error
-    in the file being checked.
+    """当 ``base_cmd`` 的 ``output`` 表明 linter 自身无法运行
+    （工具链缺口），而非被检查文件的真实 lint 错误时，返回 True。
 
-    ``base_cmd`` is the first word of the linter command line (``npx``,
-    ``rustfmt``, ``go``, ...).  ``output`` is the stdout/stderr captured
-    from running it.
+    ``base_cmd`` 是 linter 命令行的第一个单词（``npx``、
+    ``rustfmt``、``go``……）。``output`` 是运行它时捕获的 stdout/stderr。
     """
     patterns = _LINTER_UNUSABLE_PATTERNS.get(base_cmd)
     if not patterns:
@@ -599,26 +571,26 @@ def _looks_like_linter_unusable(base_cmd: str, output: str) -> bool:
 
 
 def _lint_json_inproc(content: str) -> tuple[bool, str]:
-    """In-process JSON syntax check.  Returns (ok, error_message)."""
+    """进程内 JSON 语法检查。返回 (ok, error_message)。"""
     import json as _json
     try:
         _json.loads(content)
         return True, ""
     except _json.JSONDecodeError as e:
         return False, f"JSONDecodeError: {e.msg} (line {e.lineno}, column {e.colno})"
-    except Exception as e:  # noqa: BLE001 — any parse failure is a lint failure
+    except Exception as e:  # noqa: BLE001 — 任何解析失败都视为 lint 失败
         return False, f"{type(e).__name__}: {e}"
 
 
 def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
-    """In-process YAML syntax check.  Returns (ok, error_message).
+    """进程内 YAML 语法检查。返回 (ok, error_message)。
 
-    Skipped gracefully if PyYAML isn't installed — YAML parsing is optional.
+    若未安装 PyYAML 则优雅跳过——YAML 解析是可选的。
     """
     try:
         import yaml as _yaml
     except ImportError:
-        # PyYAML not available — skip silently, caller treats as no linter.
+        # PyYAML 不可用——静默跳过，调用方视为无 linter。
         return True, "__SKIP__"
     try:
         _yaml.safe_load(content)
@@ -630,11 +602,11 @@ def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
 
 
 def _lint_toml_inproc(content: str) -> tuple[bool, str]:
-    """In-process TOML syntax check (stdlib tomllib, Python 3.11+)."""
+    """进程内 TOML 语法检查（标准库 tomllib，Python 3.11+）。"""
     try:
         import tomllib as _toml
     except ImportError:
-        # Pre-3.11 fallback via tomli, if installed.
+        # 3.11 之前通过 tomli 回退（若已安装）。
         try:
             import tomli as _toml  # type: ignore[no-redef]
         except ImportError:
@@ -642,16 +614,16 @@ def _lint_toml_inproc(content: str) -> tuple[bool, str]:
     try:
         _toml.loads(content)
         return True, ""
-    except Exception as e:  # tomllib raises TOMLDecodeError, a ValueError subclass
+    except Exception as e:  # tomllib 抛出 TOMLDecodeError，它是 ValueError 的子类
         return False, f"{type(e).__name__}: {e}"
 
 
 def _lint_python_inproc(content: str) -> tuple[bool, str]:
-    """In-process Python syntax check via ast.parse.
+    """通过 ast.parse 进行进程内 Python 语法检查。
 
-    Catches SyntaxError, IndentationError, and everything else the
-    ast module rejects — matching py_compile's scope but with no
-    subprocess overhead and no dependency on a ``python`` in PATH.
+    捕获 SyntaxError、IndentationError 以及 ast 模块拒绝的其他一切
+    ——覆盖范围与 py_compile 相同，但没有子进程开销，也不依赖 PATH
+    中存在 ``python``。
     """
     import ast as _ast
     try:
@@ -664,11 +636,10 @@ def _lint_python_inproc(content: str) -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
-# In-process linters by file extension.  Preferred over shell linters when
-# present — no subprocess overhead, microseconds per call.  Each callable
-# takes file content (str) and returns (ok: bool, error: str).  An error
-# string of ``"__SKIP__"`` signals the linter isn't available (missing
-# dependency) and should be treated as "no linter".
+# 按文件扩展名索引的进程内 linter。存在时优先于 shell linter——无子进程
+# 开销，每次调用仅微秒级。每个可调用对象接收文件内容（str），返回
+#(ok: bool, error: str)。错误字符串为 ``"__SKIP__"`` 表示该 linter 不可用
+#（缺少依赖），应视为"无 linter"。
 LINTERS_INPROC = {
     '.py': _lint_python_inproc,
     '.json': _lint_json_inproc,
@@ -677,7 +648,7 @@ LINTERS_INPROC = {
     '.toml': _lint_toml_inproc,
 }
 
-# Max limits for read operations
+# 读取操作的最大限制
 MAX_LINES = 2000
 MAX_LINE_LENGTH = 2000
 MAX_FILE_SIZE = 50 * 1024  # 50KB
@@ -688,7 +659,7 @@ DEFAULT_SEARCH_LIMIT = 50
 
 
 def _coerce_int(value: Any, default: int) -> int:
-    """Best-effort integer coercion for tool pagination inputs."""
+    """对工具分页输入做尽力而为的整数转换。"""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -697,14 +668,13 @@ def _coerce_int(value: Any, default: int) -> int:
 
 def normalize_read_pagination(offset: Any = DEFAULT_READ_OFFSET,
                               limit: Any = DEFAULT_READ_LIMIT) -> tuple[int, int]:
-    """Return safe read_file pagination bounds.
+    """返回安全的 read_file 分页边界。
 
-    Tool schemas declare minimum/maximum values, but not every caller or
-    provider enforces schemas before dispatch. Clamp here so invalid values
-    cannot leak into sed ranges like ``0,-1p``.
+    工具 schema 声明了最小/最大值，但并非每个调用方或 provider 都在分派前
+    校验 schema。在此处做夹紧，使非法值不会渗入 sed 范围（如 ``0,-1p``）。
 
-    The upper bound on ``limit`` comes from ``tool_output.max_lines`` in
-    config.yaml (defaults to the module-level ``MAX_LINES`` constant).
+    ``limit`` 的上界来自 config.yaml 中的 ``tool_output.max_lines``
+    （默认为模块级 ``MAX_LINES`` 常量）。
     """
     from tools.tool_output_limits import get_max_lines
     max_lines = get_max_lines()
@@ -716,7 +686,7 @@ def normalize_read_pagination(offset: Any = DEFAULT_READ_OFFSET,
 
 def normalize_search_pagination(offset: Any = DEFAULT_SEARCH_OFFSET,
                                 limit: Any = DEFAULT_SEARCH_LIMIT) -> tuple[int, int]:
-    """Return safe search pagination bounds for shell head/tail pipelines."""
+    """为 shell head/tail 管线返回安全的搜索分页边界。"""
     normalized_offset = max(0, _coerce_int(offset, DEFAULT_SEARCH_OFFSET))
     normalized_limit = max(1, _coerce_int(limit, DEFAULT_SEARCH_LIMIT))
     return normalized_offset, normalized_limit
@@ -726,27 +696,26 @@ _REGEX_NEWLINE_ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\n")
 
 
 def _pattern_has_regex_newline(pattern: str) -> bool:
-    """Return True when a content-search regex tries to match a newline.
+    """当内容搜索正则尝试匹配换行符时返回 True。
 
-    ``search_files`` runs rg/grep in line-oriented mode, not rg
-    ``-U``/``--multiline`` mode, so newline regexes cannot match across
-    lines.  Detect both a literal newline already decoded into the tool
-    argument and a regex ``\n`` escape (odd number of backslashes before
-    ``n``).  Even backslashes, e.g. ``\\n``, mean a literal backslash+n
-    search and should not warn.
+    ``search_files`` 以面向行的模式运行 rg/grep，而非 rg 的
+    ``-U``/``--multiline`` 模式，因此换行正则无法跨行匹配。同时检测
+    已解码进工具参数的字面换行符，以及正则 ``\n`` 转义（``n`` 之前有
+    奇数个反斜杠）。偶数个反斜杠（如 ``\\n``）表示搜索字面的反斜杠+n，
+    不应告警。
     """
     return "\n" in pattern or bool(_REGEX_NEWLINE_ESCAPE_RE.search(pattern))
 
 
 def _is_line_oriented_newline_error(error: Optional[str]) -> bool:
-    """Return True for rg's hard error when multiline mode is required."""
+    """当需要多行模式时 rg 抛出的硬错误，返回 True。"""
     if not error:
         return False
     return "literal \"\\n\" is not allowed" in error and "--multiline" in error
 
 
 def _maybe_warn_line_oriented_newline_pattern(result: SearchResult, pattern: str) -> SearchResult:
-    """Attach a newline-regex warning only when search found no usable results."""
+    """仅当搜索未找到可用结果时附加换行正则告警。"""
     if result.total_count != 0 or not _pattern_has_regex_newline(pattern):
         return result
     if result.error and not _is_line_oriented_newline_error(result.error):
@@ -763,63 +732,59 @@ def _maybe_warn_line_oriented_newline_pattern(result: SearchResult, pattern: str
 
 class ShellFileOperations(FileOperations):
     """
-    File operations implemented via shell commands.
-    
-    Works with ANY terminal backend that has execute(command, cwd) method.
-    This includes local, docker, singularity, ssh, modal, and daytona environments.
+    基于 shell 命令实现的文件操作。
+
+    可与任何具备 execute(command, cwd) 方法的终端后端协同工作。
+    包括本地、docker、singularity、ssh、modal 和 daytona 环境。
     """
-    
+
     def __init__(self, terminal_env, cwd: str = None):
         """
-        Initialize file operations with a terminal environment.
+        用一个终端环境初始化文件操作。
 
-        Args:
-            terminal_env: Any object with execute(command, cwd) method.
-                         Returns {"output": str, "returncode": int}
-            cwd: Optional explicit fallback cwd when the terminal env has
-                 no cwd attribute (rare — most backends track cwd live).
+        参数：
+            terminal_env: 任何具备 execute(command, cwd) 方法的对象。
+                         返回 {"output": str, "returncode": int}
+            cwd: 可选的显式回退 cwd，用于终端环境没有 cwd 属性时
+                （少见——大多数后端实时跟踪 cwd）。
 
-        Note:
-            Every _exec() call prefers the LIVE ``terminal_env.cwd`` over
-            ``self.cwd`` so ``cd`` commands run via the terminal tool are
-            picked up immediately.  ``self.cwd`` is only used as a fallback
-            when the env has no cwd at all — it is NOT the authoritative
-            cwd, despite being settable at init time.
+        说明：
+            每次 _exec() 调用都优先使用 LIVE ``terminal_env.cwd`` 而非
+            ``self.cwd``，以便通过终端工具运行的 ``cd`` 命令能被立即感知。
+            ``self.cwd`` 仅在环境完全没有 cwd 时用作回退——它并非权威
+            cwd，尽管可在初始化时设置。
 
-            Historical bug (fixed): prior versions of this class used the
-            init-time cwd for every _exec() call, which caused relative
-            paths passed to patch/read/write to target the wrong directory
-            after the user ran ``cd`` in the terminal.  Patches would
-            claim success and return a plausible diff but land in the
-            original directory, producing apparent silent failures.
+            历史 bug（已修复）：此类的早期版本对每次 _exec() 调用都使用
+            初始化时的 cwd，导致用户在终端运行 ``cd`` 后，传给
+            patch/read/write 的相对路径指向了错误的目录。补丁会声称成功并
+            返回看似合理的 diff，却落在原目录里，造成明显的静默失败。
         """
         self.env = terminal_env
-        # Determine cwd from various possible sources.
-        # IMPORTANT: do NOT fall back to os.getcwd() -- that's the HOST's local
-        # path which doesn't exist inside container/cloud backends (modal, docker).
-        # If nothing provides a cwd, use "/" as a safe universal default.
+        # 从多种可能来源确定 cwd。
+        # 重要：不要回退到 os.getcwd()——那是主机的本地路径，在
+        # 容器/云后端（modal、docker）内部并不存在。
+        # 若没有任何来源提供 cwd，使用 "/" 作为安全的通用默认值。
         self.cwd = cwd or getattr(terminal_env, 'cwd', None) or \
                    getattr(getattr(terminal_env, 'config', None), 'cwd', None) or "/"
 
-        # Cache for command availability checks
+        # 命令可用性检查的缓存
         self._command_cache: Dict[str, bool] = {}
     
     def _exec(self, command: str, cwd: str = None, timeout: int = None,
               stdin_data: str = None) -> ExecuteResult:
-        """Execute command via terminal backend.
+        """通过终端后端执行命令。
 
-        Args:
-            stdin_data: If provided, piped to the process's stdin instead of
-                        embedding in the command string. Bypasses ARG_MAX.
+        参数：
+            stdin_data: 若提供，则通过管道送入进程 stdin，而非嵌入命令字符串。
+                       可绕过 ARG_MAX。
 
-        Cwd resolution order (critical — see class docstring):
-          1. Explicit ``cwd`` arg (if provided)
-          2. Live ``self.env.cwd`` (tracks ``cd`` commands run via terminal)
-          3. Init-time ``self.cwd`` (fallback when env has no cwd attribute)
+        cwd 解析顺序（关键——参见类 docstring）：
+          1. 显式 ``cwd`` 参数（若提供）
+          2. 实时 ``self.env.cwd``（跟踪通过终端运行的 ``cd`` 命令）
+          3. 初始化时的 ``self.cwd``（环境无 cwd 属性时的回退）
 
-        This ordering ensures relative paths in file operations follow the
-        terminal's current directory — not the directory this file_ops was
-        originally created in.  See test_file_ops_cwd_tracking.py.
+        此顺序确保文件操作中的相对路径跟随终端的当前目录，而非此
+        file_ops 最初创建时所在的目录。参见 test_file_ops_cwd_tracking.py。
         """
         kwargs = {}
         if timeout:
@@ -827,8 +792,8 @@ class ShellFileOperations(FileOperations):
         if stdin_data is not None:
             kwargs['stdin_data'] = stdin_data
 
-        # Resolve cwd from the live env so `cd` commands are picked up.
-        # Fall through to init-time self.cwd only if the env doesn't track cwd.
+        # 从实时环境解析 cwd，使 `cd` 命令能被感知。
+        # 仅当环境不跟踪 cwd 时才回退到初始化时的 self.cwd。
         effective_cwd = cwd or getattr(self.env, 'cwd', None) or self.cwd
         result = self.env.execute(command, cwd=effective_cwd, **kwargs)
         return ExecuteResult(
@@ -837,7 +802,7 @@ class ShellFileOperations(FileOperations):
         )
     
     def _has_command(self, cmd: str) -> bool:
-        """Check if a command exists in the environment (cached)."""
+        """检查环境中是否存在某命令（带缓存）。"""
         if cmd not in self._command_cache:
             result = self._exec(f"command -v {cmd} >/dev/null 2>&1 && echo 'yes'")
             self._command_cache[cmd] = result.stdout.strip() == 'yes'
@@ -845,15 +810,15 @@ class ShellFileOperations(FileOperations):
     
     def _is_likely_binary(self, path: str, content_sample: str = None) -> bool:
         """
-        Check if a file is likely binary.
-        
-        Uses extension check (fast) + content analysis (fallback).
+        检查文件是否可能是二进制。
+
+        使用扩展名检查（快速）+ 内容分析（回退）。
         """
         ext = os.path.splitext(path)[1].lower()
         if ext in BINARY_EXTENSIONS:
             return True
-        
-        # Content analysis: >30% non-printable chars = binary
+
+        # 内容分析：不可打印字符占比 >30% 即视为二进制
         if content_sample:
             non_printable = sum(1 for c in content_sample[:1000]
                                if ord(c) < 32 and c not in '\n\r\t')
@@ -862,31 +827,28 @@ class ShellFileOperations(FileOperations):
         return False
     
     def _is_image(self, path: str) -> bool:
-        """Check if file is an image we can return as base64."""
+        """检查文件是否为可作 base64 返回的图片。"""
         ext = os.path.splitext(path)[1].lower()
         return ext in IMAGE_EXTENSIONS
     
     def _add_line_numbers(self, content: str, start_line: int = 1) -> str:
-        """Add line numbers to content in ``LINE_NUM|CONTENT`` format.
+        """以 ``LINE_NUM|CONTENT`` 格式为内容添加行号。
 
-        The gutter uses a compact ``<n>|`` prefix (e.g. ``34|foo``) rather
-        than a fixed-width zero/space-padded one (``    34|foo``). The
-        padding was pure token overhead: on dense source the padded gutter
-        cost ~48% more tokens than the bare content and ~16% more than the
-        compact form, because the leading spaces + zero-padding tokenize
-        into extra tokens on every single line. An A/B (Sonnet 4.6, 2
-        passes) showed the compact gutter matches the padded gutter on
-        line-reference / patch / value-lookup / structure tasks (4/4 both),
-        while dropping line numbers entirely regressed line-referencing
-        (the model hand-counted and was off-by-one, 3/4) — so we keep the
-        numbers, just not the padding.
+        行号槽采用紧凑的 ``<n>|`` 前缀（如 ``34|foo``），而非定宽零/空格
+        填充形式（``    34|foo``）。填充纯粹是 token 开销：在密集源码上，
+        填充槽比裸内容多耗约 48% 的 token，比紧凑形式多约 16%，因为前导
+        空格 + 零填充在每一行都会被切成额外的 token。一项 A/B 测试
+       （Sonnet 4.6，2 轮）表明，紧凑槽在行引用 / patch / 值查找 / 结构
+        任务上与填充槽持平（双方均 4/4），而完全去掉行号会让行引用退化
+        （模型手工计数出现差一错误，3/4）——因此我们保留行号，只是不保留
+        填充。
         """
         from tools.tool_output_limits import get_max_line_length
         max_line_length = get_max_line_length()
         lines = content.split('\n')
         numbered = []
         for i, line in enumerate(lines, start=start_line):
-            # Truncate long lines
+            # 截断过长的行
             if len(line) > max_line_length:
                 line = line[:max_line_length] + "... [truncated]"
             numbered.append(f"{i}|{line}")
@@ -894,81 +856,74 @@ class ShellFileOperations(FileOperations):
     
     def _expand_path(self, path: str) -> str:
         """
-        Expand shell-style paths like ~ and ~user to absolute paths.
-        
-        This must be done BEFORE shell escaping, since ~ doesn't expand
-        inside single quotes.
+        把 ~ 和 ~user 等 shell 风格路径展开为绝对路径。
+
+        必须在 shell 转义之前完成，因为 ~ 在单引号内不会展开。
         """
         if not path:
             return path
-        
-        # Handle ~ and ~user
+
+        # 处理 ~ 和 ~user
         if path.startswith('~'):
-            # Get home directory via the terminal environment
+            # 通过终端环境获取家目录
             result = self._exec("echo $HOME")
             if result.exit_code == 0 and result.stdout.strip():
                 home = result.stdout.strip()
                 if path == '~':
                     return home
                 elif path.startswith('~/'):
-                    return home + path[1:]  # Replace ~ with home
-                # ~username format - extract and validate username before
-                # letting shell expand it (prevent shell injection via
-                # paths like "~; rm -rf /").
-                rest = path[1:]  # strip leading ~
+                    return home + path[1:]  # 用家目录替换 ~
+                # ~username 格式——在交给 shell 展开前先提取并校验用户名
+                #（防止通过 "~; rm -rf /" 之类的路径进行 shell 注入）。
+                rest = path[1:]  # 去掉开头的 ~
                 slash_idx = rest.find('/')
                 username = rest[:slash_idx] if slash_idx >= 0 else rest
                 if username and re.fullmatch(r'[a-zA-Z0-9._-]+', username):
-                    # Only expand ~username (not the full path) to avoid shell
-                    # injection via path suffixes like "~user/$(malicious)".
+                    # 仅展开 ~username（不展开整个路径），以避免通过
+                    # "~user/$(malicious)" 之类的路径后缀进行 shell 注入。
                     expand_result = self._exec(f"echo ~{username}")
                     if expand_result.exit_code == 0 and expand_result.stdout.strip():
                         user_home = expand_result.stdout.strip()
-                        suffix = path[1 + len(username):]  # e.g. "/rest/of/path"
+                        suffix = path[1 + len(username):]  # 例如 "/rest/of/path"
                         return user_home + suffix
         
         return path
     
     def _escape_shell_arg(self, arg: str) -> str:
-        """Escape a string for safe use in shell commands."""
-        # Use single quotes and escape any single quotes in the string
+        """转义字符串以安全用于 shell 命令。"""
+        # 使用单引号，并转义字符串中的任何单引号
         return "'" + arg.replace("'", "'\"'\"'") + "'"
 
     def _atomic_write(self, path: str, content: str) -> "ExecuteResult":
-        """Write ``content`` to ``path`` atomically via temp-file + rename.
+        """通过临时文件 + rename 将 ``content`` 原子地写入 ``path``。
 
-        Streams ``content`` over stdin into a temp file in the SAME
-        directory as ``path`` (so the final ``mv`` is a real rename on the
-        same filesystem, not a non-atomic cross-device copy), preserves the
-        existing file's mode if it exists, then renames over the target.
-        On any failure the temp file is removed so we never leak a partial
-        ``.hermes-tmp`` file next to the user's data, and the original file
-        is left untouched. Content rides stdin so there is no ARG_MAX limit.
+        通过 stdin 把 ``content`` 流式送入 ``path`` 同目录下的临时文件
+        （使最终的 ``mv`` 是同一文件系统上的真实 rename，而非非原子的跨设备
+        拷贝），保留既有文件（若存在）的 mode，然后 rename 覆盖目标。
+        任何失败时临时文件都会被删除，从而绝不在用户数据旁泄漏残缺的
+        ``.hermes-tmp`` 文件，且原文件保持不变。内容走 stdin，因此没有
+        ARG_MAX 限制。
 
-        Returns an :class:`ExecuteResult`; ``exit_code == 0`` means the file
-        was swapped into place atomically. A non-zero exit means nothing was
-        renamed and the original (if any) is intact.
+        返回 :class:`ExecuteResult`；``exit_code == 0`` 表示文件已被原子地
+        替换到位。非零退出码表示没有发生 rename，原文件（若有）完好无损。
         """
         q_path = self._escape_shell_arg(path)
         parent = os.path.dirname(path) or "."
         q_parent = self._escape_shell_arg(parent)
-        # template basename: hidden so it doesn't show up in casual `ls`,
-        # carries a marker so an orphaned temp (only possible on a hard
-        # crash *between* cat and mv) is identifiable.
+        # 模板基本名：以隐藏开头，使它不出现在随手的 `ls` 中；带一个标记，
+        # 使孤立的临时文件（仅在 cat 与 mv 之间硬崩溃时才可能出现）可被识别。
         tmpl = self._escape_shell_arg(".hermes-tmp.XXXXXX")
 
-        # One shell script, fully quoted. Notes:
-        #  - `mktemp` lands the temp in the target's own dir (-p) so `mv` is
-        #    same-FS atomic; we fall back to a PID-stamped name if the
-        #    backend lacks mktemp (rare; busybox/macOS/Linux all ship it).
-        #  - `chmod --reference` is GNU-only, so we read the octal mode with
-        #    `stat` (GNU `-c%a` or BSD `-f%Lp`) and `chmod` it explicitly;
-        #    silent best-effort — a perms-copy failure must not abort the
-        #    write, the file still lands with default umask perms.
-        #  - `trap ... EXIT` guarantees the temp is removed on every error
-        #    path (cat failure, mv failure, signal) but NOT after a
-        #    successful mv (the temp no longer exists by then).
-        #  - we `cat >` the temp, then `mv -f` it over the target.
+        # 单条 shell 脚本，全部加引号。说明：
+        #  - `mktemp` 将临时文件落在目标自身目录（-p），使 `mv` 同 FS 原子；
+        #    后端缺少 mktemp 时回退到带 PID 的名字（少见；busybox/macOS/Linux
+        #    都自带）。
+        #  - `chmod --reference` 仅 GNU 支持，因此用 `stat`（GNU `-c%a` 或
+        #    BSD `-f%Lp`）读取八进制 mode 并显式 `chmod`；静默的尽力而为
+        #    ——权限拷贝失败不得中断写入，文件仍按默认 umask 权限落地。
+        #  - `trap ... EXIT` 保证临时文件在每条错误路径（cat 失败、mv 失败、
+        #    信号）上都被删除，但在成功 mv 之后不删除（那时临时文件已不存在）。
+        #  - 我们 `cat >` 到临时文件，再 `mv -f` 覆盖目标。
         script = (
             "set -e; "
             f"d={q_parent}; t={q_path}; "
@@ -977,7 +932,7 @@ class ShellFileOperations(FileOperations):
             '|| { tmp="$d/.hermes-tmp.$$"; : > "$tmp" && echo "$tmp"; })"; '
             '[ -n "$tmp" ] || { echo "atomic write: could not create temp file" >&2; exit 1; }; '
             "trap 'rm -f \"$tmp\"' EXIT; "
-            # preserve mode of an existing target (best-effort, never fatal)
+            # 保留既有目标的 mode（尽力而为，绝不致命）
             'if [ -e "$t" ]; then '
             'm="$(stat -c%a "$t" 2>/dev/null || stat -f%Lp "$t" 2>/dev/null || true)"; '
             '[ -n "$m" ] && chmod "$m" "$tmp" 2>/dev/null || true; '
@@ -989,20 +944,19 @@ class ShellFileOperations(FileOperations):
         return self._exec(script, stdin_data=content)
 
     def _detect_file_line_ending(self, path: str, pre_content: Optional[str] = None) -> Optional[str]:
-        """Detect the dominant line ending of a file on disk.
+        """检测磁盘上文件的占主导换行符。
 
-        If ``pre_content`` is already available (we just read the file
-        for lint/LSP purposes), inspect that — zero extra exec calls.
-        Otherwise issue a tiny ``head -c 4096`` to sample the first 4KB.
+        若 ``pre_content`` 已可用（我们刚为 lint/LSP 读过该文件），
+        则直接检查它——零额外 exec 调用。否则执行一次小小的
+        ``head -c 4096`` 采样前 4KB。
 
-        Returns ``"\\r\\n"`` for CRLF (Windows), ``"\\n"`` for LF (Unix),
-        or ``None`` if undetermined (new file, empty file, single-line
-        file with no line break in the first chunk).
+        CRLF（Windows）返回 ``"\\r\\n"``，LF（Unix）返回 ``"\\n"``，
+        无法判定时（新文件、空文件、首段无换行的单行文件）返回 ``None``。
         """
         if pre_content:
             return _detect_line_ending(pre_content)
-        # File may not exist (new write) — `head` exits 0 with empty
-        # stdout in that case which yields None below.  Cheap probe.
+        # 文件可能不存在（新写入）——此时 `head` 以退出码 0 返回空 stdout，
+        # 下面会得到 None。开销很小的探测。
         head_cmd = f"head -c 4096 {self._escape_shell_arg(path)} 2>/dev/null"
         head_result = self._exec(head_cmd)
         if head_result.exit_code != 0 or not head_result.stdout:
@@ -1010,12 +964,11 @@ class ShellFileOperations(FileOperations):
         return _detect_line_ending(head_result.stdout)
 
     def _file_has_bom(self, path: str, pre_content: Optional[str] = None) -> bool:
-        """Whether the file on disk starts with a UTF-8 BOM.
+        """磁盘上的文件是否以 UTF-8 BOM 开头。
 
-        Uses ``pre_content`` if we already read the file (zero extra exec
-        calls); otherwise issues a tiny ``head -c 3`` to sample just the
-        marker. A missing/empty file returns False (new writes get no BOM
-        unless the caller explicitly includes one).
+        若已读过该文件则使用 ``pre_content``（零额外 exec 调用）；否则
+        执行一次小小的 ``head -c 3`` 仅采样该标记。缺失/空文件返回 False
+        （新写入不会有 BOM，除非调用方显式包含一个）。
         """
         if pre_content is not None:
             return _has_bom(pre_content)
@@ -1027,7 +980,7 @@ class ShellFileOperations(FileOperations):
 
 
     def _unified_diff(self, old_content: str, new_content: str, filename: str) -> str:
-        """Generate unified diff between old and new content."""
+        """生成新旧内容之间的 unified diff。"""
         old_lines = old_content.splitlines(keepends=True)
         new_lines = new_content.splitlines(keepends=True)
         diff = difflib.unified_diff(
@@ -1038,32 +991,32 @@ class ShellFileOperations(FileOperations):
         return ''.join(diff)
     
     # =========================================================================
-    # READ Implementation
+    # 读取（READ）实现
     # =========================================================================
-    
+
     def read_file(self, path: str, offset: int = 1, limit: int = 500) -> ReadResult:
         """
-        Read a file with pagination, binary detection, and line numbers.
-        
-        Args:
-            path: File path (absolute or relative to cwd)
-            offset: Line number to start from (1-indexed, default 1)
-            limit: Maximum lines to return (default 500, max 2000)
-        
-        Returns:
-            ReadResult with content, metadata, or error info
+        读取文件，支持分页、二进制检测和行号。
+
+        参数：
+            path: 文件路径（绝对路径或相对 cwd 的路径）
+            offset: 起始行号（从 1 开始，默认 1）
+            limit: 最多返回的行数（默认 500，最大 2000）
+
+        返回：
+            ReadResult，含内容、元数据或错误信息
         """
-        # Expand ~ and other shell paths
+        # 展开 ~ 等 shell 路径
         path = self._expand_path(path)
-        
+
         offset, limit = normalize_read_pagination(offset, limit)
-        
-        # Check if file exists and get size (wc -c is POSIX, works on Linux + macOS)
+
+        # 检查文件是否存在并获取大小（wc -c 是 POSIX 命令，Linux + macOS 通用）
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
         stat_result = self._exec(stat_cmd)
         
         if stat_result.exit_code != 0:
-            # File not found - try to suggest similar files
+            # 文件未找到——尝试推荐相似文件
             return self._suggest_similar_files(path)
         
         stat_output = _strip_terminal_fence_leaks(stat_result.stdout)
@@ -1072,12 +1025,12 @@ class ShellFileOperations(FileOperations):
         except ValueError:
             file_size = 0
         
-        # Check if file is too large
+        # 检查文件是否过大
         if file_size > MAX_FILE_SIZE:
-            # Still try to read, but warn
+            # 仍尝试读取，但给出告警
             pass
-        
-        # Images are never inlined — redirect to the vision tool
+
+        # 图片永远不会内联——重定向到 vision 工具
         if self._is_image(path):
             return ReadResult(
                 is_image=True,
@@ -1089,7 +1042,7 @@ class ShellFileOperations(FileOperations):
                 ),
             )
         
-        # Read a sample to check for binary content
+        # 读取一段样本以检查是否为二进制内容
         sample_cmd = f"head -c 1000 {self._escape_shell_arg(path)} 2>/dev/null"
         sample_result = self._exec(sample_cmd)
         sample_output = _strip_terminal_fence_leaks(sample_result.stdout)
@@ -1101,7 +1054,7 @@ class ShellFileOperations(FileOperations):
                 error="Binary file - cannot display as text. Use appropriate tools to handle this file type."
             )
         
-        # Read with pagination using sed
+        # 用 sed 分页读取
         end_line = offset + limit - 1
         read_cmd = f"sed -n '{offset},{end_line}p' {self._escape_shell_arg(path)}"
         read_result = self._exec(read_cmd)
@@ -1109,13 +1062,12 @@ class ShellFileOperations(FileOperations):
         if read_result.exit_code != 0:
             return ReadResult(error=f"Failed to read file: {read_result.stdout}")
         read_output = _strip_terminal_fence_leaks(read_result.stdout)
-        # Strip a leading UTF-8 BOM so the model never sees a phantom U+FEFF
-        # before the first real character. Only meaningful on the first
-        # chunk (the marker lives at byte 0); later pages can't carry it.
+        # 剥离开头的 UTF-8 BOM，使模型永远不会在第一个真实字符之前看到
+        # 幽灵 U+FEFF。仅在第一段有意义（标记位于字节 0）；后续页不可能带它。
         if offset == 1:
             read_output, _ = _strip_bom(read_output)
         
-        # Get total line count
+        # 获取总行数
         wc_cmd = f"wc -l < {self._escape_shell_arg(path)}"
         wc_result = self._exec(wc_cmd)
         wc_output = _strip_terminal_fence_leaks(wc_result.stdout)
@@ -1124,7 +1076,7 @@ class ShellFileOperations(FileOperations):
         except ValueError:
             total_lines = 0
         
-        # Check if truncated
+        # 检查是否被截断
         truncated = total_lines > end_line
         hint = None
         if truncated:
@@ -1139,18 +1091,18 @@ class ShellFileOperations(FileOperations):
         )
     
     def _suggest_similar_files(self, path: str) -> ReadResult:
-        """Suggest similar files when the requested file is not found."""
+        """当请求的文件未找到时，推荐相似文件。"""
         dir_path = os.path.dirname(path) or "."
         filename = os.path.basename(path)
         basename_no_ext = os.path.splitext(filename)[0]
         ext = os.path.splitext(filename)[1].lower()
         lower_name = filename.lower()
 
-        # List files in the target directory
+        # 列出目标目录下的文件
         ls_cmd = f"ls -1 {self._escape_shell_arg(dir_path)} 2>/dev/null | head -50"
         ls_result = self._exec(ls_cmd)
 
-        scored: list = []  # (score, filepath) — higher is better
+        scored: list = []  # (score, filepath) —— 越高越匹配
         if ls_result.exit_code == 0 and ls_result.stdout.strip():
             for f in ls_result.stdout.strip().split('\n'):
                 if not f:
@@ -1158,22 +1110,22 @@ class ShellFileOperations(FileOperations):
                 lf = f.lower()
                 score = 0
 
-                # Exact match (shouldn't happen, but guard)
+                # 完全匹配（不应发生，但作为守卫）
                 if lf == lower_name:
                     score = 100
-                # Same base name, different extension (e.g. config.yml vs config.yaml)
+                # 同基本名、不同扩展名（如 config.yml 与 config.yaml）
                 elif os.path.splitext(f)[0].lower() == basename_no_ext.lower():
                     score = 90
-                # Target is prefix of candidate or vice-versa
+                # 目标是候选的前缀，或反之
                 elif lf.startswith(lower_name) or lower_name.startswith(lf):
                     score = 70
-                # Substring match (candidate contains query)
+                # 子串匹配（候选包含查询）
                 elif lower_name in lf:
                     score = 60
-                # Reverse substring (query contains candidate name)
+                # 反向子串（查询包含候选名）
                 elif lf in lower_name and len(lf) > 2:
                     score = 40
-                # Same extension with some overlap
+                # 同扩展名且有一定重叠
                 elif ext and os.path.splitext(f)[1].lower() == ext:
                     common = set(lower_name) & set(lf)
                     if len(common) >= max(len(lower_name), len(lf)) * 0.4:
@@ -1191,10 +1143,10 @@ class ShellFileOperations(FileOperations):
         )
     
     def read_file_raw(self, path: str) -> ReadResult:
-        """Read the complete file content as a plain string.
+        """以纯字符串形式读取完整文件内容。
 
-        No pagination, no line-number prefixes, no per-line truncation.
-        Uses cat so the full file is returned regardless of size.
+        无分页、无行号前缀、无逐行截断。
+        使用 cat，因此无论文件大小都会返回完整内容。
         """
         path = self._expand_path(path)
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
@@ -1218,11 +1170,10 @@ class ShellFileOperations(FileOperations):
         cat_result = self._exec(f"cat {self._escape_shell_arg(path)}")
         if cat_result.exit_code != 0:
             return ReadResult(error=f"Failed to read file: {cat_result.stdout}")
-        # Strip a leading UTF-8 BOM so patch's fuzzy matcher operates on
-        # clean content (a phantom U+FEFF before line 1 would defeat an
-        # exact first-line match). write_file restores the BOM on the way
-        # back out — it re-probes the on-disk file, which still has the
-        # marker — so the round-trip preserves it.
+        # 剥离开头的 UTF-8 BOM，使 patch 的模糊匹配器在干净内容上工作
+        #（第 1 行前的幽灵 U+FEFF 会使精确首行匹配落空）。write_file 在写回时
+        # 恢复该 BOM——它会重新探测磁盘文件（文件仍带该标记），因此往返保留
+        # 了该标记。
         raw_content, _ = _strip_bom(_strip_terminal_fence_leaks(cat_result.stdout))
         return ReadResult(
             content=raw_content,
@@ -1230,20 +1181,18 @@ class ShellFileOperations(FileOperations):
         )
 
     def delete_file(self, path: str) -> WriteResult:
-        """Delete a single file.
+        """删除单个文件。
 
-        Cross-platform: runs via ``python -c`` against the terminal env's
-        Python so it works on Windows shells (``cmd.exe``/PowerShell) that
-        don't ship ``rm``. Directories are rejected here — use
-        ``delete_path(recursive=True)`` for trees.
+        跨平台：通过 ``python -c`` 在终端环境的 Python 上运行，因此在
+        未自带 ``rm`` 的 Windows shell（``cmd.exe``/PowerShell）上也能工作。
+        此处拒绝目录——删除目录树请用 ``delete_path(recursive=True)``。
         """
         return self._python_delete(path, recursive=False)
 
     def delete_path(self, path: str, recursive: bool = False) -> WriteResult:
-        """Cross-platform delete that handles files and (with recursive=True)
-        directory trees. Always preferred over emitting ``rm -rf`` /
-        ``Remove-Item -Recurse`` directly so the same tool call works on
-        every backend (local / docker / ssh / Windows).
+        """跨平台删除，可处理文件，并在 recursive=True 时处理目录树。
+        始终优先于直接发出 ``rm -rf`` / ``Remove-Item -Recurse``，使同一次
+        工具调用在每个后端（本地 / docker / ssh / Windows）上都能工作。
         """
         return self._python_delete(path, recursive=recursive)
 
@@ -1252,10 +1201,10 @@ class ShellFileOperations(FileOperations):
         if _is_write_denied(path):
             return WriteResult(error=f"Delete denied: {path} is a protected path")
 
-        # We can't shell out to ``rm`` here — it doesn't exist on Windows
-        # ``cmd.exe`` or PowerShell, so this code path is what's left when
-        # the backend's terminal is a Windows shell. Path is baked into the
-        # snippet via ``repr()`` so quoting is correct on every shell.
+        # 这里不能 shell 调用 ``rm``——它在 Windows 的 ``cmd.exe`` 或
+        # PowerShell 上不存在，因此当后端的终端是 Windows shell 时就走这条
+        # 代码路径。通过 ``repr()`` 把路径烘焙进代码片段，使引用在每个 shell
+        # 上都正确。
         snippet = (
             "import shutil, pathlib, sys\n"
             f"p = pathlib.Path({path!r})\n"
@@ -1267,10 +1216,9 @@ class ShellFileOperations(FileOperations):
             "        else:\n"
             "            print('is a directory: ' + str(p), file=sys.stderr); sys.exit(2)\n"
             "    else:\n"
-            # NOTE: avoid ``unlink(missing_ok=True)`` — that kwarg lands in
-            # Python 3.8 and the remote interpreter (docker/ssh) may still
-            # be 3.7 on older distros. The FileNotFoundError handler below
-            # covers the same case and works back to 3.4.
+            # 注意：避免使用 ``unlink(missing_ok=True)``——该 kwarg 出现在
+            # Python 3.8，而远程解释器（docker/ssh）在较旧的发行版上可能仍是
+            # 3.7。下面的 FileNotFoundError 处理器覆盖同一情形，且可回溯到 3.4。
             "        p.unlink()\n"
             "except FileNotFoundError:\n"
             "    pass\n"
@@ -1280,8 +1228,8 @@ class ShellFileOperations(FileOperations):
 
         result = self._exec(f"python3 -c {self._escape_shell_arg(snippet)}")
 
-        # Fall back to ``python`` (Windows / older systems where there's no
-        # ``python3`` symlink but a ``python`` binary is on PATH).
+        # 回退到 ``python``（Windows / 较旧系统上没有 ``python3`` 符号链接，
+        # 但 PATH 上有 ``python`` 二进制）。
         if result.exit_code != 0 and "python3" in (result.stdout or ""):
             result = self._exec(f"python -c {self._escape_shell_arg(snippet)}")
 
@@ -1291,7 +1239,7 @@ class ShellFileOperations(FileOperations):
         return WriteResult()
 
     def move_file(self, src: str, dst: str) -> WriteResult:
-        """Move a file via mv."""
+        """通过 mv 移动文件。"""
         src = self._expand_path(src)
         dst = self._expand_path(dst)
         for p in (src, dst):
@@ -1305,97 +1253,82 @@ class ShellFileOperations(FileOperations):
         return WriteResult()
 
     # =========================================================================
-    # WRITE Implementation
+    # 写入（WRITE）实现
     # =========================================================================
 
     def write_file(self, path: str, content: str) -> WriteResult:
         """
-        Write content to a file, creating parent directories as needed.
+        向文件写入内容，按需创建父目录。
 
-        Pipes content through stdin to avoid OS ARG_MAX limits on large
-        files. The content never appears in the shell command string —
-        only the file path does.
+        通过 stdin 管道传输内容，以避开大文件的 OS ARG_MAX 限制。内容永远不会
+        出现在 shell 命令字符串中——只有文件路径会出现。
 
-        After the write, runs a post-first / pre-lazy lint check via
-        ``_check_lint_delta()``.  If the new content is clean, the lint
-        call is O(one parse).  If the new content has errors, the pre-write
-        content is linted too and only errors newly introduced by this
-        write are surfaced — pre-existing problems are filtered out so
-        the agent isn't distracted chasing them.
+        写入完成后，通过 ``_check_lint_delta()`` 运行"首写后/惰性前"的 lint
+        检查。若新内容干净，该 lint 调用为 O(一次解析)。若新内容有错误，则
+        也会对写前内容做 lint，并仅暴露本次写入新引入的错误——既有问题被过滤
+        掉，使 agent 不会被分散注意力去追查它们。
 
-        Args:
-            path: File path to write
-            content: Content to write
+        参数：
+            path: 要写入的文件路径
+            content: 要写入的内容
 
-        Returns:
-            WriteResult with bytes written, lint summary, or error.
+        返回：
+            WriteResult，含已写字节数、lint 摘要或错误。
         """
-        # Expand ~ and other shell paths
+        # 展开 ~ 等 shell 路径
         path = self._expand_path(path)
 
-        # Block writes to sensitive paths
+        # 拦截对敏感路径的写入
         if _is_write_denied(path):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
 
-        # Capture pre-write content.  Two consumers want it:
+        # 捕获写前内容。有两个消费者需要它：
         #
-        #   1. The lint-delta layer (for in-process linters like ast.parse
-        #      and json.loads) needs the previous content to compute the
-        #      set of NEW lint errors introduced by this write.
-        #   2. The LSP layer needs pre/post content to build a line-shift
-        #      map — pre-existing diagnostics below the edit point shift
-        #      when lines are added/removed, and the shift map remaps
-        #      baseline diagnostics into post-edit coordinates so the
-        #      strict (range-aware) delta key matches.
+        #   1. lint-delta 层（用于 ast.parse、json.loads 等进程内 linter）
+        #      需要先前内容来计算本次写入新引入的 lint 错误集合。
+        #   2. LSP 层需要写前/写后内容来构建行偏移映射——当增删行时，编辑点
+        #      以下的既有诊断会位移，偏移映射把基线诊断重映射到写后坐标，使
+        #      严格的（范围感知）delta 键能匹配。
         #
-        # The set of extensions we capture pre_content for is therefore
-        # the UNION of in-process lint coverage and LSP coverage.  For
-        # extensions outside both sets (binaries, opaque formats),
-        # skipping the read keeps the hot path fast.
+        # 因此我们为之捕获 pre_content 的扩展名集合，是进程内 lint 覆盖与
+        # LSP 覆盖的并集。对于两者都不覆盖的扩展名（二进制、不透明格式），
+        # 跳过这次读取以保持热路径快速。
         ext = os.path.splitext(path)[1].lower()
         pre_content: Optional[str] = None
         want_pre = ext in LINTERS_INPROC or self._lsp_handles_extension(ext)
         if want_pre:
-            # Best-effort read; failure (file missing, permission) leaves
-            # pre_content as None which makes both downstream consumers
-            # degrade gracefully (lint reports all errors; LSP skips the
-            # shift map).
+            # 尽力而为的读取；失败（文件缺失、权限）使 pre_content 保持
+            # None，从而让两个下游消费者都优雅降级（lint 报告所有错误；
+            # LSP 跳过偏移映射）。
             read_cmd = f"cat {self._escape_shell_arg(path)} 2>/dev/null"
             read_result = self._exec(read_cmd)
             if read_result.exit_code == 0 and read_result.stdout:
                 pre_content = read_result.stdout
 
-        # ── Line-ending preservation (Roo Code pattern) ──────────────
-        # If the file existed with CRLF endings and the agent's content
-        # has bare LFs, convert to CRLF before writing.  Otherwise the
-        # write silently normalizes a Windows-line-ending file (and patch
-        # produces mixed endings when only a substituted region changes).
-        # Detect from a small head sample to avoid reading the full file
-        # for line-ending purposes alone.
+        # ── 换行符保留（Roo Code 模式）──────────────────────────────
+        # 若文件以 CRLF 换行存在，而 agent 的内容是裸 LF，则在写入前转换为
+        # CRLF。否则写入会静默归一化 Windows 换行文件（而当只有被替换区域
+        # 变化时，patch 会产生混合换行）。用一小段 head 样本检测，避免仅为
+        # 换行符目的读取整个文件。
         original_ending = self._detect_file_line_ending(path, pre_content)
         if original_ending == "\r\n":
             content = _normalize_line_endings(content, "\r\n")
 
-        # ── BOM preservation ──────────────────────────────────────────
-        # If the file on disk started with a UTF-8 BOM, keep it. read_file
-        # strips the BOM so the agent never sees it, which means the
-        # content it hands back to write_file / patch has no BOM either —
-        # without restoring it here a round-trip would silently strip the
-        # marker and change the file's byte signature (some Windows
-        # toolchains key on it). Only prepend when the original had a BOM
-        # and the new content doesn't already carry one (guards against
-        # double-BOM if a caller passed raw bytes).
+        # ── BOM 保留 ─────────────────────────────────────────────────
+        # 若磁盘上的文件以 UTF-8 BOM 开头，则保留它。read_file 会剥离 BOM，
+        # 使 agent 永远看不到它，这意味着它交回给 write_file / patch 的内容
+        # 也没有 BOM——若不在此处恢复，往返会静默剥离该标记并改变文件的字节
+        # 签名（某些 Windows 工具链依赖它）。仅当原文件有 BOM 且新内容尚未
+        # 携带 BOM 时才前置（防止调用方传入原始字节导致双重 BOM）。
         if self._file_has_bom(path, pre_content) and not _has_bom(content):
             content = _UTF8_BOM + content
 
-        # Snapshot LSP diagnostics for this file (best-effort) so the
-        # post-write LSP layer can return only diagnostics introduced
-        # by this specific edit.  Mirrors claude-code's
-        # ``beforeFileEdited`` pattern but wired to the local LSP
-        # rather than an external IDE.
+        # 为此文件快照 LSP 诊断（尽力而为），使写后 LSP 层只返回本次编辑
+        # 引入的诊断。镜像 claude-code 的 ``beforeFileEdited`` 模式，但接到
+        # 本地 LSP 而非外部 IDE。
         self._snapshot_lsp_baseline(path)
 
-        # Create parent directories
+        # 创建父目录
         parent = os.path.dirname(path)
         dirs_created = False
 
@@ -1405,27 +1338,23 @@ class ShellFileOperations(FileOperations):
             if mkdir_result.exit_code == 0:
                 dirs_created = True
 
-        # Write atomically: stream into a temp file in the SAME directory,
-        # then ``mv`` it over the target. The rename is atomic on POSIX
-        # (and on every backend FS we run on), so a crash / power loss /
-        # truncated pipe mid-write leaves the original file intact instead
-        # of a half-written corrupt file. Same-directory is load-bearing —
-        # ``mv`` across filesystems degrades to copy+unlink, which is NOT
-        # atomic; keeping the temp beside the target guarantees a real
-        # rename. Content still rides stdin so there's no ARG_MAX limit.
+        # 原子写入：流式送入同目录下的临时文件，再 ``mv`` 覆盖目标。该 rename
+        # 在 POSIX（以及我们运行的每个后端 FS）上是原子的，因此崩溃 / 断电 /
+        # 写入中途管道截断时，原文件保持完好，而非写了一半的损坏文件。同目录
+        # 至关重要——跨文件系统的 ``mv`` 会退化为拷贝+删除，这并非原子；把临时
+        # 文件放在目标旁边才能保证真正的 rename。内容仍走 stdin，因此没有
+        # ARG_MAX 限制。
         #
-        # The temp file is created with ``mktemp`` (collision-safe) when the
-        # backend has it, falling back to a PID-stamped name otherwise. We
-        # then chmod the temp to match the existing file's mode (if any) so
-        # the atomic swap doesn't silently widen or narrow permissions, and
-        # clean the temp up on any failure so we never leak a ``.hermes-tmp``
-        # turd next to the user's file.
+        # 当后端支持时，用 ``mktemp``（碰撞安全）创建临时文件，否则回退到带
+        # PID 的名字。然后 chmod 临时文件以匹配既有文件的 mode（若有），使原子
+        # 替换不会静默扩大或收窄权限；并在任何失败时清理临时文件，从而绝不在
+        # 用户文件旁泄漏 ``.hermes-tmp`` 残留。
         write_result = self._atomic_write(path, content)
 
         if write_result.exit_code != 0:
             return WriteResult(error=f"Failed to write file: {write_result.stdout}")
 
-        # Get bytes written (wc -c is POSIX, works on Linux + macOS)
+        # 获取已写字节数（wc -c 是 POSIX 命令，Linux + macOS 通用）
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
         stat_result = self._exec(stat_cmd)
 
@@ -1434,15 +1363,13 @@ class ShellFileOperations(FileOperations):
         except ValueError:
             bytes_written = len(content.encode('utf-8'))
 
-        # Post-write lint with delta refinement.
+        # 写后 lint，带 delta 精炼。
         lint_result = self._check_lint_delta(path, pre_content=pre_content, post_content=content)
 
-        # Semantic diagnostics from the LSP layer — separate channel.
-        # Only fired when the syntax tier reported clean (no point asking
-        # an LSP for a file that won't even parse).  Pass pre/post
-        # content so the LSP layer can build a line-shift map and
-        # remap baseline diagnostics into post-edit coordinates.
-        # Best-effort: ``""`` is returned for any failure path.
+        # 来自 LSP 层的语义诊断——独立通道。仅在语法层报告干净时触发
+        #（对一个连解析都过不了的文件请求 LSP 没有意义）。传入写前/写后
+        # 内容，使 LSP 层能构建行偏移映射，把基线诊断重映射到写后坐标。
+        # 尽力而为：任何失败路径都返回 ``""``。
         lsp_diagnostics: Optional[str] = None
         if lint_result.success or lint_result.skipped:
             block = self._maybe_lsp_diagnostics(
@@ -1459,31 +1386,31 @@ class ShellFileOperations(FileOperations):
         )
     
     # =========================================================================
-    # PATCH Implementation (Replace Mode)
+    # PATCH 实现（替换模式）
     # =========================================================================
-    
+
     def patch_replace(self, path: str, old_string: str, new_string: str,
                       replace_all: bool = False) -> PatchResult:
         """
-        Replace text in a file using fuzzy matching.
+        使用模糊匹配替换文件中的文本。
 
-        Args:
-            path: File path to modify
-            old_string: Text to find (must be unique unless replace_all=True)
-            new_string: Replacement text
-            replace_all: If True, replace all occurrences
+        参数：
+            path: 要修改的文件路径
+            old_string: 要查找的文本（除非 replace_all=True，否则必须唯一）
+            new_string: 替换文本
+            replace_all: 为 True 时替换所有匹配项
 
-        Returns:
-            PatchResult with diff and lint results
+        返回：
+            PatchResult，含 diff 和 lint 结果
         """
-        # Expand ~ and other shell paths
+        # 展开 ~ 等 shell 路径
         path = self._expand_path(path)
 
-        # Block writes to sensitive paths
+        # 拦截对敏感路径的写入
         if _is_write_denied(path):
             return PatchResult(error=f"Write denied: '{path}' is a protected system/credential file.")
 
-        # Read current content
+        # 读取当前内容
         read_cmd = f"cat {self._escape_shell_arg(path)} 2>/dev/null"
         read_result = self._exec(read_cmd)
         
@@ -1491,14 +1418,12 @@ class ShellFileOperations(FileOperations):
             return PatchResult(error=f"Failed to read file: {path}")
         
         content = read_result.stdout
-        # Strip a leading UTF-8 BOM before matching so the fuzzy matcher and
-        # the diff operate on clean content (a phantom U+FEFF before line 1
-        # defeats an exact first-line match). write_file restores the BOM on
-        # the way back out by re-probing the on-disk file, so the round-trip
-        # preserves the marker.
+        # 匹配前剥离开头的 UTF-8 BOM，使模糊匹配器和 diff 在干净内容上工作
+        #（第 1 行前的幽灵 U+FEFF 会使精确首行匹配落空）。write_file 在写回时
+        # 通过重新探测磁盘文件来恢复 BOM，因此往返保留该标记。
         content, _ = _strip_bom(content)
 
-        # Import and use fuzzy matching
+        # 导入并使用模糊匹配
         from tools.fuzzy_match import fuzzy_find_and_replace
         
         new_content, match_count, _strategy, error = fuzzy_find_and_replace(
@@ -1514,43 +1439,36 @@ class ShellFileOperations(FileOperations):
                 pass
             return PatchResult(error=err_msg)
 
-        # ── Line-ending preservation ──────────────────────────────────
-        # Models nearly always send old_string/new_string with bare LF
-        # in tool args (JSON-encoded), but the file may have CRLF on
-        # disk.  After fuzzy_find_and_replace, ``new_content`` is a
-        # mixed-ending string: the substituted region is LF, surrounding
-        # text keeps the file's CRLF.  Normalize the whole thing to the
-        # file's detected line ending so the on-disk file is consistent
-        # and the unified diff below reflects the actual change.
+        # ── 换行符保留 ───────────────────────────────────────────────
+        # 模型在工具参数（JSON 编码）中几乎总是用裸 LF 发送 old_string/
+        # new_string，但磁盘上的文件可能是 CRLF。fuzzy_find_and_replace
+        # 之后，``new_content`` 是混合换行字符串：被替换区域是 LF，周围
+        # 文本保留文件的 CRLF。把它整体归一化到文件检测出的换行符，使磁盘
+        # 文件一致，且下方的 unified diff 反映真实变化。
         file_ending = _detect_line_ending(content)
         if file_ending:
             new_content = _normalize_line_endings(new_content, file_ending)
 
-        # Write back
+        # 写回
         write_result = self.write_file(path, new_content)
         if write_result.error:
             return PatchResult(error=f"Failed to write changes: {write_result.error}")
 
-        # Post-write verification — re-read the file and confirm the bytes we
-        # intended to write actually landed. Catches silent persistence
-        # failures (backend FS oddities, race with another task, truncated
-        # pipe, etc.) that would otherwise return success-with-diff while the
-        # file is unchanged on disk.
+        # 写后校验——重新读取文件，确认我们打算写入的字节确实落盘。捕获静默
+        # 的持久化失败（后端 FS 异常、与另一任务的竞争、管道截断等），否则会
+        # 在文件磁盘未变时返回"带 diff 的成功"。
         verify_cmd = f"cat {self._escape_shell_arg(path)} 2>/dev/null"
         verify_result = self._exec(verify_cmd)
         if verify_result.exit_code != 0:
             return PatchResult(error=f"Post-write verification failed: could not re-read {path}")
-        # Normalize line endings before comparing.  On Windows, Python's
-        # default text-mode ``open()`` translates ``\n`` → ``\r\n`` on
-        # write, so the file on disk legitimately holds CRLFs while our
-        # ``new_content`` string has bare LFs.  Without this normalization
-        # every patch on Windows returns a bogus "wrote 39, read 42"
-        # false-negative even though the edit landed correctly.  POSIX
-        # backends don't translate, so this is a no-op there.  We also
-        # strip a leading BOM from the re-read: write_file restored the
-        # marker on disk but ``new_content`` is the BOM-less string we
-        # matched against, so the comparison must drop it to stay
-        # apples-to-apples.
+        # 比较前归一化换行符。在 Windows 上，Python 默认的文本模式
+        # ``open()`` 在写入时把 ``\n`` 转换为 ``\r\n``，因此磁盘文件合法地
+        # 持有 CRLF，而我们的 ``new_content`` 字符串是裸 LF。若不做此归一化，
+        # Windows 上的每次 patch 都会返回假的"写了 39、读到 42"假阴性，即使
+        # 编辑已正确落地。POSIX 后端不做转换，因此那里是空操作。我们还剥离
+        # 重读内容的开头 BOM：write_file 在磁盘上恢复了该标记，但
+        # ``new_content`` 是我们用于匹配的无 BOM 字符串，因此比较必须去掉它
+        # 才能同口径对比。
         _verify_bomless, _ = _strip_bom(verify_result.stdout)
         _verify_stdout_normalized = _verify_bomless.replace("\r\n", "\n").replace("\r", "\n")
         _new_content_normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
@@ -1563,12 +1481,11 @@ class ShellFileOperations(FileOperations):
                 "The patch did not persist. Re-read the file and try again."
             ))
 
-        # Generate diff
+        # 生成 diff
         diff = self._unified_diff(content, new_content, path)
 
-        # Auto-lint with delta refinement: only surface errors introduced
-        # by this patch, filtering out pre-existing lint failures so the
-        # agent isn't distracted by problems that were already there.
+        # 带 delta 精炼的自动 lint：仅暴露本次 patch 引入的错误，过滤掉既有
+        # lint 失败，使 agent 不会因原本就存在的问题分心。
         lint_result = self._check_lint_delta(path, pre_content=content, post_content=new_content)
 
         return PatchResult(
@@ -1576,71 +1493,67 @@ class ShellFileOperations(FileOperations):
             diff=diff,
             files_modified=[path],
             lint=lint_result.to_dict() if lint_result else None,
-            # Propagate the LSP diagnostics already captured by the
-            # internal ``write_file`` call.  Its baseline was the
-            # pre-patch content (taken at the start of write_file via
-            # ``_snapshot_lsp_baseline``) so the delta is correct for
-            # the patch as a whole.  Keep the field separate from the
-            # syntax-check ``lint`` so the agent can read both signals.
+            # 传播内部 ``write_file`` 调用已捕获的 LSP 诊断。其基线是
+            # patch 前内容（在 write_file 开头经 ``_snapshot_lsp_baseline``
+            # 采集），因此 delta 对整个 patch 是正确的。该字段与语法检查的
+            # ``lint`` 分开，使 agent 能读取两路信号。
             lsp_diagnostics=write_result.lsp_diagnostics,
         )
     
     def patch_v4a(self, patch_content: str) -> PatchResult:
         """
-        Apply a V4A format patch.
-        
-        V4A format:
+        应用 V4A 格式的补丁。
+
+        V4A 格式：
             *** Begin Patch
             *** Update File: path/to/file.py
-            @@ context hint @@
-             context line
-            -removed line
-            +added line
+            @@ 上下文提示 @@
+             上下文行
+            -删除的行
+            +新增的行
             *** End Patch
-        
-        Args:
-            patch_content: V4A format patch string
-        
-        Returns:
-            PatchResult with changes made
+
+        参数：
+            patch_content: V4A 格式的补丁字符串
+
+        返回：
+            PatchResult，含所做的变更
         """
-        # Import patch parser
+        # 导入 patch 解析器
         from tools.patch_parser import parse_v4a_patch, apply_v4a_operations
         
         operations, parse_error = parse_v4a_patch(patch_content)
         if parse_error:
             return PatchResult(error=f"Failed to parse patch: {parse_error}")
         
-        # Apply operations
+        # 应用操作
         result = apply_v4a_operations(operations, self)
         return result
-    
+
     def _check_lint(self, path: str, content: Optional[str] = None) -> LintResult:
         """
-        Run syntax check on a file after editing.
+        编辑后对文件运行语法检查。
 
-        Prefers the in-process linter for structured formats (JSON, YAML,
-        TOML) when possible — those parse via the Python stdlib in
-        microseconds and don't require a subprocess.  Falls back to the
-        shell linter table for compiled/type-checked languages
-        (py_compile, node --check, tsc, go vet, rustfmt).
+        优先为结构化格式（JSON、YAML、TOML）使用进程内 linter——它们通过
+        Python 标准库在微秒级内解析，且不需要子进程。对编译/类型检查类语言
+        （py_compile、node --check、tsc、go vet、rustfmt）回退到 shell
+        linter 表。
 
-        Args:
-            path: File path (used to select the linter + for shell invocation).
-            content: Optional file content.  If provided AND an in-process
-                     linter matches the extension, we lint the content
-                     directly without re-reading the file from disk.  Ignored
-                     for shell linters.
+        参数：
+            path: 文件路径（用于选择 linter + 用于 shell 调用）。
+            content: 可选的文件内容。若提供且存在与扩展名匹配的进程内 linter，
+                     则直接对该内容做 lint，不从磁盘重读文件。对 shell linter
+                     无效。
 
-        Returns:
-            LintResult with status and any errors.
+        返回：
+            LintResult，含状态和任何错误。
         """
         ext = os.path.splitext(path)[1].lower()
 
-        # Prefer in-process linter when available.
+        # 可用时优先使用进程内 linter。
         inproc = LINTERS_INPROC.get(ext)
         if inproc is not None:
-            # Need content — either passed in or read from disk.
+            # 需要内容——要么传入，要么从磁盘读取。
             if content is None:
                 read_cmd = f"cat {self._escape_shell_arg(path)} 2>/dev/null"
                 read_result = self._exec(read_cmd)
@@ -1652,17 +1565,15 @@ class ShellFileOperations(FileOperations):
                 return LintResult(skipped=True, message=f"No linter available for {ext} (missing dependency)")
             return LintResult(success=ok, output="" if ok else err)
 
-        # Fall back to shell linter.
+        # 回退到 shell linter。
         if ext not in LINTERS:
             return LintResult(skipped=True, message=f"No linter for {ext} files")
 
-        # If a real LSP server is active and claims this file, skip the
-        # shell linter for extensions whose per-file shell invocation is
-        # structurally weaker / floods phantom errors.  See
-        # ``_SHELL_LINTER_LSP_REDUNDANT`` above for the rationale per ext.
-        # The LSP tier runs separately via ``_maybe_lsp_diagnostics`` and
-        # carries the real diagnostics in ``lsp_diagnostics`` on the
-        # WriteResult / PatchResult.
+        # 若有真实 LSP 服务器处于活动状态且声明处理此文件，则对那些逐文件
+        # shell 调用在结构上更弱/会刷出幻影错误的扩展名跳过 shell linter。
+        # 各扩展名的理由参见上方的 ``_SHELL_LINTER_LSP_REDUNDANT``。
+        # LSP 层经 ``_maybe_lsp_diagnostics`` 单独运行，并在 WriteResult /
+        # PatchResult 的 ``lsp_diagnostics`` 中承载真实诊断。
         if ext in _SHELL_LINTER_LSP_REDUNDANT and self._lsp_will_handle(path):
             return LintResult(
                 skipped=True,
@@ -1670,25 +1581,24 @@ class ShellFileOperations(FileOperations):
             )
 
         linter_cmd = LINTERS[ext]
-        # Extract the base command (first word)
+        # 提取基础命令（第一个单词）
         base_cmd = linter_cmd.split()[0]
 
         if not self._has_command(base_cmd):
             return LintResult(skipped=True, message=f"{base_cmd} not available")
 
-        # Run linter
+        # 运行 linter
         cmd = linter_cmd.replace("{file}", self._escape_shell_arg(path))
         result = self._exec(cmd, timeout=30)
 
         if result.exit_code != 0 and _looks_like_linter_unusable(base_cmd, result.stdout):
-            # The linter command exists on PATH but couldn't actually run
-            # (e.g. ``npx tsc`` when tsc isn't in node_modules; ``rustfmt
-            # --check`` without a Cargo project).  This is a tooling gap,
-            # not a real lint failure — surface it as ``skipped`` so the
-            # write doesn't get flagged AND so the LSP tier still runs.
+            # linter 命令存在于 PATH 上但实际无法运行（例如 tsc 不在
+            # node_modules 时跑 ``npx tsc``；没有 Cargo 项目时跑
+            # ``rustfmt --check``）。这是工具链缺口，而非真正的 lint 失败
+            #——以 ``skipped`` 暴露它，使写入不被标记，且 LSP 层仍会运行。
             from tools.ansi_strip import strip_ansi
             cleaned = strip_ansi(result.stdout).strip()
-            # Collapse to a single line — the npx banner is multi-line ASCII.
+            # 折叠为单行——npx 横幅是多行 ASCII。
             first_line = next(
                 (ln.strip() for ln in cleaned.splitlines() if ln.strip()),
                 cleaned[:120],
@@ -1706,74 +1616,59 @@ class ShellFileOperations(FileOperations):
     def _check_lint_delta(self, path: str, pre_content: Optional[str],
                           post_content: Optional[str] = None) -> LintResult:
         """
-        Run post-write syntax lint with pre-write baseline comparison.
+        运行写后语法 lint，并与写前基线比较。
 
-        Two-tier strategy:
+        两层策略：
 
-        1. **Syntax check** (in-process or shell-based, microseconds).
-           Catches the bug class that motivated this layer: corrupt
-           writes, mashed quotes, truncated output.  Hot path.
+        1. **语法检查**（进程内或基于 shell，微秒级）。捕获促成本层的 bug 类：
+           损坏的写入、被压坏的引号、截断的输出。热路径。
 
-        2. **Delta refinement against pre-write content** when the
-           syntax tier reports errors.  Filter out errors that already
-           existed pre-edit so the agent isn't distracted by inherited
-           state.
+        2. 当语法层报告错误时，对写前内容做 **delta 精炼**。过滤掉编辑前
+           就已存在的错误，使 agent 不会被继承的状态分散注意力。
 
-        Semantic diagnostics from the LSP layer are fetched separately
-        via :meth:`_maybe_lsp_diagnostics` and surfaced in the
-        ``lsp_diagnostics`` field on :class:`WriteResult` /
-        :class:`PatchResult`.  Keeping the two channels separate lets
-        the agent (and any downstream parsers) read syntax errors and
-        semantic errors as independent signals.
+        来自 LSP 层的语义诊断经 :meth:`_maybe_lsp_diagnostics` 单独获取，
+        并在 :class:`WriteResult` / :class:`PatchResult` 的
+        ``lsp_diagnostics`` 字段中暴露。两路通道分开，使 agent（及任何下游
+        解析器）能把语法错误与语义错误作为独立信号读取。
 
-        Args:
-            path: File path (for linter selection).
-            pre_content: File content BEFORE the write.  Pass None for new
-                         files or when the pre-state isn't available — the
-                         delta refinement is skipped and all post errors
-                         are returned.
-            post_content: File content AFTER the write.  Optional; if None,
-                          the shell linter reads from disk (same as
-                          _check_lint).
+        参数：
+            path: 文件路径（用于 linter 选择）。
+            pre_content: 写入【之前】的文件内容。新文件或写前状态不可用时
+                         传 None——跳过 delta 精炼并返回所有写后错误。
+            post_content: 写入【之后】的文件内容。可选；若为 None，shell
+                          linter 从磁盘读取（与 _check_lint 相同）。
 
-        Returns:
-            LintResult.  ``output`` contains either the full post-lint
-            errors (no pre-state) or just the new-error lines (delta
-            refinement applied).
+        返回：
+            LintResult。``output`` 含完整的写后 lint 错误（无写前状态），
+            或仅含新错误行（已应用 delta 精炼）。
         """
         post = self._check_lint(path, content=post_content)
 
-        # Hot path: clean post-write syntactically.
+        # 热路径：写后在语法上干净。
         if post.success or post.skipped:
             return post
 
-        # Post-write has syntax errors.  If we have pre-content, run the
-        # delta refinement to filter out pre-existing errors.
+        # 写后有含语法错误。若有写前内容，则运行 delta 精炼以过滤既有错误。
         if pre_content is None:
             return post
 
         pre = self._check_lint(path, content=pre_content)
         if pre.success or pre.skipped or not pre.output:
-            # Pre-write was clean (or we couldn't lint it) — post errors
-            # are all new.  Return the full post output.
+            # 写前干净（或无法 lint）——写后错误都是新的。返回完整写后输出。
             return post
 
-        # Both pre- and post-write had errors.  Compute the set-difference
-        # on non-empty stripped lines.  Caveat: single-error parsers
-        # (ast.parse, json.loads) stop at the first error and don't report
-        # later ones — if the pre-existing error blocks parsing before
-        # reaching the edit region, we can't prove the edit is clean.  So
-        # if every post error also appeared pre-edit, we report the file
-        # as still broken but annotate that this edit introduced nothing
-        # new on top — the agent knows it's inherited state, not fresh
-        # damage, without silently dropping the error.
+        # 写前和写后都有错误。在非空、去空白行上计算集合差。注意：单错误解析器
+        #（ast.parse、json.loads）在首个错误处停止，不报告后续错误——若既有
+        # 错误在到达编辑区域之前就阻断了解析，则无法证明本次编辑是干净的。因此
+        # 若每个写后错误在编辑前就已出现，我们把文件报告为仍损坏，但注明本次
+        # 编辑在其之上未引入任何新内容——agent 由此知道这是继承状态、而非新增
+        # 破坏，同时不会静默丢弃该错误。
         pre_lines = {ln.strip() for ln in pre.output.splitlines() if ln.strip()}
         post_lines = [ln for ln in post.output.splitlines() if ln.strip() and ln.strip() not in pre_lines]
 
         if not post_lines:
-            # Every error in post was also in pre — this edit didn't make
-            # anything obviously worse, but the file remains broken and
-            # the agent should know.
+            # 写后的每个错误在写前都存在——本次编辑没有明显让情况更糟，但文件
+            # 仍然损坏，agent 应当知晓。
             return LintResult(
                 success=False,
                 output=post.output,
@@ -1789,19 +1684,17 @@ class ShellFileOperations(FileOperations):
         )
 
     def _lsp_local_only(self) -> bool:
-        """Return True iff this FileOperations is wired to a local backend.
+        """当且仅当此 FileOperations 接到本地后端时返回 True。
 
-        LSP servers run on the host process — they need access to the
-        files they're linting.  Remote/sandboxed backends (Docker,
-        Modal, SSH, Daytona) keep files inside the sandbox where the
-        host-side LSP server can't reach them, so we skip the LSP
-        path for those entirely.
+        LSP 服务器运行在主机进程上——它需要访问自己要 lint 的文件。远程/沙箱
+        后端（Docker、Modal、SSH、Daytona）把文件保存在沙箱内，主机侧的 LSP
+        服务器够不到，因此我们对这些后端完全跳过 LSP 路径。
         """
         env = getattr(self, "env", None)
         if env is None:
-            # Defensive: some tests construct ShellFileOperations via
-            # ``__new__`` without going through ``__init__``, so
-            # ``self.env`` may be missing.  No env = no LSP path.
+            # 防御性：某些测试通过 ``__new__`` 构造 ShellFileOperations
+            # 而不经 ``__init__``，因此 ``self.env`` 可能缺失。无 env
+            # = 无 LSP 路径。
             return False
         try:
             from tools.environments.local import LocalEnvironment
@@ -1810,15 +1703,13 @@ class ShellFileOperations(FileOperations):
         return isinstance(env, LocalEnvironment)
 
     def _lsp_handles_extension(self, ext: str) -> bool:
-        """Return True iff some registered LSP server claims this extension.
+        """当且仅当某个已注册的 LSP 服务器声明处理此扩展名时返回 True。
 
-        Used to decide whether to capture pre-write content for the
-        line-shift map.  Capturing is cheap (one ``cat`` on the host)
-        but pointless if no LSP would ever look at the file.
+        用于决定是否为行偏移映射捕获写前内容。捕获很廉价（主机上一次
+        ``cat``），但若没有 LSP 会查看该文件则毫无意义。
 
-        Safe to call on remote backends — the registry is purely
-        in-process metadata; we still gate the actual LSP path on
-        :meth:`_lsp_local_only`.
+        在远程后端上调用是安全的——注册表纯粹是进程内元数据；我们仍以
+        :meth:`_lsp_local_only` 把真正的 LSP 路径放行。
         """
         if not ext:
             return False
@@ -1833,21 +1724,18 @@ class ShellFileOperations(FileOperations):
         return False
 
     def _lsp_will_handle(self, path: str) -> bool:
-        """Return True iff the LSP service is active AND will lint this file.
+        """当且仅当 LSP 服务处于活动状态且会 lint 此文件时返回 True。
 
-        Stronger than :meth:`_lsp_handles_extension` — that one only checks
-        the static server registry.  This one additionally requires the
-        LSP service to be configured/enabled and the file to pass
-        :meth:`agent.lsp.manager.LSPService.enabled_for` (which gates on
-        workspace detection, disabled-server set, and the broken-pair
-        short-circuit).
+        比 :meth:`_lsp_handles_extension` 更强——后者只检查静态服务器注册表。
+        本方法额外要求 LSP 服务已被配置/启用，且文件通过
+        :meth:`agent.lsp.manager.LSPService.enabled_for`（它依据工作区检测、
+        已禁用服务器集合、坏对短路来放行）。
 
-        Used by :meth:`_check_lint` to decide whether to skip the per-file
-        shell linter for extensions in ``_SHELL_LINTER_LSP_REDUNDANT``.
+        供 :meth:`_check_lint` 用来决定是否对
+        ``_SHELL_LINTER_LSP_REDUNDANT`` 中的扩展名跳过逐文件 shell linter。
 
-        Best-effort: any failure path returns False so the shell linter
-        runs as before — never suppress lint based on an LSP probe that
-        couldn't actually answer the question.
+        尽力而为：任何失败路径都返回 False，使 shell linter 照常运行
+        ——绝不基于一个实际上无法回答该问题的 LSP 探测来抑制 lint。
         """
         if not self._lsp_local_only():
             return False
@@ -1867,13 +1755,12 @@ class ShellFileOperations(FileOperations):
             return False
 
     def _snapshot_lsp_baseline(self, path: str) -> None:
-        """Capture pre-edit LSP diagnostics so the post-write delta is correct.
+        """捕获编辑前的 LSP 诊断，使写后 delta 正确。
 
-        Best-effort.  Silent on every failure path — LSP is an
-        enrichment layer and must never break a write.
+        尽力而为。每条失败路径都静默——LSP 是增强层，绝不能破坏一次写入。
 
-        Skipped entirely on non-local backends (Docker, Modal, SSH,
-        etc.) — the server can't see files inside the sandbox.
+        在非本地后端（Docker、Modal、SSH 等）上完全跳过——服务器看不到
+        沙箱内的文件。
         """
         if not self._lsp_local_only():
             return
@@ -1896,25 +1783,22 @@ class ShellFileOperations(FileOperations):
         pre_content: Optional[str] = None,
         post_content: Optional[str] = None,
     ) -> str:
-        """Best-effort LSP semantic diagnostics for ``path``.
+        """为 ``path`` 尽力而为地获取 LSP 语义诊断。
 
-        Returns a formatted ``<diagnostics>`` block, or empty string
-        when LSP is unavailable / disabled / produced no errors.
+        返回格式化的 ``<diagnostics>`` 块；当 LSP 不可用/被禁用/未产生错误时
+        返回空字符串。
 
-        When both ``pre_content`` and ``post_content`` are provided,
-        a line-shift map is built and passed to the LSPService so
-        baseline diagnostics are remapped into post-edit coordinates
-        before the set-difference.  Without this, edits that delete
-        or insert lines surface every pre-existing diagnostic below
-        the edit point as "introduced by this edit".
+        当同时提供 ``pre_content`` 和 ``post_content`` 时，会构建行偏移映射
+        并传给 LSPService，使基线诊断在做集合差之前被重映射到写后坐标。
+        若不如此，删除或插入行的编辑会把编辑点以下的每个既有诊断都暴露为
+        "本次编辑引入"。
 
-        Wraps everything in a try/except so a misbehaving LSP server
-        can't break a write.  This intentionally swallows all errors
-        — the calling tier already returned a clean syntax result, so
-        ``""`` here just means "no extra info to add".
+        把一切包在 try/except 中，使行为异常的 LSP 服务器不能破坏写入。
+        这里有意吞掉所有错误——调用层已返回干净的语法结果，因此此处返回
+        ``""`` 仅表示"没有额外信息可加"。
 
-        Skipped entirely on non-local backends (Docker, Modal, SSH,
-        etc.) — same reasoning as ``_snapshot_lsp_baseline``.
+        在非本地后端（Docker、Modal、SSH 等）上完全跳过——理由与
+        ``_snapshot_lsp_baseline`` 相同。
         """
         if not self._lsp_local_only():
             return ""
@@ -1929,9 +1813,8 @@ class ShellFileOperations(FileOperations):
         if svc is None or not svc.enabled_for(path):
             return ""
 
-        # Build a line-shift map when we have both pre and post — it
-        # remaps baseline diagnostics into post-edit coordinates so
-        # the strict (range-aware) delta key matches correctly.
+        # 当同时有写前和写后内容时构建行偏移映射——它把基线诊断重映射到
+        # 写后坐标，使严格的（范围感知）delta 键能正确匹配。
         line_shift = None
         if pre_content is not None and post_content is not None and pre_content != post_content:
             try:
@@ -1956,41 +1839,41 @@ class ShellFileOperations(FileOperations):
             return ""
     
     # =========================================================================
-    # SEARCH Implementation
+    # 搜索（SEARCH）实现
     # =========================================================================
-    
+
     def search(self, pattern: str, path: str = ".", target: str = "content",
                file_glob: Optional[str] = None, limit: int = 50, offset: int = 0,
                output_mode: str = "content", context: int = 0) -> SearchResult:
         """
-        Search for content or files.
-        
-        Args:
-            pattern: Regex (for content) or glob pattern (for files)
-            path: Directory/file to search (default: cwd)
-            target: "content" (grep) or "files" (glob)
-            file_glob: File pattern filter for content search (e.g., "*.py")
-            limit: Max results (default 50)
-            offset: Skip first N results
-            output_mode: "content", "files_only", or "count"
-            context: Lines of context around matches
-        
-        Returns:
-            SearchResult with matches or file list
+        搜索内容或文件。
+
+        参数：
+            pattern: 正则（用于内容）或 glob 模式（用于文件）
+            path: 要搜索的目录/文件（默认：cwd）
+            target: "content"（grep）或 "files"（glob）
+            file_glob: 内容搜索的文件模式过滤器（如 "*.py"）
+            limit: 最多结果数（默认 50）
+            offset: 跳过前 N 个结果
+            output_mode: "content"、"files_only" 或 "count"
+            context: 匹配项周围的上下文行数
+
+        返回：
+            SearchResult，含匹配项或文件列表
         """
         offset, limit = normalize_search_pagination(offset, limit)
 
-        # Expand ~ and other shell paths
+        # 展开 ~ 等 shell 路径
         path = self._expand_path(path)
-        
-        # Validate that the path exists before searching
+
+        # 搜索前校验路径是否存在
         check = self._exec(f"test -e {self._escape_shell_arg(path)} && echo exists || echo not_found")
         if "not_found" in check.stdout:
-            # Try to suggest nearby paths
+            # 尝试推荐附近的路径
             parent = os.path.dirname(path) or "."
             basename_query = os.path.basename(path)
             hint_parts = [f"Path not found: {path}"]
-            # Check if parent directory exists and list similar entries
+            # 检查父目录是否存在并列出相似条目
             parent_check = self._exec(
                 f"test -d {self._escape_shell_arg(parent)} && echo yes || echo no"
             )
@@ -2023,8 +1906,8 @@ class ShellFileOperations(FileOperations):
                                         output_mode, context)
     
     def _search_files(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
-        """Search for files by name pattern (glob-like)."""
-        # Auto-prepend **/ for recursive search if not already present
+        """按名称模式（类 glob）搜索文件。"""
+        # 若未已存在 **/ 前缀，则自动前置以进行递归搜索
         if not pattern.startswith('**/') and '/' not in pattern:
             search_pattern = pattern
         else:
@@ -2036,13 +1919,13 @@ class ShellFileOperations(FileOperations):
             for part in search_root.parts
         )
 
-        # Prefer ripgrep: respects .gitignore, excludes hidden dirs by
-        # default, and has parallel directory traversal (~200x faster than
-        # find on wide trees).  Mirrors _search_content which already uses rg.
+        # 优先用 ripgrep：遵循 .gitignore、默认排除隐藏目录，且具备并行目录
+        # 遍历（在宽目录树上比 find 快约 200 倍）。镜像已使用 rg 的
+        # _search_content。
         if self._has_command('rg'):
             return self._search_files_rg(search_pattern, path, limit, offset)
 
-        # Fallback: find (slower, no .gitignore awareness)
+        # 回退：find（更慢，不感知 .gitignore）
         if not self._has_command('find'):
             return SearchResult(
                 error="File search requires 'rg' (ripgrep) or 'find'. "
@@ -2050,13 +1933,12 @@ class ShellFileOperations(FileOperations):
                       "https://github.com/BurntSushi/ripgrep#installation"
             )
 
-        # Exclude hidden directories (matching ripgrep's default behavior).
+        # 排除隐藏目录（与 ripgrep 的默认行为一致）。
         hidden_exclude = "-not -path '*/.*'" if not has_hidden_path_ancestor else ""
         hidden_filter_expr = f" {hidden_exclude}" if hidden_exclude else ""
 
-        # Use shell pagination for standard roots. For hidden roots, gather full
-        # output so we can re-apply hidden-descendant filtering while allowing
-        # explicit hidden-root searches.
+        # 对标准根使用 shell 分页。对隐藏根，收集完整输出，以便我们能重新应用
+        # 隐藏后代过滤，同时允许显式的隐藏根搜索。
         pagination_expr = ""
         if not has_hidden_path_ancestor:
             pagination_expr = f" | tail -n +{offset + 1} | head -n {limit}"
@@ -2068,7 +1950,7 @@ class ShellFileOperations(FileOperations):
         stdout, limit_reason = _search_stdout_and_limit(result)
 
         if not stdout.strip() and not limit_reason:
-            # Try without -printf (BSD find compatibility -- macOS)
+            # 不带 -printf 重试（兼容 BSD find——macOS）
             cmd_simple = f"find {self._escape_shell_arg(path)}{hidden_filter_expr} -type f -name {self._escape_shell_arg(search_pattern)} " \
                         f"2>/dev/null | sort -rn{pagination_expr}"
             result = self._exec(cmd_simple, timeout=60)
@@ -2084,9 +1966,8 @@ class ShellFileOperations(FileOperations):
             else:
                 files.append(line)
 
-        # For explicit hidden roots, find's path-based filtering excludes every
-        # file under the hidden path. Apply descendant filtering after command
-        # execution so only the explicit root ancestry is bypassed.
+        # 对显式的隐藏根，find 基于路径的过滤会排除该隐藏路径下的每个文件。
+        # 在命令执行后应用后代过滤，使仅显式根祖先被绕过。
         if has_hidden_path_ancestor:
             normalized_root = search_root.resolve()
             filtered_files = []
@@ -2099,7 +1980,7 @@ class ShellFileOperations(FileOperations):
                     continue
                 filtered_files.append(file_path)
             files = filtered_files[offset:offset + limit]
-        # pagination for standard roots is already applied in shell
+        # 标准根的分页已在 shell 中应用
 
         return SearchResult(
             files=files,
@@ -2109,22 +1990,21 @@ class ShellFileOperations(FileOperations):
         )
 
     def _search_files_rg(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
-        """Search for files by name using ripgrep's --files mode.
+        """使用 ripgrep 的 --files 模式按名称搜索文件。
 
-        rg --files respects .gitignore and excludes hidden directories by
-        default, and uses parallel directory traversal for ~200x speedup
-        over find on wide trees.  Results are sorted by modification time
-        (most recently edited first) when rg >= 13.0 supports --sortr.
+        rg --files 遵循 .gitignore 并默认排除隐藏目录，且使用并行目录遍历，
+        在宽目录树上比 find 快约 200 倍。当 rg >= 13.0 支持 --sortr 时，
+        结果按修改时间排序（最近编辑的在前）。
         """
-        # rg --files -g uses glob patterns; wrap bare names so they match
-        # at any depth (equivalent to find -name).
+        # rg --files -g 使用 glob 模式；把裸名字包起来，使其在任意深度匹配
+        #（等价于 find -name）。
         if '/' not in pattern and not pattern.startswith('*'):
             glob_pattern = f"*{pattern}"
         else:
             glob_pattern = pattern
 
         fetch_limit = limit + offset
-        # Try mtime-sorted first (rg 13+); fall back to unsorted if not supported.
+        # 先尝试按 mtime 排序（rg 13+）；不支持时回退到未排序。
         cmd_sorted = (
             f"rg --files --sortr=modified -g {self._escape_shell_arg(glob_pattern)} "
             f"{self._escape_shell_arg(path)} 2>/dev/null "
@@ -2135,7 +2015,7 @@ class ShellFileOperations(FileOperations):
         all_files = [f for f in stdout.strip().split('\n') if f]
 
         if not all_files and not limit_reason:
-            # --sortr may have failed on older rg; retry without it.
+            # --sortr 在较旧的 rg 上可能失败；不带它重试。
             cmd_plain = (
                 f"rg --files -g {self._escape_shell_arg(glob_pattern)} "
                 f"{self._escape_shell_arg(path)} 2>/dev/null "
@@ -2156,8 +2036,8 @@ class ShellFileOperations(FileOperations):
     
     def _search_content(self, pattern: str, path: str, file_glob: Optional[str],
                         limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
-        """Search for content inside files (grep-like)."""
-        # Try ripgrep first (fast), fallback to grep (slower but works)
+        """在文件内部搜索内容（类 grep）。"""
+        # 先试 ripgrep（快），回退到 grep（慢但能用）
         if self._has_command('rg'):
             result = self._search_with_rg(pattern, path, file_glob, limit, offset,
                                           output_mode, context)
@@ -2165,7 +2045,7 @@ class ShellFileOperations(FileOperations):
             result = self._search_with_grep(pattern, path, file_glob, limit, offset,
                                             output_mode, context)
         else:
-            # Neither rg nor grep available (Windows without Git Bash, etc.)
+            # rg 和 grep 都不可用（未装 Git Bash 的 Windows 等）
             return SearchResult(
                 error="Content search requires ripgrep (rg) or grep. "
                       "Install ripgrep: https://github.com/BurntSushi/ripgrep#installation"
@@ -2175,59 +2055,57 @@ class ShellFileOperations(FileOperations):
     
     def _search_with_rg(self, pattern: str, path: str, file_glob: Optional[str],
                         limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
-        """Search using ripgrep."""
+        """使用 ripgrep 搜索。"""
         cmd_parts = ["rg", "--line-number", "--no-heading", "--with-filename"]
-        
-        # Add context if requested
+
+        # 按需添加上下文
         if context > 0:
             cmd_parts.extend(["-C", str(context)])
-        
-        # Add file glob filter (must be quoted to prevent shell expansion)
+
+        # 添加文件 glob 过滤器（必须加引号以防 shell 展开）
         if file_glob:
             cmd_parts.extend(["--glob", self._escape_shell_arg(file_glob)])
-        
-        # Output mode handling
+
+        # 输出模式处理
         if output_mode == "files_only":
-            cmd_parts.append("-l")  # Files only
+            cmd_parts.append("-l")  # 仅文件
         elif output_mode == "count":
-            cmd_parts.append("-c")  # Count per file
-        
-        # Add pattern and path
+            cmd_parts.append("-c")  # 每文件计数
+
+        # 添加模式和路径
         cmd_parts.append(self._escape_shell_arg(pattern))
         cmd_parts.append(self._escape_shell_arg(path))
-        
-        # Fetch extra rows so we can report the true total before slicing.
-        # For context mode, rg emits separator lines ("--") between groups,
-        # so we grab generously and filter in Python.
+
+        # 多取一些行，以便在切片前报告真实总数。对于上下文模式，rg 在组间
+        # 发射分隔行（"--"），因此我们慷慨地抓取并在 Python 中过滤。
         fetch_limit = limit + offset + 200 if context > 0 else limit + offset
         cmd_parts.extend(["|", "head", "-n", str(fetch_limit)])
         
-        # `set -o pipefail` so rg's exit status propagates through `| head`.
-        # Without it the pipeline reports head's status (0), masking rg's
-        # error code (2) and making the guard below unreachable. rg handles a
-        # truncating head cleanly (exit 0 on SIGPIPE), so pipefail does not
-        # introduce false errors on a successful-but-truncated search.
+        # `set -o pipefail` 使 rg 的退出状态能穿过 `| head` 传播。否则管线
+        # 会报告 head 的状态（0），掩盖 rg 的错误码（2），使下方的守卫不可达。
+        # rg 对截断的 head 处理干净（SIGPIPE 时退出 0），因此 pipefail 不会
+        # 在成功但被截断的搜索上引入假错误。
         cmd = "set -o pipefail; " + " ".join(cmd_parts)
         result = self._exec(cmd, timeout=60)
         stdout, limit_reason = _search_stdout_and_limit(result)
 
-        # _exec merges stderr into stdout (stderr=subprocess.STDOUT), so rg's
-        # diagnostic lines ("rg: <file>: <error>", "rg: regex parse error:")
-        # are interleaved with match output. Split them out: diagnostics must
-        # not be parsed as matches, and on a hard error they ARE the message.
+        # _exec 把 stderr 合并进 stdout（stderr=subprocess.STDOUT），因此 rg 的
+        # 诊断行（"rg: <file>: <error>"、"rg: regex parse error:"）会与匹配输出
+        # 交错。把它们分离出来：诊断不能被当作匹配解析，而在硬错误时它们就是
+        # 消息本身。
         diagnostics, payload = _split_tool_diagnostics(stdout)
 
-        # rg exit codes: 0=matches found, 1=no matches, 2=error. rg returns 2
-        # even on partial errors (e.g. one unreadable file in a tree that
-        # otherwise matched), so only surface an error when exit==2 AND no
-        # usable match payload remains. Otherwise we keep the real matches.
+        # rg 退出码：0=找到匹配，1=无匹配，2=错误。即使在部分错误时
+        #（例如一个不可读的文件在一棵 otherwise 匹配的树中）rg 也返回 2，
+        # 因此仅当 exit==2 且无可用匹配 payload 残留时才暴露错误。否则保留
+        # 真实匹配。
         if result.exit_code == 2 and not payload.strip():
             error_msg = diagnostics.strip() or result.stdout.strip() or "Search error"
             return SearchResult(error=f"Search failed: {error_msg}", total_count=0)
 
-        # Parse the diagnostic-free payload so error text never becomes a match.
+        # 解析无诊断的 payload，使错误文本永远不会成为匹配。
         stdout = payload
-        # Parse results based on output mode
+        # 根据输出模式解析结果
         if output_mode == "files_only":
             all_files = [f for f in stdout.strip().split('\n') if f]
             total = len(all_files)
@@ -2257,19 +2135,19 @@ class ShellFileOperations(FileOperations):
             )
         
         else:
-            # Parse content matches and context lines.
-            # rg match lines:   "file:lineno:content"  (colon separator)
-            # rg context lines: "file-lineno-content"   (dash separator)
-            # rg group seps:    "--"
-            # Note: on Windows, paths contain drive letters (e.g. C:\path),
-            # so naive split(":") breaks. Use regex to handle both platforms.
+            # 解析内容匹配和上下文行。
+            # rg 匹配行：  "file:lineno:content" （冒号分隔）
+            # rg 上下文行："file-lineno-content" （短横线分隔）
+            # rg 组分隔符："--"
+            # 注意：Windows 上路径含盘符（如 C:\path），因此简单的 split(":")
+            # 会出错。用正则同时处理两个平台。
             _match_re = re.compile(r'^([A-Za-z]:)?(.*?):(\d+):(.*)$')
             matches = []
             for line in stdout.strip().split('\n'):
                 if not line or line == "--":
                     continue
                 
-                # Try match line first (colon-separated: file:line:content)
+                # 先试匹配行（冒号分隔：file:line:content）
                 m = _match_re.match(line)
                 if m:
                     matches.append(SearchMatch(
@@ -2279,8 +2157,8 @@ class ShellFileOperations(FileOperations):
                     ))
                     continue
                 
-                # Try context line (dash-separated: file-line-content)
-                # Only attempt if context was requested to avoid false positives
+                # 试上下文行（短横线分隔：file-line-content）
+                # 仅在请求了上下文时尝试，以避免误报
                 if context > 0:
                     parsed = _parse_search_context_line(line)
                     if parsed:
@@ -2289,7 +2167,7 @@ class ShellFileOperations(FileOperations):
                             line_number=parsed[1],
                             content=parsed[2][:500]
                         ))
-            
+
             total = len(matches)
             page = matches[offset:offset + limit]
             return SearchResult(
@@ -2298,57 +2176,54 @@ class ShellFileOperations(FileOperations):
                 truncated=total > offset + limit or bool(limit_reason),
                 limit_reason=limit_reason,
             )
-    
+
     def _search_with_grep(self, pattern: str, path: str, file_glob: Optional[str],
                           limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
-        """Fallback search using grep."""
-        cmd_parts = ["grep", "-rnH"]  # -H forces filename even for single-file searches
+        """回退：使用 grep 搜索。"""
+        cmd_parts = ["grep", "-rnH"]  # -H 即使单文件搜索也强制输出文件名
         
-        # Exclude hidden directories (matching ripgrep's default behavior).
-        # This prevents searching inside .hub/index-cache/, .git/, etc.
+        # 排除隐藏目录（与 ripgrep 的默认行为一致）。
+        # 这防止搜索进入 .hub/index-cache/、.git/ 等目录内部。
         cmd_parts.append("--exclude-dir='.*'")
-        
-        # Add context if requested
+
+        # 按需添加上下文
         if context > 0:
             cmd_parts.extend(["-C", str(context)])
-        
-        # Add file pattern filter (must be quoted to prevent shell expansion)
+
+        # 添加文件模式过滤器（必须加引号以防 shell 展开）
         if file_glob:
             cmd_parts.extend(["--include", self._escape_shell_arg(file_glob)])
-        
-        # Output mode handling
+
+        # 输出模式处理
         if output_mode == "files_only":
             cmd_parts.append("-l")
         elif output_mode == "count":
             cmd_parts.append("-c")
-        
-        # Add pattern and path
+
+        # 添加模式和路径
         cmd_parts.append(self._escape_shell_arg(pattern))
         cmd_parts.append(self._escape_shell_arg(path))
-        
-        # Fetch generously so we can compute total before slicing
+
+        # 慷慨抓取，以便在切片前计算总数
         fetch_limit = limit + offset + (200 if context > 0 else 0)
         cmd_parts.extend(["|", "head", "-n", str(fetch_limit)])
         
-        # `set -o pipefail` so grep's exit status propagates through `| head`
-        # (without it the pipeline reports head's 0, masking grep's error 2).
-        # A truncating head makes grep exit 141 (SIGPIPE) on an otherwise
-        # successful search; the strict `== 2` guard below ignores that, so
-        # pipefail does not turn truncated results into false errors.
+        # `set -o pipefail` 使 grep 的退出状态能穿过 `| head` 传播
+        #（否则管线报告 head 的 0，掩盖 grep 的错误 2）。截断的 head 使 grep
+        # 在 otherwise 成功的搜索上以 141（SIGPIPE）退出；下方严格的
+        # `== 2` 守卫会忽略它，因此 pipefail 不会把截断结果变成假错误。
         cmd = "set -o pipefail; " + " ".join(cmd_parts)
         result = self._exec(cmd, timeout=60)
         stdout, limit_reason = _search_stdout_and_limit(result)
 
-        # _exec merges stderr into stdout, so grep's diagnostic lines
-        # ("grep: <file>: <error>") are interleaved with matches. Split them
-        # out so they're never parsed as matches and so a hard error has a
-        # clean message.
+        # _exec 把 stderr 合并进 stdout，因此 grep 的诊断行
+        #（"grep: <file>: <error>"）会与匹配交错。把它们分离出来，使其永远不会
+        # 被当作匹配解析，并使硬错误拥有干净的消息。
         diagnostics, payload = _split_tool_diagnostics(stdout)
 
-        # grep exit codes: 0=matches found, 1=no matches, 2=error. grep
-        # returns 2 on partial errors (e.g. an unreadable file) even when
-        # other files matched, so only surface an error when exit==2 AND no
-        # usable match payload remains.
+        # grep 退出码：0=找到匹配，1=无匹配，2=错误。即使在部分错误时
+        #（例如一个不可读的文件），只要其他文件匹配了 grep 也返回 2，因此
+        # 仅当 exit==2 且无可用匹配 payload 残留时才暴露错误。
         if result.exit_code == 2 and not payload.strip():
             error_msg = diagnostics.strip() or result.stdout.strip() or "Search error"
             return SearchResult(error=f"Search failed: {error_msg}", total_count=0)
@@ -2383,11 +2258,11 @@ class ShellFileOperations(FileOperations):
             )
         
         else:
-            # grep match lines:   "file:lineno:content" (colon)
-            # grep context lines: "file-lineno-content"  (dash)
-            # grep group seps:    "--"
-            # Note: on Windows, paths contain drive letters (e.g. C:\path),
-            # so naive split(":") breaks. Use regex to handle both platforms.
+            # grep 匹配行：  "file:lineno:content"（冒号）
+            # grep 上下文行："file-lineno-content"（短横线）
+            # grep 组分隔符："--"
+            # 注意：Windows 上路径含盘符（如 C:\path），因此简单的 split(":")
+            # 会出错。用正则同时处理两个平台。
             _match_re = re.compile(r'^([A-Za-z]:)?(.*?):(\d+):(.*)$')
             matches = []
             for line in stdout.strip().split('\n'):

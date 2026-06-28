@@ -1,8 +1,8 @@
-# AudioCraft Advanced Usage Guide
+# AudioCraft 高级用法指南
 
-## Fine-tuning MusicGen
+## 微调 MusicGen
 
-### Custom dataset preparation
+### 自定义数据集准备
 
 ```python
 import os
@@ -12,9 +12,9 @@ import torchaudio
 
 def prepare_dataset(audio_dir, output_dir, metadata_file):
     """
-    Prepare dataset for MusicGen fine-tuning.
+    为 MusicGen 微调准备数据集。
 
-    Directory structure:
+    目录结构：
     output_dir/
     ├── audio/
     │   ├── 0001.wav
@@ -26,7 +26,7 @@ def prepare_dataset(audio_dir, output_dir, metadata_file):
     audio_output = output_dir / "audio"
     audio_output.mkdir(parents=True, exist_ok=True)
 
-    # Load metadata (format: {"path": "...", "description": "..."})
+    # 加载元数据（格式：{"path": "...", "description": "..."}）
     with open(metadata_file) as f:
         metadata = json.load(f)
 
@@ -35,17 +35,17 @@ def prepare_dataset(audio_dir, output_dir, metadata_file):
     for idx, item in enumerate(metadata):
         audio_path = Path(audio_dir) / item["path"]
 
-        # Load and resample to 32kHz
+        # 加载并重采样到 32kHz
         wav, sr = torchaudio.load(str(audio_path))
         if sr != 32000:
             resampler = torchaudio.transforms.Resample(sr, 32000)
             wav = resampler(wav)
 
-        # Convert to mono if stereo
+        # 立体声转单声道
         if wav.shape[0] > 1:
             wav = wav.mean(dim=0, keepdim=True)
 
-        # Save processed audio
+        # 保存处理后的音频
         output_path = audio_output / f"{idx:04d}.wav"
         torchaudio.save(str(output_path), wav, sample_rate=32000)
 
@@ -55,7 +55,7 @@ def prepare_dataset(audio_dir, output_dir, metadata_file):
             "duration": wav.shape[1] / 32000
         })
 
-    # Save processed metadata
+    # 保存处理后的元数据
     with open(output_dir / "metadata.json", "w") as f:
         json.dump(processed, f, indent=2)
 
@@ -63,18 +63,18 @@ def prepare_dataset(audio_dir, output_dir, metadata_file):
     return processed
 ```
 
-### Fine-tuning with dora
+### 用 dora 微调
 
 ```bash
-# AudioCraft uses dora for experiment management
-# Install dora
+# AudioCraft 用 dora 做实验管理
+# 安装 dora
 pip install dora-search
 
-# Clone AudioCraft
+# 克隆 AudioCraft
 git clone https://github.com/facebookresearch/audiocraft.git
 cd audiocraft
 
-# Create config for fine-tuning
+# 为微调创建配置
 cat > config/solver/musicgen/finetune.yaml << 'EOF'
 defaults:
   - musicgen/musicgen_base
@@ -107,24 +107,24 @@ checkpoint:
   keep_every_states: null
 EOF
 
-# Run fine-tuning
+# 运行微调
 dora run solver=musicgen/finetune
 ```
 
-### LoRA fine-tuning
+### LoRA 微调
 
 ```python
 from peft import LoraConfig, get_peft_model
 from audiocraft.models import MusicGen
 import torch
 
-# Load base model
+# 加载基础模型
 model = MusicGen.get_pretrained('facebook/musicgen-small')
 
-# Get the language model component
+# 取出语言模型组件
 lm = model.lm
 
-# Configure LoRA
+# 配置 LoRA
 lora_config = LoraConfig(
     r=8,
     lora_alpha=16,
@@ -133,12 +133,12 @@ lora_config = LoraConfig(
     bias="none"
 )
 
-# Apply LoRA
+# 应用 LoRA
 lm = get_peft_model(lm, lora_config)
 lm.print_trainable_parameters()
 ```
 
-## Multi-GPU Training
+## 多 GPU 训练
 
 ### DataParallel
 
@@ -149,7 +149,7 @@ from audiocraft.models import MusicGen
 
 model = MusicGen.get_pretrained('facebook/musicgen-small')
 
-# Wrap LM with DataParallel
+# 用 DataParallel 包裹 LM
 if torch.cuda.device_count() > 1:
     model.lm = nn.DataParallel(model.lm)
 
@@ -173,22 +173,22 @@ def train(rank, world_size):
     model.lm = model.lm.to(rank)
     model.lm = DDP(model.lm, device_ids=[rank])
 
-    # Training loop
+    # 训练循环
     # ...
 
     dist.destroy_process_group()
 ```
 
-## Custom Conditioning
+## 自定义条件化
 
-### Adding new conditioners
+### 添加新的条件器
 
 ```python
 from audiocraft.modules.conditioners import BaseConditioner
 import torch
 
 class CustomConditioner(BaseConditioner):
-    """Custom conditioner for additional control signals."""
+    """用于额外控制信号的自定义条件器。"""
 
     def __init__(self, dim, output_dim):
         super().__init__(dim, output_dim)
@@ -198,17 +198,17 @@ class CustomConditioner(BaseConditioner):
         return self.embed(x)
 
     def tokenize(self, x):
-        # Tokenize input for conditioning
+        # 对输入做 tokenize，用于条件化
         return x
 
-# Use with MusicGen
+# 与 MusicGen 配合使用
 from audiocraft.models.builders import get_lm_model
 
-# Modify model config to include custom conditioner
-# This requires editing the model configuration
+# 修改模型配置以包含自定义条件器
+# 这需要编辑模型配置
 ```
 
-### Melody conditioning internals
+### 旋律条件化内部机制
 
 ```python
 from audiocraft.models import MusicGen
@@ -217,51 +217,51 @@ import torch
 
 model = MusicGen.get_pretrained('facebook/musicgen-melody')
 
-# Access chroma extractor
+# 访问 chroma 提取器
 chroma_extractor = model.lm.condition_provider.conditioners.get('chroma')
 
-# Manual chroma extraction
+# 手动 chroma 提取
 def extract_chroma(audio, sr):
-    """Extract chroma features from audio."""
+    """从音频中提取 chroma 特征。"""
     import librosa
 
-    # Compute chroma
+    # 计算 chroma
     chroma = librosa.feature.chroma_cqt(y=audio.numpy(), sr=sr)
 
     return torch.from_numpy(chroma).float()
 
-# Use extracted chroma for conditioning
+# 用提取出的 chroma 做条件化
 chroma = extract_chroma(melody_audio, sample_rate)
 ```
 
-## EnCodec Deep Dive
+## EnCodec 深入
 
-### Custom compression settings
+### 自定义压缩设置
 
 ```python
 from audiocraft.models import CompressionModel
 import torch
 
-# Load EnCodec
+# 加载 EnCodec
 encodec = CompressionModel.get_pretrained('facebook/encodec_32khz')
 
-# Access codec parameters
+# 访问编解码器参数
 print(f"Sample rate: {encodec.sample_rate}")
 print(f"Channels: {encodec.channels}")
-print(f"Cardinality: {encodec.cardinality}")  # Codebook size
+print(f"Cardinality: {encodec.cardinality}")  # 码本大小
 print(f"Num codebooks: {encodec.num_codebooks}")
 print(f"Frame rate: {encodec.frame_rate}")
 
-# Encode with specific bandwidth
-# Lower bandwidth = more compression, lower quality
+# 用指定带宽编码
+# 带宽越低 = 压缩越多，质量越低
 encodec.set_target_bandwidth(6.0)  # 6 kbps
 
-audio = torch.randn(1, 1, 32000)  # 1 second
+audio = torch.randn(1, 1, 32000)  # 1 秒
 encoded = encodec.encode(audio)
 decoded = encodec.decode(encoded[0])
 ```
 
-### Streaming encoding
+### 流式编码
 
 ```python
 import torch
@@ -270,11 +270,11 @@ from audiocraft.models import CompressionModel
 encodec = CompressionModel.get_pretrained('facebook/encodec_32khz')
 
 def encode_streaming(audio_stream, chunk_size=32000):
-    """Encode audio in streaming fashion."""
+    """以流式方式编码音频。"""
     all_codes = []
 
     for chunk in audio_stream:
-        # Ensure chunk is right shape
+        # 确保 chunk 形状正确
         if chunk.dim() == 1:
             chunk = chunk.unsqueeze(0).unsqueeze(0)
 
@@ -285,7 +285,7 @@ def encode_streaming(audio_stream, chunk_size=32000):
     return torch.cat(all_codes, dim=-1)
 
 def decode_streaming(codes_stream, output_stream):
-    """Decode codes in streaming fashion."""
+    """以流式方式解码码本。"""
     for codes in codes_stream:
         with torch.no_grad():
             audio = encodec.decode(codes)
@@ -294,39 +294,39 @@ def decode_streaming(codes_stream, output_stream):
 
 ## MultiBand Diffusion
 
-### Using MBD for enhanced quality
+### 用 MBD 增强质量
 
 ```python
 from audiocraft.models import MusicGen, MultiBandDiffusion
 
-# Load MusicGen
+# 加载 MusicGen
 model = MusicGen.get_pretrained('facebook/musicgen-medium')
 
-# Load MultiBand Diffusion
+# 加载 MultiBand Diffusion
 mbd = MultiBandDiffusion.get_mbd_musicgen()
 
 model.set_generation_params(duration=10)
 
-# Generate with standard decoder
+# 用标准解码器生成
 descriptions = ["epic orchestral music"]
 wav_standard = model.generate(descriptions)
 
-# Generate tokens and use MBD decoder
+# 生成 token 并用 MBD 解码器
 with torch.no_grad():
-    # Get tokens
+    # 取 token
     gen_tokens = model.generate_tokens(descriptions)
 
-    # Decode with MBD
+    # 用 MBD 解码
     wav_mbd = mbd.tokens_to_wav(gen_tokens)
 
-# Compare quality
+# 比较质量
 print(f"Standard shape: {wav_standard.shape}")
 print(f"MBD shape: {wav_mbd.shape}")
 ```
 
-## API Server Deployment
+## API 服务器部署
 
-### FastAPI server
+### FastAPI 服务器
 
 ```python
 from fastapi import FastAPI, HTTPException
@@ -339,7 +339,7 @@ import base64
 
 app = FastAPI()
 
-# Load model at startup
+# 启动时加载模型
 model = None
 
 @app.on_event("startup")
@@ -374,7 +374,7 @@ async def generate(request: GenerateRequest):
         with torch.no_grad():
             wav = model.generate([request.prompt])
 
-        # Convert to bytes
+        # 转为字节
         buffer = io.BytesIO()
         torchaudio.save(buffer, wav[0].cpu(), sample_rate=32000, format="wav")
         buffer.seek(0)
@@ -394,10 +394,10 @@ async def generate(request: GenerateRequest):
 async def health():
     return {"status": "ok", "model_loaded": model is not None}
 
-# Run: uvicorn server:app --host 0.0.0.0 --port 8000
+# 运行：uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-### Batch processing service
+### 批处理服务
 
 ```python
 import asyncio
@@ -412,7 +412,7 @@ class MusicGenService:
         self.lock = asyncio.Lock()
 
     async def generate_async(self, prompt, duration=10):
-        """Async generation with thread pool."""
+        """用线程池做异步生成。"""
         loop = asyncio.get_event_loop()
 
         def _generate():
@@ -420,16 +420,16 @@ class MusicGenService:
                 self.model.set_generation_params(duration=duration)
                 return self.model.generate([prompt])
 
-        # Run in thread pool
+        # 在线程池中运行
         wav = await loop.run_in_executor(self.executor, _generate)
         return wav[0].cpu()
 
     async def generate_batch_async(self, prompts, duration=10):
-        """Process multiple prompts concurrently."""
+        """并发处理多个提示。"""
         tasks = [self.generate_async(p, duration) for p in prompts]
         return await asyncio.gather(*tasks)
 
-# Usage
+# 用法
 service = MusicGenService()
 
 async def main():
@@ -438,9 +438,9 @@ async def main():
     return results
 ```
 
-## Integration Patterns
+## 集成模式
 
-### LangChain tool
+### LangChain 工具
 
 ```python
 from langchain.tools import BaseTool
@@ -462,7 +462,7 @@ class MusicGeneratorTool(BaseTool):
         with torch.no_grad():
             wav = self.model.generate([description])
 
-        # Save to temp file
+        # 保存到临时文件
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             torchaudio.save(f.name, wav[0].cpu(), sample_rate=32000)
             return f"Generated music saved to: {f.name}"
@@ -471,7 +471,7 @@ class MusicGeneratorTool(BaseTool):
         return self._run(description)
 ```
 
-### Gradio with advanced controls
+### 带高级控件的 Gradio
 
 ```python
 import gradio as gr
@@ -500,7 +500,7 @@ def generate(prompt, duration, temperature, cfg_coef, top_k, model_size):
     with torch.no_grad():
         wav = model.generate([prompt])
 
-    # Save
+    # 保存
     path = "output.wav"
     torchaudio.save(path, wav[0].cpu(), sample_rate=32000)
     return path
@@ -523,9 +523,9 @@ demo = gr.Interface(
 demo.launch(share=True)
 ```
 
-## Audio Processing Pipeline
+## 音频处理管线
 
-### Post-processing chain
+### 后处理链
 
 ```python
 import torch
@@ -538,34 +538,34 @@ class AudioPostProcessor:
         self.sample_rate = sample_rate
 
     def normalize(self, audio, target_db=-14.0):
-        """Normalize audio to target loudness."""
+        """把音频归一化到目标响度。"""
         rms = torch.sqrt(torch.mean(audio ** 2))
         target_rms = 10 ** (target_db / 20)
         gain = target_rms / (rms + 1e-8)
         return audio * gain
 
     def fade_in_out(self, audio, fade_duration=0.1):
-        """Apply fade in/out."""
+        """施加淡入/淡出。"""
         fade_samples = int(fade_duration * self.sample_rate)
 
-        # Create fade curves
+        # 创建淡入淡出曲线
         fade_in = torch.linspace(0, 1, fade_samples)
         fade_out = torch.linspace(1, 0, fade_samples)
 
-        # Apply fades
+        # 施加淡入淡出
         audio[..., :fade_samples] *= fade_in
         audio[..., -fade_samples:] *= fade_out
 
         return audio
 
     def apply_reverb(self, audio, decay=0.5):
-        """Apply simple reverb effect."""
+        """施加简单的混响效果。"""
         impulse = torch.zeros(int(self.sample_rate * 0.5))
         impulse[0] = 1.0
         impulse[int(self.sample_rate * 0.1)] = decay * 0.5
         impulse[int(self.sample_rate * 0.2)] = decay * 0.25
 
-        # Convolve
+        # 卷积
         audio = torch.nn.functional.conv1d(
             audio.unsqueeze(0),
             impulse.unsqueeze(0).unsqueeze(0),
@@ -575,12 +575,12 @@ class AudioPostProcessor:
         return audio
 
     def process(self, audio):
-        """Full processing pipeline."""
+        """完整处理管线。"""
         audio = self.normalize(audio)
         audio = self.fade_in_out(audio)
         return audio
 
-# Usage with MusicGen
+# 与 MusicGen 配合使用
 from audiocraft.models import MusicGen
 
 model = MusicGen.get_pretrained('facebook/musicgen-small')
@@ -593,9 +593,9 @@ wav_processed = processor.process(wav[0].cpu())
 torchaudio.save("processed.wav", wav_processed, sample_rate=32000)
 ```
 
-## Evaluation
+## 评估
 
-### Audio quality metrics
+### 音频质量指标
 
 ```python
 import torch
@@ -603,11 +603,11 @@ from audiocraft.metrics import CLAPTextConsistencyMetric
 from audiocraft.data.audio import audio_read
 
 def evaluate_generation(audio_path, text_prompt):
-    """Evaluate generated audio quality."""
-    # Load audio
+    """评估生成的音频质量。"""
+    # 加载音频
     wav, sr = audio_read(audio_path)
 
-    # CLAP consistency (text-audio alignment)
+    # CLAP 一致性（文本-音频对齐）
     clap_metric = CLAPTextConsistencyMetric()
     clap_score = clap_metric.compute(wav, [text_prompt])
 
@@ -616,16 +616,16 @@ def evaluate_generation(audio_path, text_prompt):
         "duration": wav.shape[-1] / sr
     }
 
-# Batch evaluation
+# 批量评估
 def evaluate_batch(generations):
-    """Evaluate multiple generations."""
+    """评估多个生成结果。"""
     results = []
     for gen in generations:
         result = evaluate_generation(gen["path"], gen["prompt"])
         result["prompt"] = gen["prompt"]
         results.append(result)
 
-    # Aggregate
+    # 汇总
     avg_clap = sum(r["clap_score"] for r in results) / len(results)
     return {
         "individual": results,
@@ -633,11 +633,11 @@ def evaluate_batch(generations):
     }
 ```
 
-## Model Comparison
+## 模型对比
 
-### MusicGen variants benchmark
+### MusicGen 变体基准
 
-| Model | CLAP Score | Generation Time (10s) | VRAM |
+| 模型 | CLAP 分数 | 生成时间（10 秒） | 显存 |
 |-------|------------|----------------------|------|
 | musicgen-small | 0.35 | ~5s | 2GB |
 | musicgen-medium | 0.42 | ~15s | 4GB |
@@ -645,22 +645,22 @@ def evaluate_batch(generations):
 | musicgen-melody | 0.45 | ~15s | 4GB |
 | musicgen-stereo-medium | 0.41 | ~18s | 5GB |
 
-### Prompt engineering tips
+### 提示工程技巧
 
 ```python
-# Good prompts - specific and descriptive
+# 好的提示 —— 具体且具描述性
 good_prompts = [
     "upbeat electronic dance music with synthesizer leads and punchy drums at 128 bpm",
     "melancholic piano ballad with strings, slow tempo, emotional and cinematic",
     "funky disco groove with slap bass, brass section, and rhythmic guitar"
 ]
 
-# Bad prompts - too vague
+# 差的提示 —— 太含糊
 bad_prompts = [
     "nice music",
     "song",
     "good beat"
 ]
 
-# Structure: [mood] [genre] with [instruments] at [tempo/style]
+# 结构：[情绪] [风格] with [乐器] at [节拍/风格]
 ```

@@ -30,9 +30,9 @@ describe('texToUnicode — symbols', () => {
   })
 
   it('preserves unknown commands that share a prefix with known ones', () => {
-    // `\leqq` is a real LaTeX command (≦) we don't have in our table.
-    // The word-boundary lookahead prevents `\le` from matching, so the
-    // whole thing is preserved verbatim — much better than `≤qq`.
+    // `\leqq` 是一个真实的 LaTeX 命令（≦），但我们的映射表中没有。
+    // 词边界 lookahead 阻止了 `\le` 的匹配，因此整个命令被原样保留——
+    // 这比输出 `≤qq` 要好得多。
     expect(texToUnicode('\\leqq')).toBe('\\leqq')
   })
 
@@ -76,26 +76,25 @@ describe('texToUnicode — sub / superscripts', () => {
   })
 
   it('converts mixed-content scripts when every glyph has a Unicode form', () => {
-    // `+`, digits, and lowercase letters all have superscript glyphs,
-    // so `n+1` → `ⁿ⁺¹`. Comma has no subscript form, so `i,j` falls
-    // back to `_(i,j)` (parens) rather than partially substituting —
-    // parens read as ordinary grouping while braces look like leftover
-    // unrendered LaTeX.
+    // `+`、数字和小写字母都有 superscript 字形，
+    // 因此 `n+1` → `ⁿ⁺¹`。逗号没有 subscript 形式，
+    // 所以 `i,j` 回退为 `_(i,j)`（使用圆括号）而非部分替换——
+    // 圆括号读起来像普通分组，而花括号看起来像未渲染的 LaTeX 残留。
     expect(texToUnicode('x^{n+1}')).toBe('xⁿ⁺¹')
     expect(texToUnicode('a_{i,j}')).toBe('a_(i,j)')
   })
 
   it('uses parens (not braces) when the body has Greek with no superscript form', () => {
-    // π has no Unicode superscript, so `e^{i\pi}` after symbol pass is
-    // `e^{iπ}` and the script fallback emits `e^(iπ)` — much more
-    // readable than the LaTeX-looking `e^{iπ}`.
+    // π 没有 Unicode superscript，因此 `e^{i\pi}` 经过符号替换后
+    // 变成 `e^{iπ}`，script 回退输出 `e^(iπ)`——比 LaTeX 风格的
+    // `e^{iπ}` 更具可读性。
     expect(texToUnicode('e^{i\\pi}')).toBe('e^(iπ)')
   })
 
   it('strips braces on script fallback when body collapses to a single char', () => {
-    // `^{\infty}` → symbol pass produces `^{∞}` → convertScript can't
-    // find ∞ in SUPERSCRIPT, but the body is one char so we drop the
-    // braces and emit `^∞` (much more readable than `^{∞}`).
+    // `^{\infty}` → 符号替换后变成 `^{∞}` → convertScript 在
+    // SUPERSCRIPT 中找不到 ∞，但 body 只有一个字符，
+    // 因此去掉花括号输出 `^∞`（比 `^{∞}` 更具可读性）。
     expect(texToUnicode('e^{\\infty}')).toBe('e^∞')
   })
 
@@ -120,9 +119,9 @@ describe('texToUnicode — fractions', () => {
   })
 
   it('handles braces inside numerator / denominator (regression: regex \\frac couldn\'t)', () => {
-    // The regex-only `\frac` matcher used `[^{}]*` for each arg, which
-    // failed the moment a numerator contained its own braces (here the
-    // `{p-1}` from a superscript). The balanced-brace parser handles it.
+    // 仅用正则表达式匹配 `\frac` 时，每个参数使用了 `[^{}]*`，
+    // 一旦分子内部包含花括号（例如上标中的 `{p-1}`）就会失败。
+    // 平衡花括号解析器可以正确处理这种情况。
     expect(texToUnicode('\\frac{|t|^{p-1}|P(t)|^p}{(p-1)!}')).toBe('(|t|ᵖ⁻¹|P(t)|ᵖ)/((p-1)!)')
   })
 
@@ -145,9 +144,8 @@ describe('texToUnicode — typography no-ops', () => {
   })
 
   it('does not eat letter-continuation commands like \\limit_inf', () => {
-    // The `(?![A-Za-z])` lookahead protects hypothetical commands that
-    // start with `\limit` / `\display` / etc. The bare names are stripped
-    // but anything longer is preserved verbatim.
+    // `(?![A-Za-z])` lookahead 保护了以 `\limit` / `\display` 等开头的
+    // 假设性命令。单独的命令名会被剥离，但更长的命令会被原样保留。
     expect(texToUnicode('\\limitinf x')).toBe('\\limitinf x')
   })
 })
@@ -188,10 +186,9 @@ describe('texToUnicode — newly added symbols', () => {
 })
 
 describe('texToUnicode — \\boxed / \\fbox', () => {
-  // `\boxed` produces non-printable U+0001 / U+0002 sentinels around its
-  // content so the markdown renderer can apply highlight styling. These
-  // tests assert both the sentinel form and the human-readable
-  // strip-fallback (BOX_RE).
+  // `\boxed` 在其内容周围生成不可打印的 U+0001 / U+0002 哨兵字符，
+  // 以便 markdown 渲染器可以应用高亮样式。这些测试同时断言
+  // 哨兵形式和人类可读的 strip 回退形式（BOX_RE）。
   it('wraps simple boxed content in BOX_OPEN/BOX_CLOSE sentinels', () => {
     expect(texToUnicode('\\boxed{x = 0}')).toBe(`${BOX_OPEN}x = 0${BOX_CLOSE}`)
     expect(stripBox(texToUnicode('\\boxed{x = 0}'))).toBe('x = 0')
@@ -199,8 +196,8 @@ describe('texToUnicode — \\boxed / \\fbox', () => {
   })
 
   it('handles boxed expressions with nested braces (regression: regex couldn\'t)', () => {
-    // A `[^{}]*` regex would stop at the first `{` inside the body. The
-    // balanced-brace parser walks past it.
+    // `[^{}]*` 正则会在 body 中第一个 `{` 处停止匹配。
+    // 平衡花括号解析器可以跳过它继续解析。
     expect(stripBox(texToUnicode('\\boxed{x^{n+1}}'))).toBe('xⁿ⁺¹')
     expect(stripBox(texToUnicode('\\boxed{\\frac{a}{b}}'))).toBe('a/b')
   })
@@ -261,8 +258,8 @@ describe('texToUnicode — labelled arrows', () => {
 
 describe('texToUnicode — punctuation commands without lookahead', () => {
   it('substitutes \\{ even when immediately followed by a letter', () => {
-    // Regression: with a global `(?![A-Za-z])` lookahead, `\{p` refused
-    // to substitute (because `p` is a letter) and rendered as `\{p`.
+    // 回归测试：使用全局 `(?![A-Za-z])` lookahead 时，`\{p` 拒绝
+    // 替换（因为 `p` 是字母），结果渲染为 `\{p`。
     expect(texToUnicode('\\{p, q\\}')).toBe('{p, q}')
   })
 
@@ -281,8 +278,8 @@ describe('texToUnicode — round-trip realism', () => {
   })
 
   it('handles commands without delimiters between', () => {
-    // Word-boundary lookahead means `\alpha\beta` doesn't accidentally
-    // match `\alphabeta` as one ungrouped token.
+    // 词边界 lookahead 确保 `\alpha\beta` 不会意外地
+    // 将 `\alphabeta` 匹配为一个未分组的 token。
     expect(texToUnicode('\\alpha\\beta')).toBe('αβ')
   })
 

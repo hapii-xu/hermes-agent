@@ -1,14 +1,14 @@
-"""hermes-memory-store — holographic memory plugin using MemoryProvider interface.
+"""hermes-memory-store — 基于 MemoryProvider 接口的全息记忆插件。
 
-Registers as a MemoryProvider plugin, giving the agent structured fact storage
-with entity resolution, trust scoring, and HRR-based compositional retrieval.
+作为 MemoryProvider 插件注册，为 agent 提供结构化事实存储，
+支持实体消解、信任评分和基于 HRR 的组合检索。
 
-Original plugin by dusterbloom (PR #2351), adapted to the MemoryProvider ABC.
+原始插件由 dusterbloom 开发 (PR #2351)，已适配至 MemoryProvider 抽象基类。
 
-Config in $HERMES_HOME/config.yaml (profile-scoped):
+配置位于 $HERMES_HOME/config.yaml（按 profile 作用域）：
   plugins:
     hermes-memory-store:
-      db_path: $HERMES_HOME/memory_store.db   # omit to use the default
+      db_path: $HERMES_HOME/memory_store.db   # 省略则使用默认值
       auto_extract: false
       default_trust: 0.5
       min_trust_threshold: 0.3
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Tool schemas (unchanged from original PR)
+# 工具 schema（与原 PR 保持一致）
 # ---------------------------------------------------------------------------
 
 FACT_STORE_SCHEMA = {
@@ -91,7 +91,7 @@ FACT_FEEDBACK_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
-# Config
+# 配置
 # ---------------------------------------------------------------------------
 
 def _load_plugin_config() -> dict:

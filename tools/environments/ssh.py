@@ -1,4 +1,4 @@
-"""SSH remote execution environment with ControlMaster connection persistence."""
+"""带 ControlMaster 连接持久化的 SSH 远程执行环境。"""
 
 import hashlib
 import logging
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_ssh_available() -> None:
-    """Fail fast with a clear error when the SSH client is unavailable."""
+    """当 SSH 客户端不可用时快速失败并给出清晰错误。"""
     if not shutil.which("ssh"):
         raise RuntimeError(
             "SSH is not installed or not in PATH. Install OpenSSH client: apt install openssh-client"
@@ -34,12 +34,12 @@ def _ensure_ssh_available() -> None:
 
 
 class SSHEnvironment(BaseEnvironment):
-    """Run commands on a remote machine over SSH.
+    """通过 SSH 在远程机器上运行命令。
 
-    Spawn-per-call: every execute() spawns a fresh ``ssh ... bash -c`` process.
-    Session snapshot preserves env vars across calls.
-    CWD persists via in-band stdout markers.
-    Uses SSH ControlMaster for connection reuse.
+    每次调用单独 spawn：每次 execute() 都会 spawn 一个全新的 ``ssh ... bash -c`` 进程。
+    会话快照在多次调用之间保留环境变量。
+    CWD 通过带内 stdout 标记持久化。
+    使用 SSH ControlMaster 实现连接复用。
     """
 
     def __init__(self, host: str, user: str, cwd: str = "~",
@@ -52,14 +52,11 @@ class SSHEnvironment(BaseEnvironment):
 
         self.control_dir = Path(tempfile.gettempdir()) / "hermes-ssh"
         self.control_dir.mkdir(parents=True, exist_ok=True)
-        # Keep the socket filename short and deterministic so the full path
-        # stays under the 104-byte sun_path limit that macOS enforces on
-        # Unix domain sockets. A raw ``user@host:port`` — especially with an
-        # IPv6 host — plus the 16-byte random suffix SSH appends in
-        # ControlMaster mode easily exceeds the limit under macOS's
-        # deeply-nested $TMPDIR (e.g. /var/folders/xx/yy/T/). Hashing the
-        # triple keeps the path stable across reconnects so ControlMaster
-        # reuse still works.
+        # 让 socket 文件名保持简短且确定，从而使完整路径不会超过 macOS 对 Unix 域套接字
+        # 强制要求的 104 字节 sun_path 上限。原始的 ``user@host:port`` —— 尤其是 IPv6
+        # 主机 —— 再加上 ControlMaster 模式下 SSH 追加的 16 字节随机后缀，在 macOS 深层
+        # 嵌套的 $TMPDIR（例如 /var/folders/xx/yy/T/）下很容易超出上限。对这个三元组做
+        # 哈希能让路径在重连之间保持稳定，从而 ControlMaster 复用仍然有效。
         _socket_id = hashlib.sha256(
             f"{user}@{host}:{port}".encode()
         ).hexdigest()[:16]
@@ -115,7 +112,7 @@ class SSHEnvironment(BaseEnvironment):
             raise RuntimeError(f"SSH connection to {self.user}@{self.host} timed out")
 
     def _detect_remote_home(self) -> str:
-        """Detect the remote user's home directory."""
+        """探测远程用户的主目录。"""
         try:
             cmd = self._build_ssh_command()
             cmd.append("echo $HOME")
@@ -137,11 +134,11 @@ class SSHEnvironment(BaseEnvironment):
         return f"/home/{self.user}"
 
     # ------------------------------------------------------------------
-    # File sync (via FileSyncManager)
+    # 文件同步（通过 FileSyncManager）
     # ------------------------------------------------------------------
 
     def _ensure_remote_dirs(self) -> None:
-        """Create base ~/.hermes directory tree on remote in one SSH call."""
+        """在单次 SSH 调用中于远程创建基础 ~/.hermes 目录树。"""
         base = f"{self._remote_home}/.hermes"
         dirs = [base, f"{base}/skills", f"{base}/credentials", f"{base}/cache"]
         cmd = self._build_ssh_command()
@@ -154,10 +151,10 @@ class SSHEnvironment(BaseEnvironment):
             stdin=subprocess.DEVNULL,
         )
 
-    # _get_sync_files provided via iter_sync_files in FileSyncManager init
+    # _get_sync_files 由 FileSyncManager 初始化时的 iter_sync_files 提供
 
     def _scp_upload(self, host_path: str, remote_path: str) -> None:
-        """Upload a single file via scp over ControlMaster."""
+        """通过 ControlMaster 之上的 scp 上传单个文件。"""
         parent = str(Path(remote_path).parent)
         mkdir_cmd = self._build_ssh_command()
         mkdir_cmd.append(f"mkdir -p {shlex.quote(parent)}")
@@ -186,15 +183,13 @@ class SSHEnvironment(BaseEnvironment):
             raise RuntimeError(f"scp failed: {result.stderr.strip()}")
 
     def _ssh_bulk_upload(self, files: list[tuple[str, str]]) -> None:
-        """Upload many files in a single tar-over-SSH stream.
+        """通过单条 tar-over-SSH 流上传多个文件。
 
-        Pipes ``tar c`` on the local side through an SSH connection to
-        ``tar x`` on the remote, transferring all files in one TCP stream
-        instead of spawning a subprocess per file.  Directory creation is
-        batched into a single ``mkdir -p`` call beforehand.
+        把本地的 ``tar c`` 通过 SSH 连接管道到远程的 ``tar x``，用单条 TCP 流传输所有
+        文件，而不是为每个文件 spawn 一个子进程。目录创建会事先批量成一次 ``mkdir -p``
+        调用。
 
-        Typical improvement: ~580 files goes from O(N) scp round-trips
-        to a single streaming transfer.
+        典型提升：约 580 个文件从 O(N) 次 scp 往返变成一次流式传输。
         """
         if not files:
             return
@@ -214,11 +209,10 @@ class SSHEnvironment(BaseEnvironment):
             if result.returncode != 0:
                 raise RuntimeError(f"remote mkdir failed: {result.stderr.strip()}")
 
-        # Symlink staging avoids fragile GNU tar --transform rules.
-        # On Windows without Developer Mode, symlink creation raises
-        # OSError with winerror 1314 (privilege not held).  Catch only
-        # that specific error and fall back to a plain copy; all other
-        # OSErrors (e.g. disk full, bad path) are re-raised as normal.
+        # 用符号链接暂存，避免脆弱的 GNU tar --transform 规则。
+        # 在未开启开发者模式的 Windows 上，创建符号链接会抛出 winerror 1314
+        # （未持有特权）的 OSError。只捕获这一个特定错误并退回到普通拷贝；其余所有
+        # OSError（例如磁盘已满、路径错误）都照常重新抛出。
         with tempfile.TemporaryDirectory(prefix="hermes-ssh-bulk-") as staging:
             for host_path, remote_path in files:
                 try:
@@ -238,7 +232,7 @@ class SSHEnvironment(BaseEnvironment):
                 try:
                     os.symlink(os.path.abspath(host_path), staged)
                 except OSError as e:
-                    # WinError 1314: symlink privilege not held (Windows without Dev Mode)
+                    # WinError 1314：未持有符号链接特权（未开启开发者模式的 Windows）
                     if getattr(e, "winerror", None) == 1314:
                         shutil.copy2(host_path, staged)
                     else:
@@ -246,10 +240,9 @@ class SSHEnvironment(BaseEnvironment):
 
             tar_cmd = ["tar", "-chf", "-", "-C", staging, "."]
             ssh_cmd = self._build_ssh_command()
-            # --no-overwrite-dir prevents tar from overwriting the mode of
-            # existing directories (e.g. /home/<user>) with the staging
-            # directory's mode.  Without this, a umask 002 produces 0775
-            # dirs which breaks sshd StrictModes (refuses authorized_keys).
+            # --no-overwrite-dir 阻止 tar 用暂存目录的 mode 覆盖已存在目录
+            # （例如 /home/<user>）的 mode。否则 umask 002 会产生 0775 的目录，
+            # 这会破坏 sshd 的 StrictModes（它会拒绝 authorized_keys）。
             ssh_cmd.append(f"tar xf - --no-overwrite-dir -C {shlex.quote(base)}")
 
             tar_proc = subprocess.Popen(
@@ -268,13 +261,13 @@ class SSHEnvironment(BaseEnvironment):
                 tar_proc.wait()
                 raise
 
-            # Allow tar_proc to receive SIGPIPE if ssh_proc exits early
+            # 若 ssh_proc 提前退出，允许 tar_proc 收到 SIGPIPE
             tar_proc.stdout.close()
 
             try:
                 _, ssh_stderr = ssh_proc.communicate(timeout=120)
-                # Use communicate() instead of wait() to drain stderr and
-                # avoid deadlock if tar produces more than PIPE_BUF of errors.
+                # 用 communicate() 而不是 wait() 来排空 stderr，避免 tar 产生的错误
+                # 超过 PIPE_BUF 时发生死锁。
                 tar_stderr_raw = b""
                 if tar_proc.poll() is None:
                     _, tar_stderr_raw = tar_proc.communicate(timeout=10)
@@ -301,9 +294,9 @@ class SSHEnvironment(BaseEnvironment):
         logger.debug("SSH: bulk-uploaded %d file(s) via tar pipe", len(files))
 
     def _ssh_bulk_download(self, dest: Path) -> None:
-        """Download remote .hermes/ as a tar archive."""
-        # Tar from / with the full path so archive entries preserve absolute
-        # paths (e.g. home/user/.hermes/skills/f.py), matching _pushed_hashes keys.
+        """把远程的 .hermes/ 作为 tar 归档下载下来。"""
+        # 从 / 开始 tar 并带上完整路径，这样归档条目会保留绝对路径
+        # （例如 home/user/.hermes/skills/f.py），与 _pushed_hashes 的键匹配。
         rel_base = f"{self._remote_home}/.hermes".lstrip("/")
         ssh_cmd = self._build_ssh_command()
         ssh_cmd.append(f"tar cf - -C / {shlex.quote(rel_base)}")
@@ -319,7 +312,7 @@ class SSHEnvironment(BaseEnvironment):
             raise RuntimeError(f"SSH bulk download failed: {result.stderr.decode(errors='replace').strip()}")
 
     def _ssh_delete(self, remote_paths: list[str]) -> None:
-        """Batch-delete remote files in one SSH call."""
+        """在单次 SSH 调用中批量删除远程文件。"""
         cmd = self._build_ssh_command()
         cmd.append(quoted_rm_command(remote_paths))
         result = subprocess.run(
@@ -333,17 +326,17 @@ class SSHEnvironment(BaseEnvironment):
             raise RuntimeError(f"remote rm failed: {result.stderr.strip()}")
 
     def _before_execute(self) -> None:
-        """Sync files to remote via FileSyncManager (rate-limited internally)."""
+        """通过 FileSyncManager 把文件同步到远程（内部已做限流）。"""
         self._sync_manager.sync()
 
     # ------------------------------------------------------------------
-    # Execution
+    # 执行
     # ------------------------------------------------------------------
 
     def _run_bash(self, cmd_string: str, *, login: bool = False,
                   timeout: int = 120,
                   stdin_data: str | None = None) -> subprocess.Popen:
-        """Spawn an SSH process that runs bash on the remote host."""
+        """spawn 一个在远程主机上运行 bash 的 SSH 进程。"""
         cmd = self._build_ssh_command()
         if login:
             cmd.extend(["bash", "-l", "-c", shlex.quote(cmd_string)])

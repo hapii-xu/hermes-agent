@@ -1,46 +1,46 @@
-# Experiment Design Patterns
+# 实验设计模式
 
-Patterns and best practices distilled from running research experiments at scale with the Hermes agent. These cover experiment infrastructure, evaluation protocols, monitoring, and failure recovery.
+从使用 Hermes agent 大规模运行研究实验中提炼出的模式与最佳实践。涵盖实验基础设施、评估协议、监控以及失败恢复。
 
 ---
 
-## Experiment Infrastructure
+## 实验基础设施
 
-### Directory Structure
+### 目录结构
 
-Organize experiments with a consistent structure:
+用一致的结构组织实验：
 
 ```
 workspace/
   experiments/
-    run_main.py                # Core experiment runner
-    run_baselines.py           # Baseline comparison
-    run_ablation.py            # Ablation studies
-    strategies.py              # Method implementations
-    config.yaml                # Shared configuration
+    run_main.py                # 核心实验运行器
+    run_baselines.py           # 基线对比
+    run_ablation.py            # 消融研究
+    strategies.py              # 方法实现
+    config.yaml                # 共享配置
   results/
     <experiment_name>/
       <task_or_problem>/
         <strategy>/
-          result.json          # Final metrics
-          final_output.md      # Final output artifact
-          history.json         # Full trajectory/log
-          pass_01/             # Per-iteration artifacts (if iterative)
+          result.json          # 最终指标
+          final_output.md      # 最终输出产物
+          history.json         # 完整轨迹/日志
+          pass_01/             # 每轮迭代的产物（若为迭代式）
             intermediate.md
   analysis/
-    analyze_results.py         # Statistical analysis
-    compute_stats.py           # Significance tests
-    make_charts.py             # Visualization
+    analyze_results.py         # 统计分析
+    compute_stats.py           # 显著性检验
+    make_charts.py             # 可视化
   paper/
-    paper.tex                  # LaTeX source
-    fig_*.pdf                  # Generated figures
+    paper.tex                  # LaTeX 源
+    fig_*.pdf                  # 生成的图
 ```
 
-### Script Design Principles
+### 脚本设计原则
 
-**1. Incremental Saving (Crash Recovery)**
+**1. 增量保存（崩溃恢复）**
 
-Every experiment script should save results after each unit of work, and skip already-completed work on restart:
+每个实验脚本应在每个工作单元之后保存结果，并在重启时跳过已完成的工作：
 
 ```python
 import json, os
@@ -54,24 +54,24 @@ def run_experiment(problems, strategies, output_dir):
                 print(f"Skipping {problem['id']}/{strategy} (already done)")
                 continue
             
-            # Run the experiment
+            # 运行实验
             result = execute_strategy(problem, strategy)
             
-            # Save immediately
+            # 立即保存
             result_path.parent.mkdir(parents=True, exist_ok=True)
             with open(result_path, 'w') as f:
                 json.dump(result, f, indent=2)
 ```
 
-This pattern makes re-runs safe and efficient. If a process crashes at problem 47/150, restarting skips the first 46.
+这种模式让重新运行既安全又高效。如果进程在 47/150 题处崩溃，重启会跳过前 46 题。
 
-**2. Artifact Preservation**
+**2. 产物保留**
 
-Save all intermediate outputs, not just final results. This enables post-hoc analysis without re-running:
+保存所有中间输出，而不仅仅是最终结果。这样无需重跑就能做事后分析：
 
 ```python
 def save_pass_artifacts(output_dir, pass_num, artifacts):
-    """Save all artifacts from a single pass of an iterative method."""
+    """保存迭代方法单轮的全部产物。"""
     pass_dir = Path(output_dir) / f"pass_{pass_num:02d}"
     pass_dir.mkdir(parents=True, exist_ok=True)
     
@@ -80,9 +80,9 @@ def save_pass_artifacts(output_dir, pass_num, artifacts):
             f.write(content)
 ```
 
-**3. Configuration Management**
+**3. 配置管理**
 
-Use YAML configs for reproducibility:
+用 YAML 配置以保证可复现：
 
 ```yaml
 # config.yaml
@@ -102,49 +102,49 @@ with open("config.yaml") as f:
     config = yaml.safe_load(f)
 ```
 
-**4. Separation of Concerns**
+**4. 关注点分离**
 
-Keep generation, evaluation, and visualization in separate scripts:
+把生成、评估和可视化放在各自独立的脚本里：
 
-| Script | Purpose |
+| 脚本 | 用途 |
 |--------|---------|
-| `run_experiment.py` | Core method execution |
-| `run_baselines.py` | Baseline comparisons at same compute |
-| `run_eval.py` | Blind evaluation / judge panels |
-| `analyze_results.py` | Statistical analysis |
-| `make_charts.py` | Figure generation |
+| `run_experiment.py` | 核心方法执行 |
+| `run_baselines.py` | 在同等算力下做基线对比 |
+| `run_eval.py` | 盲评 / 评审组 |
+| `analyze_results.py` | 统计分析 |
+| `make_charts.py` | 图表生成 |
 
-This lets you re-run evaluation without re-running expensive generation, and regenerate figures without re-running analysis.
+这让你可以不重跑昂贵的生成就重新评估，不重跑分析就重新生成图。
 
 ---
 
-## Evaluation Protocols
+## 评估协议
 
-### Blind Judge Panels (for Subjective Tasks)
+### 盲评评审组（用于主观任务）
 
-When evaluating subjective outputs (writing, analysis, recommendations), use a blind judge panel:
+评估主观输出（写作、分析、推荐）时，使用盲评评审组：
 
 ```python
 import random
 
 def run_blind_evaluation(outputs: dict, task_prompt: str, num_judges: int = 7):
     """
-    Run blind evaluation of multiple method outputs.
-    
+    对多种方法的输出做盲评。
+
     Args:
         outputs: {"method_name": "output_text", ...}
-        task_prompt: The original task description
-        num_judges: Number of independent judge evaluations
+        task_prompt: 原始任务描述
+        num_judges: 独立评审评估的次数
     """
     rankings = []
     
     for judge_i in range(num_judges):
-        # Randomize labels and presentation order per judge
+        # 每位评审随机化标签与呈现顺序
         methods = list(outputs.keys())
         random.shuffle(methods)
         labels = {m: chr(65 + i) for i, m in enumerate(methods)}  # A, B, C...
         
-        # Present to judge with randomized labels
+        # 用随机化标签呈现给评审
         prompt = f"Task: {task_prompt}\n\n"
         for method in methods:
             prompt += f"--- Proposal {labels[method]} ---\n{outputs[method]}\n\n"
@@ -153,13 +153,13 @@ def run_blind_evaluation(outputs: dict, task_prompt: str, num_judges: int = 7):
         ranking = call_judge(prompt)
         rankings.append({"labels": labels, "ranking": ranking})
     
-    # Aggregate via Borda count
+    # 通过 Borda 计数汇总
     return compute_borda(rankings)
 
 def compute_borda(rankings, n_methods=3):
-    """Borda count: 3/2/1 points for 1st/2nd/3rd."""
+    """Borda 计数：第 1/2/3 名得 3/2/1 分。"""
     scores = {}
-    points = {0: n_methods, 1: n_methods - 1, 2: n_methods - 2}  # Adjust for n_methods
+    points = {0: n_methods, 1: n_methods - 1, 2: n_methods - 2}  # 按 n_methods 调整
     
     for r in rankings:
         for position, method in enumerate(r["ranking"]):
@@ -168,21 +168,21 @@ def compute_borda(rankings, n_methods=3):
     return scores
 ```
 
-Key design decisions:
-- **Randomize both labels AND order** per judge to prevent position bias
-- **Use odd number of judges** (3, 5, 7) to break ties
-- **Conservative tiebreak**: Incumbent/baseline wins ties (prevents false positives)
-- **CoT judges** match non-CoT quality at ~40% cost (1 CoT judge ≈ 3 standard judges)
+关键设计决策：
+- **每位评审同时随机化标签与顺序**，以防止位置偏差
+- **使用奇数位评审**（3、5、7）以打破平局
+- **保守平局裁决**：在位者/基线赢得平局（防止假阳性）
+- **CoT 评审**以约 40% 成本匹敌非 CoT 质量（1 位 CoT 评审 ≈ 3 位标准评审）
 
-### Code/Objective Evaluation
+### 代码/客观评估
 
-For tasks with ground-truth evaluation (code, math, factual):
+对于有真值评估的任务（代码、数学、事实）：
 
 ```python
 import subprocess
 
 def evaluate_code(solution: str, test_cases: list, timeout: int = 30):
-    """Run code solution against test cases with sandboxed execution."""
+    """用沙箱化执行把代码解跑在测试用例上。"""
     results = {"public": [], "private": []}
     
     for test in test_cases:
@@ -209,144 +209,144 @@ def evaluate_code(solution: str, test_cases: list, timeout: int = 30):
     }
 ```
 
-### Compute-Matched Comparison
+### 算力对等比较
 
-Always compare methods at equal compute budget. If your method uses N API calls, baselines get N calls too:
+始终在同等算力预算下比较方法。如果你的方法用 N 次 API 调用，基线也得到 N 次调用：
 
-| Method | Call Budget | Allocation |
+| 方法 | 调用预算 | 分配 |
 |--------|-----------|------------|
-| Single pass | 6 calls | 6 independent generations |
-| Critique & revise | 6 calls | 1 generate + 5 revise rounds |
-| Autoreason | 6 calls | 1 generate + 1 analysis + 4 revisions |
-| Best-of-N | 6 calls | 6 independent, pick best on public test |
+| 单次通过 | 6 次调用 | 6 次独立生成 |
+| Critique & revise | 6 次调用 | 1 次生成 + 5 轮修订 |
+| Autoreason | 6 次调用 | 1 次生成 + 1 次分析 + 4 次修订 |
+| Best-of-N | 6 次调用 | 6 次独立生成，按公开测试挑最好 |
 
-### Human Evaluation Design
+### 人工评估设计
 
-Many ML/NLP papers require human evaluation, especially for subjective tasks (text generation, summarization, dialogue, creative writing). Poorly designed human evals are a common rejection reason.
+许多 ML/NLP 论文需要人工评估，尤其是主观任务（文本生成、摘要、对话、创意写作）。设计不佳的人工评估是常见的拒稿原因。
 
-#### When Human Evaluation Is Required
+#### 何时需要人工评估
 
-| Task Type | Required? | Notes |
+| 任务类型 | 是否需要？ | 备注 |
 |-----------|-----------|-------|
-| Text generation (open-ended) | Yes | LLM-as-judge alone is insufficient for acceptance at ACL/EMNLP |
-| Summarization | Usually | At minimum for a subset of outputs |
-| Dialogue systems | Yes | User studies or annotation |
-| Code generation | No | Test suites are objective ground truth |
-| Classification | No | Standard metrics suffice |
-| Any task with subjective quality | Strongly recommended | Strengthens the paper significantly |
+| 文本生成（开放式） | 是 | 仅用 LLM-as-judge 在 ACL/EMNLP 不足以被接收 |
+| 摘要 | 通常需要 | 至少对一部分输出做 |
+| 对话系统 | 是 | 用户研究或标注 |
+| 代码生成 | 否 | 测试套件是客观真值 |
+| 分类 | 否 | 标准指标即可 |
+| 任何带主观质量的 | 强烈建议 | 能显著增强论文 |
 
-#### Annotation Protocol Design
+#### 标注协议设计
 
 ```
-Human Evaluation Protocol:
-1. Define the evaluation dimensions (fluency, relevance, factual accuracy, etc.)
-2. Create annotation guidelines with examples of each score level
-3. Run a pilot with 2-3 annotators on 20-30 examples
-4. Compute pilot inter-annotator agreement — if low, revise guidelines
-5. Run full evaluation
-6. Report: annotator count, agreement metrics, compensation, time per item
+人工评估协议：
+1. 定义评估维度（流畅度、相关性、事实准确性等）
+2. 编写标注指南，给出每个分级的示例
+3. 用 2-3 名标注员在 20-30 个示例上做试点
+4. 计算试点标注员间一致性 —— 若低，修订指南
+5. 跑完整评估
+6. 报告：标注员人数、一致性指标、报酬、每项耗时
 ```
 
-**Evaluation dimensions** (pick relevant subset):
+**评估维度**（选取相关子集）：
 
-| Dimension | Definition | Scale |
+| 维度 | 定义 | 量表 |
 |-----------|-----------|-------|
-| Fluency | Grammaticality and naturalness | 1-5 Likert |
-| Relevance | Does it address the task? | 1-5 Likert |
-| Factual accuracy | Are stated facts correct? | Binary or 1-5 |
-| Coherence | Logical flow and consistency | 1-5 Likert |
-| Informativeness | Does it provide useful information? | 1-5 Likert |
-| Overall preference | Which output is better? | A/B/Tie (pairwise) |
+| 流畅度 | 语法正确性与自然度 | 1-5 Likert |
+| 相关性 | 是否切合任务？ | 1-5 Likert |
+| 事实准确性 | 所述事实是否正确？ | 二值或 1-5 |
+| 连贯性 | 逻辑流畅与一致性 | 1-5 Likert |
+| 信息量 | 是否提供有用信息？ | 1-5 Likert |
+| 整体偏好 | 哪个输出更好？ | A/B/平局（成对） |
 
-**Pairwise comparison** (preferred over absolute scoring — more reliable):
-- Present two outputs side-by-side (randomize left/right position)
-- Ask: "Which is better? A / B / Tie"
-- More discriminative and less susceptible to annotator calibration drift
+**成对比较**（优先于绝对评分 —— 更可靠）：
+- 并排呈现两个输出（左右位置随机化）
+- 提问：「哪个更好？A / B / 平局」
+- 更有区分力，且不易受标注员校准漂移影响
 
-#### Inter-Annotator Agreement
+#### 标注员间一致性
 
-Always report agreement metrics. Without them, reviewers assume your annotations are unreliable.
+务必报告一致性指标。没有它们，审稿人会认为你的标注不可靠。
 
 ```python
-# Krippendorff's alpha (preferred — handles missing data, any scale)
+# Krippendorff's alpha（首选 —— 处理缺失数据，任意量表）
 # pip install krippendorffs-alpha
 import krippendorff
 
-# Ratings: rows = annotators, columns = items, values = scores
+# 评分：行 = 标注员，列 = 条目，值 = 分数
 ratings = [
-    [3, 4, 1, 2, 5, None, 3],  # Annotator 1
-    [3, 5, 1, 3, 5, 2, 3],     # Annotator 2
-    [4, 4, 2, 2, 4, 2, None],  # Annotator 3
+    [3, 4, 1, 2, 5, None, 3],  # 标注员 1
+    [3, 5, 1, 3, 5, 2, 3],     # 标注员 2
+    [4, 4, 2, 2, 4, 2, None],  # 标注员 3
 ]
 alpha = krippendorff.alpha(reliability_data=ratings, level_of_measurement="ordinal")
 print(f"Krippendorff's alpha: {alpha:.3f}")
-# Interpretation: >0.80 good, 0.67-0.80 acceptable, <0.67 questionable
+# 解读：>0.80 良好，0.67-0.80 可接受，<0.67 存疑
 ```
 
 ```python
-# Cohen's kappa (for exactly 2 annotators, categorical data)
+# Cohen's kappa（恰好 2 名标注员、分类数据）
 from sklearn.metrics import cohen_kappa_score
 
 annotator_1 = [1, 2, 3, 1, 2, 3, 2]
 annotator_2 = [1, 2, 2, 1, 3, 3, 2]
 kappa = cohen_kappa_score(annotator_1, annotator_2)
 print(f"Cohen's kappa: {kappa:.3f}")
-# Interpretation: >0.80 excellent, 0.60-0.80 substantial, 0.40-0.60 moderate
+# 解读：>0.80 优秀，0.60-0.80 充分，0.40-0.60 中等
 ```
 
-| Metric | When to Use | Annotators | Scale |
+| 指标 | 何时使用 | 标注员数 | 量表 |
 |--------|------------|-----------|-------|
-| Krippendorff's alpha | Default choice | Any number | Any (ordinal, nominal, ratio) |
-| Cohen's kappa | 2 annotators, categorical | Exactly 2 | Nominal/ordinal |
-| Fleiss' kappa | 3+ annotators, categorical | 3+ | Nominal |
-| Pearson/Spearman | Continuous scores | 2 | Interval/ratio |
+| Krippendorff's alpha | 默认选择 | 任意数量 | 任意（序数、名义、比率） |
+| Cohen's kappa | 2 名标注员、分类 | 恰好 2 | 名义/序数 |
+| Fleiss' kappa | 3+ 名标注员、分类 | 3+ | 名义 |
+| Pearson/Spearman | 连续评分 | 2 | 区间/比率 |
 
-#### Crowdsourcing Platforms
+#### 众包平台
 
-| Platform | Best For | Cost | Quality |
+| 平台 | 最适合 | 成本 | 质量 |
 |----------|----------|------|---------|
-| **Prolific** | Academic research, higher quality | $8-15/hr | High — academic participant pool |
-| **MTurk** | Large-scale, fast turnaround | $2-10/hr | Variable — use qualifications |
-| **Surge AI** | NLP-specific annotations | Premium | High — trained annotators |
-| **Expert annotators** | Domain-specific (medical, legal) | Highest | Highest — but slow |
+| **Prolific** | 学术研究、质量较高 | $8-15/小时 | 高 —— 学术参与者池 |
+| **MTurk** | 大规模、快速周转 | $2-10/小时 | 不一 —— 用资格筛选 |
+| **Surge AI** | NLP 专用标注 | 高端 | 高 —— 受训标注员 |
+| **专家标注员** | 领域专用（医疗、法律） | 最高 | 最高 —— 但慢 |
 
-**Ethics requirements**:
-- Report compensation rate (must be at minimum local minimum wage)
-- Describe annotator demographics if relevant
-- Obtain IRB/ethics approval if required by your institution
-- ACL venues explicitly require compensation documentation
+**伦理要求**：
+- 报告报酬率（必须至少为当地最低工资）
+- 如相关，描述标注员人口统计
+- 如所在机构要求，取得 IRB/伦理审批
+- ACL 系列会议明确要求报酬文档
 
-#### What to Report in the Paper
+#### 论文中应报告什么
 
 ```
-Human Evaluation Section Checklist:
-- [ ] Number of annotators
-- [ ] Annotator qualifications / recruitment method
-- [ ] Number of items evaluated
-- [ ] Evaluation dimensions with definitions
-- [ ] Scale used (Likert, pairwise, binary)
-- [ ] Inter-annotator agreement (Krippendorff's alpha or Cohen's kappa)
-- [ ] Compensation rate
-- [ ] Time per annotation item
-- [ ] Whether annotators saw model identities (should be blind)
-- [ ] Randomization of presentation order
+人工评估章节检查清单：
+- [ ] 标注员人数
+- [ ] 标注员资格 / 招募方式
+- [ ] 被评估的条目数
+- [ ] 评估维度及其定义
+- [ ] 所用量表（Likert、成对、二值）
+- [ ] 标注员间一致性（Krippendorff's alpha 或 Cohen's kappa）
+- [ ] 报酬率
+- [ ] 每个标注条目耗时
+- [ ] 标注员是否看到模型身份（应为盲评）
+- [ ] 呈现顺序的随机化
 ```
 
 ---
 
-## Statistical Analysis
+## 统计分析
 
-### Required Tests
+### 必需的检验
 
-| Test | When to Use | Python |
+| 检验 | 何时使用 | Python |
 |------|------------|--------|
-| McNemar's test | Comparing two methods on same problems | `scipy.stats.binomtest` for small n |
-| Two-proportion z-test | Comparing success rates | Custom or `statsmodels` |
-| Fisher's exact test | Small sample pairwise comparison | `scipy.stats.fisher_exact` |
-| Bootstrapped CI | Confidence intervals for any metric | Custom bootstrap |
-| Cohen's h | Effect size for proportions | Manual calculation |
+| McNemar 检验 | 在相同问题上比较两种方法 | 小样本用 `scipy.stats.binomtest` |
+| 双比例 z 检验 | 比较成功率 | 自写或 `statsmodels` |
+| Fisher 精确检验 | 小样本成对比较 | `scipy.stats.fisher_exact` |
+| 自助法 CI | 任意指标的置信区间 | 自写自助 |
+| Cohen's h | 比例的效应量 | 手动计算 |
 
-### Standard Analysis Script
+### 标准分析脚本
 
 ```python
 import numpy as np
@@ -355,7 +355,7 @@ from pathlib import Path
 import json
 
 def load_all_results(results_dir):
-    """Load all results into a structured format."""
+    """把所有结果加载为结构化格式。"""
     results = {}
     for result_file in Path(results_dir).rglob("result.json"):
         parts = result_file.relative_to(results_dir).parts
@@ -366,17 +366,17 @@ def load_all_results(results_dir):
     return results
 
 def pairwise_mcnemar(method_a_results, method_b_results):
-    """McNemar's test for paired binary outcomes."""
+    """配对二值结果的 McNemar 检验。"""
     a_win_b_lose = sum(1 for a, b in zip(method_a_results, method_b_results) if a and not b)
     b_win_a_lose = sum(1 for a, b in zip(method_a_results, method_b_results) if b and not a)
     
     n = a_win_b_lose + b_win_a_lose
     if n < 25:
-        # Use exact binomial for small samples
+        # 小样本用精确二项分布
         result = stats.binomtest(a_win_b_lose, n, 0.5)
         p_value = result.pvalue
     else:
-        # Chi-squared approximation
+        # 卡方近似
         chi2 = (abs(a_win_b_lose - b_win_a_lose) - 1)**2 / (a_win_b_lose + b_win_a_lose)
         p_value = 1 - stats.chi2.cdf(chi2, df=1)
     
@@ -389,7 +389,7 @@ def pairwise_mcnemar(method_a_results, method_b_results):
     }
 
 def bootstrap_ci(data, n_bootstrap=10000, ci=0.95):
-    """Bootstrap confidence interval for mean."""
+    """均值的自助法置信区间。"""
     means = []
     for _ in range(n_bootstrap):
         sample = np.random.choice(data, size=len(data), replace=True)
@@ -399,191 +399,191 @@ def bootstrap_ci(data, n_bootstrap=10000, ci=0.95):
     return {"mean": np.mean(data), "ci_lower": lower, "ci_upper": upper}
 
 def cohens_h(p1, p2):
-    """Cohen's h effect size for two proportions."""
+    """两个比例的 Cohen's h 效应量。"""
     return 2 * np.arcsin(np.sqrt(p1)) - 2 * np.arcsin(np.sqrt(p2))
 ```
 
-### Reporting Standards
+### 报告标准
 
-Always include in the paper:
-- **Sample sizes**: n=X problems/tasks
-- **Number of runs**: K independent runs if applicable
-- **Error bars**: Specify standard deviation or standard error
-- **Confidence intervals**: 95% CI for key results
-- **Significance tests**: p-values for key comparisons
-- **Effect sizes**: Cohen's d or h for practical significance
+论文中始终包含：
+- **样本量**：n=X 个问题/任务
+- **运行次数**：如适用，K 次独立运行
+- **误差棒**：注明是标准差还是标准误
+- **置信区间**：关键结果的 95% CI
+- **显著性检验**：关键比较的 p 值
+- **效应量**：Cohen's d 或 h，体现实际显著性
 
 ---
 
-## Monitoring (Cron Pattern)
+## 监控（定时任务模式）
 
-### Cron Prompt Template
+### 定时任务提示模板
 
-For each experiment batch, create a monitoring prompt:
+为每个实验批次创建监控提示：
 
 ```
-Check the status of the [EXPERIMENT_NAME] experiment:
+检查 [EXPERIMENT_NAME] 实验的状态：
 
-1. Process check: ps aux | grep [PROCESS_PATTERN]
-2. Log check: tail -30 [LOG_FILE]
-3. Results check: ls [RESULT_DIR]/eval/ (or appropriate result location)
-4. If results are available:
-   - Read the result JSON files
-   - Report metrics in a table (Borda scores, accuracy, etc.)
-   - Compute key comparisons between methods
-5. If all experiments in this batch are complete:
+1. 进程检查：ps aux | grep [PROCESS_PATTERN]
+2. 日志检查：tail -30 [LOG_FILE]
+3. 结果检查：ls [RESULT_DIR]/eval/（或合适的结果位置）
+4. 若有结果可用：
+   - 读取结果 JSON 文件
+   - 用表格报告指标（Borda 分数、准确率等）
+   - 计算方法间的关键比较
+5. 若本批次所有实验已完成：
    - git add -A && git commit -m "[COMMIT_MESSAGE]" && git push
-   - Report final summary
-6. Key question: [SPECIFIC ANALYTICAL QUESTION]
+   - 报告最终总结
+6. 关键问题：[具体的分析问题]
 
-If nothing has changed since the last check, respond with [SILENT].
+如果自上次检查以来没有任何变化，回复 [SILENT]。
 ```
 
-### Monitoring Best Practices
+### 监控最佳实践
 
-1. **Check processes first** — don't read results if the experiment is still running and results are incomplete
-2. **Read the log tail** — look for errors, progress indicators, completion messages
-3. **Count completed vs expected** — "45/150 problems done" is more useful than "some results exist"
-4. **Report in structured tables** — always include key metrics in a table
-5. **Answer the key question** — each experiment should have a specific analytical question to answer when done
-6. **[SILENT] for no-news** — suppress notifications when nothing has changed
-7. **Commit on completion** — every completed batch gets committed with a descriptive message
+1. **先检查进程** —— 实验仍在运行且结果不完整时，不要读结果
+2. **读日志尾部** —— 找错误、进度指示、完成信息
+3. **数已完成 vs 预期** ——「45/150 题完成」比「存在一些结果」更有用
+4. **用结构化表格报告** —— 关键指标始终放进表格
+5. **回答关键问题** —— 每个实验在完成时应回答一个具体的分析问题
+6. **无新闻时用 [SILENT]** —— 没有变化时抑制通知
+7. **完成即提交** —— 每个完成的批次都用描述性消息提交
 
-### Example Monitoring Report
+### 监控报告示例
 
 ```
-## Code Experiments (Haiku 3.5) - COMPLETE
+## 代码实验（Haiku 3.5）—— 已完成
 
-| Strategy | Pass Rate (150 problems) | vs Single |
+| 策略 | 通过率（150 题） | vs 单次 |
 |----------|------------------------|-----------|
 | single_pass | 38.0% | — |
 | critique_revise | 35.2% | -2.8pp |
 | **autoreason** | **40.0%** | **+2.0pp** |
 | best_of_6 | 31.0% | -7.0pp |
 
-Key finding: Autoreason shows +2pp improvement over single pass, while 
-best-of-6 collapses due to single-public-test selection issue.
+关键发现：autoreason 相对单次通过提升 +2pp，而
+best-of_6 因单一公开测试选择问题而崩溃。
 
-Committed: `git commit -m "Add Haiku code results (150 problems, 4 strategies)"`
-Next: Run significance tests on these results.
+已提交：`git commit -m "Add Haiku code results (150 problems, 4 strategies)"`
+下一步：对这些结果跑显著性检验。
 ```
 
 ---
 
-## Failure Recovery
+## 失败恢复
 
-### Common Failures and Recovery
+### 常见失败与恢复
 
-| Failure | Detection | Recovery |
+| 失败 | 检测 | 恢复 |
 |---------|-----------|----------|
-| **API credit exhaustion** | 402 errors in logs, incomplete results | Top up credits, re-run (skips completed work automatically) |
-| **Rate limiting** | 429 errors, slow progress | Add retry logic with exponential backoff |
-| **Process crash** | PID gone, log stops mid-problem | Re-run script (resumes from last checkpoint) |
-| **Wrong model ID** | Model not found errors | Fix ID (e.g., `claude-opus-4-6` not `claude-opus-4.6`) |
-| **Parallel slowdown** | Each experiment taking 2x longer | Reduce parallel experiments to 2-3 max |
-| **Security scan blocks** | Commands blocked by security | Use `execute_code` instead of piped `terminal` commands |
-| **Delegation failures** | `delegate_task` returns errors | Fall back to doing work directly |
-| **Timeout on hard problems** | Process stuck, no log progress | Kill, skip problem, note in results |
-| **Dataset path mismatch** | File not found errors | Verify paths before launching |
+| **API 额度耗尽** | 日志出现 402 错误、结果不完整 | 充值额度，重跑（自动跳过已完成工作） |
+| **限流** | 429 错误、进度缓慢 | 加带指数退避的重试逻辑 |
+| **进程崩溃** | PID 消失、日志停在某个问题中途 | 重跑脚本（从最后检查点恢复） |
+| **模型 ID 错误** | 模型未找到错误 | 修正 ID（如 `claude-opus-4-6` 而非 `claude-opus-4.6`） |
+| **并行变慢** | 每个实验耗时变成 2 倍 | 把并行实验降到最多 2-3 个 |
+| **安全扫描拦截** | 命令被安全机制拦截 | 用 `execute_code` 而非管道 `terminal` 命令 |
+| **委派失败** | `delegate_task` 返回错误 | 回退为直接做工作 |
+| **难题超时** | 进程卡住、日志无进展 | 杀掉、跳过该题、在结果中注明 |
+| **数据集路径不匹配** | 文件未找到错误 | 启动前核实路径 |
 
-### Retry Naming Convention
+### 重试命名约定
 
-When re-running failed experiments, use a suffix to track rounds:
-
-```
-logs/experiment_haiku_0_50.log       # Round 1
-logs/experiment_haiku_0_50_r2.log    # Round 2 (after credit exhaustion)
-logs/experiment_haiku_0_50_r3.log    # Round 3 (after bug fix)
-```
-
-### Pre-Flight Checklist
-
-Before launching any experiment batch:
+重跑失败实验时，用后缀跟踪轮次：
 
 ```
-Pre-Flight:
-- [ ] API credits sufficient for estimated calls
-- [ ] Model IDs correct (test with 1 problem first)
-- [ ] Output directory exists and is writable
-- [ ] Resume logic works (re-run won't overwrite existing results)
-- [ ] Log file path is unique (won't overwrite previous logs)
-- [ ] Dataset/task files are accessible
-- [ ] Config matches intended experiment
+logs/experiment_haiku_0_50.log       # 第 1 轮
+logs/experiment_haiku_0_50_r2.log    # 第 2 轮（额度耗尽后）
+logs/experiment_haiku_0_50_r3.log    # 第 3 轮（修 bug 后）
+```
+
+### 起飞前检查清单
+
+启动任何实验批次之前：
+
+```
+起飞前：
+- [ ] API 额度足够覆盖估计的调用数
+- [ ] 模型 ID 正确（先用 1 个问题测试）
+- [ ] 输出目录存在且可写
+- [ ] 恢复逻辑工作正常（重跑不会覆盖已有结果）
+- [ ] 日志文件路径唯一（不会覆盖之前的日志）
+- [ ] 数据集/任务文件可访问
+- [ ] 配置与目标实验一致
 ```
 
 ---
 
-## Task/Benchmark Design
+## 任务/基准设计
 
-### Open-Ended Tasks (Subjective Evaluation)
+### 开放式任务（主观评估）
 
-Design tasks that have clear objectives but subjective quality:
+设计目标清晰但质量主观的任务：
 
 ```markdown
-# Task: [Title]
+# 任务：[标题]
 
-## Context
-[Specific scenario with concrete details: company size, constraints, timeline]
+## 背景
+[带具体细节的场景：公司规模、约束、时间线]
 
-## Deliverable
-[Exact format and structure required]
+## 交付物
+[要求的精确格式和结构]
 
-## Requirements
-- [Specific, measurable requirements]
-- [Not vague — "be comprehensive" is bad, "include exactly 6 sections" is good]
+## 要求
+- [具体、可衡量的要求]
+- [不要含糊 ——「要全面」不好，「恰好包含 6 节」好]
 ```
 
-### Constrained Tasks (for Testing Scope Effects)
+### 受约束任务（用于测试范围效应）
 
-Constrained tasks test whether methods respect scope boundaries. Design with:
+受约束任务测试方法是否尊重范围边界。设计时用：
 
-- **Fixed facts**: "Use only these N data points, add nothing else"
-- **Fixed deliverable**: Specific format (pitch, postmortem, memo — not "improve this")
-- **Fixed structure**: "These sections in this order, do not add/remove"
-- **Fixed change items**: "Address exactly these N points, nothing else"
+- **固定事实**：「只用这 N 个数据点，不要加别的」
+- **固定交付物**：具体格式（路演、复盘、备忘 —— 而非「改进这个」）
+- **固定结构**：「按此顺序排这些节，不要增删」
+- **固定改动项**：「恰好回应这 N 点，不加别的」
 
-**Do NOT use word count as a scope constraint.** Word limits cause false convergence — outputs get rejected for length, not quality. Constrain scope (what to include) not length.
+**不要把字数当作范围约束。** 字数限制会造成假收敛 —— 输出因长度被拒，而非质量。约束范围（包含什么）而非长度。
 
-### Example: Good vs Bad Constraints
+### 示例：好约束 vs 坏约束
 
-| Bad Constraint | Why | Good Constraint |
+| 坏约束 | 原因 | 好约束 |
 |---------------|-----|-----------------|
-| "Max 500 words" | Judges reject for length | "Exactly 4 sections, each with 3 numbered items" |
-| "Be concise" | Too vague | "Each prohibition must reference a specific base fact" |
-| "Improve this" | Unbounded scope | "Write a 600-word incident postmortem with this exact structure" |
-| "Make it better" | No clear criterion | "Address exactly these 3 reviewer concerns" |
+| 「最多 500 字」 | 评审因长度拒绝 | 「恰好 4 节，每节 3 个编号项」 |
+| 「要简洁」 | 太模糊 | 「每条禁令必须引用一个具体的基本事实」 |
+| 「改进这个」 | 范围无界 | 「用这个确切结构写一份 600 字事故复盘」 |
+| 「让它更好」 | 无明确标准 | 「恰好回应这 3 条评审意见」 |
 
 ---
 
-## Visualization Best Practices
+## 可视化最佳实践
 
-### Setup: SciencePlots + matplotlib
+### 设置：SciencePlots + matplotlib
 
-Install SciencePlots for publication-ready defaults:
+安装 SciencePlots 以获得出版级默认值：
 
 ```bash
 pip install SciencePlots matplotlib numpy
 ```
 
-**Option A: SciencePlots styles** (recommended — handles most defaults automatically):
+**选项 A：SciencePlots 样式**（推荐 —— 自动处理大多数默认值）：
 
 ```python
 import matplotlib.pyplot as plt
-import scienceplots  # registers the styles
+import scienceplots  # 注册样式
 
-# Pick a style:
-# 'science'        — clean, serif fonts, suitable for most venues
-# 'science+ieee'   — IEEE-style (good for two-column papers)
-# 'science+nature' — Nature-style
-# Add 'no-latex' if LaTeX is not installed on the machine generating plots
+# 选一个样式：
+# 'science'        —— 干净、衬线字体，适合大多数会议
+# 'science+ieee'   —— IEEE 风格（适合双栏论文）
+# 'science+nature' —— Nature 风格
+# 若生成图的机器上没装 LaTeX，加上 'no-latex'
 
 with plt.style.context(['science', 'no-latex']):
-    fig, ax = plt.subplots(figsize=(3.5, 2.5))  # single-column width
-    # ... plot ...
+    fig, ax = plt.subplots(figsize=(3.5, 2.5))  # 单栏宽度
+    # ... 绘图 ...
     fig.savefig('paper/fig_results.pdf', bbox_inches='tight')
 ```
 
-**Option B: Manual rcParams** (when you need full control):
+**选项 B：手动 rcParams**（需要完全控制时）：
 
 ```python
 import matplotlib.pyplot as plt
@@ -596,7 +596,7 @@ plt.rcParams.update({
     'xtick.labelsize': 9,
     'ytick.labelsize': 9,
     'legend.fontsize': 9,
-    'figure.figsize': (3.5, 2.5),    # single-column default
+    'figure.figsize': (3.5, 2.5),    # 单栏默认
     'figure.dpi': 300,
     'savefig.dpi': 300,
     'savefig.bbox': 'tight',
@@ -610,18 +610,18 @@ plt.rcParams.update({
 })
 ```
 
-### Standard Figure Sizes (Two-Column Format)
+### 标准图尺寸（双栏格式）
 
-| Use Case | figsize | Notes |
+| 用途 | figsize | 备注 |
 |----------|---------|-------|
-| Single column | `(3.5, 2.5)` | Fits in one column of two-column layout |
-| Double column | `(7.0, 3.0)` | Spans full page width |
-| Square (heatmap, confusion matrix) | `(3.5, 3.5)` | Single column |
-| Tall single (many rows) | `(3.5, 5.0)` | Use sparingly |
+| 单栏 | `(3.5, 2.5)` | 放进双栏布局的一栏 |
+| 双栏 | `(7.0, 3.0)` | 跨整页宽度 |
+| 正方形（热力图、混淆矩阵） | `(3.5, 3.5)` | 单栏 |
+| 高瘦单栏（行很多） | `(3.5, 5.0)` | 谨慎使用 |
 
-### Colorblind-Safe Palette (Okabe-Ito)
+### 色盲友好调色板（Okabe-Ito）
 
-Use this palette for all paper figures. It is distinguishable by people with all common forms of color vision deficiency:
+所有论文图都用这个调色板。它对所有常见色觉缺陷人群都可区分：
 
 ```python
 COLORS = {
@@ -635,11 +635,11 @@ COLORS = {
     'black':   '#000000',
 }
 
-# As a list for cycling:
+# 作为循环用列表：
 COLOR_CYCLE = ['#0072B2', '#D55E00', '#009E73', '#E69F00', '#CC79A7', '#56B4E9']
 ```
 
-Also differentiate lines by **marker and linestyle**, not just color:
+还要用**标记和线型**区分线条，而不只是颜色：
 ```python
 STYLES = [
     {'color': '#0072B2', 'marker': 'o', 'linestyle': '-'},
@@ -649,7 +649,7 @@ STYLES = [
 ]
 ```
 
-### Complete Example: Method Comparison Bar Chart
+### 完整示例：方法对比柱状图
 
 ```python
 import matplotlib.pyplot as plt
@@ -671,7 +671,7 @@ with plt.style.context(style):
     bars = ax.bar(methods, scores, yerr=errors, capsize=3,
                   color=colors, edgecolor='black', linewidth=0.5)
     
-    # Highlight "Ours"
+    # 突出 "Ours"
     bars[-1].set_edgecolor('#0072B2')
     bars[-1].set_linewidth(1.5)
     
@@ -683,7 +683,7 @@ with plt.style.context(style):
     fig.savefig('paper/fig_comparison.pdf', bbox_inches='tight')
 ```
 
-### Complete Example: Convergence/Trajectory Line Chart
+### 完整示例：收敛/轨迹折线图
 
 ```python
 with plt.style.context(style):
@@ -696,7 +696,7 @@ with plt.style.context(style):
     ax.plot(passes, ours, **STYLES[0], label='Ours', markersize=4)
     ax.plot(passes, baseline, **STYLES[1], label='Critique+Revise', markersize=4)
     
-    # Mark convergence point
+    # 标出收敛点
     ax.axvline(x=10, color='gray', linestyle=':', alpha=0.5, linewidth=0.8)
     ax.annotate('Converged', xy=(10, 90), fontsize=8, ha='center',
                 xytext=(10, 93), arrowprops=dict(arrowstyle='->', color='gray'))
@@ -710,19 +710,19 @@ with plt.style.context(style):
     fig.savefig('paper/fig_trajectory.pdf', bbox_inches='tight')
 ```
 
-### Output Rules
+### 输出规则
 
-- **Always save as PDF**: `fig.savefig('fig.pdf')` — vector graphics, sharp at any zoom
-- **Never save as PNG** for paper figures — raster PNGs look blurry when printed/zoomed
-- **Exception**: Screenshots, photographs, or pixel-art visualizations → PNG at 600 DPI
-- **Verify grayscale**: Print to grayscale PDF and check all information is still visible
+- **始终存为 PDF**：`fig.savefig('fig.pdf')` —— 矢量图，任意缩放都清晰
+- **绝不存为 PNG** 做论文图 —— 栅格 PNG 在打印/缩放时显得模糊
+- **例外**：截图、照片或像素艺术可视化 → 用 600 DPI 的 PNG
+- **验证灰度**：打印成灰度 PDF，检查所有信息仍可见
 
-### Chart Types for Common Comparisons
+### 常见比较的图表类型
 
-| Comparison Type | Chart | Notes |
+| 比较类型 | 图表 | 备注 |
 |----------------|-------|-------|
-| Method vs method | Grouped bar chart | Include error bars |
-| Across model sizes | Line chart with CI bands | Log scale for model size axis |
-| Ablation study | Stacked/grouped bar | Highlight removed component |
-| Trajectory/convergence | Line chart over iterations | Show winner per iteration |
-| Per-task breakdown | Heatmap or grouped bar | Show variance across tasks |
+| 方法 vs 方法 | 分组柱状图 | 带误差棒 |
+| 跨模型规模 | 带 CI 带的折线图 | 模型规模轴用对数刻度 |
+| 消融研究 | 堆叠/分组柱状图 | 突出被移除的组件 |
+| 轨迹/收敛 | 跨迭代的折线图 | 显示每轮的胜者 |
+| 分任务细分 | 热力图或分组柱状图 | 显示跨任务的方差 |

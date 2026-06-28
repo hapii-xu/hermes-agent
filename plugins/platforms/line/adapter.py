@@ -1,61 +1,58 @@
 """
-LINE Messaging API platform adapter for Hermes Agent.
+Hermes Agent 的 LINE Messaging API 平台适配器。
 
-A bundled platform plugin that runs an aiohttp webhook server, accepts LINE
-webhook events (signature-verified), and relays messages to/from the agent
-via the standard ``BasePlatformAdapter`` interface.
+一个捆绑的平台插件，运行 aiohttp webhook 服务器，接收 LINE
+webhook 事件（经过签名验证），并通过标准的 ``BasePlatformAdapter`` 接口
+在 agent 与 LINE 之间中继消息。
 
-Design highlights
------------------
+设计要点
+---------
 
-**Reply token preferred, Push fallback.** LINE's reply token is single-use
-and expires roughly 60 seconds after the inbound event. We try Reply first
-(it's free) and fall back to the metered Push API when the token is absent,
-expired, or rejected by the API.
+**优先使用 reply token，Push 作为回退。** LINE 的 reply token 是一次性的，
+大约在内入站事件后 60 秒过期。我们优先尝试 Reply（免费），当 token 缺失、
+过期或被 API 拒绝时，回退到按量计费的 Push API。
 
-**Slow-LLM postback button (optional).** When the LLM is still running past
-``slow_response_threshold`` seconds (default 45, leaving 15s margin on the
-60s reply-token TTL), we burn the original reply token to send a Template
-Buttons bubble — the user taps it later to receive the cached answer via a
-*fresh* reply token (also free). State machine: PENDING → READY → DELIVERED,
-with ERROR for cancelled runs. Set the threshold to 0 to disable the
-button and always Push-fallback instead.
+**慢速 LLM postback 按钮（可选）。** 当 LLM 运行时间超过
+``slow_response_threshold`` 秒时（默认 45 秒，在 60 秒 reply token TTL
+基础上预留 15 秒余量），我们会消耗原始 reply token 发送一个 Template
+Buttons 气泡 —— 用户稍后点击它，通过一个 *新的* reply token（同样免费）
+接收缓存的回答。状态机：PENDING → READY → DELIVERED，
+ERROR 用于被取消的运行。将阈值设为 0 可禁用按钮，
+始终使用 Push 回退。
 
-**Three-allowlist gating.** Separate allowlists for users (U-prefixed),
-groups (C-prefixed), and rooms (R-prefixed). ``LINE_ALLOW_ALL_USERS=true``
-is a dev-only escape hatch.
+**三重白名单控制。** 对用户（U 前缀）、群组（C 前缀）和房间（R 前缀）
+分别设置白名单。``LINE_ALLOW_ALL_USERS=true`` 是仅用于开发的逃生通道。
 
-**Media via public HTTPS.** LINE's Messaging API does *not* accept
-binary uploads — images, audio, and video must be reachable HTTPS URLs.
-We register registered tempfiles under ``/line/media/<token>/<filename>``
-served by the same aiohttp app, with an allowed-roots traversal guard.
-``LINE_PUBLIC_URL`` (e.g. ``https://my-tunnel.example.com``) overrides
-the host:port construction so URLs are reachable when bind is 0.0.0.0
-or behind a reverse proxy.
+**通过公共 HTTPS 传输媒体。** LINE 的 Messaging API *不*接受
+二进制上传 —— 图片、音频和视频必须是可访问的 HTTPS URL。
+我们将注册的临时文件挂在 ``/line/media/<token>/<filename>`` 路径下，
+由同一个 aiohttp 应用提供服务，并带有允许根目录的遍历保护。
+``LINE_PUBLIC_URL``（例如 ``https://my-tunnel.example.com``）会覆盖
+host:port 构造，使得在绑定 0.0.0.0 或反向代理后面时 URL 仍可访问。
 
-**5-message batching.** LINE accepts at most 5 message objects per
-Reply/Push call; longer responses are smart-chunked at 4500 chars
-(LINE per-bubble limit is 5000) and batched.
+**5 条消息批处理。** LINE 每次 Reply/Push 调用最多接受 5 个消息对象；
+较长的响应会按 4500 字符进行智能分块（LINE 每个气泡的限制为 5000）
+并批处理。
 
-Synthesis credits
------------------
+整合致谢
+---------
 
-This file is a synthesis of seven open community PRs adding LINE support
-to Hermes Agent. It deliberately ports the *strongest* idea from each into
-a single plugin-form module that requires zero core edits:
+本文件整合了七个为 Hermes Agent 添加 LINE 支持的开源社区 PR。
+它刻意从每个 PR 中移植 *最强* 的想法，整合成一个插件形式的模块，
+无需修改核心代码：
 
-* PR #18153 (leepoweii)   — Template Buttons postback cache state machine,
-  Markdown URL preservation, system-message bypass.
-* PR #8398  (yuga-hashimoto) — media URL serving with traversal guard,
-  send_voice / send_video, ``LINE_PUBLIC_URL`` env, macOS ``/tmp`` root.
-* PR #16832 (jethac)      — config wiring style, voice/image tests.
-* PR #21023 (perng)       — plugin-form skeleton (the only one already
-  modeled on ``ADDING_A_PLATFORM.md``), reply→push fallback at 50s TTL,
-  loading-animation indicator, source dispatcher.
-* PR #14942 (soichiyo)    — Cloudflare-tunnel operating model (docs only).
-* PR #14988 (David-0x221Eight) — text-first scope discipline.
-* PR #6676  (liyoungc)    — Push-only mode (used as the ``threshold=0``
-  fallback path here).
+* PR #18153 (leepoweii)   — Template Buttons postback 缓存状态机，
+  Markdown URL 保留，系统消息旁路。
+* PR #8398  (yuga-hashimoto) — 媒体 URL 服务及遍历保护，
+  send_voice / send_video，``LINE_PUBLIC_URL`` 环境变量，macOS ``/tmp`` 根目录。
+* PR #16832 (jethac)      — 配置连接方式，语音/图片测试。
+* PR #21023 (perng)       — 插件形式的骨架（唯一一个已经按照
+  ``ADDING_A_PLATFORM.md`` 建模的 PR），reply→push 在 50 秒 TTL 时的回退，
+  加载动画指示器，source 分发器。
+* PR #14942 (soichiyo)    — Cloudflare 隧道运行模式（仅文档）。
+* PR #14988 (David-0x221Eight) — 文本优先的作用域规范。
+* PR #6676  (liyoungc)    — 仅 Push 模式（此处用作 ``threshold=0``
+  的回退路径）。
 """
 
 from __future__ import annotations
@@ -82,9 +79,8 @@ from urllib.parse import quote as _urlquote
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy / function-level imports for gateway internals are NOT used here —
-# the plugin discovery flow imports adapter.py late enough that gateway is
-# already loaded.
+# 不使用延迟/函数级别的 gateway 内部导入 —— 插件发现流程导入 adapter.py
+# 时 gateway 已经加载完成。
 # ---------------------------------------------------------------------------
 
 from gateway.platforms.base import (
@@ -98,7 +94,7 @@ from gateway.config import Platform
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
@@ -107,20 +103,20 @@ LINE_LOADING_URL = "https://api.line.me/v2/bot/chat/loading/start"
 LINE_CONTENT_URL_FMT = "https://api-data.line.me/v2/bot/message/{message_id}/content"
 LINE_BOT_INFO_URL = "https://api.line.me/v2/bot/info"
 
-# LINE Messaging API hard limits
-LINE_PER_BUBBLE_CHARS = 5000  # Hard limit per text message object
-LINE_SAFE_BUBBLE_CHARS = 4500  # Conservative limit for chunking
-LINE_MAX_MESSAGES_PER_CALL = 5  # API rejects >5 messages per Reply/Push
-LINE_REPLY_TOKEN_TTL_SECONDS = 50  # Conservative cap below LINE's ~60s
+# LINE Messaging API 硬限制
+LINE_PER_BUBBLE_CHARS = 5000  # 每个文本消息对象的硬限制
+LINE_SAFE_BUBBLE_CHARS = 4500  # 分块时使用的保守限制
+LINE_MAX_MESSAGES_PER_CALL = 5  # API 拒绝每次 Reply/Push 超过 5 条消息
+LINE_REPLY_TOKEN_TTL_SECONDS = 50  # 低于 LINE 约 60 秒的保守上限
 
-# Webhook hardening
-WEBHOOK_BODY_MAX_BYTES = 1_048_576  # 1 MiB — webhooks are tiny JSON
+# Webhook 加固
+WEBHOOK_BODY_MAX_BYTES = 1_048_576  # 1 MiB — webhook 是很小的 JSON
 DEFAULT_WEBHOOK_PORT = 8646
 DEFAULT_WEBHOOK_PATH = "/line/webhook"
 DEFAULT_MEDIA_PATH_PREFIX = "/line/media"
 
-# Slow-LLM postback button defaults
-DEFAULT_SLOW_RESPONSE_THRESHOLD = 45.0  # seconds; 0 disables
+# 慢速 LLM postback 按钮默认值
+DEFAULT_SLOW_RESPONSE_THRESHOLD = 45.0  # 秒；0 表示禁用
 DEFAULT_PENDING_REPLY_TEXT = (
     "🤔 Still thinking. Tap below to fetch the answer when it's ready."
 )
@@ -128,16 +124,16 @@ DEFAULT_BUTTON_LABEL = "Get answer"
 DEFAULT_DELIVERED_TEXT = "Already replied ✅"
 DEFAULT_INTERRUPTED_TEXT = "Run was interrupted before completion."
 
-# Media defaults
-MEDIA_TOKEN_TTL_SECONDS = 1800  # 30 minutes; LINE caches the URL aggressively
-LINE_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per LINE docs
-LINE_AV_MAX_BYTES = 200 * 1024 * 1024  # 200 MB for voice/video
+# 媒体默认值
+MEDIA_TOKEN_TTL_SECONDS = 1800  # 30 分钟；LINE 会积极缓存 URL
+LINE_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 根据 LINE 文档为 10 MB
+LINE_AV_MAX_BYTES = 200 * 1024 * 1024  # 语音/视频为 200 MB
 
-# Map LINE webhook message types to the normalized MessageType the gateway
-# routes on. LINE has no separate "voice" type — audio messages are recorded
-# voice clips, so they map to VOICE (which the gateway sends through STT),
-# mirroring how Telegram/WhatsApp classify voice notes. Anything unknown
-# falls back to TEXT.
+# 将 LINE webhook 消息类型映射到 gateway 路由使用的标准化 MessageType。
+# LINE 没有单独的 "voice" 类型 —— 音频消息是录制的语音片段，
+# 因此它们映射到 VOICE（gateway 会通过 STT 发送），
+# 这与 Telegram/WhatsApp 对语音消息的分类方式一致。
+# 任何未知的类型都会回退到 TEXT。
 _LINE_MESSAGE_TYPES = {
     "text": MessageType.TEXT,
     "image": MessageType.PHOTO,
@@ -148,9 +144,9 @@ _LINE_MESSAGE_TYPES = {
     "sticker": MessageType.STICKER,
 }
 
-# A 1×1 transparent PNG used as fallback video preview thumbnail when no
-# explicit preview is supplied — LINE requires ``previewImageUrl`` for
-# video messages. Sourced from the Python stdlib (no Pillow dependency).
+# 当没有提供显式预览时，用作视频预览缩略图的 1×1 透明 PNG ——
+# LINE 要求视频消息必须包含 ``previewImageUrl``。
+# 来源于 Python 标准库（无 Pillow 依赖）。
 _FALLBACK_PNG_PREVIEW = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
     "890000000d49444154789c63000100000005000100377a7ff20000000049454e"
@@ -159,7 +155,7 @@ _FALLBACK_PNG_PREVIEW = bytes.fromhex(
 
 
 # ---------------------------------------------------------------------------
-# Markdown stripping (URL-preserving)
+# Markdown 剥离（保留 URL）
 # ---------------------------------------------------------------------------
 
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
@@ -172,17 +168,16 @@ _MD_BULLET_RE = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 
 
 def strip_markdown_preserving_urls(text: str) -> str:
-    """Strip Markdown that LINE can't render, but keep URLs usable.
+    """剥离 LINE 无法渲染的 Markdown，但保持 URL 可用。
 
-    LINE's text bubble has zero Markdown support — bold, italics, code
-    fences, headings, and bullet markers all render as literal characters.
-    URLs *are* auto-linked by the client, but only when they appear bare
-    (not inside ``[label](url)`` syntax). This converts ``[label](url)``
-    to ``label (url)`` so the URL remains tappable, then strips the rest.
+    LINE 的文本气泡不支持 Markdown —— 粗体、斜体、代码块、标题和
+    列表标记都会显示为字面字符。URL *会*被客户端自动链接，但前提是
+    它们以裸 URL 形式出现（不在 ``[label](url)`` 语法内）。
+    此函数将 ``[label](url)`` 转换为 ``label (url)``，使 URL 仍可点击，
+    然后剥离其余 Markdown。
 
-    Source: PR #18153 (leepoweii) — adapted to keep code-block content
-    visible (LINE users frequently want command snippets to land as
-    plain text, not be eaten by the fence).
+    来源：PR #18153 (leepoweii) —— 经过调整以保留代码块内容
+    （LINE 用户经常希望命令片段作为纯文本显示，而不是被代码围栏吞掉）。
     """
     if not text:
         return text

@@ -1,8 +1,8 @@
-# Himalaya Configuration Reference
+# Himalaya 配置参考
 
-Configuration file location: `~/.config/himalaya/config.toml`
+配置文件位置：`~/.config/himalaya/config.toml`
 
-## Minimal IMAP + SMTP Setup
+## 最小 IMAP + SMTP 配置
 
 ```toml
 [accounts.default]
@@ -10,7 +10,7 @@ email = "user@example.com"
 display-name = "Your Name"
 default = true
 
-# IMAP backend for reading emails
+# 用于读取邮件的 IMAP 后端
 backend.type = "imap"
 backend.host = "imap.example.com"
 backend.port = 993
@@ -19,7 +19,7 @@ backend.login = "user@example.com"
 backend.auth.type = "password"
 backend.auth.raw = "your-password"
 
-# SMTP backend for sending emails
+# 用于发送邮件的 SMTP 后端
 message.send.backend.type = "smtp"
 message.send.backend.host = "smtp.example.com"
 message.send.backend.port = 587
@@ -28,38 +28,38 @@ message.send.backend.login = "user@example.com"
 message.send.backend.auth.type = "password"
 message.send.backend.auth.raw = "your-password"
 
-# Folder aliases — required whenever server folder names differ
-# from himalaya's canonical names. See "Folder Aliases" below.
+# 文件夹别名——当服务器文件夹名与 himalaya 的规范名不同时必填。
+# 参见下文的「文件夹别名」。
 folder.aliases.inbox = "INBOX"
 folder.aliases.sent = "Sent"
 folder.aliases.drafts = "Drafts"
 folder.aliases.trash = "Trash"
 ```
 
-## Password Options
+## 密码选项
 
-### Raw password (testing only, not recommended)
+### 明文密码（仅用于测试，不推荐）
 
 ```toml
 backend.auth.raw = "your-password"
 ```
 
-### Password from command (recommended)
+### 通过命令获取密码（推荐）
 
 ```toml
 backend.auth.cmd = "pass show email/imap"
 # backend.auth.cmd = "security find-generic-password -a user@example.com -s imap -w"
 ```
 
-### System keyring (requires keyring feature)
+### 系统 keyring（需要 keyring 特性）
 
 ```toml
 backend.auth.keyring = "imap-example"
 ```
 
-Then run `himalaya account configure <account>` to store the password.
+然后运行 `himalaya account configure <account>` 来存储密码。
 
-## Gmail Configuration
+## Gmail 配置
 
 ```toml
 [accounts.gmail]
@@ -83,20 +83,20 @@ message.send.backend.login = "you@gmail.com"
 message.send.backend.auth.type = "password"
 message.send.backend.auth.cmd = "pass show google/app-password"
 
-# Gmail folder mapping. Without these, save-to-Sent fails after
-# SMTP delivery succeeds (Gmail's Sent folder is `[Gmail]/Sent Mail`,
-# not `Sent`), and `himalaya message send` exits non-zero. Any
-# caller that retries on that error will re-run SMTP — duplicate
-# emails to recipients. Always include this block for Gmail.
+# Gmail 文件夹映射。缺少这些配置，「保存到已发送」会在
+# SMTP 投递成功之后失败（Gmail 的已发送文件夹是
+# `[Gmail]/Sent Mail`，而不是 `Sent`），`himalaya message send`
+# 以非零状态退出。任何在该错误上重试的调用方都会重新执行
+# SMTP——给收件人发出重复邮件。Gmail 必须始终包含此配置块。
 folder.aliases.inbox = "INBOX"
 folder.aliases.sent = "[Gmail]/Sent Mail"
 folder.aliases.drafts = "[Gmail]/Drafts"
 folder.aliases.trash = "[Gmail]/Trash"
 ```
 
-**Note:** Gmail requires an App Password if 2FA is enabled.
+**注意：** 如果 Gmail 启用了 2FA，则需要应用专用密码（App Password）。
 
-## iCloud Configuration
+## iCloud 配置
 
 ```toml
 [accounts.icloud]
@@ -120,18 +120,18 @@ message.send.backend.auth.type = "password"
 message.send.backend.auth.cmd = "pass show icloud/app-password"
 ```
 
-**Note:** Generate an app-specific password at appleid.apple.com
+**注意：** 请在 appleid.apple.com 生成应用专用密码。
 
-## Folder Aliases
+## 文件夹别名
 
-Map himalaya's canonical folder names (`inbox`, `sent`, `drafts`,
-`trash`) to whatever the server actually calls them. Use the
-v1.2.0 `folder.aliases.X` syntax (plural, dotted keys, directly
-under `[accounts.NAME]`):
+把 himalaya 的规范文件夹名（`inbox`、`sent`、`drafts`、
+`trash`）映射为服务器实际使用的名称。请使用 v1.2.0 的
+`folder.aliases.X` 语法（复数、点分键，直接写在
+`[accounts.NAME]` 下）：
 
 ```toml
 [accounts.default]
-# ... other account config ...
+# ... 其他账户配置 ...
 
 folder.aliases.inbox = "INBOX"
 folder.aliases.sent = "Sent"
@@ -139,7 +139,7 @@ folder.aliases.drafts = "Drafts"
 folder.aliases.trash = "Trash"
 ```
 
-The equivalent TOML sub-section form also works in v1.2.0:
+在 v1.2.0 中，等价的 TOML 子段写法也可用：
 
 ```toml
 [accounts.default.folder.aliases]
@@ -149,37 +149,37 @@ drafts = "Drafts"
 trash = "Trash"
 ```
 
-> **Don't use the singular `alias` form.** Pre-v1.2.0 docs showed
-> `[accounts.NAME.folder.alias]` (singular). v1.2.0 silently
-> ignores that sub-section — TOML parses without error, but the
-> alias resolver never reads it. Every lookup then falls through
-> to the canonical name. On Gmail (where `sent` is actually
-> `[Gmail]/Sent Mail`) this means save-to-Sent fails *after* SMTP
-> delivery succeeds, and `himalaya message send` exits non-zero.
-> Any caller (agent, script, user) that retries on that error
-> code will re-run the send — including SMTP — producing duplicate
-> emails to recipients. Always use `folder.aliases.X` (plural).
+> **不要使用单数 `alias` 写法。** v1.2.0 之前的文档展示的是
+> `[accounts.NAME.folder.alias]`（单数）。v1.2.0 会静默
+> 忽略该子段——TOML 解析不报错，但别名解析器
+> 根本读不到它。于是每次查找都会回落到规范名。
+> 在 Gmail 上（其 `sent` 实际是 `[Gmail]/Sent Mail`），
+> 这意味着「保存到已发送」会在 SMTP 投递成功*之后*
+> 失败，`himalaya message send` 以非零状态退出。任何
+> 在该错误码上重试的调用方（agent、脚本、用户）都会
+> 重新执行发送——包括 SMTP——给收件人发出重复邮件。
+> 请始终使用 `folder.aliases.X`（复数）。
 
-## Multiple Accounts
+## 多账户
 
 ```toml
 [accounts.personal]
 email = "personal@example.com"
 default = true
-# ... backend config ...
+# ... 后端配置 ...
 
 [accounts.work]
 email = "work@company.com"
-# ... backend config ...
+# ... 后端配置 ...
 ```
 
-Switch accounts with `--account`:
+用 `--account` 切换账户：
 
 ```bash
 himalaya --account work envelope list
 ```
 
-## Notmuch Backend (local mail)
+## Notmuch 后端（本地邮件）
 
 ```toml
 [accounts.local]
@@ -189,7 +189,7 @@ backend.type = "notmuch"
 backend.db-path = "~/.mail/.notmuch"
 ```
 
-## OAuth2 Authentication (for providers that support it)
+## OAuth2 认证（用于支持它的服务商）
 
 ```toml
 backend.auth.type = "oauth2"
@@ -201,9 +201,9 @@ backend.auth.auth-url = "https://provider.com/oauth/authorize"
 backend.auth.token-url = "https://provider.com/oauth/token"
 ```
 
-## Additional Options
+## 其他选项
 
-### Signature
+### 签名
 
 ```toml
 [accounts.default]
@@ -211,16 +211,16 @@ signature = "Best regards,\nYour Name"
 signature-delim = "-- \n"
 ```
 
-### Downloads directory
+### 下载目录
 
 ```toml
 [accounts.default]
 downloads-dir = "~/Downloads/himalaya"
 ```
 
-### Editor for composing
+### 用于撰写的编辑器
 
-Set via environment variable:
+通过环境变量设置：
 
 ```bash
 export EDITOR="vim"

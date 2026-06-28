@@ -1,50 +1,47 @@
-"""Windows UTF-8 bootstrap for Hermes entry points.
+"""适用于 Hermes 入口点的 Windows UTF-8 引导模块。
 
-Python on Windows has two long-standing text-encoding footguns:
+Python 在 Windows 上存在两个由来已久的文本编码陷阱：
 
-1. ``sys.stdout`` / ``sys.stderr`` are bound to the console code page
-   (``cp1252`` on US-locale installs), so ``print("café")`` crashes with
-   ``UnicodeEncodeError: 'charmap' codec can't encode character``.
+1. ``sys.stdout`` / ``sys.stderr`` 绑定到控制台代码页
+   （美国区域设置安装中为 ``cp1252``），因此 ``print("café")`` 会因
+   ``UnicodeEncodeError: 'charmap' codec can't encode character`` 而崩溃。
 
-2. Child processes spawned via ``subprocess`` don't know to use UTF-8
-   unless ``PYTHONUTF8`` and/or ``PYTHONIOENCODING`` are set in their
-   environment — so any Python subprocess (the execute_code sandbox,
-   delegation children, linter subprocesses, etc.) inherits the same
-   cp1252 defaults and hits the same UnicodeEncodeError.
+2. 通过 ``subprocess`` 派生的子进程不知道要使用 UTF-8，
+   除非在其环境中设置了 ``PYTHONUTF8`` 和/或 ``PYTHONIOENCODING``——
+   因此任何 Python 子进程（execute_code 沙箱、委派子进程、linter 子进程等）
+   都会继承相同的 cp1252 默认值，并遭遇同样的 UnicodeEncodeError。
 
-This module fixes both on Windows *only* — POSIX is untouched.  It
-should be imported at the very top of every Hermes entry point
-(``hermes``, ``hermes-agent``, ``hermes-acp``, ``python -m gateway.run``,
-``batch_runner.py``, ``cron/scheduler.py``) before any other imports
-that might do file I/O or print to stdout.
+本模块*仅*在 Windows 上修复上述两个问题——POSIX 系统不受影响。
+它应当在每个 Hermes 入口点的最顶部被导入
+（``hermes``、``hermes-agent``、``hermes-acp``、``python -m gateway.run``、
+``batch_runner.py``、``cron/scheduler.py``），在任何可能执行文件 I/O
+或向 stdout 打印的导入之前。
 
-What this module does on Windows:
+本模块在 Windows 上的作用：
 
-  - Sets ``os.environ["PYTHONUTF8"] = "1"`` (PEP 540 UTF-8 mode) so
-    every child process we spawn uses UTF-8 for ``open()`` and stdio.
-  - Sets ``os.environ["PYTHONIOENCODING"] = "utf-8"`` for belt-and-
-    suspenders — some tools read this instead of / in addition to
-    ``PYTHONUTF8``.
-  - Reconfigures ``sys.stdout`` / ``sys.stderr`` to UTF-8 in the current
-    process, using the ``reconfigure()`` API (Python 3.7+).  This fixes
-    ``print("café")`` in the parent without a re-exec.
+  - 设置 ``os.environ["PYTHONUTF8"] = "1"``（PEP 540 UTF-8 模式），
+    使我们派生的每个子进程对 ``open()`` 和 stdio 均使用 UTF-8。
+  - 设置 ``os.environ["PYTHONIOENCODING"] = "utf-8"`` 作为双重保险——
+    某些工具读取此变量而非 ``PYTHONUTF8``，或同时读取两者。
+  - 使用 ``reconfigure()`` API（Python 3.7+）将当前进程的
+    ``sys.stdout`` / ``sys.stderr`` 重新配置为 UTF-8。
+    这样无需重新启动进程即可修复父进程中的 ``print("café")``。
 
-What this module does NOT do:
+本模块不做的事情：
 
-  - It does not re-exec Python with ``-X utf8``, so ``open()`` calls in
-    the *current* process still default to locale encoding.  Those need
-    an explicit ``encoding="utf-8"`` at the call site (lint rule
-    ``PLW1514`` / ``PYI058``).  Ruff is the right tool for that sweep.
+  - 不会以 ``-X utf8`` 重新启动 Python，因此*当前*进程中的 ``open()``
+    调用仍默认使用区域编码。这些调用需要在调用处显式指定
+    ``encoding="utf-8"``（lint 规则 ``PLW1514`` / ``PYI058``）。
+    Ruff 是执行该检查的正确工具。
 
-What this module does on POSIX:
+本模块在 POSIX 上的作用：
 
-  - Nothing.  POSIX systems are already UTF-8 by default in 99% of cases,
-    and we don't want to touch ``LANG``/``LC_*`` behavior that users may
-    have configured intentionally.  If someone hits a C/POSIX locale on
-    Linux, they can export ``PYTHONUTF8=1`` themselves — we won't override.
+  - 什么都不做。在 99% 的情况下，POSIX 系统默认已使用 UTF-8，
+    我们不想干扰用户可能有意配置的 ``LANG``/``LC_*`` 行为。
+    如果有人在 Linux 上遇到 C/POSIX 区域设置问题，
+    可以自行导出 ``PYTHONUTF8=1``——我们不会覆盖。
 
-Idempotent: safe to call multiple times.  ``_bootstrap_once`` guards
-against double-reconfigure.
+幂等性：可安全多次调用。``_bootstrap_once`` 防止重复重新配置。
 """
 
 from __future__ import annotations
@@ -57,14 +54,12 @@ _bootstrap_applied = False
 
 
 def apply_windows_utf8_bootstrap() -> bool:
-    """Apply the Windows UTF-8 bootstrap if we're on Windows.
+    """如果当前运行于 Windows，则应用 Windows UTF-8 引导。
 
-    Returns True if bootstrap was applied (i.e. we're on Windows and
-    haven't already done this), False otherwise.  The return value is
-    advisory — callers normally don't need it, but tests may want to
-    assert the path was taken.
+    若引导已应用（即当前为 Windows 且尚未执行过），返回 True，否则返回 False。
+    返回值仅供参考——调用方通常不需要它，但测试可能希望断言该路径已被执行。
 
-    Idempotent: subsequent calls after the first are a no-op.
+    幂等性：首次调用后的后续调用均为空操作。
     """
     global _bootstrap_applied
 
@@ -73,32 +68,29 @@ def apply_windows_utf8_bootstrap() -> bool:
     if _bootstrap_applied:
         return False
 
-    # 1. Child processes inherit these and run in UTF-8 mode.
-    #    We use setdefault() rather than overwriting so the user can
-    #    explicitly opt out by setting PYTHONUTF8=0 in their environment
-    #    (or PYTHONIOENCODING=something-else) if they really want to.
+    # 1. 子进程继承这些环境变量并以 UTF-8 模式运行。
+    #    使用 setdefault() 而非直接覆盖，以便用户可在环境中设置
+    #    PYTHONUTF8=0（或 PYTHONIOENCODING=其他值）来显式退出。
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
-    # 2. Reconfigure the current process's stdio to UTF-8.  Needed
-    #    because os.environ changes don't retroactively rebind sys.stdout
-    #    — those were bound at interpreter startup based on the console
-    #    code page.  ``reconfigure`` is a TextIOWrapper method since 3.7.
+    # 2. 将当前进程的 stdio 重新配置为 UTF-8。
+    #    这是必要的，因为 os.environ 的更改不会追溯性地重新绑定 sys.stdout
+    #    ——后者在解释器启动时已根据控制台代码页完成绑定。
+    #    ``reconfigure`` 是 Python 3.7 起 TextIOWrapper 提供的方法。
     #
-    #    errors="replace" means that if we ever *read* something from
-    #    stdin that isn't UTF-8 (unlikely but possible with piped input
-    #    from legacy tools), we'll get U+FFFD replacement chars rather
-    #    than a crash.  Output is pure UTF-8.
+    #    errors="replace" 意味着如果我们从 stdin *读取*到非 UTF-8 内容
+    #    （不常见，但通过旧工具管道输入时可能发生），
+    #    会得到 U+FFFD 替换字符而非崩溃。输出为纯 UTF-8。
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         if stream is None:
             continue
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
-            # Not a TextIOWrapper (could be redirected to a BytesIO in
-            # tests, or a non-standard stream in some embedded cases).
-            # Skip silently — the env-var fix is still in effect for
-            # child processes, which is the bigger win.
+            # 不是 TextIOWrapper（可能在测试中被重定向为 BytesIO，
+            # 或在某些嵌入场景中为非标准流）。
+            # 静默跳过——环境变量修复对子进程仍然有效，那才是更大的收益。
             continue
         try:
             reconfigure(encoding="utf-8", errors="replace")

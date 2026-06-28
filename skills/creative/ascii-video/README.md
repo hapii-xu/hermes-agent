@@ -1,290 +1,290 @@
 # ☤ ASCII Video
 
-Renders any content as colored ASCII character video. Audio, video, images, text, or pure math in, MP4/GIF/PNG sequence out. Full RGB color per character cell, 1080p 24fps default. No GPU.
+将任何内容渲染为彩色 ASCII 字符视频。音频、视频、图像、文本或纯数学输入，MP4/GIF/PNG 序列输出。每个字符单元全 RGB 颜色，默认 1080p 24fps。无需 GPU。
 
-Built for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Usable in any coding agent. Canonical source lives here; synced to [`NousResearch/hermes-agent/skills/creative/ascii-video`](https://github.com/NousResearch/hermes-agent/tree/main/skills/creative/ascii-video) via PR.
+为 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 而建。可在任何编程 agent 中使用。权威源位于此处；通过 PR 同步到 [`NousResearch/hermes-agent/skills/creative/ascii-video`](https://github.com/NousResearch/hermes-agent/tree/main/skills/creative/ascii-video)。
 
-## What this is
+## 这是什么
 
-A skill that teaches an agent how to build single-file Python renderers for ASCII video from scratch. The agent gets the full pipeline: grid system, font rasterization, effect library, shader chain, audio analysis, parallel encoding. It writes the renderer, runs it, gets video.
+一个教会 agent 如何从零开始构建单文件 Python ASCII 视频渲染器的 skill。agent 获得完整流水线：网格系统、字体栅格化、效果库、着色器链、音频分析、并行编码。它编写渲染器、运行它、得到视频。
 
-The output is actual video. Not terminal escape codes. Frames are computed as grids of colored characters, composited onto pixel canvases with pre-rasterized font bitmaps, post-processed through shaders, piped to ffmpeg.
+输出是真正的视频。不是终端转义码。帧被计算为彩色字符网格，与预栅格化的字体位图合成到像素画布上，通过着色器做后处理，再管道传给 ffmpeg。
 
-## Modes
+## 模式
 
-| Mode | Input | Output |
+| 模式 | 输入 | 输出 |
 |------|-------|--------|
-| Video-to-ASCII | A video file | ASCII recreation of the footage |
-| Audio-reactive | An audio file | Visuals driven by frequency bands, beats, energy |
-| Generative | Nothing | Procedural animation from math |
-| Hybrid | Video + audio | ASCII video with audio-reactive overlays |
-| Lyrics/text | Audio + timed text (SRT) | Karaoke-style text with effects |
-| TTS narration | Text quotes + API key | Narrated video with typewriter text and generated speech |
+| 视频转 ASCII | 视频文件 | 影像的 ASCII 再现 |
+| 音频反应 | 音频文件 | 由频段、节拍、能量驱动的视觉效果 |
+| 生成式 | 无 | 由数学生成的程序化动画 |
+| 混合 | 视频 + 音频 | 带音频反应叠加的 ASCII 视频 |
+| 歌词/文本 | 音频 + 时间文本（SRT） | 带效果的卡拉 OK 风格文本 |
+| TTS 旁白 | 文本引语 + API key | 带打字机文本和生成语音的旁白视频 |
 
-## Pipeline
+## 流水线
 
-Every mode follows the same 6-stage path:
+每种模式都遵循相同的 6 阶段路径：
 
 ```
 INPUT --> ANALYZE --> SCENE_FN --> TONEMAP --> SHADE --> ENCODE
 ```
 
-1. **Input** loads source material (or nothing for generative).
-2. **Analyze** extracts per-frame features. Audio gets 6-band FFT, RMS, spectral centroid, flatness, flux, beat detection with exponential decay. Video gets luminance, edges, motion.
-3. **Scene function** returns a pixel canvas directly. Composes multiple character grids at different densities, value/hue fields, pixel blend modes. This is where the visuals happen.
-4. **Tonemap** does adaptive percentile-based brightness normalization with per-scene gamma. ASCII on black is inherently dark. Linear multipliers don't work. This does.
-5. **Shade** runs a `ShaderChain` (38 composable shaders) plus a `FeedbackBuffer` for temporal recursion with spatial transforms.
-6. **Encode** pipes raw RGB frames to ffmpeg for H.264 encoding. Segments concatenated, audio muxed.
+1. **Input（输入）** 加载源素材（生成式则无）。
+2. **Analyze（分析）** 提取每帧特征。音频获得 6 频段 FFT、RMS、谱质心、平坦度、通量、带指数衰减的节拍检测。视频获得亮度、边缘、运动。
+3. **Scene function（场景函数）** 直接返回像素画布。以不同密度组合多个字符网格、亮度/色相场、像素混合模式。视觉在这里发生。
+4. **Tonemap（色调映射）** 做基于自适应百分位的亮度归一化，带每场景伽马。黑底 ASCII 本质上偏暗。线性乘法不行。这个行。
+5. **Shade（着色）** 运行 `ShaderChain`（38 个可组合着色器）外加 `FeedbackBuffer` 做带空间变换的时间递归。
+6. **Encode（编码）** 将原始 RGB 帧管道传给 ffmpeg 做 H.264 编码。片段拼接、音频混流。
 
-## Grid system
+## 网格系统
 
-Characters render on fixed-size grids. Layer multiple densities for depth.
+字符在固定大小的网格上渲染。叠加多个密度以营造景深。
 
-| Size | Font | Grid at 1080p | Use |
+| 尺寸 | 字体 | 1080p 下的网格 | 用途 |
 |------|------|---------------|-----|
-| xs | 8px | 400x108 | Ultra-dense data fields |
-| sm | 10px | 320x83 | Rain, starfields |
-| md | 16px | 192x56 | Default balanced |
-| lg | 20px | 160x45 | Readable text |
-| xl | 24px | 137x37 | Large titles |
-| xxl | 40px | 80x22 | Giant minimal |
+| xs | 8px | 400x108 | 超密集数据场 |
+| sm | 10px | 320x83 | 雨、星空 |
+| md | 16px | 192x56 | 默认均衡 |
+| lg | 20px | 160x45 | 可读文本 |
+| xl | 24px | 137x37 | 大标题 |
+| xxl | 40px | 80x22 | 巨大极简 |
 
-Rendering the same scene on `sm` and `lg` then screen-blending them creates natural texture interference. Fine detail shows through gaps in coarse characters. Most scenes use two or three grids.
+在 `sm` 和 `lg` 上渲染同一场景再做屏幕混合，会产生自然的纹理干涉。精细细节透过粗糙字符的间隙显现。大多数场景使用两到三个网格。
 
-## Character palettes (24)
+## 字符调色板（24）
 
-Each sorted dark-to-bright, each a different visual texture. Validated against the font at init so broken glyphs get dropped silently.
+每个都按暗到亮排序，各有不同的视觉纹理。在初始化时针对字体验证，因此损坏的字形会被静默丢弃。
 
-| Family | Examples | Feel |
+| 系列 | 示例 | 感觉 |
 |--------|----------|------|
-| Density ramps | ` .:-=+#@█` | Classic ASCII art gradient |
-| Block elements | ` ░▒▓█▄▀▐▌` | Chunky, digital |
-| Braille | ` ⠁⠂⠃...⠿` | Fine-grained pointillism |
-| Dots | ` ⋅∘∙●◉◎` | Smooth, organic |
-| Stars | ` ·✧✦✩✨★✶` | Sparkle, celestial |
-| Half-fills | ` ◔◑◕◐◒◓◖◗◙` | Directional fill progression |
-| Crosshatch | ` ▣▤▥▦▧▨▩` | Hatched density ramp |
-| Math | ` ·∘∙•°±×÷≈≠≡∞∫∑Ω` | Scientific, abstract |
-| Box drawing | ` ─│┌┐└┘├┤┬┴┼` | Structural, circuit-like |
-| Katakana | ` ·ｦｧｨｩｪｫｬｭ...` | Matrix rain |
-| Greek | ` αβγδεζηθ...ω` | Classical, academic |
-| Runes | ` ᚠᚢᚦᚱᚷᛁᛇᛒᛖᛚᛞᛟ` | Mystical, ancient |
-| Alchemical | ` ☉☽♀♂♃♄♅♆♇` | Esoteric |
-| Arrows | ` ←↑→↓↔↕↖↗↘↙` | Directional, kinetic |
-| Music | ` ♪♫♬♩♭♮♯○●` | Musical |
-| Project-specific | ` .·~=≈∞⚡☿✦★⊕◊◆▲▼●■` | Themed per project |
+| 密度斜坡 | ` .:-=+#@█` | 经典 ASCII 艺术渐变 |
+| 块元素 | ` ░▒▓█▄▀▐▌` | 厚重、数字感 |
+| 盲文 | ` ⠁⠂⠃...⠿` | 细腻点彩 |
+| 点 | ` ⋅∘∙●◉◎` | 平滑、有机 |
+| 星 | ` ·✧✦✩✨★✶` | 闪烁、天体 |
+| 半填充 | ` ◔◑◕◐◒◓◖◗◙` | 方向性填充递进 |
+| 交叉影线 | ` ▣▤▥▦▧▨▩` | 影线密度斜坡 |
+| 数学 | ` ·∘∙•°±×÷≈≠≡∞∫∑Ω` | 科学、抽象 |
+| 制表符 | ` ─│┌┐└┘├┤┬┴┼` | 结构、电路感 |
+| 片假名 | ` ·ｦｧｨｩｪｫｬｭ...` | Matrix 雨 |
+| 希腊字母 | ` αβγδεζηθ...ω` | 古典、学术 |
+| 符文 | ` ᚠᚢᚦᚱᚷᛁᛇᛒᛖᛚᛞᛟ` | 神秘、古老 |
+| 炼金术 | ` ☉☽♀♂♃♄♅♆♇` | 深奥 |
+| 箭头 | ` ←↑→↓↔↕↖↗↘↙` | 方向、动感 |
+| 音乐 | ` ♪♫♬♩♭♮♯○●` | 音乐性 |
+| 项目专属 | ` .·~=≈∞⚡☿✦★⊕◊◆▲▼●■` | 按项目主题化 |
 
-Custom palettes are built per project to match the content.
+每个项目会构建自定义调色板以匹配内容。
 
-## Color strategies
+## 颜色策略
 
-| Strategy | How it maps hue | Good for |
+| 策略 | 如何映射色相 | 适用于 |
 |----------|----------------|----------|
-| Angle-mapped | Position angle from center | Rainbow radial effects |
-| Distance-mapped | Distance from center | Depth, tunnels |
-| Frequency-mapped | Audio spectral centroid | Timbral shifting |
-| Value-mapped | Brightness level | Heat maps, fire |
-| Time-cycled | Slow rotation over time | Ambient, chill |
-| Source-sampled | Original video pixel colors | Video-to-ASCII |
-| Palette-indexed | Discrete lookup table | Retro, flat graphic |
-| Temperature | Warm-to-cool blend | Emotional tone |
-| Complementary | Hue + opposite | Bold, dramatic |
-| Triadic | Three equidistant hues | Psychedelic, vibrant |
-| Analogous | Neighboring hues | Harmonious, subtle |
-| Monochrome | Fixed hue, vary S/V | Noir, focused |
+| 角度映射 | 从中心起的位置角 | 彩虹径向效果 |
+| 距离映射 | 距中心的距离 | 景深、隧道 |
+| 频率映射 | 音频谱质心 | 音色变化 |
+| 亮度映射 | 亮度级别 | 热力图、火焰 |
+| 时间循环 | 随时间缓慢旋转 | 氛围、舒缓 |
+| 源采样 | 原始视频像素颜色 | 视频转 ASCII |
+| 调色板索引 | 离散查找表 | 复古、平面图形 |
+| 温度 | 暖到冷混合 | 情绪色调 |
+| 互补 | 色相 + 对立色 | 大胆、戏剧化 |
+| 三分色 | 三个等距色相 | 迷幻、鲜艳 |
+| 类似色 | 相邻色相 | 和谐、微妙 |
+| 单色 | 固定色相，变 S/V | 黑白、聚焦 |
 
-Plus 10 discrete RGB palettes (neon, pastel, cyberpunk, vaporwave, earth, ice, blood, forest, mono-green, mono-amber).
+另有 10 个离散 RGB 调色板（霓虹、粉彩、赛博朋克、蒸汽波、大地、冰、血、森林、单色绿、单色琥珀）。
 
-Full OKLAB/OKLCH color system: sRGB↔linear↔OKLAB conversion pipeline, perceptually uniform gradient interpolation, and color harmony generation (complementary, triadic, analogous, split-complementary, tetradic).
+完整 OKLAB/OKLCH 颜色系统：sRGB↔线性↔OKLAB 转换流水线、感知均匀的渐变插值，以及颜色和谐生成（互补、三分、类似、分裂互补、四分）。
 
-## Value field generators (21)
+## 亮度场生成器（21）
 
-Value fields are the core visual building blocks. Each produces a 2D float array in [0, 1] mapping every grid cell to a brightness value.
+亮度场是核心视觉构件。每个生成一个 [0, 1] 区间的 2D 浮点数组，把每个网格单元映射到一个亮度值。
 
-### Trigonometric (12)
+### 三角类（12）
 
-| Field | Description |
+| 场 | 描述 |
 |-------|-------------|
-| Sine field | Layered multi-sine interference, general-purpose background |
-| Smooth noise | Multi-octave sine approximation of Perlin noise |
-| Rings | Concentric rings, bass-driven count and wobble |
-| Spiral | Logarithmic spiral arms, configurable arm count/tightness |
-| Tunnel | Infinite depth perspective (inverse distance) |
-| Vortex | Twisting radial pattern, distance modulates angle |
-| Interference | N overlapping sine waves creating moire |
-| Aurora | Horizontal flowing bands |
-| Ripple | Concentric waves from configurable source points |
-| Plasma | Sum of sines at multiple orientations/speeds |
-| Diamond | Diamond/checkerboard pattern |
-| Noise/static | Random per-cell per-frame flicker |
+| 正弦场 | 分层多正弦干涉，通用背景 |
+| 平滑噪声 | 多倍频正弦近似 Perlin 噪声 |
+| 环形 | 同心环，低音驱动数量和摆动 |
+| 螺旋 | 对数螺旋臂，可配置臂数/松紧 |
+| 隧道 | 无限景深透视（距离倒数） |
+| 漩涡 | 扭曲的径向图案，距离调制角度 |
+| 干涉 | N 个重叠正弦波产生摩尔纹 |
+| 极光 | 水平流动带 |
+| 涟漪 | 从可配置源点发出的同心波 |
+| 等离子 | 多方向/速度正弦之和 |
+| 菱形 | 菱形/棋盘图案 |
+| 噪声/静电 | 每单元每帧随机闪烁 |
 
-### Noise-based (4)
+### 基于噪声（4）
 
-| Field | Description |
+| 场 | 描述 |
 |-------|-------------|
-| Value noise | Smooth organic noise, no axis-alignment artifacts |
-| fBM | Fractal Brownian Motion — octaved noise for clouds, terrain, smoke |
-| Domain warp | Inigo Quilez technique — fBM-driven coordinate distortion for flowing organic forms |
-| Voronoi | Moving seed points with distance, edge, and cell-ID output modes |
+| Value noise | 平滑有机噪声，无轴向对齐伪影 |
+| fBM | 分形布朗运动 —— 倍频噪声，用于云、地形、烟雾 |
+| 域扭曲 | Inigo Quilez 技术 —— fBM 驱动的坐标扭曲，产生流动的有机形态 |
+| Voronoi | 移动种子点，带距离、边缘、单元 ID 输出模式 |
 
-### Simulation-based (4)
+### 基于模拟（4）
 
-| Field | Description |
+| 场 | 描述 |
 |-------|-------------|
-| Reaction-diffusion | Gray-Scott with 7 presets: coral, spots, worms, labyrinths, mitosis, pulsating, chaos |
-| Cellular automata | Game of Life + 4 rule variants with analog fade trails |
-| Strange attractors | Clifford, De Jong, Bedhead — iterated point systems binned to density fields |
-| Temporal noise | 3D noise that morphs in-place without directional drift |
+| 反应-扩散 | Gray-Scott，7 个预设：珊瑚、斑点、蠕虫、迷宫、有丝分裂、脉动、混沌 |
+| 元胞自动机 | 生命游戏 + 4 种规则变体，带模拟渐隐轨迹 |
+| 奇异吸引子 | Clifford、De Jong、Bedhead —— 迭代点系统分箱成密度场 |
+| 时间噪声 | 原地变形的 3D 噪声，无方向漂移 |
 
-### SDF-based
+### 基于 SDF
 
-7 signed distance field primitives (circle, box, ring, line, triangle, star, heart) with smooth boolean combinators (union, intersection, subtraction, smooth union/subtraction) and infinite tiling. Render as solid fills or glowing outlines.
+7 个有符号距离场基元（圆、盒、环、线、三角、星、心），带平滑布尔组合器（并、交、差、平滑并/差）和无限平铺。渲染为实心填充或发光轮廓。
 
-## Hue field generators (9)
+## 色相场生成器（9）
 
-Determine per-cell color independent of brightness: fixed hue, angle-mapped rainbow, distance gradient, time-cycled rotation, audio spectral centroid, horizontal/vertical gradients, plasma variation, perceptually uniform OKLCH rainbow.
+独立于亮度决定每单元颜色：固定色相、角度映射彩虹、距离渐变、时间循环旋转、音频谱质心、水平/垂直渐变、等离子变化、感知均匀的 OKLCH 彩虹。
 
-## Coordinate transforms (11)
+## 坐标变换（11）
 
-UV-space transforms applied before effect evaluation: rotate, scale, skew, tile (with mirror seaming), polar, inverse-polar, twist (rotation increasing with distance), fisheye, wave displacement, Möbius conformal transformation. `make_tgrid()` wraps transformed coordinates into a grid object.
+在效果求值前应用的 UV 空间变换：旋转、缩放、倾斜、平铺（带镜像接缝）、极坐标、逆极坐标、扭曲（旋转随距离递增）、鱼眼、波位移、莫比乌斯共形变换。`make_tgrid()` 把变换后的坐标包装成网格对象。
 
-## Particle systems (9)
+## 粒子系统（9）
 
-| Type | Behavior |
+| 类型 | 行为 |
 |------|----------|
-| Explosion | Beat-triggered radial burst with gravity and life decay |
-| Embers | Rising from bottom with horizontal drift |
-| Dissolving cloud | Spreading outward with accelerating fade |
-| Starfield | 3D projected, Z-depth stars approaching with streak trails |
-| Orbit | Circular/elliptical paths around center |
-| Gravity well | Attracted toward configurable point sources |
-| Boid flocking | Separation/alignment/cohesion with spatial hash for O(n) neighbors |
-| Flow-field | Steered by gradient of any value field |
-| Trail particles | Fading lines between current and previous positions |
+| 爆炸 | 节拍触发的径向迸发，带重力和生命衰减 |
+| 余烬 | 从底部上升，带水平漂移 |
+| 消散云 | 向外扩散，渐隐加速 |
+| 星空 | 3D 投影，Z 深度星点逼近，带条纹尾迹 |
+| 轨道 | 绕中心的圆形/椭圆路径 |
+| 引力井 | 被可配置点源吸引 |
+| Boid 群集 | 分离/对齐/聚合，带空间哈希实现 O(n) 邻居 |
+| 流场 | 由任意亮度场的梯度引导 |
+| 尾迹粒子 | 当前与上一位置间的渐隐线 |
 
-14 themed particle character sets (energy, spark, leaf, snow, rain, bubble, data, hex, binary, rune, zodiac, dot, dash).
+14 个主题化粒子字符集（能量、火花、叶、雪、雨、泡泡、数据、十六进制、二进制、符文、星座、点、划）。
 
-## Temporal coherence
+## 时间连贯性
 
-10 easing functions (linear, quad, cubic, expo, elastic, bounce — in/out/in-out). Keyframe interpolation with eased transitions. Value field morphing (smooth crossfade between fields). Value field sequencing (cycle through fields with crossfade). Temporal noise (3D noise evolving smoothly in-place).
+10 种缓动函数（线性、二次、三次、指数、弹性、反弹 —— in/out/in-out）。关键帧插值带缓动过渡。亮度场变形（场之间的平滑交叉淡入）。亮度场序列（带交叉淡入循环切换场）。时间噪声（原地平滑演化的 3D 噪声）。
 
-## Shader pipeline
+## 着色器流水线
 
-38 composable shaders, applied to the pixel canvas after character rendering. Configurable per section.
+38 个可组合着色器，在字符渲染后应用于像素画布。每小节可配置。
 
-| Category | Shaders |
+| 类别 | 着色器 |
 |----------|---------|
-| Geometry | CRT barrel, pixelate, wave distort, displacement map, kaleidoscope, mirror (h/v/quad/diag) |
-| Channel | Chromatic aberration (beat-reactive), channel shift, channel swap, RGB split radial |
-| Color | Invert, posterize, threshold, solarize, hue rotate, saturation, color grade, color wobble, color ramp |
-| Glow/Blur | Bloom, edge glow, soft focus, radial blur |
-| Noise | Film grain (beat-reactive), static noise |
-| Lines/Patterns | Scanlines, halftone |
-| Tone | Vignette, contrast, gamma, levels, brightness |
-| Glitch/Data | Glitch bands (beat-reactive), block glitch, pixel sort, data bend |
+| 几何 | CRT 桶形、像素化、波浪扭曲、位移贴图、万花筒、镜像（h/v/quad/diag） |
+| 通道 | 色差（节拍反应）、通道偏移、通道交换、径向 RGB 分裂 |
+| 颜色 | 反相、色调分离、阈值、日晒、色相旋转、饱和度、颜色分级、色彩摆动、色彩斜坡 |
+| 发光/模糊 | 泛光、边缘发光、柔焦、径向模糊 |
+| 噪声 | 胶片颗粒（节拍反应）、静电噪声 |
+| 线条/图案 | 扫描线、半调 |
+| 色调 | 暗角、对比度、伽马、色阶、亮度 |
+| 故障/数据 | 故障带（节拍反应）、块状故障、像素排序、数据弯曲 |
 
-12 color tint presets: warm, cool, matrix green, amber, sepia, neon pink, ice, blood, forest, void, sunset, neutral.
+12 种颜色染色预设：暖、冷、Matrix 绿、琥珀、棕褐、霓虹粉、冰、血、森林、虚空、日落、中性。
 
-7 mood presets for common shader combos:
+7 种针对常见着色器组合的氛围预设：
 
-| Mood | Shaders |
+| 氛围 | 着色器 |
 |------|---------|
-| Retro terminal | CRT + scanlines + grain + amber/green tint |
-| Clean modern | Light bloom + subtle vignette |
-| Glitch art | Heavy chromatic + glitch bands + color wobble |
-| Cinematic | Bloom + vignette + grain + color grade |
-| Dreamy | Heavy bloom + soft focus + color wobble |
-| Harsh/industrial | High contrast + grain + scanlines, no bloom |
-| Psychedelic | Color wobble + chromatic + kaleidoscope mirror |
+| 复古终端 | CRT + 扫描线 + 颗粒 + 琥珀/绿染色 |
+| 干净现代 | 轻度泛光 + 微妙暗角 |
+| 故障艺术 | 重度色差 + 故障带 + 色彩摆动 |
+| 电影感 | 泛光 + 暗角 + 颗粒 + 颜色分级 |
+| 梦幻 | 重度泛光 + 柔焦 + 色彩摆动 |
+| 粗粝/工业 | 高对比度 + 颗粒 + 扫描线，无泛光 |
+| 迷幻 | 色彩摆动 + 色差 + 万花筒镜像 |
 
-## Blend modes and composition
+## 混合模式与合成
 
-20 pixel blend modes for layering canvases: normal, add, subtract, multiply, screen, overlay, softlight, hardlight, difference, exclusion, colordodge, colorburn, linearlight, vividlight, pin_light, hard_mix, lighten, darken, grain_extract, grain_merge. Both sRGB and linear-light blending supported.
+20 种用于画布分层的像素混合模式：normal、add、subtract、multiply、screen、overlay、softlight、hardlight、difference、exclusion、colordodge、colorburn、linearlight、vividlight、pin_light、hard_mix、lighten、darken、grain_extract、grain_merge。同时支持 sRGB 和线性光混合。
 
-**Feedback buffer.** Temporal recursion — each frame blends with a transformed version of the previous frame. 7 spatial transforms: zoom, shrink, rotate CW/CCW, shift up/down, mirror. Optional per-frame hue shift for rainbow trails. Configurable decay, blend mode, and opacity per scene.
+**反馈缓冲。** 时间递归 —— 每一帧与上一帧的变换版本混合。7 种空间变换：缩放、收缩、顺/逆时针旋转、上/下移动、镜像。可选每帧色相偏移以产生彩虹尾迹。每场景可配置衰减、混合模式和不透明度。
 
-**Masking.** 16 mask types for spatial compositing: shape masks (circle, rect, ring, gradients), procedural masks (any value field as a mask, text stencils), animated masks (iris open/close, wipe, dissolve), boolean operations (union, intersection, subtraction, invert).
+**遮罩。** 16 种用于空间合成的遮罩类型：形状遮罩（圆、矩形、环、渐变）、程序化遮罩（任意亮度场作为遮罩、文本模版）、动画遮罩（光圈开/合、擦除、溶解）、布尔运算（并、交、差、反相）。
 
-**Transitions.** Crossfade, directional wipe, radial wipe, dissolve, glitch cut.
+**转场。** 交叉淡入、方向擦除、径向擦除、溶解、故障切换。
 
-## Scene design patterns
+## 场景设计模式
 
-Compositional patterns for making scenes that look intentional rather than random.
+让场景看起来是有意为之而非随机的构图模式。
 
-**Layer hierarchy.** Background (dim atmosphere, dense grid), content (main visual, standard grid), accent (sparse highlights, coarse grid). Three distinct roles, not three competing layers.
+**分层层级。** 背景（暗淡氛围、密集网格）、内容（主视觉、标准网格）、强调（稀疏高光、粗糙网格）。三种不同角色，而非三个竞争层。
 
-**Directional parameter arcs.** The defining parameter of each scene ramps, accelerates, or builds over its duration. Progress-based formulas (linear, ease-out, step reveal) replace aimless `sin(t)` oscillation.
+**方向性参数弧。** 每个场景的标志性参数在其持续时间内爬升、加速或累积。基于进度的公式（线性、缓出、阶梯揭示）取代漫无目的的 `sin(t)` 振荡。
 
-**Scene concepts.** Scenes built around visual metaphors (emergence, descent, collision, entropy) with motivated layer/palette/feedback choices. Not named after their effects.
+**场景概念。** 围绕视觉隐喻（涌现、下降、碰撞、熵）构建场景，带有动机明确的分层/调色板/反馈选择。不以它们的效果命名。
 
-**Compositional techniques.** Counter-rotating dual systems, wave collision, progressive fragmentation (voronoi cells multiplying over time), entropy (geometry consumed by reaction-diffusion), staggered layer entry (crescendo buildup).
+**构图技巧。** 反向旋转双系统、波浪碰撞、渐进碎片化（voronoi 单元随时间倍增）、熵（几何被反应-扩散吞噬）、错峰分层进入（渐强铺垫）。
 
-## Hardware adaptation
+## 硬件适配
 
-Auto-detects CPU count, RAM, platform, ffmpeg. Adapts worker count, resolution, FPS.
+自动检测 CPU 核心数、内存、平台、ffmpeg。适配 worker 数、分辨率、FPS。
 
-| Profile | Resolution | FPS | When |
+| 档位 | 分辨率 | FPS | 何时使用 |
 |---------|-----------|-----|------|
-| `draft` | 960x540 | 12 | Check timing/layout |
-| `preview` | 1280x720 | 15 | Review effects |
-| `production` | 1920x1080 | 24 | Final output |
-| `max` | 3840x2160 | 30 | Ultra-high |
-| `auto` | Detected | 24 | Adapts to hardware + duration |
+| `draft` | 960x540 | 12 | 检查时序/布局 |
+| `preview` | 1280x720 | 15 | 审查效果 |
+| `production` | 1920x1080 | 24 | 最终输出 |
+| `max` | 3840x2160 | 30 | 超高 |
+| `auto` | 检测 | 24 | 适配硬件 + 时长 |
 
-`auto` estimates render time and downgrades if it would take over an hour. Low-memory systems drop to 720p automatically.
+`auto` 会估计渲染时间，若超过一小时则降级。低内存系统自动降到 720p。
 
-### Render times (1080p 24fps, ~180ms/frame/worker)
+### 渲染时间（1080p 24fps，约 180ms/帧/worker）
 
-| Duration | 4 workers | 8 workers | 16 workers |
+| 时长 | 4 worker | 8 worker | 16 worker |
 |----------|-----------|-----------|------------|
-| 30s | ~3 min | ~2 min | ~1 min |
-| 2 min | ~13 min | ~7 min | ~4 min |
-| 5 min | ~33 min | ~17 min | ~9 min |
-| 10 min | ~65 min | ~33 min | ~17 min |
+| 30s | ~3 分钟 | ~2 分钟 | ~1 分钟 |
+| 2 分钟 | ~13 分钟 | ~7 分钟 | ~4 分钟 |
+| 5 分钟 | ~33 分钟 | ~17 分钟 | ~9 分钟 |
+| 10 分钟 | ~65 分钟 | ~33 分钟 | ~17 分钟 |
 
-720p roughly halves these. 4K roughly quadruples them.
+720p 大约减半。4K 大约四倍。
 
-## Known pitfalls
+## 已知陷阱
 
-**Brightness.** ASCII characters are small bright dots on black. Most frame pixels are background. Linear `* N` multipliers clip highlights and wash out. Use `tonemap()` with per-scene gamma instead. Default gamma 0.75, solarize scenes 0.55, posterize 0.50.
+**亮度。** ASCII 字符是黑底上的小亮点。大多数帧像素是背景。线性 `* N` 乘法会裁剪高光并洗白。改用带每场景伽马的 `tonemap()`。默认伽马 0.75，日晒场景 0.55，色调分离 0.50。
 
-**Render bottleneck.** The per-cell Python loop compositing font bitmaps runs at ~100-150ms/frame. Unavoidable without Cython/C. Everything else must be vectorized numpy. Python for-loops over rows/cols in effect functions will tank performance.
+**渲染瓶颈。** 合成字体位图的每单元 Python 循环约 100-150ms/帧。没有 Cython/C 无法避免。其他一切都必须是向量化的 numpy。效果函数中对行/列的 Python for 循环会拖垮性能。
 
-**ffmpeg deadlock.** Never `stderr=subprocess.PIPE` on long-running encodes. Buffer fills at ~64KB, process hangs. Redirect stderr to a file.
+**ffmpeg 死锁。** 永远不要在长时间运行的编码上用 `stderr=subprocess.PIPE`。缓冲在约 64KB 时填满，进程挂起。把 stderr 重定向到文件。
 
-**Font cell height.** Pillow's `textbbox()` returns wrong height on macOS. Use `font.getmetrics()` for `ascent + descent`.
+**字体单元高度。** Pillow 的 `textbbox()` 在 macOS 上返回错误高度。用 `font.getmetrics()` 取 `ascent + descent`。
 
-**Font compatibility.** Not all Unicode renders in all fonts. Palettes validated at init, blank glyphs silently removed.
+**字体兼容性。** 并非所有 Unicode 都能在所有字体中渲染。调色板在初始化时验证，空白字形被静默移除。
 
-## Requirements
+## 要求
 
 ◆ Python 3.10+
-◆ NumPy, Pillow, SciPy (audio modes)
-◆ ffmpeg on PATH
-◆ A monospace font (Menlo, Courier, Monaco, auto-detected)
-◆ Optional: OpenCV, ElevenLabs API key (TTS mode)
+◆ NumPy、Pillow、SciPy（音频模式）
+◆ ffmpeg 在 PATH 上
+◆ 一个等宽字体（Menlo、Courier、Monaco，自动检测）
+◆ 可选：OpenCV、ElevenLabs API key（TTS 模式）
 
-## File structure
+## 文件结构
 
 ```
-├── SKILL.md                 # Modes, workflow, creative direction
-├── README.md                # This file
+├── SKILL.md                 # 模式、工作流、创意指导
+├── README.md                # 本文件
 └── references/
-    ├── architecture.md      # Grid system, fonts, palettes, color, _render_vf()
-    ├── effects.md           # Value fields, hue fields, backgrounds, particles
-    ├── shaders.md           # 38 shaders, ShaderChain, tint presets, transitions
-    ├── composition.md       # Blend modes, multi-grid, tonemap, FeedbackBuffer
-    ├── scenes.md            # Scene protocol, SCENES table, render_clip(), examples
-    ├── design-patterns.md   # Layer hierarchy, directional arcs, scene concepts
-    ├── inputs.md            # Audio analysis, video sampling, text, TTS
-    ├── optimization.md      # Hardware detection, vectorized patterns, parallelism
-    └── troubleshooting.md   # Broadcasting traps, blend pitfalls, diagnostics
+    ├── architecture.md      # 网格系统、字体、调色板、颜色、_render_vf()
+    ├── effects.md           # 亮度场、色相场、背景、粒子
+    ├── shaders.md           # 38 个着色器、ShaderChain、染色预设、转场
+    ├── composition.md       # 混合模式、多网格、tonemap、FeedbackBuffer
+    ├── scenes.md            # 场景协议、SCENES 表、render_clip()、示例
+    ├── design-patterns.md   # 分层层级、方向性弧、场景概念
+    ├── inputs.md            # 音频分析、视频采样、文本、TTS
+    ├── optimization.md      # 硬件检测、向量化模式、并行化
+    └── troubleshooting.md   # 广播陷阱、混合陷阱、诊断
 ```
 
-## Projects built with this
+## 用本 skill 构建的项目
 
-✦ 85-second highlight reel. 15 scenes (14×5s + 15s crescendo finale), randomized order, directional parameter arcs, layer hierarchy composition. Showcases the full effect vocabulary: fBM, voronoi fragmentation, reaction-diffusion, cellular automata, dual counter-rotating spirals, wave collision, domain warping, tunnel descent, kaleidoscope symmetry, boid flocking, fire simulation, glitch corruption, and a 7-layer crescendo buildup.
+✦ 85 秒高光集锦。15 个场景（14×5s + 15s 渐强终曲），随机顺序，方向性参数弧，分层层级构图。展示完整效果词汇：fBM、voronoi 碎片化、反应-扩散、元胞自动机、双反向旋转螺旋、波浪碰撞、域扭曲、隧道下降、万花筒对称、boid 群集、火焰模拟、故障腐蚀，以及 7 层渐强铺垫。
 
-✦ Audio-reactive music visualizer. 3.5 min, 8 sections with distinct effects, beat-triggered particles and glitch, cycling palettes.
+✦ 音频反应音乐可视化器。3.5 分钟，8 个带不同效果的小节，节拍触发的粒子和故障，循环调色板。
 
-✦ TTS narrated testimonial video. 23 quotes, per-quote ElevenLabs voices, background music at 15% wide stereo, per-clip re-rendering for iterative editing.
+✦ TTS 旁白证言视频。23 条引语，每条引语用 ElevenLabs 语音，15% 宽立体声背景音乐，逐片段重渲染以便迭代编辑。

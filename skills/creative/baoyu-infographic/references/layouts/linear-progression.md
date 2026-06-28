@@ -1,48 +1,48 @@
 # linear-progression
 
-Sequential progression showing steps, timeline, or chronological events.
+线性推进，展示步骤、时间线或按时间顺序的事件。
 
-## Structure
+## 结构
 
-- Linear arrangement (horizontal or vertical)
-- Nodes/markers at key points
-- Connecting line or path between nodes
-- Clear start and end points
-- Directional flow indicators
+- 线性排布（水平或垂直）
+- 关键点处设节点/标记
+- 节点之间用连线或路径连接
+- 起点和终点清晰
+- 方向性流向指示
 
-## Variants
+## 变体
 
-| Variant | Focus | Visual Emphasis |
+| 变体 | 重点 | 视觉强调 |
 |---------|-------|-----------------|
-| **Timeline** | Chronological events, dates | Time markers, period labels |
-| **Process** | Action steps, numbered sequence | Step numbers, action icons |
+| **时间线** | 按时间顺序的事件、日期 | 时间标记、时期标签 |
+| **流程** | 动作步骤、编号序列 | 步骤编号、动作图标 |
 
-## Best For
+## 最适用于
 
-- Step-by-step tutorials and how-tos
-- Historical timelines and evolution
-- Project milestones and roadmaps
-- Workflow documentation
-- Onboarding processes
+- 分步教程和操作指南
+- 历史时间线和演进
+- 项目里程碑和路线图
+- 工作流文档
+- 入职流程
 
-## Visual Elements
+## 视觉元素
 
-- Numbered steps or date markers
-- Arrows or connectors showing direction
-- Icons representing each step/event
-- Consistent node spacing
-- Progress indicators optional
+- 编号步骤或日期标记
+- 箭头或连接件指示方向
+- 每步/事件配图标
+- 节点间距一致
+- 进度指示器可选
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Step/event titles at each node
-- Brief descriptions below nodes
-- Dates or numbers clearly visible
+- 标题置于顶部
+- 各节点处放步骤/事件标题
+- 节点下方配简短描述
+- 日期或编号清晰可见
 
-## Recommended Pairings
+## 推荐搭配
 
-- `craft-handmade`: Friendly tutorials and timelines
-- `ikea-manual`: Clean assembly instructions
-- `corporate-memphis`: Business process flows
-- `aged-academia`: Historical discoveries
+- `craft-handmade`：友好型教程和时间线
+- `ikea-manual`：干净的组装说明
+- `corporate-memphis`：商业流程
+- `aged-academia`：历史发现

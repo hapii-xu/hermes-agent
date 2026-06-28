@@ -1,32 +1,32 @@
-# GGUF Advanced Usage Guide
+# GGUF 高级用法指南
 
-## Speculative Decoding
+## 投机解码（Speculative Decoding）
 
-### Draft Model Approach
+### 草稿模型方式
 
 ```bash
-# Use smaller model as draft for faster generation
+# 使用较小模型作为草稿以加速生成
 ./llama-speculative \
     -m large-model-q4_k_m.gguf \
     -md draft-model-q4_k_m.gguf \
     -p "Write a story about AI" \
     -n 500 \
-    --draft 8  # Draft tokens before verification
+    --draft 8  # 验证前的草稿 token 数
 ```
 
-### Self-Speculative Decoding
+### 自投机解码
 
 ```bash
-# Use same model with different context for speculation
+# 使用同一模型在不同上下文下进行投机
 ./llama-cli -m model-q4_k_m.gguf \
     --lookup-cache-static lookup.bin \
     --lookup-cache-dynamic lookup-dynamic.bin \
     -p "Hello world"
 ```
 
-## Batched Inference
+## 批量推理
 
-### Process Multiple Prompts
+### 处理多个提示词
 
 ```python
 from llama_cpp import Llama
@@ -35,7 +35,7 @@ llm = Llama(
     model_path="model-q4_k_m.gguf",
     n_ctx=4096,
     n_gpu_layers=35,
-    n_batch=512  # Larger batch for parallel processing
+    n_batch=512  # 更大的批量以支持并行处理
 )
 
 prompts = [
@@ -44,29 +44,29 @@ prompts = [
     "Describe neural networks."
 ]
 
-# Process in batch (each prompt gets separate context)
+# 批量处理（每个提示词使用独立上下文）
 for prompt in prompts:
     output = llm(prompt, max_tokens=100)
     print(f"Q: {prompt}")
     print(f"A: {output['choices'][0]['text']}\n")
 ```
 
-### Server Batching
+### 服务器批处理
 
 ```bash
-# Start server with batching
+# 启动带批处理的服务器
 ./llama-server -m model-q4_k_m.gguf \
     --host 0.0.0.0 \
     --port 8080 \
     -ngl 35 \
     -c 4096 \
-    --parallel 4        # Concurrent requests
-    --cont-batching     # Continuous batching
+    --parallel 4        # 并发请求数
+    --cont-batching     # 连续批处理
 ```
 
-## Custom Model Conversion
+## 自定义模型转换
 
-### Convert with Vocabulary Modifications
+### 带词表修改的转换
 
 ```python
 # custom_convert.py
@@ -76,89 +76,89 @@ sys.path.insert(0, './llama.cpp')
 from convert_hf_to_gguf import main
 from gguf import GGUFWriter
 
-# Custom conversion with modified vocab
+# 带自定义词表的转换
 def convert_with_custom_vocab(model_path, output_path):
-    # Load and modify tokenizer
+    # 加载并修改分词器
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
-    # Add special tokens if needed
+    # 如有需要添加特殊 token
     special_tokens = {"additional_special_tokens": ["<|custom|>"]}
     tokenizer.add_special_tokens(special_tokens)
     tokenizer.save_pretrained(model_path)
 
-    # Then run standard conversion
+    # 然后执行标准转换
     main([model_path, "--outfile", output_path])
 ```
 
-### Convert Specific Architecture
+### 转换特定架构
 
 ```bash
-# For Mistral-style models
+# 适用于 Mistral 风格的模型
 python convert_hf_to_gguf.py ./mistral-model \
     --outfile mistral-f16.gguf \
     --outtype f16
 
-# For Qwen models
+# 适用于 Qwen 模型
 python convert_hf_to_gguf.py ./qwen-model \
     --outfile qwen-f16.gguf \
     --outtype f16
 
-# For Phi models
+# 适用于 Phi 模型
 python convert_hf_to_gguf.py ./phi-model \
     --outfile phi-f16.gguf \
     --outtype f16
 ```
 
-## Advanced Quantization
+## 高级量化
 
-### Mixed Quantization
+### 混合量化
 
 ```bash
-# Quantize different layer types differently
+# 对不同层类型使用不同量化
 ./llama-quantize model-f16.gguf model-mixed.gguf Q4_K_M \
     --allow-requantize \
     --leave-output-tensor
 ```
 
-### Quantization with Token Embeddings
+### 带词嵌入 token 的量化
 
 ```bash
-# Keep embeddings at higher precision
+# 保持词嵌入为更高精度
 ./llama-quantize model-f16.gguf model-q4.gguf Q4_K_M \
     --token-embedding-type f16
 ```
 
-### IQ Quantization (Importance-aware)
+### IQ 量化（基于重要性）
 
 ```bash
-# Ultra-low bit quantization with importance
+# 带重要性的超低比特量化
 ./llama-quantize --imatrix model.imatrix \
     model-f16.gguf model-iq2_xxs.gguf IQ2_XXS
 
-# Available IQ types: IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_XS, IQ3_S, IQ4_XS
+# 可用的 IQ 类型：IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_XS, IQ3_S, IQ4_XS
 ```
 
-## Memory Optimization
+## 内存优化
 
-### Memory Mapping
+### 内存映射
 
 ```python
 from llama_cpp import Llama
 
-# Use memory mapping for large models
+# 对大模型使用内存映射
 llm = Llama(
     model_path="model-q4_k_m.gguf",
-    use_mmap=True,       # Memory map the model
-    use_mlock=False,     # Don't lock in RAM
+    use_mmap=True,       # 对模型进行内存映射
+    use_mlock=False,     # 不锁定在 RAM 中
     n_gpu_layers=35
 )
 ```
 
-### Partial GPU Offload
+### 部分 GPU 卸载
 
 ```python
-# Calculate layers to offload based on VRAM
+# 根据 VRAM 计算要卸载的层数
 import subprocess
 
 def get_free_vram_gb():
@@ -168,35 +168,35 @@ def get_free_vram_gb():
     )
     return int(result.stdout.strip()) / 1024
 
-# Estimate layers based on VRAM (rough: 0.5GB per layer for 7B Q4)
+# 根据 VRAM 估算层数（粗略：7B Q4 每层约 0.5GB）
 free_vram = get_free_vram_gb()
 layers_to_offload = int(free_vram / 0.5)
 
 llm = Llama(
     model_path="model-q4_k_m.gguf",
-    n_gpu_layers=min(layers_to_offload, 35)  # Cap at total layers
+    n_gpu_layers=min(layers_to_offload, 35)  # 上限为总层数
 )
 ```
 
-### KV Cache Optimization
+### KV 缓存优化
 
 ```python
 from llama_cpp import Llama
 
-# Optimize KV cache for long contexts
+# 为长上下文优化 KV 缓存
 llm = Llama(
     model_path="model-q4_k_m.gguf",
-    n_ctx=8192,          # Large context
+    n_ctx=8192,          # 大上下文
     n_gpu_layers=35,
-    type_k=1,            # Q8_0 for K cache (1)
-    type_v=1,            # Q8_0 for V cache (1)
-    # Or use Q4_0 (2) for more compression
+    type_k=1,            # K 缓存用 Q8_0（1）
+    type_v=1,            # V 缓存用 Q8_0（1）
+    # 或使用 Q4_0（2）以获得更高压缩
 )
 ```
 
-## Context Management
+## 上下文管理
 
-### Context Shifting
+### 上下文移位
 
 ```python
 from llama_cpp import Llama
@@ -207,14 +207,14 @@ llm = Llama(
     n_gpu_layers=35
 )
 
-# Handle long conversations with context shifting
+# 通过上下文移位处理长对话
 conversation = []
 max_history = 10
 
 def chat(user_message):
     conversation.append({"role": "user", "content": user_message})
 
-    # Keep only recent history
+    # 只保留最近的历史
     if len(conversation) > max_history * 2:
         conversation = conversation[-max_history * 2:]
 
@@ -228,30 +228,30 @@ def chat(user_message):
     return assistant_message
 ```
 
-### Save and Load State
+### 保存和加载状态
 
 ```bash
-# Save state to file
+# 将状态保存到文件
 ./llama-cli -m model.gguf \
     -p "Once upon a time" \
     --save-session session.bin \
     -n 100
 
-# Load and continue
+# 加载并继续
 ./llama-cli -m model.gguf \
     --load-session session.bin \
     -p " and they lived" \
     -n 100
 ```
 
-## Grammar Constrained Generation
+## 语法约束生成
 
-### JSON Output
+### JSON 输出
 
 ```python
 from llama_cpp import Llama, LlamaGrammar
 
-# Define JSON grammar
+# 定义 JSON 语法
 json_grammar = LlamaGrammar.from_string('''
 root ::= object
 object ::= "{" ws pair ("," ws pair)* "}" ws
@@ -273,10 +273,10 @@ output = llm(
 print(output["choices"][0]["text"])
 ```
 
-### Custom Grammar
+### 自定义语法
 
 ```python
-# Grammar for specific format
+# 针对特定格式的语法
 answer_grammar = LlamaGrammar.from_string('''
 root ::= "Answer: " letter "\\n" "Explanation: " explanation
 letter ::= [A-D]
@@ -290,29 +290,29 @@ output = llm(
 )
 ```
 
-## LoRA Integration
+## LoRA 集成
 
-### Load LoRA Adapter
+### 加载 LoRA 适配器
 
 ```bash
-# Apply LoRA at runtime
+# 在运行时应用 LoRA
 ./llama-cli -m base-model-q4_k_m.gguf \
     --lora lora-adapter.gguf \
     --lora-scale 1.0 \
     -p "Hello!"
 ```
 
-### Multiple LoRA Adapters
+### 多个 LoRA 适配器
 
 ```bash
-# Stack multiple adapters
+# 堆叠多个适配器
 ./llama-cli -m base-model.gguf \
     --lora adapter1.gguf --lora-scale 0.5 \
     --lora adapter2.gguf --lora-scale 0.5 \
     -p "Hello!"
 ```
 
-### Python LoRA Usage
+### Python 中使用 LoRA
 
 ```python
 from llama_cpp import Llama
@@ -325,25 +325,25 @@ llm = Llama(
 )
 ```
 
-## Embedding Generation
+## 嵌入向量生成
 
-### Extract Embeddings
+### 提取嵌入向量
 
 ```python
 from llama_cpp import Llama
 
 llm = Llama(
     model_path="model-q4_k_m.gguf",
-    embedding=True,      # Enable embedding mode
+    embedding=True,      # 启用嵌入模式
     n_gpu_layers=35
 )
 
-# Get embeddings
+# 获取嵌入向量
 embeddings = llm.embed("This is a test sentence.")
 print(f"Embedding dimension: {len(embeddings)}")
 ```
 
-### Batch Embeddings
+### 批量嵌入向量
 
 ```python
 texts = [
@@ -354,7 +354,7 @@ texts = [
 
 embeddings = [llm.embed(text) for text in texts]
 
-# Calculate similarity
+# 计算相似度
 import numpy as np
 
 def cosine_similarity(a, b):
@@ -364,9 +364,9 @@ sim = cosine_similarity(embeddings[0], embeddings[1])
 print(f"Similarity: {sim:.4f}")
 ```
 
-## Performance Tuning
+## 性能调优
 
-### Benchmark Script
+### 基准测试脚本
 
 ```python
 import time
@@ -380,10 +380,10 @@ def benchmark(model_path, prompt, n_tokens=100, n_runs=5):
         verbose=False
     )
 
-    # Warmup
+    # 预热
     llm(prompt, max_tokens=10)
 
-    # Benchmark
+    # 基准测试
     times = []
     for _ in range(n_runs):
         start = time.time()
@@ -400,16 +400,16 @@ def benchmark(model_path, prompt, n_tokens=100, n_runs=5):
 
     return tokens_per_sec
 
-# Compare quantizations
+# 对比不同量化
 for quant in ["q4_k_m", "q5_k_m", "q8_0"]:
     benchmark(f"model-{quant}.gguf", "Explain quantum computing:", 100)
 ```
 
-### Optimal Configuration Finder
+### 最优配置查找器
 
 ```python
 def find_optimal_config(model_path, target_vram_gb=8):
-    """Find optimal n_gpu_layers and n_batch for target VRAM."""
+    """为目标 VRAM 找到最优的 n_gpu_layers 和 n_batch。"""
     from llama_cpp import Llama
     import gc
 
@@ -428,7 +428,7 @@ def find_optimal_config(model_path, target_vram_gb=8):
                     verbose=False
                 )
 
-                # Quick benchmark
+                # 快速基准测试
                 start = time.time()
                 llm("Hello", max_tokens=50)
                 speed = 50 / (time.time() - start)
@@ -451,19 +451,19 @@ def find_optimal_config(model_path, target_vram_gb=8):
     return best_config
 ```
 
-## Multi-GPU Setup
+## 多 GPU 设置
 
-### Distribute Across GPUs
+### 跨 GPU 分发
 
 ```bash
-# Split model across multiple GPUs
+# 将模型拆分到多块 GPU 上
 ./llama-cli -m large-model.gguf \
     --tensor-split 0.5,0.5 \
     -ngl 60 \
     -p "Hello!"
 ```
 
-### Python Multi-GPU
+### Python 多 GPU
 
 ```python
 import os
@@ -474,28 +474,28 @@ from llama_cpp import Llama
 llm = Llama(
     model_path="large-model-q4_k_m.gguf",
     n_gpu_layers=60,
-    tensor_split=[0.5, 0.5]  # Split evenly across 2 GPUs
+    tensor_split=[0.5, 0.5]  # 在 2 块 GPU 上均匀拆分
 )
 ```
 
-## Custom Builds
+## 自定义构建
 
-### Build with All Optimizations
+### 带所有优化的构建
 
 ```bash
-# Clean build with all CPU optimizations
+# 带所有 CPU 优化的干净构建
 make clean
 LLAMA_OPENBLAS=1 LLAMA_BLAS_VENDOR=OpenBLAS make -j
 
-# With CUDA and cuBLAS
+# 带 CUDA 和 cuBLAS
 make clean
 GGML_CUDA=1 LLAMA_CUBLAS=1 make -j
 
-# With specific CUDA architecture
+# 带特定 CUDA 架构
 GGML_CUDA=1 CUDA_DOCKER_ARCH=sm_86 make -j
 ```
 
-### CMake Build
+### CMake 构建
 
 ```bash
 mkdir build && cd build

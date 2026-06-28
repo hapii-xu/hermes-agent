@@ -1,21 +1,17 @@
-"""Adapter-driven dispatch of structured stream events to a delivery sink.
+"""由 adapter 驱动的结构化流式事件分发到投递 sink。
 
-``GatewayEventDispatcher`` is the seam Tobi asked for: the agent emits typed
-events (gateway/stream_events.py), and the *adapter* decides how each one is
-delivered.  The dispatcher holds an adapter + the stream consumer (sink) + the
-resolved per-channel presentation settings (tool-progress mode, preview length)
-and routes each event through the adapter's render hooks.
+``GatewayEventDispatcher`` 正是 Tobi 要求的那个接缝：agent 发出类型化事件
+（gateway/stream_events.py），由 *adapter* 决定每个事件如何投递。dispatcher 持有一个
+adapter + stream consumer（sink）+ 已解析的 per-channel 呈现设置（tool-progress 模式、
+preview 长度），并通过 adapter 的渲染钩子路由每个事件。
 
-Message/commentary/segment events flow into the consumer (native draft on
-Telegram DMs, edit-in-place elsewhere).  Tool events are formatted by the
-adapter — which may return None to *eat* the event on platforms that can't
-render tool chrome — and the rendered line is enqueued onto the same tool
-progress queue the gateway already drains, so the two no longer race through
-independent code paths.
+Message/commentary/segment 事件流入 consumer（Telegram DM 用原生 draft，其他平台
+就地编辑）。工具事件由 adapter 格式化 —— 在无法渲染 tool chrome 的平台上，adapter
+可以返回 None 来 *吃掉* 该事件 —— 渲染出的行被入队到 gateway 已经在排空的同一个
+tool progress 队列上，这样二者就不会再通过相互独立的代码路径竞争。
 
-This module deliberately has no platform knowledge and no asyncio: it is a thin
-synchronous router callable from the agent's worker thread, exactly like the
-callbacks it replaces.
+本模块刻意不包含平台知识，也不使用 asyncio：它是一个轻量的同步路由器，可从 agent
+的工作线程调用，与它所替换的回调完全一致。
 """
 
 from __future__ import annotations
@@ -38,30 +34,27 @@ logger = logging.getLogger("gateway.stream_events")
 
 
 class GatewayEventDispatcher:
-    """Route typed stream events through an adapter onto a delivery sink.
+    """把类型化的流式事件通过 adapter 路由到一个投递 sink。
 
     Parameters
     ----------
     adapter:
-        The platform adapter.  Provides ``render_message_event`` and
-        ``format_tool_event`` (BasePlatformAdapter defaults reproduce today's
-        behavior; adapters may override for native rendering).
+        平台 adapter。提供 ``render_message_event`` 和 ``format_tool_event``
+        （BasePlatformAdapter 的默认实现复现当前行为；adapter 可重写以实现原生渲染）。
     sink:
-        The GatewayStreamConsumer for assistant-text delivery.  May be None
-        when streaming is disabled, in which case message events are dropped
-        (the final response still goes out via the normal send path).
+        用于投递 assistant 文本的 GatewayStreamConsumer。当流式功能被禁用时可为
+        None，此时消息事件会被丢弃（最终响应仍通过常规 send 路径发出）。
     enqueue_tool_line:
-        Callback that places a rendered tool-progress line onto the gateway's
-        progress queue (the same queue ``send_progress_messages`` drains).  May
-        be None when tool progress is disabled for this channel.
+        把渲染后的 tool-progress 行放入 gateway 的 progress 队列（即
+        ``send_progress_messages`` 所排空的同一个队列）的回调。当此通道的 tool
+        progress 被禁用时可传 None。
     tool_mode:
-        Resolved tool-progress mode for this channel ("all" / "new" / "verbose"
-        / "off").
+        此通道已解析的 tool-progress 模式（"all" / "new" / "verbose" / "off"）。
     preview_max_len:
-        Resolved ``tool_preview_length`` (0 = no cap in verbose mode).
+        已解析的 ``tool_preview_length``（0 = 在 verbose 模式下不设上限）。
     on_long_tool / on_notice:
-        Optional hooks for LongToolHint / GatewayNotice events, letting the
-        gateway own the "should I surface this here?" decision.
+        LongToolHint / GatewayNotice 事件的可选钩子，让 gateway 拥有"我是否应在此处
+        展示？"的决定权。
     """
 
     def __init__(
@@ -82,14 +75,14 @@ class GatewayEventDispatcher:
         self.preview_max_len = preview_max_len
         self._on_long_tool = on_long_tool
         self._on_notice = on_notice
-        # "new" mode dedup — only report when the tool changes.
+        # "new" 模式去重 —— 仅在工具变化时上报。
         self._last_tool: Optional[str] = None
 
     def dispatch(self, event: StreamEvent) -> None:
-        """Route a single event.  Never raises into the agent's worker thread."""
+        """路由单个事件。绝不向 agent 的工作线程抛出异常。"""
         try:
             self._dispatch(event)
-        except Exception:  # presentation must never break the agent loop
+        except Exception:  # 呈现层绝不能打断 agent 循环
             logger.debug("stream-event dispatch error", exc_info=True)
 
     def _dispatch(self, event: StreamEvent) -> None:
@@ -101,21 +94,21 @@ class GatewayEventDispatcher:
         if isinstance(event, ToolCallChunk):
             if self.tool_mode == "off" or self._enqueue_tool_line is None:
                 return
-            # "new" mode: only emit when the tool changes.
+            # "new" 模式：仅在工具变化时发出。
             if self.tool_mode == "new" and event.tool_name == self._last_tool:
                 return
             self._last_tool = event.tool_name
             line = self.adapter.format_tool_event(
                 event, mode=self.tool_mode, preview_max_len=self.preview_max_len,
             )
-            # None == adapter chose to eat this event (can't render tool chrome).
+            # None == adapter 选择吃掉此事件（无法渲染 tool chrome）。
             if line:
                 self._enqueue_tool_line(line)
             return
 
         if isinstance(event, ToolCallFinished):
-            # Default: no chrome on completion (matches today — the gateway only
-            # rendered "started" events).  Completion drives onboarding hints.
+            # 默认：完成时不显示 chrome（与当前一致 —— gateway 只渲染 "started"
+            # 事件）。完成事件用于驱动上手提示。
             return
 
         if isinstance(event, LongToolHint):

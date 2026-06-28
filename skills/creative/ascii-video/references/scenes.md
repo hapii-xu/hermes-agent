@@ -1,35 +1,35 @@
-# Scene System & Creative Composition
+# 场景系统与创意编排
 
-> **See also:** architecture.md · composition.md · effects.md · shaders.md
+> **另请参阅：** architecture.md · composition.md · effects.md · shaders.md
 
-## Scene Design Philosophy
+## 场景设计哲学
 
-Scenes are storytelling units, not effect demos. Every scene needs:
-- A **concept** — what is happening visually? Not "plasma + rings" but "emergence from void" or "crystallization"
-- An **arc** — how does it change over its duration? Build, decay, transform, reveal?
-- A **role** — how does it serve the larger video narrative? Opening tension, peak energy, resolution?
+场景是叙事单元，而不是特效演示。每个场景都需要：
+- 一个**概念** —— 视觉上正在发生什么？不是「等离子 + 圆环」，而是「从虚无中浮现」或「结晶化」
+- 一条**弧线** —— 它在持续时间内如何变化？铺陈、衰减、变形、揭示？
+- 一个**角色** —— 它如何服务于更大的视频叙事？开场张力、能量峰值、收束？
 
-The design patterns below provide compositional techniques. The scene examples show them in practice at increasing complexity. The protocol section covers the technical contract.
+下面的设计模式提供了编排技法。场景示例则展示了它们在不同复杂度下的实际运用。协议部分涵盖所有场景必须遵循的技术契约。
 
-Good scene design starts with the concept, then selects effects and parameters that serve it. The design patterns section shows *how* to compose layers intentionally. The examples section shows complete working scenes at every complexity level. The protocol section covers the technical contract that all scenes must follow.
+好的场景设计从概念出发，然后选择服务于该概念的特效和参数。设计模式部分展示*如何*有意图地组织图层。示例部分展示每种复杂度下完整可运行的场景。协议部分涵盖所有场景必须遵循的技术契约。
 
 ---
 
-## Scene Design Patterns
+## 场景设计模式
 
-Higher-order patterns for composing scenes that feel intentional rather than random. These patterns use the existing building blocks (value fields, blend modes, shaders, feedback) but organize them with compositional intent.
+用于组织场景、让它们显得有意图而非随机的更高阶模式。这些模式使用既有的构建块（值场、混合模式、着色器、反馈），但以编排意图来组织它们。
 
-## Layer Hierarchy
+## 图层层级
 
-Every scene should have clear visual layers with distinct roles:
+每个场景都应有清晰、各司其职的视觉图层：
 
-| Layer | Grid | Brightness | Purpose |
+| 图层 | 网格 | 亮度 | 用途 |
 |-------|------|-----------|---------|
-| **Background** | xs or sm (dense) | 0.1–0.25 | Atmosphere, texture. Never competes with content. |
-| **Content** | md (balanced) | 0.4–0.8 | The main visual idea. Carries the scene's concept. |
-| **Accent** | lg or sm (sparse) | 0.5–1.0 (sparse coverage) | Highlights, punctuation, sparse bright points. |
+| **背景** | xs 或 sm（密集） | 0.1–0.25 | 氛围、纹理。绝不与内容抢戏。 |
+| **内容** | md（均衡） | 0.4–0.8 | 主要视觉构想。承载场景的概念。 |
+| **点缀** | lg 或 sm（稀疏） | 0.5–1.0（稀疏覆盖） | 高光、点睛、稀疏的亮点。 |
 
-The background sets mood. The content layer is what the scene *is about*. The accent adds visual interest without overwhelming.
+背景设定基调。内容图层是场景*要表达的东西*。点缀在不喧宾夺主的前提下增加视觉趣味。
 
 ```python
 def fx_example(r, f, t, S):
@@ -40,248 +40,248 @@ def fx_example(r, f, t, S):
     g_main = r.get_grid("md")
     g_accent = r.get_grid("lg")
 
-    # --- Background: dim atmosphere ---
+    # --- 背景：暗淡的氛围 ---
     bg_val = vf_smooth_noise(g_bg, f, t * 0.3, S, octaves=2, bri=0.15)
-    # ... render bg to canvas
+    # ... 将 bg 渲染到画布
 
-    # --- Content: the main visual idea ---
+    # --- 内容：主要的视觉构想 ---
     content_val = vf_spiral(g_main, f, t, S, n_arms=n_arms, tightness=tightness)
-    # ... render content on top of canvas
+    # ... 将内容渲染到画布之上
 
-    # --- Accent: sparse highlights ---
+    # --- 点缀：稀疏的高光 ---
     accent_val = vf_noise_static(g_accent, f, t, S, density=0.05)
-    # ... render accent on top
+    # ... 将点缀渲染到最上层
 
     return canvas
 ```
 
-## Directional Parameter Arcs
+## 有方向性的参数弧线
 
-Parameters should *go somewhere* over the scene's duration — not oscillate aimlessly with `sin(t * N)`.
+参数应当在场景持续时间内*有所去向* —— 而不是用 `sin(t * N)` 漫无目的地来回震荡。
 
-**Bad:** `twist = 3.0 + 2.0 * math.sin(t * 0.6)` — wobbles back and forth, feels aimless.
+**糟糕：** `twist = 3.0 + 2.0 * math.sin(t * 0.6)` —— 来回摆动，显得漫无目的。
 
-**Good:** `twist = 2.0 + progress * 5.0` — starts gentle, ends intense. The scene *builds*.
+**良好：** `twist = 2.0 + progress * 5.0` —— 起步温和，结尾强烈。场景在*层层累积*。
 
-Use `progress = min(local / duration, 1.0)` (0→1 over the scene) to drive directional change:
+用 `progress = min(local / duration, 1.0)`（场景内 0→1）来驱动有方向的变化：
 
-| Pattern | Formula | Feel |
+| 模式 | 公式 | 感觉 |
 |---------|---------|------|
-| Linear ramp | `progress * range` | Steady buildup |
-| Ease-out | `1 - (1 - progress) ** 2` | Fast start, gentle finish |
-| Ease-in | `progress ** 2` | Slow start, accelerating |
-| Step reveal | `np.clip((progress - 0.5) / 0.25, 0, 1)` | Nothing until 50%, then fades in |
-| Build + plateau | `min(1.0, progress * 1.5)` | Reaches full at 67%, holds |
+| 线性递增 | `progress * range` | 稳定的累积 |
+| 缓出（ease-out） | `1 - (1 - progress) ** 2` | 快速起步，温和收尾 |
+| 缓入（ease-in） | `progress ** 2` | 缓慢起步，逐渐加速 |
+| 阶梯揭示 | `np.clip((progress - 0.5) / 0.25, 0, 1)` | 直到 50% 才出现，然后淡入 |
+| 累积 + 平台 | `min(1.0, progress * 1.5)` | 在 67% 达到满值，之后保持 |
 
-Oscillation is fine for *secondary* parameters (saturation shimmer, hue drift). But the *defining* parameter of the scene should have a direction.
+震荡适合*次要*参数（饱和度微动、色相漂移）。但场景的*定义性*参数应当有方向。
 
-### Examples of Directional Arcs
+### 有方向性弧线的示例
 
-| Scene concept | Parameter | Arc |
+| 场景概念 | 参数 | 弧线 |
 |--------------|-----------|-----|
-| Emergence | Ring radius | 0 → max (ease-out) |
-| Shatter | Voronoi cell count | 8 → 38 (linear) |
-| Descent | Tunnel speed | 2.0 → 10.0 (linear) |
-| Mandala | Shape complexity | ring → +polygon → +star → +rosette (step reveals) |
-| Crescendo | Layer count | 1 → 7 (staggered entry) |
-| Entropy | Geometry visibility | 1.0 → 0.0 (consumed) |
+| 浮现 | 圆环半径 | 0 → max（缓出） |
+| 破碎 | Voronoi 单元数 | 8 → 38（线性） |
+| 坠落 | 隧道速度 | 2.0 → 10.0（线性） |
+| 曼陀罗 | 形状复杂度 | ring → +polygon → +star → +rosette（阶梯揭示） |
+| 渐强 | 图层数 | 1 → 7（错峰入场） |
+| 熵增 | 几何可见度 | 1.0 → 0.0（被吞噬） |
 
-## Scene Concepts
+## 场景概念
 
-Each scene should be built around a *visual idea*, not an effect name.
+每个场景都应围绕一个*视觉构想*构建，而不是一个特效名。
 
-**Bad:** "fx_plasma_cascade" — named after the effect. No concept.
-**Good:** "fx_emergence" — a point of light expands into a field. The name tells you *what happens*.
+**糟糕：** "fx_plasma_cascade" —— 以特效命名。没有概念。
+**良好：** "fx_emergence" —— 一个光点扩展成一片光场。名字告诉你*发生了什么*。
 
-Good scene concepts have:
-1. A **visual metaphor** (emergence, descent, collision, entropy)
-2. A **directional arc** (things change from A to B, not oscillate)
-3. **Motivated layer choices** (each layer serves the concept)
-4. **Motivated feedback** (transform direction matches the metaphor)
+好的场景概念具备：
+1. 一个**视觉隐喻**（浮现、坠落、碰撞、熵增）
+2. 一条**有方向性的弧线**（事物从 A 变到 B，而非震荡）
+3. **有动机的图层选择**（每个图层都服务于概念）
+4. **有动机的反馈**（变换方向与隐喻一致）
 
-| Concept | Metaphor | Feedback transform | Why |
+| 概念 | 隐喻 | 反馈变换 | 原因 |
 |---------|----------|-------------------|-----|
-| Emergence | Birth, expansion | zoom-out | Past frames expand outward |
-| Descent | Falling, acceleration | zoom-in | Past frames rush toward center |
-| Inferno | Rising fire | shift-up | Past frames rise with the flames |
-| Entropy | Decay, dissolution | none | Clean, no persistence — things disappear |
-| Crescendo | Accumulation | zoom + hue_shift | Everything compounds and shifts |
+| 浮现 | 诞生、扩展 | 缩小（zoom-out） | 过去的画面向外扩张 |
+| 坠落 | 下落、加速 | 放大（zoom-in） | 过去的画面向中心冲来 |
+| 烈焰 | 升腾的火 | 向上偏移（shift-up） | 过去的画面随火焰上升 |
+| 熵增 | 衰败、消散 | 无 | 干净、无残留 —— 事物直接消失 |
+| 渐强 | 累积 | 放大 + 色相偏移 | 一切都在叠加并流转 |
 
-## Compositional Techniques
+## 编排技法
 
-### Counter-Rotating Dual Systems
+### 反向旋转的双系统
 
-Two instances of the same effect rotating in opposite directions create visual interference:
+同一特效的两个实例朝相反方向旋转，产生视觉干涉：
 
 ```python
-# Primary spiral (clockwise)
+# 主螺旋（顺时针）
 s1_val = vf_spiral(g_main, f, t * 1.5, S, n_arms=n_arms_1, tightness=tightness_1)
 
-# Counter-rotating spiral (counter-clockwise via negative time)
+# 反向旋转的螺旋（通过负时间实现逆时针）
 s2_val = vf_spiral(g_accent, f, -t * 1.2, S, n_arms=n_arms_2, tightness=tightness_2)
 
-# Screen blend creates bright interference at crossing points
+# 屏幕混合在交叉点产生明亮的干涉
 canvas = blend_canvas(canvas_with_s1, c2, "screen", 0.7)
 ```
 
-Works with spirals, vortexes, rings. The counter-rotation creates constantly shifting interference patterns.
+适用于螺旋、漩涡、圆环。反向旋转会产生不断变换的干涉图样。
 
-### Wave Collision
+### 波浪碰撞
 
-Two wave fronts converging from opposite sides, meeting at a collision point:
+两道波前从两侧汇聚，在一个碰撞点相遇：
 
 ```python
-collision_phase = abs(progress - 0.5) * 2  # 1→0→1 (0 at collision)
+collision_phase = abs(progress - 0.5) * 2  # 1→0→1（碰撞时为 0）
 
-# Wave A approaches from left
+# 波 A 从左侧逼近
 offset_a = (1 - progress) * g.cols * 0.4
 wave_a = np.sin((g.cc + offset_a) * 0.08 + t * 2) * 0.5 + 0.5
 
-# Wave B approaches from right
+# 波 B 从右侧逼近
 offset_b = -(1 - progress) * g.cols * 0.4
 wave_b = np.sin((g.cc + offset_b) * 0.08 - t * 2) * 0.5 + 0.5
 
-# Interference peaks at collision
+# 干涉在碰撞处达到峰值
 combined = wave_a * 0.5 + wave_b * 0.5 + np.abs(wave_a - wave_b) * (1 - collision_phase) * 0.5
 ```
 
-### Progressive Fragmentation
+### 渐进式破碎
 
-Voronoi with cell count increasing over time — visual shattering:
+Voronoi 的单元数随时间增加 —— 视觉上的碎裂：
 
 ```python
-n_pts = int(8 + progress * 30)  # 8 cells → 38 cells
-# Pre-generate enough points, slice to n_pts
+n_pts = int(8 + progress * 30)  # 8 个单元 → 38 个单元
+# 预生成足够多的点，再切片到 n_pts
 px = base_x[:n_pts] + np.sin(t * 0.3 + np.arange(n_pts) * 0.7) * (3 + progress * 3)
 ```
 
-The edge glow width can also increase with progress to emphasize the cracks.
+边缘辉光的宽度也可以随 progress 增大，以强调裂纹。
 
-### Entropy / Consumption
+### 熵增 / 吞噬
 
-A clean geometric pattern being overtaken by an organic process:
+干净的几何图样被一个有机过程逐渐吞没：
 
 ```python
-# Geometry fades out
+# 几何淡出
 geo_val = clean_pattern * max(0.05, 1.0 - progress * 0.9)
 
-# Organic process grows in
+# 有机过程生长
 rd_val = vf_reaction_diffusion(g, f, t, S) * min(1.0, progress * 1.5)
 
-# Render geometry first, organic on top — organic consumes geometry
+# 先渲染几何，有机图样叠加在上 —— 有机吞噬几何
 ```
 
-### Staggered Layer Entry (Crescendo)
+### 错峰图层入场（渐强）
 
-Layers enter one at a time, building to overwhelming density:
+图层逐一入场，累积到压倒性的密度：
 
 ```python
 def layer_strength(enter_t, ramp=1.5):
-    """0.0 until enter_t, ramps to 1.0 over ramp seconds."""
+    """在 enter_t 之前为 0.0，在 ramp 秒内升至 1.0。"""
     return max(0.0, min(1.0, (local - enter_t) / ramp))
 
-# Layer 1: always present
+# 图层 1：始终存在
 s1 = layer_strength(0.0)
-# Layer 2: enters at 2s
+# 图层 2：2 秒入场
 s2 = layer_strength(2.0)
-# Layer 3: enters at 4s
+# 图层 3：4 秒入场
 s3 = layer_strength(4.0)
-# ... etc
+# ……等等
 
-# Each layer uses a different effect, grid, palette, and blend mode
-# Screen blend between layers so they accumulate light
+# 每个图层使用不同的特效、网格、色板和混合模式
+# 图层之间用屏幕混合，让光线累积
 ```
 
-For a 15-second crescendo, 7 layers entering every 2 seconds works well. Use different blend modes (screen for most, add for energy, colordodge for the final wash).
+对一个 15 秒的渐强，每 2 秒入场一个、共 7 个图层效果不错。使用不同的混合模式（多数用 screen，能量用 add，最后的覆盖用 colordodge）。
 
-## Scene Ordering
+## 场景排序
 
-For a multi-scene reel or video:
-- **Vary mood between adjacent scenes** — don't put two calm scenes next to each other
-- **Randomize order** rather than grouping by type — prevents "effect demo" feel
-- **End on the strongest scene** — crescendo or something with a clear payoff
-- **Open with energy** — grab attention in the first 2 seconds
+对于多场景连播或完整视频：
+- **相邻场景之间 mood 要有变化** —— 不要把两个宁静场景挨在一起
+- **顺序随机化**，而不是按类型分组 —— 避免「特效演示」的感觉
+- **以最强的场景收尾** —— 渐强或某个有明显回报的场景
+- **以能量开场** —— 在前 2 秒抓住注意力
 
 ---
 
-## Scene Protocol
+## 场景协议
 
-Scenes are the top-level creative unit. Each scene is a time-bounded segment with its own effect function, shader chain, feedback configuration, and tone-mapping gamma.
+场景是顶层的创意单元。每个场景都是一个有自身特效函数、着色器链、反馈配置和色调映射 gamma 的时间限定片段。
 
-### Scene Protocol (v2)
+### 场景协议（v2）
 
-### Function Signature
+### 函数签名
 
 ```python
 def fx_scene_name(r, f, t, S) -> canvas:
     """
     Args:
-        r: Renderer instance — access multiple grids via r.get_grid("sm")
-        f: dict of audio/video features, all values normalized to [0, 1]
-        t: time in seconds — local to scene (0.0 at scene start)
-        S: dict for persistent state (particles, rain columns, etc.)
+        r: Renderer 实例 —— 通过 r.get_grid("sm") 访问多个网格
+        f: 音频/视频特征字典，所有值归一化到 [0, 1]
+        t: 以秒为单位的时间 —— 场景内本地时间（场景开始处为 0.0）
+        S: 用于持久状态（粒子、雨列等）的字典
 
     Returns:
-        canvas: numpy uint8 array, shape (VH, VW, 3) — full pixel frame
+        canvas: numpy uint8 数组，形状 (VH, VW, 3) —— 完整像素帧
     """
 ```
 
-**Local time convention:** Scene functions receive `t` starting at 0.0 for the first frame of the scene, regardless of where the scene appears in the timeline. The render loop subtracts the scene's start time before calling the function:
+**本地时间约定：** 场景函数收到的 `t` 从场景第一帧的 0.0 开始，无论该场景出现在时间线的何处。渲染循环会在调用函数前减去场景的起始时间：
 
 ```python
-# In render_clip:
+# 在 render_clip 中：
 t_local = fi / FPS - scene_start
 canvas = fx_fn(r, feat, t_local, S)
 ```
 
-This makes scenes reorderable without modifying their code. Compute scene progress as:
+这让场景可以在不修改代码的情况下重新排序。场景进度计算为：
 
 ```python
-progress = min(t / scene_duration, 1.0)  # 0→1 over the scene
+progress = min(t / scene_duration, 1.0)  # 场景内 0→1
 ```
 
-This replaces the v1 protocol where scenes returned `(chars, colors)` tuples. The v2 protocol gives scenes full control over multi-grid rendering and pixel-level composition internally.
+这取代了 v1 协议中场景返回 `(chars, colors)` 元组的做法。v2 协议让场景完全掌控内部的多网格渲染和像素级合成。
 
-### The Renderer Class
+### Renderer 类
 
 ```python
 class Renderer:
     def __init__(self):
-        self.grids = {}   # lazy-initialized grid cache
-        self.g = None      # "active" grid (for backward compat)
-        self.S = {}        # persistent state dict
+        self.grids = {}   # 懒加载的网格缓存
+        self.g = None      # 「活动」网格（向后兼容）
+        self.S = {}        # 持久状态字典
 
     def get_grid(self, key):
-        """Get or create a GridLayer by size key."""
+        """按尺寸 key 获取或创建 GridLayer。"""
         if key not in self.grids:
             sizes = {"xs": 8, "sm": 10, "md": 16, "lg": 20, "xl": 24, "xxl": 40}
             self.grids[key] = GridLayer(FONT_PATH, sizes[key])
         return self.grids[key]
 
     def set_grid(self, key):
-        """Set active grid (legacy). Prefer get_grid() for multi-grid scenes."""
+        """设置活动网格（遗留用法）。多网格场景请用 get_grid()。"""
         self.g = self.get_grid(key)
         return self.g
 ```
 
-**Key difference from v1**: scenes call `r.get_grid("sm")`, `r.get_grid("lg")`, etc. to access multiple grids. Each grid is lazy-initialized and cached. The `set_grid()` method still works for single-grid scenes.
+**与 v1 的关键区别**：场景调用 `r.get_grid("sm")`、`r.get_grid("lg")` 等来访问多个网格。每个网格都是懒加载并缓存的。`set_grid()` 方法仍可用于单网格场景。
 
-### Minimal Scene (Single Grid)
+### 最小场景（单网格）
 
 ```python
 def fx_simple_rings(r, f, t, S):
-    """Single-grid scene: rings with distance-mapped hue."""
+    """单网格场景：圆环，色相按距离映射。"""
     canvas = _render_vf(r, "md",
         lambda g, f, t, S: vf_rings(g, f, t, S, n_base=8, spacing_base=3),
         hf_distance(0.3, 0.02), PAL_STARS, f, t, S, sat=0.85)
     return canvas
 ```
 
-### Standard Scene (Two Grids + Blend)
+### 标准场景（双网格 + 混合）
 
 ```python
 def fx_tunnel_ripple(r, f, t, S):
-    """Two-grid scene: tunnel depth exclusion-blended with ripple."""
+    """双网格场景：隧道深度与波纹做排除混合。"""
     canvas_a = _render_vf(r, "md",
         lambda g, f, t, S: vf_tunnel(g, f, t, S, speed=5.0, complexity=10) * 1.3,
         hf_distance(0.55, 0.02), PAL_GREEK, f, t, S, sat=0.7)
@@ -294,31 +294,31 @@ def fx_tunnel_ripple(r, f, t, S):
     return blend_canvas(canvas_a, canvas_b, "exclusion", 0.8)
 ```
 
-### Complex Scene (Three Grids + Conditional + Custom Rendering)
+### 复杂场景（三网格 + 条件 + 自定义渲染）
 
 ```python
 def fx_rings_explosion(r, f, t, S):
-    """Three-grid scene with particles and conditional kaleidoscope."""
-    # Layer 1: rings
+    """三网格场景，带粒子和条件触发的万花筒。"""
+    # 图层 1：圆环
     canvas_a = _render_vf(r, "sm",
         lambda g, f, t, S: vf_rings(g, f, t, S, n_base=10, spacing_base=2) * 1.4,
         lambda g, f, t, S: (g.angle / (2*np.pi) + t * 0.15) % 1.0,
         PAL_STARS, f, t, S, sat=0.9)
 
-    # Layer 2: vortex on different grid
+    # 图层 2：不同网格上的漩涡
     canvas_b = _render_vf(r, "md",
         lambda g, f, t, S: vf_vortex(g, f, t, S, twist=6.0) * 1.2,
         hf_time_cycle(0.15), PAL_BLOCKS, f, t, S, sat=0.8)
 
     result = blend_canvas(canvas_b, canvas_a, "screen", 0.7)
 
-    # Layer 3: particles (custom rendering, not _render_vf)
+    # 图层 3：粒子（自定义渲染，不走 _render_vf）
     g = r.get_grid("sm")
     if "px" not in S:
         S["px"], S["py"], S["vx"], S["vy"], S["life"], S["pch"] = (
             [], [], [], [], [], [])
     if f.get("beat", 0) > 0.5:
-        chars = list("\u2605\u2736\u2733\u2738\u2726\u2728*+")
+        chars = list("★✶✳✸✦✨*+")
         for _ in range(int(80 + f.get("rms", 0.3) * 120)):
             ang = random.uniform(0, 2 * math.pi)
             sp = random.uniform(1, 10) * (0.5 + f.get("sub_r", 0.3) * 2)
@@ -329,7 +329,7 @@ def fx_rings_explosion(r, f, t, S):
             S["life"].append(1.0)
             S["pch"].append(random.choice(chars))
 
-    # Update + draw particles
+    # 更新 + 绘制粒子
     ch_p = np.full((g.rows, g.cols), " ", dtype="U1")
     co_p = np.zeros((g.rows, g.cols, 3), dtype=np.uint8)
     i = 0
@@ -349,21 +349,21 @@ def fx_rings_explosion(r, f, t, S):
     canvas_p = g.render(ch_p, co_p)
     result = blend_canvas(result, canvas_p, "add", 0.8)
 
-    # Conditional kaleidoscope on strong beats
+    # 强拍上触发条件式万花筒
     if f.get("bdecay", 0) > 0.4:
         result = sh_kaleidoscope(result.copy(), folds=6)
 
     return result
 ```
 
-### Scene with Custom Character Rendering (Matrix Rain)
+### 带自定义字符渲染的场景（矩阵雨）
 
-When you need per-cell control beyond what `_render_vf()` provides:
+当你需要 `_render_vf()` 之外的逐单元控制时：
 
 ```python
 def fx_matrix_layered(r, f, t, S):
-    """Matrix rain blended with tunnel — two grids, screen blend."""
-    # Layer 1: Matrix rain (custom per-column rendering)
+    """矩阵雨与隧道混合 —— 双网格，屏幕混合。"""
+    # 图层 1：矩阵雨（自定义逐列渲染）
     g = r.get_grid("md")
     rows, cols = g.rows, g.cols
     pal = PAL_KATA
@@ -396,7 +396,7 @@ def fx_matrix_layered(r, f, t, S):
                     co[row, c] = (int(v*0.1), v, int(v*0.4))
     canvas_a = g.render(ch, co)
 
-    # Layer 2: Tunnel on sm grid for depth texture
+    # 图层 2：sm 网格上的隧道，提供深度纹理
     canvas_b = _render_vf(r, "sm",
         lambda g, f, t, S: vf_tunnel(g, f, t, S, speed=5.0, complexity=10),
         hf_distance(0.3, 0.02), PAL_BLOCKS, f, t, S, sat=0.6)
@@ -406,27 +406,27 @@ def fx_matrix_layered(r, f, t, S):
 
 ---
 
-## Scene Table
+## 场景表
 
-The scene table defines the timeline: which scene plays when, with what configuration.
+场景表定义了时间线：哪个场景何时播放、用什么配置。
 
-### Structure
+### 结构
 
 ```python
 SCENES = [
     {
-        "start": 0.0,           # start time in seconds
-        "end": 3.96,            # end time in seconds
-        "name": "starfield",    # identifier (used for clip filenames)
-        "grid": "sm",           # default grid (for render_clip setup)
-        "fx": fx_starfield,     # scene function reference (must be module-level)
-        "gamma": 0.75,          # tonemap gamma override (default 0.75)
-        "shaders": [            # shader chain (applied after tonemap + feedback)
+        "start": 0.0,           # 起始时间（秒）
+        "end": 3.96,            # 结束时间（秒）
+        "name": "starfield",    # 标识符（用于片段文件名）
+        "grid": "sm",           # 默认网格（供 render_clip 设置用）
+        "fx": fx_starfield,     # 场景函数引用（必须是模块级）
+        "gamma": 0.75,          # 色调映射 gamma 覆盖（默认 0.75）
+        "shaders": [            # 着色器链（在色调映射 + 反馈之后应用）
             ("bloom", {"thr": 120}),
             ("vignette", {"s": 0.2}),
             ("grain", {"amt": 8}),
         ],
-        "feedback": None,       # feedback buffer config (None = disabled)
+        "feedback": None,       # 反馈缓冲配置（None = 禁用）
         # "feedback": {"decay": 0.8, "blend": "screen", "opacity": 0.3,
         #              "transform": "zoom", "transform_amt": 0.02, "hue_shift": 0.02},
     },
@@ -444,46 +444,46 @@ SCENES = [
         ],
         "feedback": {"decay": 0.5, "blend": "add", "opacity": 0.2},
     },
-    # ... more scenes ...
+    # ……更多场景……
 ]
 ```
 
-### Beat-Synced Scene Cutting
+### 节拍同步的场景切换
 
-Derive cut points from audio analysis:
+从音频分析中推导切换点：
 
 ```python
-# Get beat timestamps
+# 获取节拍时间戳
 beats = [fi / FPS for fi in range(N_FRAMES) if features["beat"][fi] > 0.5]
 
-# Group beats into phrase boundaries (every 4-8 beats)
+# 将节拍按乐句边界分组（每 4-8 拍）
 cuts = [0.0]
-for i in range(0, len(beats), 4):  # cut every 4 beats
+for i in range(0, len(beats), 4):  # 每 4 拍切一次
     cuts.append(beats[i])
 cuts.append(DURATION)
 
-# Or use the music's structure: silence gaps, energy changes
+# 或使用音乐结构：静默间隙、能量变化
 energy = features["rms"]
-# Find timestamps where energy drops significantly -> natural break points
+# 找出能量显著下降的时间点 -> 自然断点
 ```
 
-### `render_clip()` — The Render Loop
+### `render_clip()` —— 渲染循环
 
-This function renders one scene to a clip file:
+该函数将一个场景渲染为一个片段文件：
 
 ```python
 def render_clip(seg, features, clip_path):
     r = Renderer()
     r.set_grid(seg["grid"])
     S = r.S
-    random.seed(hash(seg["id"]) + 42)  # deterministic per scene
+    random.seed(hash(seg["id"]) + 42)  # 每场景确定性
 
-    # Build shader chain from config
+    # 从配置构建着色器链
     chain = ShaderChain()
     for shader_name, kwargs in seg.get("shaders", []):
         chain.add(shader_name, **kwargs)
 
-    # Setup feedback buffer
+    # 设置反馈缓冲
     fb = None
     fb_cfg = seg.get("feedback", None)
     if fb_cfg:
@@ -491,7 +491,7 @@ def render_clip(seg, features, clip_path):
 
     fx_fn = seg["fx"]
 
-    # Open ffmpeg pipe
+    # 打开 ffmpeg 管道
     cmd = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{VW}x{VH}", "-r", str(FPS), "-i", "pipe:0",
            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
@@ -504,17 +504,17 @@ def render_clip(seg, features, clip_path):
         t = fi / FPS
         feat = {k: float(features[k][fi]) for k in features}
 
-        # 1. Scene renders canvas
+        # 1. 场景渲染画布
         canvas = fx_fn(r, feat, t, S)
 
-        # 2. Tonemap normalizes brightness
+        # 2. 色调映射归一化亮度
         canvas = tonemap(canvas, gamma=seg.get("gamma", 0.75))
 
-        # 3. Feedback adds temporal recursion
+        # 3. 反馈增加时间递归
         if fb and fb_cfg:
             canvas = fb.apply(canvas, **{k: fb_cfg[k] for k in fb_cfg})
 
-        # 4. Shader chain adds post-processing
+        # 4. 着色器链添加后处理
         canvas = chain.apply(canvas, f=feat, t=t)
 
         pipe.stdin.write(canvas.tobytes())
@@ -522,7 +522,7 @@ def render_clip(seg, features, clip_path):
     pipe.stdin.close(); pipe.wait(); stderr_fh.close()
 ```
 
-### Building Segments from Scene Table
+### 从场景表构建片段
 
 ```python
 segments = []
@@ -540,9 +540,9 @@ for i, scene in enumerate(SCENES):
     })
 ```
 
-### Parallel Rendering
+### 并行渲染
 
-Scenes are independent units dispatched to a process pool:
+场景是独立单元，可派发到进程池：
 
 ```python
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -559,11 +559,11 @@ with ProcessPoolExecutor(max_workers=N_WORKERS) as pool:
             log(f"ERROR {futures[fut]}: {e}")
 ```
 
-**Pickling constraint**: `ProcessPoolExecutor` serializes arguments via pickle. Module-level functions can be pickled; lambdas and closures cannot. All `fx_*` scene functions MUST be defined at module level, not as closures or class methods.
+**Pickle 约束**：`ProcessPoolExecutor` 通过 pickle 序列化参数。模块级函数可被 pickle；lambda 和闭包不行。所有 `fx_*` 场景函数必须定义在模块级别，不能是闭包或类方法。
 
-### Test-Frame Mode
+### 测试帧模式
 
-Render a single frame at a specific timestamp to verify visuals without a full render:
+在指定时间戳渲染单帧，无需完整渲染即可核验视觉效果：
 
 ```python
 if args.test_frame >= 0:
@@ -583,55 +583,55 @@ if args.test_frame >= 0:
     print(f"Mean brightness: {canvas.astype(float).mean():.1f}")
 ```
 
-CLI: `python reel.py --test-frame 10.0`
+CLI：`python reel.py --test-frame 10.0`
 
 ---
 
-## Scene Design Checklist
+## 场景设计清单
 
-For each scene:
+对每个场景：
 
-1. **Choose 2-3 grid sizes** — different scales create interference
-2. **Choose different value fields** per layer — don't use the same effect on every grid
-3. **Choose different hue fields** per layer — or at minimum different hue offsets
-4. **Choose different palettes** per layer — mixing PAL_RUNE with PAL_BLOCKS looks different from PAL_RUNE with PAL_DENSE
-5. **Choose a blend mode** that matches the energy — screen for bright, difference for psychedelic, exclusion for subtle
-6. **Add conditional effects** on beat — kaleidoscope, mirror, glitch
-7. **Configure feedback** for trailing/recursive looks — or None for clean cuts
-8. **Set gamma** if using destructive shaders (solarize, posterize)
-9. **Test with --test-frame** at the scene's midpoint before full render
-
----
-
-## Scene Examples
-
-Copy-paste-ready scene functions at increasing complexity. Each is a complete, working v2 scene function that returns a pixel canvas. See the Scene Protocol section above for the scene protocol and `composition.md` for blend modes and tonemap.
+1. **选择 2-3 种网格尺寸** —— 不同尺度产生干涉
+2. **每个图层选择不同的值场** —— 不要在每个网格上用同一个特效
+3. **每个图层选择不同的色相场** —— 或至少不同的色相偏移
+4. **每个图层选择不同的色板** —— PAL_RUNE 与 PAL_BLOCKS 混合，与 PAL_RUNE 和 PAL_DENSE 混合看起来不同
+5. **选择与能量匹配的混合模式** —— 明亮用 screen，迷幻用 difference，细腻用 exclusion
+6. **在节拍上添加条件特效** —— 万花筒、镜像、故障
+7. **配置反馈以获得拖尾/递归观感** —— 或用 None 做干净切换
+8. **使用破坏性着色器（solarize、posterize）时设置 gamma**
+9. **在完整渲染前用 --test-frame 测试场景中点**
 
 ---
 
-### Minimal — Single Grid, Single Effect
+## 场景示例
 
-### Breathing Plasma
+复杂度递增、可直接复制粘贴的场景函数。每个都是完整的、可运行的 v2 场景函数，返回一个像素画布。关于场景协议见上文的「场景协议」章节；关于混合模式和色调映射见 `composition.md`。
 
-One grid, one value field, one hue field. The simplest possible scene.
+---
+
+### 最小化 —— 单网格、单特效
+
+### 呼吸的等离子体
+
+一个网格、一个值场、一个色相场。可能的最简单场景。
 
 ```python
 def fx_breathing_plasma(r, f, t, S):
-    """Plasma field with time-cycling hue. Audio modulates brightness."""
+    """等离子体场，色相随时间循环。音频调制亮度。"""
     canvas = _render_vf(r, "md",
         lambda g, f, t, S: vf_plasma(g, f, t, S) * 1.3,
         hf_time_cycle(0.08), PAL_DENSE, f, t, S, sat=0.8)
     return canvas
 ```
 
-### Reaction-Diffusion Coral
+### 反应-扩散珊瑚
 
-Single grid, simulation-based field. Evolves organically over time.
+单网格，基于模拟的场。随时间有机演化。
 
 ```python
 def fx_coral(r, f, t, S):
-    """Gray-Scott reaction-diffusion — coral branching pattern.
-    Slow-evolving, organic. Best for ambient/chill sections."""
+    """Gray-Scott 反应-扩散 —— 珊瑚状分支图样。
+    缓慢演化、有机。适合氛围/舒缓段落。"""
     canvas = _render_vf(r, "sm",
         lambda g, f, t, S: vf_reaction_diffusion(g, f, t, S,
             feed=0.037, kill=0.060, steps_per_frame=6, init_mode="center"),
@@ -639,13 +639,13 @@ def fx_coral(r, f, t, S):
     return canvas
 ```
 
-### SDF Geometry
+### SDF 几何
 
-Geometric shapes from SDFs. Clean, precise, graphic.
+来自 SDF 的几何形状。干净、精确、图形化。
 
 ```python
 def fx_sdf_rings(r, f, t, S):
-    """Concentric SDF rings with smooth pulsing."""
+    """同心 SDF 圆环，带平滑脉动。"""
     def val_fn(g, f, t, S):
         d1 = sdf_ring(g, radius=0.15 + f.get("bass", 0.3) * 0.05, thickness=0.015)
         d2 = sdf_ring(g, radius=0.25 + f.get("mid", 0.3) * 0.05, thickness=0.012)
@@ -658,15 +658,15 @@ def fx_sdf_rings(r, f, t, S):
 
 ---
 
-### Standard — Two Grids + Blend
+### 标准 —— 双网格 + 混合
 
-### Tunnel Through Noise
+### 穿越噪声的隧道
 
-Two grids at different densities, screen blended. The fine noise texture shows through the coarser tunnel characters.
+两种密度的网格，屏幕混合。精细的噪声纹理透过较粗的隧道字符显现。
 
 ```python
 def fx_tunnel_noise(r, f, t, S):
-    """Tunnel depth on md grid + fBM noise on sm grid, screen blended."""
+    """md 网格上的隧道深度 + sm 网格上的 fBM 噪声，屏幕混合。"""
     canvas_a = _render_vf(r, "md",
         lambda g, f, t, S: vf_tunnel(g, f, t, S, speed=4.0, complexity=8) * 1.2,
         hf_distance(0.5, 0.02), PAL_BLOCKS, f, t, S, sat=0.7)
@@ -678,13 +678,13 @@ def fx_tunnel_noise(r, f, t, S):
     return blend_canvas(canvas_a, canvas_b, "screen", 0.7)
 ```
 
-### Voronoi Cells + Spiral Overlay
+### Voronoi 单元 + 螺旋叠加
 
-Voronoi cell edges with a spiral arm pattern overlaid.
+Voronoi 单元边缘叠加一个螺旋臂图样。
 
 ```python
 def fx_voronoi_spiral(r, f, t, S):
-    """Voronoi edge detection on md + logarithmic spiral on lg."""
+    """md 上的 Voronoi 边缘检测 + lg 上的对数螺旋。"""
     canvas_a = _render_vf(r, "md",
         lambda g, f, t, S: vf_voronoi(g, f, t, S,
             n_cells=15, mode="edge", edge_width=2.0, speed=0.4),
@@ -697,13 +697,13 @@ def fx_voronoi_spiral(r, f, t, S):
     return blend_canvas(canvas_a, canvas_b, "exclusion", 0.6)
 ```
 
-### Domain-Warped fBM
+### 域扭曲的 fBM
 
-Two layers of the same fBM, one domain-warped, difference-blended for psychedelic organic texture.
+两层相同的 fBM，其中一层做域扭曲（domain-warp），差值混合，产生迷幻的有机纹理。
 
 ```python
 def fx_organic_warp(r, f, t, S):
-    """Clean fBM vs domain-warped fBM, difference blended."""
+    """干净 fBM 与域扭曲 fBM，差值混合。"""
     canvas_a = _render_vf(r, "sm",
         lambda g, f, t, S: vf_fbm(g, f, t, S, octaves=5, freq=0.04, speed=0.1),
         hf_plasma(0.2), PAL_DENSE, f, t, S, sat=0.6)
@@ -718,44 +718,44 @@ def fx_organic_warp(r, f, t, S):
 
 ---
 
-### Complex — Three Grids + Conditional + Feedback
+### 复杂 —— 三网格 + 条件 + 反馈
 
-### Psychedelic Cathedral
+### 迷幻大教堂
 
-Three-grid composition with beat-triggered kaleidoscope and feedback zoom tunnel. The most visually complex pattern.
+三网格合成，节拍触发的万花筒和反馈缩放隧道。视觉上最复杂的图样。
 
 ```python
 def fx_cathedral(r, f, t, S):
-    """Three-layer cathedral: interference + rings + noise, kaleidoscope on beat,
-    feedback zoom tunnel."""
-    # Layer 1: interference pattern on sm grid
+    """三层大教堂：干涉 + 圆环 + 噪声，节拍上万花筒，
+    反馈缩放隧道。"""
+    # 图层 1：sm 网格上的干涉图样
     canvas_a = _render_vf(r, "sm",
         lambda g, f, t, S: vf_interference(g, f, t, S, n_waves=7) * 1.3,
         hf_angle(0.0), PAL_MATH, f, t, S, sat=0.8)
 
-    # Layer 2: pulsing rings on md grid
+    # 图层 2：md 网格上的脉动圆环
     canvas_b = _render_vf(r, "md",
         lambda g, f, t, S: vf_rings(g, f, t, S, n_base=10, spacing_base=3) * 1.4,
         hf_distance(0.3, 0.02), PAL_STARS, f, t, S, sat=0.9)
 
-    # Layer 3: temporal noise on lg grid (slow morph)
+    # 图层 3：lg 网格上的时变噪声（缓慢形变）
     canvas_c = _render_vf(r, "lg",
         lambda g, f, t, S: vf_temporal_noise(g, f, t, S,
             freq=0.04, t_freq=0.2, octaves=3),
         hf_time_cycle(0.12), PAL_BLOCKS, f, t, S, sat=0.7)
 
-    # Blend: A screen B, then difference with C
+    # 混合：A 屏幕 B，再与 C 做差值
     result = blend_canvas(canvas_a, canvas_b, "screen", 0.8)
     result = blend_canvas(result, canvas_c, "difference", 0.5)
 
-    # Beat-triggered kaleidoscope
+    # 节拍触发的万花筒
     if f.get("bdecay", 0) > 0.3:
         folds = 6 if f.get("sub_r", 0.3) > 0.4 else 8
         result = sh_kaleidoscope(result.copy(), folds=folds)
 
     return result
 
-# Scene table entry with feedback:
+# 带反馈的场景表条目：
 # {"start": 30.0, "end": 50.0, "name": "cathedral", "fx": fx_cathedral,
 #  "gamma": 0.65, "shaders": [("bloom", {"thr": 110}), ("chromatic", {"amt": 4}),
 #                              ("vignette", {"s": 0.2}), ("grain", {"amt": 8})],
@@ -763,29 +763,29 @@ def fx_cathedral(r, f, t, S):
 #               "transform": "zoom", "transform_amt": 0.012, "hue_shift": 0.015}}
 ```
 
-### Masked Reaction-Diffusion with Attractor Overlay
+### 带吸引子叠加的遮罩反应-扩散
 
-Reaction-diffusion visible only through an animated iris mask, with a strange attractor density field underneath.
+反应-扩散仅在动画光圈遮罩内可见，其下是奇异吸引子密度场。
 
 ```python
 def fx_masked_life(r, f, t, S):
-    """Attractor base + reaction-diffusion visible through iris mask + particles."""
+    """吸引子底层 + 通过光圈遮罩可见的反应-扩散 + 粒子。"""
     g_sm = r.get_grid("sm")
     g_md = r.get_grid("md")
 
-    # Layer 1: strange attractor density field (background)
+    # 图层 1：奇异吸引子密度场（背景）
     canvas_bg = _render_vf(r, "sm",
         lambda g, f, t, S: vf_strange_attractor(g, f, t, S,
             attractor="clifford", n_points=30000),
         hf_time_cycle(0.04), PAL_DOTS, f, t, S, sat=0.5)
 
-    # Layer 2: reaction-diffusion (foreground, will be masked)
+    # 图层 2：反应-扩散（前景，将被遮罩）
     canvas_rd = _render_vf(r, "md",
         lambda g, f, t, S: vf_reaction_diffusion(g, f, t, S,
             feed=0.046, kill=0.063, steps_per_frame=4, init_mode="ring"),
         hf_angle(0.15), PAL_HALFFILL, f, t, S, sat=0.85)
 
-    # Animated iris mask — opens over first 5 seconds of scene
+    # 动画光圈遮罩 —— 在场景的前 5 秒内打开
     scene_start = S.get("_scene_start", t)
     if "_scene_start" not in S:
         S["_scene_start"] = t
@@ -793,9 +793,9 @@ def fx_masked_life(r, f, t, S):
                      max_radius=0.6)
     canvas_rd = apply_mask_canvas(canvas_rd, mask, bg_canvas=canvas_bg)
 
-    # Layer 3: flow-field particles following the R-D gradient
+    # 图层 3：跟随 R-D 梯度的流场粒子
     rd_field = vf_reaction_diffusion(g_sm, f, t, S,
-        feed=0.046, kill=0.063, steps_per_frame=0)  # read without stepping
+        feed=0.046, kill=0.063, steps_per_frame=0)  # 只读取，不步进
     ch_p, co_p = update_flow_particles(S, g_sm, f, rd_field,
         n=300, speed=0.8, char_set=list("·•◦∘°"))
     canvas_p = g_sm.render(ch_p, co_p)
@@ -804,19 +804,19 @@ def fx_masked_life(r, f, t, S):
     return result
 ```
 
-### Morphing Field Sequence with Eased Keyframes
+### 带缓动关键帧的形变场序列
 
-Demonstrates temporal coherence: smooth morphing between effects with keyframed parameters.
+展示时间连贯性：在不同特效之间用关键帧参数做平滑形变。
 
 ```python
 def fx_morphing_journey(r, f, t, S):
-    """Morphs through 4 value fields over 20 seconds with eased transitions.
-    Parameters (twist, arm count) also keyframed."""
-    # Keyframed twist parameter
+    """在 20 秒内形变穿越 4 个值场，带缓动过渡。
+    参数（扭转、臂数）也做了关键帧。"""
+    # 关键帧的 twist 参数
     twist = keyframe(t, [(0, 1.0), (5, 5.0), (10, 2.0), (15, 8.0), (20, 1.0)],
                      ease_fn=ease_in_out_cubic, loop=True)
 
-    # Sequence of value fields with 2s crossfade
+    # 值场序列，2 秒交叉淡化
     fields = [
         lambda g, f, t, S: vf_plasma(g, f, t, S),
         lambda g, f, t, S: vf_vortex(g, f, t, S, twist=twist),
@@ -828,11 +828,11 @@ def fx_morphing_journey(r, f, t, S):
     val_fn = lambda g, f, t, S: vf_sequence(g, f, t, S, fields, durations,
                                              crossfade=2.0)
 
-    # Render with slowly rotating hue
+    # 用缓慢旋转的色相渲染
     canvas = _render_vf(r, "md", val_fn, hf_time_cycle(0.06),
                         PAL_DENSE, f, t, S, sat=0.8)
 
-    # Second layer: tiled version of same sequence at smaller grid
+    # 第二层：同一序列的平铺版本，用更小网格
     tiled_fn = lambda g, f, t, S: vf_sequence(
         make_tgrid(g, *uv_tile(g, 3, 3, mirror=True)),
         f, t, S, fields, durations, crossfade=2.0)
@@ -844,22 +844,22 @@ def fx_morphing_journey(r, f, t, S):
 
 ---
 
-### Specialized — Unique State Patterns
+### 专用 —— 独特的状态模式
 
-### Game of Life with Ghost Trails
+### 带幻影拖尾的生命游戏
 
-Cellular automaton with analog fade trails. Beat injects random cells.
+带模拟淡入拖尾的元胞自动机。节拍注入随机单元。
 
 ```python
 def fx_life(r, f, t, S):
-    """Conway's Game of Life with fading ghost trails.
-    Beat events inject random live cells for disruption."""
+    """Conway 生命游戏，带渐隐的幻影拖尾。
+    节拍事件注入随机活单元以制造扰动。"""
     canvas = _render_vf(r, "sm",
         lambda g, f, t, S: vf_game_of_life(g, f, t, S,
             rule="life", steps_per_frame=1, fade=0.92, density=0.25),
         hf_fixed(0.33), PAL_BLOCKS, f, t, S, sat=0.8)
 
-    # Overlay: coral automaton on lg grid for chunky texture
+    # 叠加层：lg 网格上的珊瑚自动机，提供块状纹理
     canvas_b = _render_vf(r, "lg",
         lambda g, f, t, S: vf_game_of_life(g, f, t, S,
             rule="coral", steps_per_frame=1, fade=0.85, density=0.15, seed=99),
@@ -868,27 +868,27 @@ def fx_life(r, f, t, S):
     return blend_canvas(canvas, canvas_b, "screen", 0.5)
 ```
 
-### Boids Flock Over Voronoi
+### Voronoi 之上的 Boids 群
 
-Emergent swarm movement over a cellular background.
+涌现的群体运动覆盖在单元背景之上。
 
 ```python
 def fx_boid_swarm(r, f, t, S):
-    """Flocking boids over animated voronoi cells."""
-    # Background: voronoi cells
+    """动画 Voronoi 单元之上的群集 boids。"""
+    # 背景：Voronoi 单元
     canvas_bg = _render_vf(r, "md",
         lambda g, f, t, S: vf_voronoi(g, f, t, S,
             n_cells=20, mode="distance", speed=0.2),
         hf_distance(0.4, 0.02), PAL_CIRCUIT, f, t, S, sat=0.5)
 
-    # Foreground: boids
+    # 前景：boids
     g = r.get_grid("md")
     ch_b, co_b = update_boids(S, g, f, n_boids=150, perception=6.0,
                               max_speed=1.5, char_set=list("▸▹►▻→⟶"))
     canvas_boids = g.render(ch_b, co_b)
 
-    # Trails for the boids
-    # (boid positions are stored in S["boid_x"], S["boid_y"])
+    # boids 的拖尾
+    # (boid 位置存放在 S["boid_x"]、S["boid_y"])
     S["px"] = list(S.get("boid_x", []))
     S["py"] = list(S.get("boid_y", []))
     ch_t, co_t = draw_particle_trails(S, g, max_trail=6, fade=0.6)
@@ -899,32 +899,32 @@ def fx_boid_swarm(r, f, t, S):
     return result
 ```
 
-### Fire Rising Through SDF Text Stencil
+### 透过 SDF 文字模板升腾的火焰
 
-Fire effect visible only through text letterforms.
+火焰特效仅在文字字形内可见。
 
 ```python
 def fx_fire_text(r, f, t, S):
-    """Fire columns visible through text stencil. Text acts as window."""
+    """透过文字模板可见的火柱。文字充当窗口。"""
     g = r.get_grid("lg")
 
-    # Full-screen fire (will be masked)
+    # 全屏火焰（将被遮罩）
     canvas_fire = _render_vf(r, "sm",
         lambda g, f, t, S: np.clip(
             vf_fbm(g, f, t, S, octaves=4, freq=0.08, speed=0.8) *
-            (1.0 - g.rr / g.rows) *  # fade toward top
+            (1.0 - g.rr / g.rows) *  # 向顶部淡化
             (0.6 + f.get("bass", 0.3) * 0.8), 0, 1),
-        hf_fixed(0.05), PAL_BLOCKS, f, t, S, sat=0.9)  # fire hue
+        hf_fixed(0.05), PAL_BLOCKS, f, t, S, sat=0.9)  # 火焰色相
 
-    # Background: dark domain warp
+    # 背景：深色域扭曲
     canvas_bg = _render_vf(r, "md",
         lambda g, f, t, S: vf_domain_warp(g, f, t, S,
             warp_strength=8, freq=0.03, speed=0.05) * 0.3,
         hf_fixed(0.6), PAL_DENSE, f, t, S, sat=0.4)
 
-    # Text stencil mask
+    # 文字模板遮罩
     mask = mask_text(g, "FIRE", row_frac=0.45)
-    # Expand vertically for multi-row coverage
+    # 垂直扩展以覆盖多行
     for offset in range(-2, 3):
         shifted = mask_text(g, "FIRE", row_frac=0.45 + offset / g.rows)
         mask = mask_union(mask, shifted)
@@ -933,34 +933,34 @@ def fx_fire_text(r, f, t, S):
     return canvas_masked
 ```
 
-### Portrait Mode: Vertical Rain + Quote
+### 竖屏模式：垂直雨 + 引言
 
-Optimized for 9:16. Uses vertical space for long rain trails and stacked text.
+为 9:16 优化。利用垂直空间做长雨迹和堆叠文字。
 
 ```python
 def fx_portrait_rain_quote(r, f, t, S):
-    """Portrait-optimized: matrix rain (long vertical trails) with stacked quote.
-    Designed for 1080x1920 (9:16)."""
-    g = r.get_grid("md")  # ~112x100 in portrait
+    """竖屏优化：矩阵雨（长垂直拖尾）配堆叠引言。
+    为 1080x1920 (9:16) 设计。"""
+    g = r.get_grid("md")  # 竖屏下约 112x100
 
-    # Matrix rain — long trails benefit from portrait's extra rows
+    # 矩阵雨 —— 长拖尾受益于竖屏多出来的行
     ch, co, S = eff_matrix_rain(g, f, t, S,
         hue=0.33, bri=0.6, pal=PAL_KATA, speed_base=0.4, speed_beat=2.5)
     canvas_rain = g.render(ch, co)
 
-    # Tunnel depth underneath for texture
+    # 下方隧道深度提供纹理
     canvas_tunnel = _render_vf(r, "sm",
         lambda g, f, t, S: vf_tunnel(g, f, t, S, speed=3.0, complexity=6) * 0.8,
         hf_fixed(0.33), PAL_BLOCKS, f, t, S, sat=0.5)
 
     result = blend_canvas(canvas_tunnel, canvas_rain, "screen", 0.8)
 
-    # Quote text — portrait layout: short lines, many of them
-    g_text = r.get_grid("lg")  # ~90x80 in portrait
+    # 引言文字 —— 竖屏布局：短行、行数多
+    g_text = r.get_grid("lg")  # 竖屏下约 90x80
     quote_lines = layout_text_portrait(
         "The code is the art and the art is the code",
         max_chars_per_line=20)
-    # Center vertically
+    # 垂直居中
     block_start = (g_text.rows - len(quote_lines)) // 2
     ch_t = np.full((g_text.rows, g_text.cols), " ", dtype="U1")
     co_t = np.zeros((g_text.rows, g_text.cols, 3), dtype=np.uint8)
@@ -977,9 +977,9 @@ def fx_portrait_rain_quote(r, f, t, S):
 
 ---
 
-### Scene Table Template
+### 场景表模板
 
-Wire scenes into a complete video:
+把场景串联成完整视频：
 
 ```python
 SCENES = [

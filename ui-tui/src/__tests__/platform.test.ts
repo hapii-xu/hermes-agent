@@ -71,10 +71,10 @@ describe('isVoiceToggleKey', () => {
     const { isVoiceToggleKey } = await importPlatform('darwin')
 
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b')).toBe(true)
-    // ``key.meta`` is NOT accepted as Cmd — hermes-ink uses meta for
-    // Alt too, so accepting it leaked Alt+B into the default binding
-    // (Copilot round-6 review on #19835). Legacy-terminal mac users
-    // get strict Ctrl+B.
+    // ``key.meta`` 不被接受为 Cmd —— hermes-ink 使用 meta 表示
+    // Alt，因此接受它会将 Alt+B 泄漏到默认绑定中
+    //（#19835 的 Copilot 第 6 轮 review）。旧式终端的 Mac 用户
+    // 使用严格的 Ctrl+B。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'b')).toBe(false)
   })
 
@@ -119,12 +119,12 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('treats ambiguous mac modifiers (meta / cmd / command) as unrecognised', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // ``meta`` / ``cmd`` / ``command`` are ambiguous on the wire:
-    // hermes-ink sets ``key.meta`` for plain Alt on every platform AND
-    // for Cmd on legacy macOS terminals. Accepting any of them would
-    // produce a display/binding mismatch (Copilot round-6 review on
-    // #19835). Users on modern kitty-style terminals spell the
-    // platform action modifier ``super`` / ``win``.
+    // ``meta`` / ``cmd`` / ``command`` 在传输中是有歧义的：
+    // hermes-ink 在每个平台上为普通 Alt 设置 ``key.meta``，
+    // 在旧式 macOS 终端上为 Cmd 也设置 ``key.meta``。接受其中任何一个
+    // 都会导致显示/绑定不匹配（#19835 的 Copilot 第 6 轮 review）。
+    // 使用现代 kitty 风格终端的用户将平台动作修饰符
+    // 拼写为 ``super`` / ``win``。
     expect(parseVoiceRecordKey('meta+b')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('cmd+b')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('command+b')).toEqual(DEFAULT_VOICE_RECORD_KEY)
@@ -133,8 +133,8 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('parses named keys (space, enter, tab, escape, backspace, delete)', async () => {
     const { parseVoiceRecordKey } = await importPlatform('linux')
 
-    // Every named token from the CLI's prompt_toolkit ``c-<name>`` set is
-    // accepted with both the canonical name and its common alias.
+    // CLI 的 prompt_toolkit 的每个命名 token 来自 ``c-<name>`` 集
+    // 同时接受规范名称及其常见别名。
     expect(parseVoiceRecordKey('ctrl+space')).toEqual({
       ch: 'space',
       mod: 'ctrl',
@@ -145,28 +145,27 @@ describe('parseVoiceRecordKey (#18994)', () => {
     expect(parseVoiceRecordKey('alt+return').named).toBe('enter') // ``return`` ↔ ``enter``
     expect(parseVoiceRecordKey('ctrl+tab').named).toBe('tab')
     expect(parseVoiceRecordKey('ctrl+escape').named).toBe('escape')
-    expect(parseVoiceRecordKey('ctrl+esc').named).toBe('escape') // ``esc`` alias
+    expect(parseVoiceRecordKey('ctrl+esc').named).toBe('escape') // ``esc`` 别名
     expect(parseVoiceRecordKey('ctrl+backspace').named).toBe('backspace')
     expect(parseVoiceRecordKey('ctrl+delete').named).toBe('delete')
-    expect(parseVoiceRecordKey('ctrl+del').named).toBe('delete') // ``del`` alias
+    expect(parseVoiceRecordKey('ctrl+del').named).toBe('delete') // ``del`` 别名
   })
 
   it('falls back to Ctrl+B for unrecognised multi-character tokens', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // Typos / unsupported names (``ctrl+spcae``, ``ctrl+f5``, …) fall back
-    // to the documented Ctrl+B default rather than silently disabling the
-    // binding.
+    // 拼写错误 / 不支持的名称（``ctrl+spcae``、``ctrl+f5`` 等）回退
+    // 到文档中记录的 Ctrl+B 默认值，而不是静默禁用绑定。
     expect(parseVoiceRecordKey('ctrl+spcae')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('ctrl+f5')).toEqual(DEFAULT_VOICE_RECORD_KEY)
   })
 
-  // Round-3 Copilot review regressions on #19835.
+  // #19835 的第 3 轮 Copilot review 回归测试。
   it('does not throw on non-string YAML scalars — falls back instead', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // ``config.get full`` surfaces raw YAML values; ``voice.record_key: 1``
-    // or ``voice.record_key: true`` would otherwise crash ``.trim()``.
+    // ``config.get full`` 返回原始 YAML 值；``voice.record_key: 1``
+    // 或 ``voice.record_key: true`` 否则会崩溃 ``.trim()``。
     expect(parseVoiceRecordKey(1 as unknown as string)).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey(true as unknown as string)).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey(null as unknown as string)).toEqual(DEFAULT_VOICE_RECORD_KEY)
@@ -177,21 +176,21 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('rejects multi-modifier chords rather than silently dropping extras', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // Previously ``ctrl+alt+r`` parsed as ``ctrl+r`` and ``cmd+ctrl+b`` as
-    // ``super+b`` — a typo silently bound a different shortcut. Now a
-    // multi-modifier spelling falls back to the documented default.
+    // 之前 ``ctrl+alt+r`` 被解析为 ``ctrl+r``，``cmd+ctrl+b`` 被解析为
+    // ``super+b`` —— 拼写错误会静默绑定不同的快捷键。现在
+    // 多修饰符拼写回退到文档中记录的默认值。
     expect(parseVoiceRecordKey('ctrl+alt+r')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('cmd+ctrl+b')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('alt+ctrl+space')).toEqual(DEFAULT_VOICE_RECORD_KEY)
   })
 
-  // Round-4 Copilot review regressions on #19835.
+  // #19835 的第 4 轮 Copilot review 回归测试。
   it('rejects bare-char configs without an explicit modifier', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // The classic CLI's prompt_toolkit binds raw-char configs to the key
-    // itself (``c-o`` requires an explicit modifier); rewriting ``o``
-    // → ``ctrl+o`` would silently diverge the two runtimes. Refuse.
+    // 经典 CLI 的 prompt_toolkit 将裸字符配置绑定到键本身
+    //（``c-o`` 需要显式修饰符）；将 ``o`` 重写为
+    // ``ctrl+o`` 会静默使两个运行时产生分歧。拒绝。
     expect(parseVoiceRecordKey('o')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('b')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('space')).toEqual(DEFAULT_VOICE_RECORD_KEY)
@@ -201,18 +200,18 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('rejects ctrl+c / ctrl+d / ctrl+l — reserved by the TUI input handler', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // ``useInputHandlers()`` intercepts these before the voice check,
-    // so a binding like ``ctrl+c`` would be advertised but never fire.
-    // Fall back to the documented default instead of lying to the user.
+    // ``useInputHandlers()`` 在 voice 检查之前拦截这些键，
+    // 因此像 ``ctrl+c`` 这样的绑定会被宣传但永远不会触发。
+    // 回退到文档中记录的默认值，而不是对用户撒谎。
     expect(parseVoiceRecordKey('ctrl+c')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('ctrl+d')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('ctrl+l')).toEqual(DEFAULT_VOICE_RECORD_KEY)
-    // Alt-modifier versions of those letters are NOT intercepted, so
-    // they remain usable.
+    // 这些字母的 Alt 修饰符版本不会被拦截，因此
+    // 仍然可用。
     expect(parseVoiceRecordKey('alt+c').mod).toBe('alt')
-    // ``ctrl+x`` is intentionally allowed — only intercepted during
-    // queue-edit (``queueEditIdx !== null``), so the voice binding
-    // works for most of the session (Copilot round-8 review).
+    // ``ctrl+x`` 是故意允许的 —— 仅在 queue-edit 期间拦截
+    //（``queueEditIdx !== null``），因此 voice 绑定在
+    // 大部分 session 中可用（Copilot 第 8 轮 review）。
     expect(parseVoiceRecordKey('ctrl+x').mod).toBe('ctrl')
     expect(parseVoiceRecordKey('ctrl+x').ch).toBe('x')
   })
@@ -220,13 +219,13 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('rejects super+{c,d,l,v} on macOS — action-mod chords are claimed before voice', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('darwin')
 
-    // On macOS super+c/d/l/v are copy / exit / clear / paste. Reject at
-    // parse time so /voice status doesn't advertise dead bindings.
+    // 在 macOS 上 super+c/d/l/v 是复制 / 退出 / 清除 / 粘贴。在
+    // 解析时拒绝，这样 /voice status 不会宣传无效的绑定。
     expect(parseVoiceRecordKey('super+c')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('super+d')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('super+l')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('super+v')).toEqual(DEFAULT_VOICE_RECORD_KEY)
-    // Other super letters still work (no global chord claims them).
+    // 其他 super 字母仍然可用（没有全局快捷键占用它们）。
     expect(parseVoiceRecordKey('super+b').mod).toBe('super')
     expect(parseVoiceRecordKey('super+o').mod).toBe('super')
   })
@@ -234,10 +233,10 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('allows super+{c,d,l,v} on Linux/Windows — those globals key off Ctrl, not Super', async () => {
     const { parseVoiceRecordKey } = await importPlatform('linux')
 
-    // Kitty/CSI-u users on non-mac report Cmd/Super as ``key.super``,
-    // but the TUI's global shortcuts (copy/exit/clear/paste) key off
-    // Ctrl there, so ``super+<letter>`` doesn't collide. Reject would
-    // silently coerce valid configs to Ctrl+B (Copilot round-8 review).
+    // 非 Mac 上的 Kitty/CSI-u 用户将 Cmd/Super 报告为 ``key.super``，
+    // 但 TUI 的全局快捷键（复制/退出/清除/粘贴）在那里使用
+    // Ctrl，因此 ``super+<letter>`` 不会冲突。拒绝会
+    // 静默将有效配置强制为 Ctrl+B（Copilot 第 8 轮 review）。
     expect(parseVoiceRecordKey('super+c').mod).toBe('super')
     expect(parseVoiceRecordKey('super+d').mod).toBe('super')
     expect(parseVoiceRecordKey('super+l').mod).toBe('super')
@@ -247,15 +246,15 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('rejects alt+{c,d,l} on macOS — meta-as-alt collides with isAction', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, parseVoiceRecordKey } = await importPlatform('darwin')
 
-    // hermes-ink reports Alt as ``key.meta`` on many terminals, and
-    // ``isActionMod`` on darwin accepts ``key.meta`` as the action
-    // modifier. So ``alt+c`` / ``alt+d`` / ``alt+l`` get claimed by
-    // isCopyShortcut / isAction('d') / isAction('l') before voice
-    // runs (Copilot round-12 on #19835).
+    // hermes-ink 在许多终端上将 Alt 报告为 ``key.meta``，
+    // darwin 上的 ``isActionMod`` 接受 ``key.meta`` 作为动作
+    // 修饰符。因此 ``alt+c`` / ``alt+d`` / ``alt+l`` 在 voice
+    // 运行之前被 isCopyShortcut / isAction('d') / isAction('l') 占用
+    //（#19835 的 Copilot 第 12 轮 review）。
     expect(parseVoiceRecordKey('alt+c')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('alt+d')).toEqual(DEFAULT_VOICE_RECORD_KEY)
     expect(parseVoiceRecordKey('alt+l')).toEqual(DEFAULT_VOICE_RECORD_KEY)
-    // Other alt letters stay usable on darwin.
+    // darwin 上的其他 alt 字母仍然可用。
     expect(parseVoiceRecordKey('alt+r').mod).toBe('alt')
     expect(parseVoiceRecordKey('alt+space').mod).toBe('alt')
   })
@@ -263,21 +262,21 @@ describe('parseVoiceRecordKey (#18994)', () => {
   it('allows alt+{c,d,l} on Linux/Windows — non-mac isAction keys off Ctrl', async () => {
     const { parseVoiceRecordKey } = await importPlatform('linux')
 
-    // On Linux/Windows ``isActionMod`` ignores key.meta, so alt+<letter>
-    // doesn't collide with copy/exit/clear. Those configs stay usable.
+    // 在 Linux/Windows 上 ``isActionMod`` 忽略 key.meta，因此 alt+<letter>
+    // 不会与复制/退出/清除冲突。这些配置保持可用。
     expect(parseVoiceRecordKey('alt+c').mod).toBe('alt')
     expect(parseVoiceRecordKey('alt+d').mod).toBe('alt')
     expect(parseVoiceRecordKey('alt+l').mod).toBe('alt')
   })
 
-  // Round-5 Copilot review regressions on #19835.
+  // #19835 的第 5 轮 Copilot review 回归测试。
   it('super+<key> does NOT fire on key.meta-only events (Alt+X false-fire guard)', async () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('darwin')
 
-    // hermes-ink sets ``key.meta`` for Alt/Option AND for bare Esc on
-    // some macOS terminals. The super branch used to accept
-    // ``isMac && key.meta`` as a Cmd fallback, which made super+<key>
-    // bindings silently fire on Alt+<key> / bare Esc.
+    // hermes-ink 为 Alt/Option 以及某些 macOS 终端上的裸 Esc
+    // 设置 ``key.meta``。super 分支曾经接受
+    // ``isMac && key.meta`` 作为 Cmd 回退，这使得 super+<key>
+    // 绑定在 Alt+<key> / 裸 Esc 上静默触发。
     const superB = parseVoiceRecordKey('super+b')
     const superSpace = parseVoiceRecordKey('super+space')
     const superEscape = parseVoiceRecordKey('super+escape')
@@ -287,16 +286,16 @@ describe('parseVoiceRecordKey (#18994)', () => {
     expect(isVoiceToggleKey({ ctrl: false, escape: true, meta: true, super: false }, '', superEscape)).toBe(false)
   })
 
-  // Round-6 Copilot review regressions on #19835.
+  // #19835 的第 6 轮 Copilot review 回归测试。
   it('default ctrl+b does NOT fire on Alt+B via isActionMod meta leak', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, isVoiceToggleKey } = await importPlatform('darwin')
 
-    // ``isActionMod(key)`` on darwin was accepting ``key.meta`` as the
-    // action modifier, so Alt+B (key.meta=true) fired the default
-    // ctrl+b binding. Now the Cmd-fallback path requires literal
-    // ``key.super`` on macOS and rejects ``key.meta``.
+    // darwin 上的 ``isActionMod(key)`` 曾经接受 ``key.meta`` 作为
+    // 动作修饰符，因此 Alt+B（key.meta=true）触发了默认的
+    // ctrl+b 绑定。现在 Cmd 回退路径在 macOS 上需要字面的
+    // ``key.super`` 并拒绝 ``key.meta``。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'b', DEFAULT_VOICE_RECORD_KEY)).toBe(false)
-    // Literal Ctrl+B and Cmd+B (kitty-style) still work on darwin.
+    // darwin 上的字面 Ctrl+B 和 Cmd+B（kitty 风格）仍然可用。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'b', DEFAULT_VOICE_RECORD_KEY)).toBe(true)
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b', DEFAULT_VOICE_RECORD_KEY)).toBe(true)
   })
@@ -305,14 +304,14 @@ describe('parseVoiceRecordKey (#18994)', () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('linux')
     const ctrlO = parseVoiceRecordKey('ctrl+o')
 
-    // ``ctrl+o`` must fire ONLY on literal Ctrl+O, not on
-    // Ctrl+Alt+O / Ctrl+Cmd+O / Ctrl+Meta+O — otherwise the runtime
-    // matches a different chord than the parser would let you
-    // configure.
+    // ``ctrl+o`` 必须仅在字面 Ctrl+O 时触发，而不是在
+    // Ctrl+Alt+O / Ctrl+Cmd+O / Ctrl+Meta+O 时触发 —— 否则运行时
+    // 匹配的快捷键与解析器允许配置的
+    // 不同。
     expect(isVoiceToggleKey({ alt: true, ctrl: true, meta: false, super: false }, 'o', ctrlO)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: true, meta: true, super: false }, 'o', ctrlO)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: true }, 'o', ctrlO)).toBe(false)
-    // Sanity: plain Ctrl+O still fires.
+    // 验证：普通的 Ctrl+O 仍然触发。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'o', ctrlO)).toBe(true)
   })
 
@@ -323,7 +322,7 @@ describe('parseVoiceRecordKey (#18994)', () => {
     expect(isVoiceToggleKey({ alt: true, ctrl: false, meta: false, super: true }, 'b', superB)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: true }, 'b', superB)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: true }, 'b', superB)).toBe(false)
-    // Sanity: plain Super+B still fires.
+    // 验证：普通的 Super+B 仍然触发。
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b', superB)).toBe(true)
   })
 
@@ -331,18 +330,18 @@ describe('parseVoiceRecordKey (#18994)', () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('darwin')
     const altEscape = parseVoiceRecordKey('alt+escape')
 
-    // Some terminals surface bare Esc as meta=true + escape=true.
+    // 某些终端将裸 Esc 显示为 meta=true + escape=true。
     expect(isVoiceToggleKey({ ctrl: false, escape: true, meta: true, super: false }, '', altEscape)).toBe(false)
-    // Explicit alt bit (kitty-style) still fires the configured chord.
+    // 显式 alt 位（kitty 风格）仍然触发配置的快捷键。
     expect(isVoiceToggleKey({ alt: true, ctrl: false, escape: true, meta: false, super: false }, '', altEscape)).toBe(true)
   })
 
   it('rejects matches when Shift is held (different chord than configured)', async () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('linux')
 
-    // Parser rejects multi-modifier configs like ``ctrl+shift+tab``,
-    // so the runtime matcher must also reject Shift-held events —
-    // otherwise ``ctrl+tab`` would fire on Ctrl+Shift+Tab.
+    // 解析器拒绝多修饰符配置如 ``ctrl+shift+tab``，
+    // 因此运行时匹配器也必须拒绝按住 Shift 的事件 ——
+    // 否则 ``ctrl+tab`` 会在 Ctrl+Shift+Tab 时触发。
     const ctrlTab = parseVoiceRecordKey('ctrl+tab')
     const altEnter = parseVoiceRecordKey('alt+enter')
     const ctrlO = parseVoiceRecordKey('ctrl+o')
@@ -364,9 +363,8 @@ describe('formatVoiceRecordKey (#18994)', () => {
     expect(formatVoiceRecordKey(parseVoiceRecordKey('ctrl+b'))).toBe('Ctrl+B')
     expect(formatVoiceRecordKey(parseVoiceRecordKey('ctrl+o'))).toBe('Ctrl+O')
     expect(formatVoiceRecordKey(parseVoiceRecordKey('alt+r'))).toBe('Alt+R')
-    // ``super``/``win`` render as ``Super`` on non-mac so the hint
-    // doesn't tell Linux/Windows users to press a Cmd key they don't
-    // have.
+    // ``super``/``win`` 在非 Mac 上渲染为 ``Super``，这样提示
+    // 不会告诉 Linux/Windows 用户按他们没有的 Cmd 键。
     expect(formatVoiceRecordKey(parseVoiceRecordKey('super+b'))).toBe('Super+B')
   })
 
@@ -386,7 +384,7 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
     const ctrlO = parseVoiceRecordKey('ctrl+o')
 
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'o', ctrlO)).toBe(true)
-    // The old hardcoded 'b' must NOT match when the user configured 'o'.
+    // 旧的硬编码 'b' 在用户配置了 'o' 时不能匹配。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'b', ctrlO)).toBe(false)
   })
 
@@ -404,9 +402,9 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
 
     const ctrlSpace = parseVoiceRecordKey('ctrl+space')
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, ' ', ctrlSpace)).toBe(true)
-    // Single-char ``b`` must NOT match a ``space``-configured binding.
+    // 单字符 ``b`` 不能匹配 ``space`` 配置的绑定。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'b', ctrlSpace)).toBe(false)
-    // Space without the configured modifier must not fire either.
+    // 没有配置修饰符的 Space 也不能触发。
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: false }, ' ', ctrlSpace)).toBe(false)
 
     const ctrlEnter = parseVoiceRecordKey('ctrl+enter')
@@ -431,24 +429,24 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
   it('omitted configured key falls back to ctrl+b (back-compat)', async () => {
     const { isVoiceToggleKey } = await importPlatform('linux')
 
-    // No third arg → DEFAULT_VOICE_RECORD_KEY → Ctrl+B behaviour.
+    // 没有第三个参数 → DEFAULT_VOICE_RECORD_KEY → Ctrl+B 行为。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'b')).toBe(true)
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'o')).toBe(false)
   })
 
-  // Regressions from Copilot review on #19835: the previous implementation
-  // accepted ``isActionMod(key)`` in the ``ctrl`` branch for every
-  // configured key, so bare Esc (which hermes-ink reports with
-  // ``key.meta`` on some macOS terminals) fired ``ctrl+escape``, and
-  // Alt+Space / Alt+Tab fired ``ctrl+space`` / ``ctrl+tab``. The fallback
-  // is now gated to the documented default (``ctrl+b``) only.
+  // #19835 的 Copilot review 回归测试：之前的实现
+  // 在每个配置键的 ``ctrl`` 分支中接受了 ``isActionMod(key)``，
+  // 因此裸 Esc（hermes-ink 在某些 macOS 终端上报告为
+  // ``key.meta``）触发了 ``ctrl+escape``，
+  // Alt+Space / Alt+Tab 触发了 ``ctrl+space`` / ``ctrl+tab``。
+  // 回退现在仅限于文档中记录的默认值（``ctrl+b``）。
   it('ctrl+escape does NOT fire on bare Esc via key.meta on macOS', async () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('darwin')
     const ctrlEscape = parseVoiceRecordKey('ctrl+escape')
 
-    // Bare Esc on a legacy macOS terminal: ``key.meta: true``, ``key.escape: true``, no ctrl.
+    // 旧式 macOS 终端上的裸 Esc：``key.meta: true``、``key.escape: true``，没有 ctrl。
     expect(isVoiceToggleKey({ ctrl: false, escape: true, meta: true, super: false }, '', ctrlEscape)).toBe(false)
-    // Real Ctrl+Esc still fires.
+    // 真正的 Ctrl+Esc 仍然触发。
     expect(isVoiceToggleKey({ ctrl: true, escape: true, meta: false, super: false }, '', ctrlEscape)).toBe(true)
   })
 
@@ -456,22 +454,22 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('darwin')
     const ctrlSpace = parseVoiceRecordKey('ctrl+space')
 
-    // Alt+Space surfaces as ``key.meta: true`` with space char.
+    // Alt+Space 显示为 ``key.meta: true`` 加上 space 字符。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, ' ', ctrlSpace)).toBe(false)
-    // Real Ctrl+Space still fires.
+    // 真正的 Ctrl+Space 仍然触发。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, ' ', ctrlSpace)).toBe(true)
   })
 
   it('default ctrl+b accepts raw Ctrl+B and kitty-style Cmd+B on macOS', async () => {
     const { DEFAULT_VOICE_RECORD_KEY, isVoiceToggleKey } = await importPlatform('darwin')
 
-    // Raw Ctrl+B: always works.
+    // 原始 Ctrl+B：始终可用。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'b', DEFAULT_VOICE_RECORD_KEY)).toBe(true)
-    // Cmd+B via kitty-style ``key.super``: still works.
+    // 通过 kitty 风格的 ``key.super`` 的 Cmd+B：仍然可用。
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b', DEFAULT_VOICE_RECORD_KEY)).toBe(true)
-    // Cmd+B via legacy ``key.meta`` NO LONGER works — ``key.meta`` is
-    // hermes-ink's Alt signal, so accepting it leaked Alt+B into the
-    // default binding (Copilot round-6 review on #19835).
+    // 通过旧式 ``key.meta`` 的 Cmd+B 不再可用 —— ``key.meta`` 是
+    // hermes-ink 的 Alt 信号，因此接受它会将 Alt+B 泄漏到
+    // 默认绑定中（#19835 的 Copilot 第 6 轮 review）。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'b', DEFAULT_VOICE_RECORD_KEY)).toBe(false)
   })
 
@@ -479,8 +477,8 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
     const { isVoiceToggleKey, parseVoiceRecordKey } = await importPlatform('darwin')
     const ctrlO = parseVoiceRecordKey('ctrl+o')
 
-    // Only ``ctrl+b`` gets the action-modifier fallback; ``ctrl+o`` must
-    // be a literal Ctrl bit — otherwise Cmd+O would steal the shortcut.
+    // 只有 ``ctrl+b`` 获得动作修饰符回退；``ctrl+o`` 必须是
+    // 字面的 Ctrl 位 —— 否则 Cmd+O 会抢占快捷键。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'o', ctrlO)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'o', ctrlO)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'o', ctrlO)).toBe(true)
@@ -491,17 +489,17 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
     const superB = parseVoiceRecordKey('super+b')
 
     expect(formatVoiceRecordKey(superB)).toBe('Cmd+B')
-    // Kitty-style: key.super fires the binding.
+    // Kitty 风格：key.super 触发绑定。
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b', superB)).toBe(true)
-    // ``key.meta`` is NOT accepted — hermes-ink uses meta for Alt too,
-    // so accepting it here would make super+b silently fire on Alt+B
-    // (Copilot round-5 review on #19835).
+    // ``key.meta`` 不被接受 —— hermes-ink 对 Alt 也使用 meta，
+    // 因此在这里接受它会使 super+b 在 Alt+B 时静默触发
+    //（#19835 的 Copilot 第 5 轮 review）。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'b', superB)).toBe(false)
-    // Ctrl held at the same time → reject (different chord).
+    // 同时按住 Ctrl → 拒绝（不同的快捷键）。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: true }, 'b', superB)).toBe(false)
   })
 
-  // Round-2 Copilot review regressions on #19835.
+  // #19835 的第 2 轮 Copilot review 回归测试。
   it('super+b renders "Super+B" on Linux (not "Cmd+B")', async () => {
     const { formatVoiceRecordKey, parseVoiceRecordKey } = await importPlatform('linux')
 
@@ -521,17 +519,17 @@ describe('isVoiceToggleKey honours configured record key (#18994)', () => {
     const controlB = parseVoiceRecordKey('control+b')
     const spacedB = parseVoiceRecordKey('ctrl + b')
 
-    // Both parse to the documented default semantically; both must keep
-    // the macOS Cmd+B muscle-memory fallback via kitty-style key.super.
-    // ``key.meta`` is NOT accepted — that's hermes-ink's Alt signal
-    // (round-6 review), so legacy-terminal users get strict Ctrl+B.
+    // 两者在语义上都解析为文档中记录的默认值；两者都必须
+    // 保留 macOS 上通过 kitty 风格的 key.super 实现的 Cmd+B 肌肉记忆回退。
+    // ``key.meta`` 不被接受 —— 那是 hermes-ink 的 Alt 信号
+    //（第 6 轮 review），因此旧式终端用户使用严格的 Ctrl+B。
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'b', controlB)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: false, meta: true, super: false }, 'b', spacedB)).toBe(false)
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b', controlB)).toBe(true)
     expect(isVoiceToggleKey({ ctrl: false, meta: false, super: true }, 'b', spacedB)).toBe(true)
-    // Literal Ctrl+B still fires.
+    // 字面 Ctrl+B 仍然触发。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'b', controlB)).toBe(true)
-    // And still reject a ctrl bit on a different letter.
+    // 并且仍然拒绝不同字母的 ctrl 位。
     expect(isVoiceToggleKey({ ctrl: true, meta: false, super: false }, 'o', controlB)).toBe(false)
   })
 })
@@ -542,7 +540,7 @@ describe('isMacActionFallback', () => {
 
     expect(isMacActionFallback({ ctrl: true, meta: false, super: false }, 'k', 'k')).toBe(true)
     expect(isMacActionFallback({ ctrl: true, meta: false, super: false }, 'w', 'w')).toBe(true)
-    // Must not fire when Cmd (meta/super) is held — those are distinct chords.
+    // 当 Cmd（meta/super）被按住时不能触发 —— 那些是不同的快捷键。
     expect(isMacActionFallback({ ctrl: true, meta: true, super: false }, 'k', 'k')).toBe(false)
     expect(isMacActionFallback({ ctrl: true, meta: false, super: true }, 'w', 'w')).toBe(false)
   })

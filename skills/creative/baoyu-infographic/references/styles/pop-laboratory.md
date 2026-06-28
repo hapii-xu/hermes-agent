@@ -1,48 +1,48 @@
 # pop-laboratory
 
-Lab manual precision meets pop art color impact—coordinate systems, technical diagrams, and fluorescent accents on blueprint grid.
+实验室手册的精确感与波普艺术的色彩冲击相结合——坐标系、技术图示，以及蓝图网格上的荧光点缀。
 
-## Color Palette
+## 配色
 
-- Background: Professional grayish-white with faint blueprint grid texture (#F2F2F2)
-- Primary: Muted teal/sage green (#B8D8BE) for major functional blocks and data zones
-- High-alert accent: Vibrant fluorescent pink (#E91E63) strictly for warnings, critical data, or "winner" highlights
-- Marker highlights: Vivid lemon yellow (#FFF200) as translucent highlighter effect for keywords
-- Line art: Ultra-fine charcoal brown (#2D2926) for technical grids, coordinates, and hairlines
+- 背景：专业灰白，带淡蓝图纸网格纹理 (#F2F2F2)
+- 主色：柔和青绿/鼠尾草绿 (#B8D8BE)，用于主要功能块和数据区
+- 高警示点缀：鲜艳荧光粉 (#E91E63)，严格用于警告、关键数据或"优胜"高亮
+- 标记高亮：明亮柠檬黄 (#FFF200)，作为半透明荧光笔效果标注关键词
+- 线稿：超细炭棕 (#2D2926)，用于技术网格、坐标和极细线
 
-## Visual Elements
+## 视觉元素
 
-- Coordinate-style labels on every module (e.g., R-20, G-02, SEC-08)
-- Technical diagrams: exploded views, cross-sections with anchor points, architectural skeletal lines
-- Vertical/horizontal rulers with precise markers (0.5mm, 1.8mm, 45°)
-- "Marker-over-print" effect: color blocks slightly offset from text, postmodern print feel
-- Cross-hair targets, mathematical symbols (Σ, Δ, ∞), directional arrows (X/Y axis)
-- Microscopic detail annotations alongside macroscopic bold headers
-- Corner metadata: tiny barcodes, timestamps, technical parameters
-- High contrast between massive bold headers and tiny 8pt-style annotations
+- 每个模块上的坐标式标签（如 R-20、G-02、SEC-08）
+- 技术图示：分解图、带锚点的剖面图、建筑骨架线
+- 带精确刻度的垂直/水平标尺（0.5mm、1.8mm、45°）
+- "套印标记"效果：色块相对文字略有偏移，呈现后现代印刷感
+- 十字准星、数学符号（Σ、Δ、∞）、方向箭头（X/Y 轴）
+- 显微级细节批注与宏观粗体标题并存
+- 角落元数据：微型条码、时间戳、技术参数
+- 大块粗体标题与微小 8pt 风格批注形成高对比
 
-## Typography
+## 字体排印
 
-- Headers: Bold brutalist characters, high visual impact
-- Body: Professional sans-serif or crisp technical print
-- Numbers: Large, highlighted with yellow or blue to stand out
-- Annotations: Ultra-crisp, small technical labels
+- 标题：粗体野兽派字符，视觉冲击力强
+- 正文：专业无衬线字体或利落的技术印刷体
+- 数字：大号，用黄色或蓝色高亮以突出
+- 批注：超清晰、小型技术标签
 
-## Style Enforcement
+## 风格执行
 
-- Strictly systematic color usage: only teal, pink, yellow, charcoal—no rainbow palette
-- Sufficient fine grid lines and coordinate annotations throughout
-- Maintain tension between large impactful headers and small precise parameters
-- Lab manual aesthetic: mix of microscopic details and macroscopic data
+- 严格系统的色彩使用：仅青绿、粉、黄、炭色——不用彩虹色板
+- 全程配充足的细网格线和坐标批注
+- 保持大冲击力标题与小型精确参数之间的张力
+- 实验室手册美学：显微细节与宏观数据相混合
 
-## Avoid
+## 避免
 
-- Cute or cartoonish doodles
-- Soft pastels or generic textures
-- Empty white space
-- Flat vector stock icons
-- Organic or hand-drawn imperfections
+- 可爱或卡通化的涂鸦
+- 柔和粉彩或通用纹理
+- 空白留白
+- 扁平矢量图库图标
+- 有机或手绘的不完美
 
-## Best For
+## 最适用于
 
-Technical product guides, specification comparisons, precision-focused data visualization, engineering-adjacent content
+技术产品指南、规格对比、聚焦精度的数据可视化、与工程相关的内容

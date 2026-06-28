@@ -1,3 +1,3 @@
 ---
-description: Skills for extracting text from PDFs, scanned documents, images, and other file formats using OCR and document parsing tools.
+description: 使用 OCR 和文档解析工具从 PDF、扫描文档、图片及其他文件格式中提取文本的技能。
 ---

@@ -1,22 +1,20 @@
-"""disk_cleanup — ephemeral file cleanup for Hermes Agent.
+"""disk_cleanup — Hermes Agent 的临时文件清理。
 
-Library module wrapping the deterministic cleanup rules written by
-@LVT382009 in PR #12212. The plugin ``__init__.py`` wires these
-functions into ``post_tool_call`` and ``on_session_end`` hooks so
-tracking and cleanup happen automatically — the agent never needs to
-call a tool or remember a skill.
+封装了 @LVT382009 在 PR #12212 中编写的确定性清理规则的库模块。
+插件 ``__init__.py`` 将这些函数连接到 ``post_tool_call`` 和 ``on_session_end``
+钩子，使追踪和清理自动发生 — agent 永远不需要调用工具或记忆技能。
 
-Rules:
-  - test files    → delete immediately at task end (age >= 0)
-  - temp files    → delete after 7 days
-  - cron-output   → delete after 14 days
-  - empty dirs    → always delete (under HERMES_HOME)
-  - research      → keep 10 newest, prompt for older (deep only)
-  - chrome-profile→ prompt after 14 days (deep only)
-  - >500 MB files → prompt always (deep only)
+规则：
+  - 测试文件     → 任务结束时立即删除（age >= 0）
+  - 临时文件     → 7 天后删除
+  - cron-output  → 14 天后删除
+  - 空目录       → 始终删除（在 HERMES_HOME 下）
+  - 研究文件     → 保留最新 10 个，对旧文件提示（仅 deep 模式）
+  - chrome-profile → 14 天后提示（仅 deep 模式）
+  - >500 MB 文件 → 始终提示（仅 deep 模式）
 
-Scope: strictly HERMES_HOME and /tmp/hermes-*
-Never touches: ~/.hermes/logs/ or any system directory.
+范围：严格限于 HERMES_HOME 和 /tmp/hermes-*
+永不触及：~/.hermes/logs/ 或任何系统目录。
 """
 
 from __future__ import annotations
@@ -42,11 +40,11 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Paths
+# 路径
 # ---------------------------------------------------------------------------
 
 def get_state_dir() -> Path:
-    """State dir — separate from ``$HERMES_HOME/logs/``."""
+    """状态目录 — 与 ``$HERMES_HOME/logs/`` 分开。"""
     return get_hermes_home() / "disk-cleanup"
 
 
@@ -55,18 +53,18 @@ def get_tracked_file() -> Path:
 
 
 def get_log_file() -> Path:
-    """Audit log — intentionally NOT under ``$HERMES_HOME/logs/``."""
+    """审计日志 — 刻意不在 ``$HERMES_HOME/logs/`` 下。"""
     return get_state_dir() / "cleanup.log"
 
 
 # ---------------------------------------------------------------------------
-# Path safety
+# 路径安全
 # ---------------------------------------------------------------------------
 
 def is_safe_path(path: Path) -> bool:
-    """Accept only paths under HERMES_HOME or ``/tmp/hermes-*``.
+    """仅接受 HERMES_HOME 或 ``/tmp/hermes-*`` 下的路径。
 
-    Rejects Windows mounts (``/mnt/c`` etc.) and any system directory.
+    拒绝 Windows 挂载点（``/mnt/c`` 等）和任何系统目录。
     """
     hermes_home = get_hermes_home()
     try:
@@ -74,7 +72,7 @@ def is_safe_path(path: Path) -> bool:
         return True
     except (ValueError, OSError):
         pass
-    # Allow /tmp/hermes-* explicitly
+    # 明确允许 /tmp/hermes-*
     parts = path.parts
     if len(parts) >= 3 and parts[1] == "tmp" and parts[2].startswith("hermes-"):
         return True
@@ -82,7 +80,7 @@ def is_safe_path(path: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Audit log
+# 审计日志
 # ---------------------------------------------------------------------------
 
 def _log(message: str) -> None:
@@ -93,16 +91,16 @@ def _log(message: str) -> None:
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(f"[{ts}] {message}\n")
     except OSError:
-        # Never let the audit log break the agent loop.
+        # 永不让审计日志中断 agent 循环。
         pass
 
 
 # ---------------------------------------------------------------------------
-# tracked.json — atomic read/write, backup scoped to tracked.json only
+# tracked.json — 原子读写，备份仅限于 tracked.json
 # ---------------------------------------------------------------------------
 
 def load_tracked() -> List[Dict[str, Any]]:
-    """Load tracked.json.  Restores from ``.bak`` on corruption."""
+    """加载 tracked.json。损坏时从 ``.bak`` 恢复。"""
     tf = get_tracked_file()
     tf.parent.mkdir(parents=True, exist_ok=True)
 
@@ -125,7 +123,7 @@ def load_tracked() -> List[Dict[str, Any]]:
 
 
 def save_tracked(tracked: List[Dict[str, Any]]) -> None:
-    """Atomic write: ``.tmp`` → backup old → rename."""
+    """原子写入：``.tmp`` → 备份旧文件 → 重命名。"""
     tf = get_tracked_file()
     tf.parent.mkdir(parents=True, exist_ok=True)
     tmp = tf.with_suffix(".json.tmp")
@@ -136,7 +134,7 @@ def save_tracked(tracked: List[Dict[str, Any]]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Categories
+# 类别
 # ---------------------------------------------------------------------------
 
 ALLOWED_CATEGORIES = {
@@ -156,22 +154,20 @@ _EMPTY_DIR_SWEEP_PRUNE_DIRS = frozenset({
 })
 
 
-# Paths under $HERMES_HOME that must NEVER be deleted by quick(),
-# regardless of what the stored category says.  This is a defense-in-depth
-# guard against stale tracked.json entries from before #34840.
+# $HERMES_HOME 下永远不得被 quick() 删除的路径，
+# 无论存储的类别是什么。这是针对 #34840 之前的
+# 陈旧 tracked.json 条目的纵深防御保护。
 _PROTECTED_CRON_PATHS: set[str] = set()
 
 
 def _is_protected_cron_path(p: Path) -> bool:
-    """Return True if *p* is a cron control-plane file/directory that must
-    never be deleted.
+    """如果 *p* 是永远不得删除的 cron 控制平面文件/目录则返回 True。
 
-    This only matches the directory itself and known control-plane files
-    (``jobs.json``, ``.tick.lock``) — it does NOT blanket-protect
-    everything under ``cron/`` because ``cron/output/`` is disposable.
+    这只匹配目录本身和已知的控制平面文件
+    （``jobs.json``、``.tick.lock``）— 不会全面保护
+    ``cron/`` 下的所有内容，因为 ``cron/output/`` 是可丢弃的。
     """
-    # Lazily build the set once per process so HERMES_HOME is resolved
-    # exactly once.
+    # 每进程延迟构建一次集合，使 HERMES_HOME 精确解析一次。
     if not _PROTECTED_CRON_PATHS:
         hermes_home = get_hermes_home()
         for parent in ("cron", "cronjobs"):
@@ -192,11 +188,11 @@ def fmt_size(n: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Track / forget
+# 追踪 / 忘记
 # ---------------------------------------------------------------------------
 
 def track(path_str: str, category: str, silent: bool = False) -> bool:
-    """Register a file for tracking. Returns True if newly tracked."""
+    """注册一个文件以进行追踪。如果是新追踪则返回 True。"""
     if category not in ALLOWED_CATEGORIES:
         _log(f"WARN: unknown category '{category}', using 'other'")
         category = "other"
@@ -214,7 +210,7 @@ def track(path_str: str, category: str, silent: bool = False) -> bool:
     size = path.stat().st_size if path.is_file() else 0
     tracked = load_tracked()
 
-    # Deduplicate
+    # 去重
     if any(item["path"] == str(path) for item in tracked):
         return False
 
@@ -232,7 +228,7 @@ def track(path_str: str, category: str, silent: bool = False) -> bool:
 
 
 def forget(path_str: str) -> int:
-    """Remove a path from tracking without deleting the file."""
+    """从追踪中移除路径，不删除文件。"""
     p = Path(path_str).resolve()
     tracked = load_tracked()
     before = len(tracked)
@@ -245,11 +241,11 @@ def forget(path_str: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Dry run
+# 预演模式
 # ---------------------------------------------------------------------------
 
 def dry_run() -> Tuple[List[Dict], List[Dict]]:
-    """Return (auto_delete_list, needs_prompt_list) without touching files."""
+    """返回 (auto_delete_list, needs_prompt_list)，不触碰文件。"""
     tracked = load_tracked()
     now = datetime.now(timezone.utc)
 
@@ -264,12 +260,12 @@ def dry_run() -> Tuple[List[Dict], List[Dict]]:
         cat = item["category"]
         size = item["size"]
 
-        # Re-validate stale "cron-output" entries (fixes #37721).
+        # 重新验证陈旧的 "cron-output" 条目（修复 #37721）。
         if cat == "cron-output":
             re_cat = guess_category(p)
             if re_cat != "cron-output":
-                # Stale entry — would be skipped by quick(); omit from
-                # dry-run output too.
+                # 陈旧条目 — 会被 quick() 跳过；也从
+                # 预演输出中省略。
                 continue
 
         if cat == "test":
@@ -289,13 +285,13 @@ def dry_run() -> Tuple[List[Dict], List[Dict]]:
 
 
 # ---------------------------------------------------------------------------
-# Quick cleanup
+# 快速清理
 # ---------------------------------------------------------------------------
 
 def quick() -> Dict[str, Any]:
-    """Safe deterministic cleanup — no prompts.
+    """安全的确定性清理 — 无提示。
 
-    Returns: ``{"deleted": N, "empty_dirs": N, "freed": bytes,
+    返回：``{"deleted": N, "empty_dirs": N, "freed": bytes,
                "errors": [str, ...]}``.
     """
     tracked = load_tracked()
@@ -315,12 +311,12 @@ def quick() -> Dict[str, Any]:
 
         age = (now - datetime.fromisoformat(item["timestamp"])).days
 
-        # ---- stale-state migration (fixes #37721) ----
-        # Old tracked.json entries may carry a "cron-output" category for
-        # paths that are NOT under cron/output/ (e.g. cron/jobs.json).
-        # guess_category() was fixed in #34840, but existing entries are
-        # never re-validated.  Re-classify here so stale entries for cron
-        # control-plane state are not deleted.
+        # ---- 陈旧状态迁移（修复 #37721）----
+        # 旧的 tracked.json 条目可能对不在 cron/output/ 下的路径
+        # （例如 cron/jobs.json）带有 "cron-output" 类别。
+        # guess_category() 在 #34840 中已修复，但现有条目
+        # 从未重新验证。在此重新分类，使 cron 控制平面状态的
+        # 陈旧条目不被删除。
         if cat == "cron-output":
             re_cat = guess_category(p)
             if re_cat != "cron-output":
@@ -331,8 +327,8 @@ def quick() -> Dict[str, Any]:
                 # Drop the stale entry — it was misclassified.
                 continue
 
-        # Hard safety net: never delete cron control-plane state even if
-        # the category somehow slipped through re-validation above.
+        # 硬安全网：即使类别以某种方式通过了上面的重新验证，
+        # 也永远不删除 cron 控制平面状态。
         if _is_protected_cron_path(p):
             _log(f"SKIP protected cron path: {p}")
             continue
@@ -359,10 +355,10 @@ def quick() -> Dict[str, Any]:
         else:
             new_tracked.append(item)
 
-    # Remove empty dirs under HERMES_HOME, but never recurse into known
-    # durable state trees.  Some installs place the Hermes checkout, venv,
-    # and desktop build under HERMES_HOME; a full rglob over that tree can
-    # stall the gateway event loop for minutes.
+    # 删除 HERMES_HOME 下的空目录，但永不递归到已知的
+    # 持久状态树中。一些安装将 Hermes checkout、venv
+    # 和桌面构建放在 HERMES_HOME 下；对该树进行完整 rglob
+    # 可能使网关事件循环停滞数分钟。
     hermes_home = get_hermes_home()
     empty_removed = 0
     sweep_stack: List[Tuple[Path, bool]] = []
@@ -416,24 +412,24 @@ def quick() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Deep cleanup (interactive — not called from plugin hooks)
+# 深度清理（交互式 — 不从插件钩子调用）
 # ---------------------------------------------------------------------------
 
 def deep(
     confirm: Optional[callable] = None,
 ) -> Dict[str, Any]:
-    """Deep cleanup.
+    """深度清理。
 
-    Runs :func:`quick` first, then asks the *confirm* callable for each
-    risky item (research > 30d beyond 10 newest, chrome-profile > 14d,
-    any file > 500 MB).  *confirm(item)* must return True to delete.
+    先运行 :func:`quick`，然后对每个风险项（研究文件超过 30 天且不在最新 10 个中、
+    chrome-profile 超过 14 天、任何超过 500 MB 的文件）询问 *confirm* 可调用对象。
+    *confirm(item)* 必须返回 True 才能删除。
 
-    Returns: ``{"quick": {...}, "deep_deleted": N, "deep_freed": bytes}``.
+    返回：``{"quick": {...}, "deep_deleted": N, "deep_freed": bytes}``.
     """
     quick_result = quick()
 
     if confirm is None:
-        # No interactive confirmer — deep stops after the quick pass.
+        # 无交互确认器 — deep 在 quick 阶段后停止。
         return {"quick": quick_result, "deep_deleted": 0, "deep_freed": 0}
 
     tracked = load_tracked()
@@ -487,11 +483,11 @@ def deep(
 
 
 # ---------------------------------------------------------------------------
-# Status
+# 状态
 # ---------------------------------------------------------------------------
 
 def status() -> Dict[str, Any]:
-    """Return per-category breakdown and top 10 largest tracked files."""
+    """返回每类别细分和最大的 10 个已追踪文件。"""
     tracked = load_tracked()
     cats: Dict[str, Dict] = {}
     for item in tracked:
@@ -514,7 +510,7 @@ def status() -> Dict[str, Any]:
 
 
 def format_status(s: Dict[str, Any]) -> str:
-    """Human-readable status string (for slash command output)."""
+    """人类可读的状态字符串（用于斜杠命令输出）。"""
     lines = [f"{'Category':<20} {'Files':>6}  {'Size':>10}", "-" * 40]
     cats = s["categories"]
     for cat, d in sorted(cats.items(), key=lambda x: x[1]["size"], reverse=True):
@@ -534,7 +530,7 @@ def format_status(s: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Auto-categorisation from tool-call inspection
+# 从工具调用检查进行自动分类
 # ---------------------------------------------------------------------------
 
 _TEST_PATTERNS = ("test_", "tmp_")
@@ -542,14 +538,14 @@ _TEST_SUFFIXES = (".test.py", ".test.js", ".test.ts", ".test.md")
 
 
 def guess_category(path: Path) -> Optional[str]:
-    """Return a category label for *path*, or None if we shouldn't track it.
+    """返回 *path* 的类别标签，或如果不应追踪则返回 None。
 
-    Used by the ``post_tool_call`` hook to auto-track ephemeral files.
+    由 ``post_tool_call`` 钩子用于自动追踪临时文件。
     """
     if not is_safe_path(path):
         return None
 
-    # Skip the state dir itself, logs, memory files, sessions, config.
+    # 跳过状态目录本身、日志、记忆文件、会话、配置。
     hermes_home = get_hermes_home()
     try:
         rel = path.resolve().relative_to(hermes_home)
@@ -561,18 +557,18 @@ def guess_category(path: Path) -> Optional[str]:
         }:
             return None
         if top == "cron" or top == "cronjobs":
-            # Only files under the disposable ``output/`` subtree are
-            # cleanup candidates. Top-level cron control-plane state
-            # (e.g. ``jobs.json``, ``.tick.lock``) must never be
-            # auto-tracked — deleting it wipes the live scheduler
-            # registry. See issue #32164.
+            # 只有可丢弃 ``output/`` 子树下的文件才是
+            # 清理候选。顶级 cron 控制平面状态
+            # （例如 ``jobs.json``、``.tick.lock``）永远不能
+            # 自动追踪 — 删除它会清除实时调度器注册表。
+            # 参见 issue #32164。
             if len(rel.parts) >= 2 and rel.parts[1] == "output":
                 return "cron-output"
             return None
         if top == "cache":
             return "temp"
     except ValueError:
-        # Path isn't under HERMES_HOME (e.g. /tmp/hermes-*) — fall through.
+        # 路径不在 HERMES_HOME 下（例如 /tmp/hermes-*）— 继续执行。
         pass
 
     name = path.name

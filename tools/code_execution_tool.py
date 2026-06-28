@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 """
-Code Execution Tool -- Programmatic Tool Calling (PTC)
+代码执行工具 —— 编程式工具调用（Programmatic Tool Calling，PTC）
 
-Lets the LLM write a Python script that calls Hermes tools via RPC,
-collapsing multi-step tool chains into a single inference turn.
+让 LLM 编写一段 Python 脚本，通过 RPC 调用 Hermes 工具，
+从而把多步工具链压缩为一次推理回合。
 
-Architecture (two transports):
+架构（两种传输方式）：
 
-  **Local backend (UDS):**
-  1. Parent generates a `hermes_tools.py` stub module with UDS RPC functions
-  2. Parent opens a Unix domain socket and starts an RPC listener thread
-  3. Parent spawns a child process that runs the LLM's script
-  4. Tool calls travel over the UDS back to the parent for dispatch
+  **本地后端（UDS）：**
+  1. 父进程生成一个带有 UDS RPC 函数的 `hermes_tools.py` 桩模块
+  2. 父进程打开一个 Unix 域套接字并启动 RPC 监听线程
+  3. 父进程派生一个运行 LLM 脚本的子进程
+  4. 工具调用通过 UDS 传回父进程进行分发
 
-  **Remote backends (file-based RPC):**
-  1. Parent generates `hermes_tools.py` with file-based RPC stubs
-  2. Parent ships both files to the remote environment
-  3. Script runs inside the terminal backend (Docker/SSH/Modal/Daytona/etc.)
-  4. Tool calls are written as request files; a polling thread on the parent
-     reads them via env.execute(), dispatches, and writes response files
-  5. The script polls for response files and continues
+  **远程后端（基于文件的 RPC）：**
+  1. 父进程生成带有基于文件 RPC 桩的 `hermes_tools.py`
+  2. 父进程把两个文件传送到远程环境
+  3. 脚本在终端后端内运行（Docker/SSH/Modal/Daytona 等）
+  4. 工具调用被写为请求文件；父进程上的轮询线程通过 env.execute()
+     读取、分发并写回响应文件
+  5. 脚本轮询响应文件并继续执行
 
-In both cases, only the script's stdout is returned to the LLM; intermediate
-tool results never enter the context window.
+两种情况下，只有脚本的 stdout 会返回给 LLM；中间的工具结果
+绝不会进入上下文窗口。
 
-Platform: Linux / macOS only (Unix domain sockets for local). Disabled on Windows.
-Remote execution additionally requires Python 3 in the terminal backend.
+平台：仅限 Linux / macOS（本地使用 Unix 域套接字）。Windows 上禁用。
+远程执行还要求终端后端中存在 Python 3。
 """
 
 import base64
@@ -48,16 +48,16 @@ from typing import Any, Dict, List, Optional
 
 from tools.thread_context import propagate_context_to_thread
 
-# Availability gate.  On Windows we fall back to loopback TCP for the
-# sandbox RPC transport (AF_UNIX is unreliable on Windows Python) — see
-# ``_use_tcp_rpc`` in ``_execute_local`` below.  That makes execute_code
-# available on every platform Hermes itself runs on.
+# 可用性开关。在 Windows 上，沙箱 RPC 传输回退到环回 TCP
+# （AF_UNIX 在 Windows Python 上不可靠）——见下方 ``_execute_local``
+# 中的 ``_use_tcp_rpc``。这样 execute_code 在 Hermes 自身能运行的
+# 每个平台上都可用。
 logger = logging.getLogger(__name__)
 
 SANDBOX_AVAILABLE = True
 
-# The 7 tools allowed inside the sandbox. The intersection of this list
-# and the session's enabled tools determines which stubs are generated.
+# 沙箱内允许使用的 7 个工具。此列表与会话已启用的工具取交集，
+# 决定生成哪些桩函数。
 SANDBOX_ALLOWED_TOOLS = frozenset([
     "web_search",
     "web_extract",
@@ -68,32 +68,31 @@ SANDBOX_ALLOWED_TOOLS = frozenset([
     "terminal",
 ])
 
-# Resource limit defaults (overridable via config.yaml → code_execution.*)
-DEFAULT_TIMEOUT = 300        # 5 minutes
+# 资源限制默认值（可通过 config.yaml → code_execution.* 覆盖）
+DEFAULT_TIMEOUT = 300        # 5 分钟
 DEFAULT_MAX_TOOL_CALLS = 50
 MAX_STDOUT_BYTES = 50_000    # 50 KB
 MAX_STDERR_BYTES = 10_000    # 10 KB
 
-# Environment variable scrubbing rules (shared between the local + remote
-# backends).  Secret-substring block is applied first; anything left must
-# match a safe prefix, the operational HERMES_ allowlist, or (on Windows) an
-# OS-essential name.
+# 环境变量清洗规则（本地与远程后端共享）。先按密钥子串进行阻断；
+# 剩下的必须匹配安全前缀、运营性 HERMES_ 允许清单，或（在 Windows 上）
+# 操作系统必需的变量名。
 #
-# NB: the broad "HERMES_" prefix was deliberately removed (#27303) — it leaked
-# HERMES_*-named config that lacks a secret substring (e.g. HERMES_BASE_URL,
-# HERMES_KANBAN_DB, HERMES_*_WEBHOOK).  The child only needs the few
-# location/profile vars in _HERMES_CHILD_ALLOWED below; HERMES_RPC_SOCKET /
-# HERMES_RPC_DIR / TZ / HOME are injected explicitly after scrubbing.
+# 注意：宽泛的 "HERMES_" 前缀已被刻意移除（#27303）——它会泄露不含密钥
+# 子串的 HERMES_* 配置（例如 HERMES_BASE_URL、HERMES_KANBAN_DB、
+# HERMES_*_WEBHOOK）。子进程只需要下方 _HERMES_CHILD_ALLOWED 中那几个
+# 位置/配置文件变量；HERMES_RPC_SOCKET / HERMES_RPC_DIR / TZ / HOME 在
+# 清洗之后显式注入。
 _SAFE_ENV_PREFIXES = ("PATH", "HOME", "USER", "LANG", "LC_", "TERM",
                       "TMPDIR", "TMP", "TEMP", "SHELL", "LOGNAME",
                       "XDG_", "PYTHONPATH", "VIRTUAL_ENV", "CONDA")
 _SECRET_SUBSTRINGS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL",
                       "PASSWD", "AUTH", "DSN", "WEBHOOK")
 
-# Operational HERMES_* vars the child legitimately needs by exact name — these
-# are non-secret runtime-location flags (the same set hermes_cli treats as the
-# runtime location) that repo-root modules a sandbox script imports may read at
-# import time.  None match _SECRET_SUBSTRINGS.
+# 子进程按精确名称合法需要的运营性 HERMES_* 变量——这些是非密钥的
+# 运行时位置标志（与 hermes_cli 视为运行时位置的那一组相同），沙箱脚本
+# 所 import 的仓库根目录模块可能会在导入时读取它们。它们都不匹配
+# _SECRET_SUBSTRINGS。
 _HERMES_CHILD_ALLOWED = frozenset({
     "HERMES_HOME",
     "HERMES_PROFILE",
@@ -101,30 +100,29 @@ _HERMES_CHILD_ALLOWED = frozenset({
     "HERMES_ENV",
 })
 
-# Windows-only: a handful of variables are required by the OS/CRT itself.
-# Without them, even stdlib calls like ``socket.socket()`` fail with
-# WinError 10106 (Winsock can't locate mswsock.dll) and ``subprocess``
-# can't resolve cmd.exe.  These are well-known OS paths, not secrets, so
-# we allow them through by exact name.  The _SECRET_SUBSTRINGS block
-# still runs as a safety net (none of these names match those substrings).
+# 仅 Windows：少数变量是操作系统/CRT 自身所必需的。缺少它们时，连
+# ``socket.socket()`` 这样的标准库调用都会以 WinError 10106 失败
+# （Winsock 找不到 mswsock.dll），``subprocess`` 也无法解析 cmd.exe。
+# 这些都是众所周知的操作系统路径，不是密钥，因此我们按精确名称放行。
+# _SECRET_SUBSTRINGS 阻断仍作为安全网运行（这些名称都不匹配那些子串）。
 _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
-    "SYSTEMROOT",       # %SYSTEMROOT%\System32 — Winsock needs this
-    "SYSTEMDRIVE",      # C: (or wherever Windows lives)
-    "WINDIR",           # usually same as SYSTEMROOT
-    "COMSPEC",          # cmd.exe path — subprocess shell=True needs it
-    "PATHEXT",          # .COM;.EXE;.BAT;... — shell lookup
-    "OS",               # "Windows_NT" — some tools gate on this
+    "SYSTEMROOT",       # %SYSTEMROOT%\System32 —— Winsock 需要
+    "SYSTEMDRIVE",      # C:（或 Windows 安装所在的盘）
+    "WINDIR",           # 通常与 SYSTEMROOT 相同
+    "COMSPEC",          # cmd.exe 路径 —— subprocess shell=True 需要
+    "PATHEXT",          # .COM;.EXE;.BAT;... —— shell 查找
+    "OS",               # "Windows_NT" —— 一些工具据此判断
     "PROCESSOR_ARCHITECTURE",
     "NUMBER_OF_PROCESSORS",
     "PUBLIC",           # C:\Users\Public
-    "ALLUSERSPROFILE",  # C:\ProgramData — some stdlib paths use it
+    "ALLUSERSPROFILE",  # C:\ProgramData —— 一些标准库路径会用到
     "PROGRAMDATA",      # C:\ProgramData
     "PROGRAMFILES",
     "PROGRAMFILES(X86)",
     "PROGRAMW6432",
-    "APPDATA",          # %USERPROFILE%\AppData\Roaming — Python uses it
+    "APPDATA",          # %USERPROFILE%\AppData\Roaming —— Python 会用到
     "LOCALAPPDATA",     # %USERPROFILE%\AppData\Local
-    "USERPROFILE",      # C:\Users\<name> — Python's expanduser uses it
+    "USERPROFILE",      # C:\Users\<name> —— Python 的 expanduser 会用到
     "USERDOMAIN",
     "USERNAME",
     "HOMEDRIVE",        # C:
@@ -134,19 +132,17 @@ _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
 
 
 def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
-    """Produce the scrubbed child-process env for execute_code.
+    """为 execute_code 生成清洗后的子进程环境变量。
 
-    Rules (order matters):
-      1. Passthrough vars (skill- or config-declared) always pass.
-      2. Secret-substring names (KEY/TOKEN/DSN/WEBHOOK/etc.) are blocked.
-      3. Names matching a safe prefix pass.
-      4. Operational HERMES_* vars (_HERMES_CHILD_ALLOWED) pass by exact name.
-      5. On Windows, a small OS-essential allowlist passes by exact name
-         — without these the child can't even create a socket or spawn a
-         subprocess.
+    规则（顺序很重要）：
+      1. 透传变量（技能或配置声明的）一律放行。
+      2. 含密钥子串的名称（KEY/TOKEN/DSN/WEBHOOK 等）被阻断。
+      3. 匹配安全前缀的名称放行。
+      4. 运营性 HERMES_* 变量（_HERMES_CHILD_ALLOWED）按精确名称放行。
+      5. 在 Windows 上，一小份操作系统必需的允许清单按精确名称放行
+         ——缺少这些，子进程甚至无法创建套接字或派生子进程。
 
-    Extracted into a helper so tests can exercise the logic without
-    spawning a subprocess.
+    抽成一个辅助函数，便于测试在不派生子进程的情况下验证逻辑。
     """
     if is_passthrough is None:
         try:
@@ -158,13 +154,12 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
         is_windows = _IS_WINDOWS
 
     scrubbed = {}
-    # Non-secret HERMES_* vars dropped by the tightened allowlist (#27303). The
-    # broad "HERMES_" prefix used to pass these through; now only the
-    # operational set does. The drop is intentional (those vars can carry
-    # config like HERMES_KANBAN_DB / HERMES_BASE_URL), but a sandbox script
-    # that imports a repo module reading one at import time would otherwise see
-    # it silently unset. Surface the drop once so the behavior change is
-    # diagnosable and points at the env_passthrough opt-in escape hatch.
+    # 被收紧后的允许清单（#27303）丢弃的非密钥 HERMES_* 变量。过去宽泛的
+    # "HERMES_" 前缀会放行它们；现在只有运营性集合放行。这个丢弃是
+    # 有意的（这些变量可能携带 HERMES_KANBAN_DB / HERMES_BASE_URL 等
+    # 配置），但若沙箱脚本 import 的仓库模块在导入时读取其中某个变量，
+    # 原本会看到它被静默置空。这里把丢弃行为显式记录一次，以便诊断
+    # 行为变化，并指向 env_passthrough 这个显式 opt-in 的逃生通道。
     _dropped_hermes = []
     for k, v in source_env.items():
         if is_passthrough(k):
@@ -182,8 +177,8 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
             scrubbed[k] = v
             continue
         if k.startswith("HERMES_"):
-            # Non-secret (secrets were already dropped above) and not in any
-            # allowlist — a deliberately-dropped HERMES_* var.
+            # 非密钥（密钥已在上方被丢弃）且不在任何允许清单中
+            # —— 一个被刻意丢弃的 HERMES_* 变量。
             _dropped_hermes.append(k)
     if _dropped_hermes:
         logger.debug(
@@ -198,18 +193,18 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
 
 
 def check_sandbox_requirements() -> bool:
-    """Code execution sandbox requires a POSIX OS for Unix domain sockets."""
+    """代码执行沙箱需要 POSIX 操作系统以支持 Unix 域套接字。"""
     if not SANDBOX_AVAILABLE:
         return False
     return True
 
 
 # ---------------------------------------------------------------------------
-# hermes_tools.py code generator
+# hermes_tools.py 代码生成器
 # ---------------------------------------------------------------------------
 
-# Per-tool stub templates: (function_name, signature, docstring, args_dict_expr)
-# The args_dict_expr builds the JSON payload sent over the RPC socket.
+# 各工具的桩模板：(函数名, 签名, docstring, 参数字典表达式)
+# args_dict_expr 构造通过 RPC 套接字发送的 JSON 负载。
 _TOOL_STUBS = {
     "web_search": (
         "web_search",
@@ -259,14 +254,15 @@ _TOOL_STUBS = {
 def generate_hermes_tools_module(enabled_tools: List[str],
                                  transport: str = "uds") -> str:
     """
-    Build the source code for the hermes_tools.py stub module.
+    构建 hermes_tools.py 桩模块的源代码。
 
-    Only tools in both SANDBOX_ALLOWED_TOOLS and enabled_tools get stubs.
+    只有同时存在于 SANDBOX_ALLOWED_TOOLS 和 enabled_tools 中的工具
+    才会生成桩函数。
 
-    Args:
-        enabled_tools: Tool names enabled in the current session.
-        transport: ``"uds"`` for Unix domain socket (local backend) or
-                   ``"file"`` for file-based RPC (remote backends).
+    参数：
+        enabled_tools: 当前会话中启用的工具名列表。
+        transport: ``"uds"`` 表示 Unix 域套接字（本地后端），
+                   ``"file"`` 表示基于文件的 RPC（远程后端）。
     """
     tools_to_generate = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
 
@@ -291,32 +287,32 @@ def generate_hermes_tools_module(enabled_tools: List[str],
     return header + "\n".join(stub_functions)
 
 
-# ---- Shared helpers section (embedded in both transport headers) ----------
+# ---- 共享辅助函数段（嵌入到两种传输头中）----------
 
 _COMMON_HELPERS = '''\
 
 # ---------------------------------------------------------------------------
-# Convenience helpers (avoid common scripting pitfalls)
+# 便捷辅助函数（规避常见脚本陷阱）
 # ---------------------------------------------------------------------------
 
 def json_parse(text: str):
-    """Parse JSON tolerant of control characters (strict=False).
-    Use this instead of json.loads() when parsing output from terminal()
-    or web_extract() that may contain raw tabs/newlines in strings."""
+    """解析 JSON，容忍控制字符（strict=False）。
+    当解析 terminal() 或 web_extract() 的输出（字符串中可能含有原始制表符/换行）时，
+    请用本函数代替 json.loads()。"""
     return json.loads(text, strict=False)
 
 
 def shell_quote(s: str) -> str:
-    """Shell-escape a string for safe interpolation into commands.
-    Use this when inserting dynamic content into terminal() commands:
+    """对字符串做 shell 转义，以便安全地插入命令。
+    向 terminal() 命令中插入动态内容时使用：
         terminal(f"echo {shell_quote(user_input)}")
     """
     return shlex.quote(s)
 
 
 def retry(fn, max_attempts=3, delay=2):
-    """Retry a function up to max_attempts times with exponential backoff.
-    Use for transient failures (network errors, API rate limits):
+    """最多重试 max_attempts 次，采用指数退避。
+    用于瞬时失败（网络错误、API 速率限制）：
         result = retry(lambda: terminal("gh issue list ..."))
     """
     last_err = None
@@ -331,35 +327,34 @@ def retry(fn, max_attempts=3, delay=2):
 
 '''
 
-# ---- UDS transport (local backend) ---------------------------------------
+# ---- UDS 传输（本地后端）------------------------------------------------
 
 _UDS_TRANSPORT_HEADER = '''\
 """Auto-generated Hermes tools RPC stubs."""
 import json, os, socket, shlex, threading, time
 
 _sock = None
-# The RPC server handles a single client connection serially and has no
-# request-id in the protocol, so concurrent _call() invocations from multiple
-# threads (e.g. ThreadPoolExecutor) would race on the shared socket and get
-# each other's responses. Serialize the entire send+recv round-trip.
+# RPC 服务端串行处理单个客户端连接，且协议中没有 request-id，
+# 因此来自多个线程（例如 ThreadPoolExecutor）的并发 _call() 调用会在共享 socket 上
+# 产生竞争，互相拿到对方的响应。需要把整个「发送+接收」往返过程串行化。
 _call_lock = threading.Lock()
 ''' + _COMMON_HELPERS + '''\
 
 def _connect():
-    """Connect to the parent's RPC server via the transport it picked.
+    """通过父进程选定的传输方式连接到其 RPC 服务端。
 
-    HERMES_RPC_SOCKET can be either:
-      - a filesystem path (POSIX Unix domain socket — the default on
-        Linux and macOS)
-      - a string of the form ``tcp://127.0.0.1:<port>`` (Windows, where
-        AF_UNIX is unreliable — the parent falls back to loopback TCP)
+    HERMES_RPC_SOCKET 可以是：
+      - 一个文件系统路径（POSIX Unix domain socket —— 在
+        Linux 和 macOS 上为默认）
+      - 形如 ``tcp://127.0.0.1:<port>`` 的字符串（Windows 上
+        AF_UNIX 不可靠 —— 父进程回退到环回 TCP）
     """
     global _sock
     if _sock is None:
         endpoint = os.environ["HERMES_RPC_SOCKET"]
         if endpoint.startswith("tcp://"):
-            # tcp://host:port  (host is always 127.0.0.1 in practice — we
-            # only bind loopback server-side)
+            # tcp://host:port  （实践中 host 恒为 127.0.0.1 —— 我们
+            # 服务端只绑定环回地址）
             _host_port = endpoint[len("tcp://"):]
             _host, _, _port = _host_port.rpartition(":")
             _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -371,7 +366,7 @@ def _connect():
     return _sock
 
 def _call(tool_name, args):
-    """Send a tool call to the parent process and return the parsed result."""
+    """向父进程发送一次工具调用，并返回解析后的结果。"""
     request = json.dumps({"tool": tool_name, "args": args}) + "\\n"
     with _call_lock:
         conn = _connect()
@@ -395,7 +390,7 @@ def _call(tool_name, args):
 
 '''
 
-# ---- File-based transport (remote backends) -------------------------------
+# ---- 基于文件的传输（远程后端）--------------------------------------------
 
 _FILE_TRANSPORT_HEADER = '''\
 """Auto-generated Hermes tools RPC stubs (file-based transport)."""
@@ -403,14 +398,13 @@ import json, os, shlex, tempfile, threading, time
 
 _RPC_DIR = os.environ.get("HERMES_RPC_DIR") or os.path.join(tempfile.gettempdir(), "hermes_rpc")
 _seq = 0
-# `_seq += 1` is not atomic (read-modify-write), so concurrent _call()
-# invocations from multiple threads could allocate the same sequence number
-# and clobber each other's request files. Guard seq allocation with a lock.
+# `_seq += 1` 不是原子操作（读-改-写），因此来自多个线程的并发 _call()
+# 调用可能分配到相同的序列号，并互相覆盖对方的请求文件。用锁保护序列号分配。
 _seq_lock = threading.Lock()
 ''' + _COMMON_HELPERS + '''\
 
 def _call(tool_name, args):
-    """Send a tool call request via file-based RPC and wait for response."""
+    """通过基于文件的 RPC 发送一次工具调用请求并等待响应。"""
     global _seq
     with _seq_lock:
         _seq += 1
@@ -419,16 +413,16 @@ def _call(tool_name, args):
     req_file = os.path.join(_RPC_DIR, f"req_{seq_str}")
     res_file = os.path.join(_RPC_DIR, f"res_{seq_str}")
 
-    # Write request atomically (write to .tmp, then rename).
-    # encoding="utf-8" is critical: on Windows-hosted remote backends
-    # (or any non-UTF-8 locale) the default open() mode would mangle
-    # non-ASCII chars in tool args when encoding them as JSON.
+    # 原子地写入请求（先写到 .tmp，再 rename）。
+    # encoding="utf-8" 至关重要：在 Windows 托管的远程后端
+    # （或任何非 UTF-8 的 locale）上，默认的 open() 模式会在把工具参数
+    # 编码为 JSON 时破坏其中的非 ASCII 字符。
     tmp = req_file + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"tool": tool_name, "args": args, "seq": seq}, f)
     os.rename(tmp, req_file)
 
-    # Wait for response with adaptive polling
+    # 以自适应轮询等待响应
     deadline = time.monotonic() + 300  # 5-minute timeout per tool call
     poll_interval = 0.05  # Start at 50ms
     while not os.path.exists(res_file):
@@ -440,7 +434,7 @@ def _call(tool_name, args):
     with open(res_file, encoding="utf-8") as f:
         raw = f.read()
 
-    # Clean up response file
+    # 清理响应文件
     try:
         os.unlink(res_file)
     except OSError:
@@ -458,10 +452,10 @@ def _call(tool_name, args):
 
 
 # ---------------------------------------------------------------------------
-# RPC server (runs in a thread inside the parent process)
+# RPC 服务器（在父进程内的一个线程中运行）
 # ---------------------------------------------------------------------------
 
-# Terminal parameters that must not be used from ephemeral sandbox scripts
+# 临时沙箱脚本不得使用的终端参数
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
 
@@ -469,14 +463,14 @@ def _rpc_server_loop(
     server_sock: socket.socket,
     task_id: str,
     tool_call_log: list,
-    tool_call_counter: list,   # mutable [int] so the thread can increment
+    tool_call_counter: list,   # 可变的 [int]，便于线程自增
     max_tool_calls: int,
     allowed_tools: frozenset,
     stop_event: threading.Event,
 ):
     """
-    Accept one client connection and dispatch tool-call requests until
-    the client disconnects or the call limit is reached.
+    接受一个客户端连接并分发工具调用请求，直到客户端断开连接
+    或达到调用次数上限。
     """
     from model_tools import handle_function_call
 
@@ -503,7 +497,7 @@ def _rpc_server_loop(
                 break
             buf += chunk
 
-            # Process all complete newline-delimited messages in the buffer
+            # 处理缓冲区中所有完整的换行符分隔消息
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 line = line.strip()
@@ -521,7 +515,7 @@ def _rpc_server_loop(
                 tool_name = request.get("tool", "")
                 tool_args = request.get("args", {})
 
-                # Enforce the allow-list
+                # 校验允许清单
                 if tool_name not in allowed_tools:
                     available = ", ".join(sorted(allowed_tools))
                     resp = json.dumps({
@@ -533,7 +527,7 @@ def _rpc_server_loop(
                     conn.sendall((resp + "\n").encode())
                     continue
 
-                # Enforce tool call limit
+                # 校验工具调用次数上限
                 if tool_call_counter[0] >= max_tool_calls:
                     resp = json.dumps({
                         "error": (
@@ -544,14 +538,14 @@ def _rpc_server_loop(
                     conn.sendall((resp + "\n").encode())
                     continue
 
-                # Strip forbidden terminal parameters
+                # 剥离被禁用的终端参数
                 if tool_name == "terminal" and isinstance(tool_args, dict):
                     for param in _TERMINAL_BLOCKED_PARAMS:
                         tool_args.pop(param, None)
 
-                # Dispatch through the standard tool handler.
-                # Suppress stdout/stderr from internal tool handlers so
-                # their status prints don't leak into the CLI spinner.
+                # 通过标准工具处理器进行分发。
+                # 抑制内部工具处理器的 stdout/stderr，避免它们的状态
+                # 打印泄露到 CLI 的旋转动画中。
                 try:
                     _real_stdout, _real_stderr = sys.stdout, sys.stderr
                     devnull = open(os.devnull, "w", encoding="utf-8")
@@ -571,7 +565,7 @@ def _rpc_server_loop(
                 tool_call_counter[0] += 1
                 call_duration = time.monotonic() - call_start
 
-                # Log for observability
+                # 记录以便可观测性
                 args_preview = str(tool_args)[:80]
                 tool_call_log.append({
                     "tool": tool_name,
@@ -594,15 +588,14 @@ def _rpc_server_loop(
 
 
 # ---------------------------------------------------------------------------
-# Remote execution support (file-based RPC via terminal backend)
+# 远程执行支持（通过终端后端进行基于文件的 RPC）
 # ---------------------------------------------------------------------------
 
 def _get_or_create_env(task_id: str):
-    """Get or create the terminal environment for *task_id*.
+    """获取或创建 *task_id* 对应的终端环境。
 
-    Reuses the same environment (container/sandbox/SSH session) that the
-    terminal and file tools use, creating one if it doesn't exist yet.
-    Returns ``(env, env_type)`` tuple.
+    复用终端工具和文件工具所使用的同一个环境（容器/沙箱/SSH 会话），
+    若尚不存在则创建一个。返回 ``(env, env_type)`` 元组。
     """
     from tools.terminal_tool import (
         _active_environments, _env_lock, _create_environment,
@@ -613,13 +606,13 @@ def _get_or_create_env(task_id: str):
 
     effective_task_id = _resolve_container_task_id(task_id)
 
-    # Fast path: environment already exists
+    # 快速路径：环境已存在
     with _env_lock:
         if effective_task_id in _active_environments:
             _last_activity[effective_task_id] = time.time()
             return _active_environments[effective_task_id], _get_env_config()["env_type"]
 
-    # Slow path: create environment (same pattern as file_tools._get_file_ops)
+    # 慢速路径：创建环境（与 file_tools._get_file_ops 相同的模式）
     with _creation_locks_lock:
         if effective_task_id not in _creation_locks:
             _creation_locks[effective_task_id] = threading.Lock()
@@ -700,12 +693,11 @@ def _get_or_create_env(task_id: str):
 
 
 def _ship_file_to_remote(env, remote_path: str, content: str) -> None:
-    """Write *content* to *remote_path* on the remote environment.
+    """把 *content* 写到远程环境上的 *remote_path*。
 
-    Uses ``echo … | base64 -d`` rather than stdin piping because some
-    backends (Modal) don't reliably deliver stdin_data to chained
-    commands.  Base64 output is shell-safe ([A-Za-z0-9+/=]) so single
-    quotes are fine.
+    使用 ``echo … | base64 -d`` 而非 stdin 管道，因为某些后端（Modal）
+    不能可靠地把 stdin_data 传给链式命令。Base64 输出是 shell 安全的
+    （仅含 [A-Za-z0-9+/=]），所以用单引号即可。
     """
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     quoted_remote_path = shlex.quote(remote_path)
@@ -717,7 +709,7 @@ def _ship_file_to_remote(env, remote_path: str, content: str) -> None:
 
 
 def _env_temp_dir(env: Any) -> str:
-    """Return a writable temp dir for env-backed execute_code sandboxes."""
+    """为基于环境的 execute_code 沙箱返回一个可写的临时目录。"""
     get_temp_dir = getattr(env, "get_temp_dir", None)
     if callable(get_temp_dir):
         try:
@@ -742,20 +734,19 @@ def _rpc_poll_loop(
     allowed_tools: frozenset,
     stop_event: threading.Event,
 ):
-    """Poll the remote filesystem for tool call requests and dispatch them.
+    """轮询远程文件系统，获取工具调用请求并分发它们。
 
-    Runs in a background thread.  Each ``env.execute()`` spawns an
-    independent process, so these calls run safely concurrent with the
-    script-execution thread.
+    在后台线程中运行。每次 ``env.execute()`` 都会派生一个独立进程，
+    因此这些调用可以安全地与脚本执行线程并发运行。
     """
     from model_tools import handle_function_call
 
-    poll_interval = 0.1  # 100 ms
+    poll_interval = 0.1  # 100 毫秒
 
     quoted_rpc_dir = shlex.quote(rpc_dir)
     while not stop_event.is_set():
         try:
-            # List pending request files (skip .tmp partials)
+            # 列出待处理的请求文件（跳过 .tmp 的半成品）
             ls_result = env.execute(
                 f"ls -1 {quoted_rpc_dir}/req_* 2>/dev/null || true",
                 cwd="/",
@@ -780,7 +771,7 @@ def _rpc_poll_loop(
                 call_start = time.monotonic()
 
                 quoted_req_file = shlex.quote(req_file)
-                # Read request
+                # 读取请求
                 read_result = env.execute(
                     f"cat {quoted_req_file}",
                     cwd="/",
@@ -790,7 +781,7 @@ def _rpc_poll_loop(
                     request = json.loads(read_result.get("output", ""))
                 except (json.JSONDecodeError, ValueError):
                     logger.debug("Malformed RPC request in %s", req_file)
-                    # Remove bad request to avoid infinite retry
+                    # 删除坏请求以避免无限重试
                     env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
                     continue
 
@@ -801,7 +792,7 @@ def _rpc_poll_loop(
                 res_file = f"{rpc_dir}/res_{seq_str}"
                 quoted_res_file = shlex.quote(res_file)
 
-                # Enforce allow-list
+                # 校验允许清单
                 if tool_name not in allowed_tools:
                     available = ", ".join(sorted(allowed_tools))
                     tool_result = json.dumps({
@@ -810,7 +801,7 @@ def _rpc_poll_loop(
                             f"Available: {available}"
                         )
                     })
-                # Enforce tool call limit
+                # 校验工具调用次数上限
                 elif tool_call_counter[0] >= max_tool_calls:
                     tool_result = json.dumps({
                         "error": (
@@ -819,12 +810,12 @@ def _rpc_poll_loop(
                         )
                     })
                 else:
-                    # Strip forbidden terminal parameters
+                    # 剥离被禁用的终端参数
                     if tool_name == "terminal" and isinstance(tool_args, dict):
                         for param in _TERMINAL_BLOCKED_PARAMS:
                             tool_args.pop(param, None)
 
-                    # Dispatch through the standard tool handler
+                    # 通过标准工具处理器进行分发
                     try:
                         _real_stdout, _real_stderr = sys.stdout, sys.stderr
                         devnull = open(os.devnull, "w", encoding="utf-8")
@@ -850,9 +841,9 @@ def _rpc_poll_loop(
                         "duration": round(call_duration, 2),
                     })
 
-                # Write response atomically (tmp + rename).
-                # Use echo piping (not stdin_data) because Modal doesn't
-                # reliably deliver stdin to chained commands.
+                # 原子化地写响应（先 tmp 再 rename）。
+                # 使用 echo 管道（而非 stdin_data），因为 Modal 不能可靠地
+                # 把 stdin 传给链式命令。
                 encoded_result = base64.b64encode(
                     tool_result.encode("utf-8")
                 ).decode("ascii")
@@ -863,7 +854,7 @@ def _rpc_poll_loop(
                     timeout=60,
                 )
 
-                # Remove the request file
+                # 删除请求文件
                 env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
 
         except Exception as e:
@@ -879,11 +870,10 @@ def _execute_remote(
     task_id: Optional[str],
     enabled_tools: Optional[List[str]],
 ) -> str:
-    """Run a script on the remote terminal backend via file-based RPC.
+    """通过基于文件的 RPC 在远程终端后端上运行脚本。
 
-    The script and the generated hermes_tools.py module are shipped to
-    the remote environment, and tool calls are proxied through a polling
-    thread that communicates via request/response files.
+    脚本和生成的 hermes_tools.py 模块被传送到远程环境，工具调用则由
+    一个轮询线程代理，该线程通过请求/响应文件进行通信。
     """
 
     _cfg = _load_config()
@@ -911,7 +901,7 @@ def _execute_remote(
     rpc_thread = None
 
     try:
-        # Verify Python is available on the remote
+        # 校验远程上是否有 Python 可用
         py_check = env.execute(
             "command -v python3 >/dev/null 2>&1 && echo OK",
             cwd="/", timeout=15,
@@ -928,21 +918,21 @@ def _execute_remote(
                 "duration_seconds": 0,
             })
 
-        # Create sandbox directory on remote
+        # 在远程上创建沙箱目录
         env.execute(
             f"mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10,
         )
 
-        # Generate and ship files
+        # 生成并传送文件
         tools_src = generate_hermes_tools_module(
             list(sandbox_tools), transport="file",
         )
         _ship_file_to_remote(env, f"{sandbox_dir}/hermes_tools.py", tools_src)
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
 
-        # Wrapped so the thread inherits the turn's approval context + callbacks
-        # (see tools.thread_context) — else sandbox RPC tool calls lose approval
-        # routing (#33057).
+        # 包装一层，使线程继承当前回合的审批上下文 + 回调
+        # （见 tools.thread_context）——否则沙箱 RPC 工具调用会丢失审批
+        # 路由（#33057）。
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_poll_loop),
             args=(
@@ -954,7 +944,7 @@ def _execute_remote(
         )
         rpc_thread.start()
 
-        # Build environment variable prefix for the script
+        # 为脚本构造环境变量前缀
         env_prefix = (
             f"HERMES_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} "
             f"PYTHONDONTWRITEBYTECODE=1"
@@ -963,7 +953,7 @@ def _execute_remote(
         if tz:
             env_prefix += f" TZ={shlex.quote(tz)}"
 
-        # Execute the script on the remote backend
+        # 在远程后端上执行脚本
         logger.info("Executing code on %s backend (task %s)...",
                      env_type, effective_task_id[:8])
         script_result = env.execute(
@@ -975,7 +965,7 @@ def _execute_remote(
         exit_code = script_result.get("returncode", -1)
         status = "success"
 
-        # Check for timeout/interrupt from the backend
+        # 检查后端返回的超时/中断
         if exit_code == 124:
             status = "timeout"
         elif exit_code == 130:
@@ -996,12 +986,12 @@ def _execute_remote(
         }, ensure_ascii=False)
 
     finally:
-        # Stop the polling thread
+        # 停止轮询线程
         stop_event.set()
         if rpc_thread is not None:
             rpc_thread.join(timeout=5)
 
-        # Clean up remote sandbox dir
+        # 清理远程沙箱目录
         try:
             env.execute(
                 f"rm -rf {quoted_sandbox_dir}", cwd="/", timeout=15,
@@ -1011,9 +1001,9 @@ def _execute_remote(
 
     duration = round(time.monotonic() - exec_start, 2)
 
-    # --- Post-process output (same as local path) ---
+    # --- 后处理输出（与本地路径相同）---
 
-    # Truncate stdout to cap
+    # 按上限截断 stdout
     if len(stdout_text) > MAX_STDOUT_BYTES:
         head_bytes = int(MAX_STDOUT_BYTES * 0.4)
         tail_bytes = MAX_STDOUT_BYTES - head_bytes
@@ -1027,15 +1017,15 @@ def _execute_remote(
             + tail
         )
 
-    # Strip ANSI escape sequences
+    # 去除 ANSI 转义序列
     from tools.ansi_strip import strip_ansi
     stdout_text = strip_ansi(stdout_text)
 
-    # Redact secrets
+    # 脱敏密钥
     from agent.redact import redact_sensitive_text
     stdout_text = redact_sensitive_text(stdout_text)
 
-    # Build response
+    # 构造响应
     result: Dict[str, Any] = {
         "status": status,
         "output": stdout_text,
@@ -1046,8 +1036,8 @@ def _execute_remote(
     if status == "timeout":
         timeout_msg = f"Script timed out after {timeout}s and was killed."
         result["error"] = timeout_msg
-        # Include timeout message in output so the LLM always surfaces it
-        # to the user (see local path comment — same reasoning, #10807).
+        # 把超时消息放进输出，以便 LLM 总是能把它呈现给用户
+        # （见本地路径的注释——同样的理由，#10807）。
         if stdout_text:
             result["output"] = stdout_text + f"\n\n⏰ {timeout_msg}"
         else:
@@ -1068,7 +1058,7 @@ def _execute_remote(
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# 主入口
 # ---------------------------------------------------------------------------
 
 def execute_code(
@@ -1077,20 +1067,18 @@ def execute_code(
     enabled_tools: Optional[List[str]] = None,
 ) -> str:
     """
-    Run a Python script in a sandboxed child process with RPC access
-    to a subset of Hermes tools.
+    在沙箱子进程中运行 Python 脚本，并通过 RPC 访问一部分 Hermes 工具。
 
-    Dispatches to the local (UDS) or remote (file-based RPC) path
-    depending on the configured terminal backend.
+    根据配置的终端后端，分发到本地（UDS）或远程（基于文件的 RPC）路径。
 
-    Args:
-        code:          Python source code to execute.
-        task_id:       Session task ID for tool isolation (terminal env, etc.).
-        enabled_tools: Tool names enabled in the current session. The sandbox
-                       gets the intersection with SANDBOX_ALLOWED_TOOLS.
+    参数：
+        code:          要执行的 Python 源代码。
+        task_id:       用于工具隔离的会话任务 ID（终端环境等）。
+        enabled_tools: 当前会话中启用的工具名列表。沙箱获得其与
+                       SANDBOX_ALLOWED_TOOLS 的交集。
 
-    Returns:
-        JSON string with execution results.
+    返回：
+        包含执行结果的 JSON 字符串。
     """
     if not SANDBOX_AVAILABLE:
         return json.dumps({
@@ -1101,14 +1089,14 @@ def execute_code(
     if not code or not code.strip():
         return tool_error("No code provided.")
 
-    # Dispatch: remote backends use file-based RPC, local uses UDS
+    # 分发：远程后端使用基于文件的 RPC，本地使用 UDS
     from tools.terminal_tool import _get_env_config
     env_type = _get_env_config()["env_type"]
 
-    # execute_code runs arbitrary Python (subprocess/os.system/...) that never
-    # passes through terminal()/DANGEROUS_PATTERNS, so guard the whole script
-    # here before either dispatch path spawns it. Runs synchronously in the
-    # caller (tool-executor) thread, which holds the session context (#30882).
+    # execute_code 会运行任意 Python 代码（subprocess/os.system/...），这些
+    # 代码从不经过 terminal()/DANGEROUS_PATTERNS，因此在任一分发路径派生它
+    # 之前，先在这里对整个脚本做守卫。它在调用方（工具执行器）线程中同步
+    # 运行，该线程持有会话上下文（#30882）。
     from tools.approval import check_execute_code_guard
     _guard = check_execute_code_guard(code, env_type)
     if not _guard.get("approved", False):
@@ -1122,41 +1110,40 @@ def execute_code(
     if env_type != "local":
         return _execute_remote(code, task_id, enabled_tools)
 
-    # --- Local execution path (UDS) --- below this line is unchanged ---
+    # --- 本地执行路径（UDS）--- 此行以下保持不变 ---
 
-    # Import per-thread interrupt check (cooperative cancellation)
+    # 导入每线程中断检查（协作式取消）
     from tools.interrupt import is_interrupted as _is_interrupted
 
-    # Resolve config
+    # 解析配置
     _cfg = _load_config()
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
-    # Determine which tools the sandbox can call
+    # 确定沙箱可以调用哪些工具
     session_tools = set(enabled_tools) if enabled_tools else set()
     sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
 
     if not sandbox_tools:
         sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
-    # --- Set up temp directory with hermes_tools.py and script.py ---
+    # --- 搭建含 hermes_tools.py 和 script.py 的临时目录 ---
     tmpdir = tempfile.mkdtemp(prefix="hermes_sandbox_")
-    # Use /tmp on macOS to avoid the long /var/folders/... path that pushes
-    # Unix domain socket paths past the 104-byte macOS AF_UNIX limit.
-    # On Linux, tempfile.gettempdir() already returns /tmp.
+    # macOS 上使用 /tmp，以避免过长的 /var/folders/... 路径把
+    # Unix 域套接字路径顶到 macOS AF_UNIX 的 104 字节上限之外。
+    # Linux 上 tempfile.gettempdir() 已经返回 /tmp。
     #
-    # Windows: Python 3.9+ added partial AF_UNIX support but the file-backed
-    # variant is flaky across Windows builds (requires Windows 10 1803+,
-    # still fails under some configurations, and the socket file can't live
-    # on the same temp drive as the script).  Fall back to loopback TCP —
-    # same ephemeral port, same 1-connection listen queue, same serialized
-    # request/response framing.  The generated client reads the transport
-    # selector from HERMES_RPC_SOCKET (path vs. ``tcp://host:port``).
+    # Windows：Python 3.9+ 增加了对 AF_UNIX 的部分支持，但基于文件的
+    # 变体在不同 Windows 构建间不稳定（要求 Windows 10 1803+，在某些
+    # 配置下仍会失败，且套接字文件不能与脚本位于同一个临时驱动器上）。
+    # 回退到环回 TCP——同样的临时端口、同样的 1 连接监听队列、同样的
+    # 串行化请求/响应帧格式。生成的客户端从 HERMES_RPC_SOCKET 读取
+    # 传输选择器（路径 vs. ``tcp://host:port``）。
     _sock_tmpdir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
     _use_tcp_rpc = _IS_WINDOWS
     if _use_tcp_rpc:
-        sock_path = None  # not used on Windows; TCP endpoint stored below
-        rpc_endpoint = None  # set after bind()
+        sock_path = None  # Windows 上不使用；TCP 端点存放在下方
+        rpc_endpoint = None  # 在 bind() 之后设置
     else:
         sock_path = os.path.join(_sock_tmpdir, f"hermes_rpc_{uuid.uuid4().hex}.sock")
         rpc_endpoint = sock_path
@@ -1168,33 +1155,31 @@ def execute_code(
     stop_event = threading.Event()
 
     try:
-        # Write the auto-generated hermes_tools module.
-        # encoding="utf-8" is required on Windows — the stub and user code
-        # both contain non-ASCII characters (em-dashes in docstrings, plus
-        # whatever the user script carries).  Python's default open() uses
-        # the system locale on Windows (cp1252 typically), which corrupts
-        # those bytes; the child then fails to import with a SyntaxError
-        # ("'utf-8' codec can't decode byte 0x97 in position ...") because
-        # Python source files are decoded as UTF-8 by default (PEP 3120).
-        # sandbox_tools is already the correct set (intersection with session
-        # tools, or SANDBOX_ALLOWED_TOOLS as fallback — see lines above).
+        # 写入自动生成的 hermes_tools 模块。
+        # Windows 上要求 encoding="utf-8"——桩代码和用户代码都包含
+        # 非 ASCII 字符（docstring 中的破折号，以及用户脚本所带的任何字符）。
+        # Python 默认的 open() 在 Windows 上使用系统区域设置（通常是
+        # cp1252），这会破坏这些字节；子进程随后会以 SyntaxError 导入失败
+        # （"'utf-8' codec can't decode byte 0x97 in position ..."），
+        # 因为 Python 源文件默认按 UTF-8 解码（PEP 3120）。
+        # sandbox_tools 已经是正确的集合（与会话工具取交集，或以
+        # SANDBOX_ALLOWED_TOOLS 作为回退——见上方代码）。
         tools_src = generate_hermes_tools_module(list(sandbox_tools))
         with open(os.path.join(tmpdir, "hermes_tools.py"), "w", encoding="utf-8") as f:
             f.write(tools_src)
 
-        # Write the user's script
+        # 写入用户脚本
         with open(os.path.join(tmpdir, "script.py"), "w", encoding="utf-8") as f:
             f.write(code)
 
-        # --- Start RPC server ---
-        # Two transports:
-        #   POSIX: AF_UNIX stream socket on sock_path, chmod 0600 for
-        #   owner-only access.  Filesystem permissions gate the socket.
-        #   Windows: AF_INET stream socket on 127.0.0.1 with an ephemeral
-        #   port.  No filesystem permission story, but loopback-only bind
-        #   means only the current user's processes (not remote) can
-        #   connect.  HERMES_RPC_SOCKET is set to ``tcp://127.0.0.1:<port>``
-        #   which the generated client parses to pick AF_INET.
+        # --- 启动 RPC 服务器 ---
+        # 两种传输方式：
+        #   POSIX：sock_path 上的 AF_UNIX 流套接字，chmod 0600 以实现
+        #   仅属主访问。文件系统权限控制着该套接字。
+        #   Windows：127.0.0.1 上带临时端口的 AF_INET 流套接字。
+        #   没有文件系统权限机制，但仅绑定环回地址意味着只有当前
+        #   用户的进程（而非远程）可以连接。HERMES_RPC_SOCKET 被设为
+        #   ``tcp://127.0.0.1:<port>``，由生成的客户端解析以选择 AF_INET。
         if _use_tcp_rpc:
             server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_sock.bind(("127.0.0.1", 0))  # ephemeral port
@@ -1206,9 +1191,9 @@ def execute_code(
             os.chmod(sock_path, 0o600)
         server_sock.listen(1)
 
-        # Wrapped so the thread inherits the turn's approval context + callbacks
-        # (see tools.thread_context) — else gateway sandbox tool calls silently
-        # auto-approve dangerous commands (#33057, #30882).
+        # 包装一层，使线程继承当前回合的审批上下文 + 回调
+        # （见 tools.thread_context）——否则网关沙箱的工具调用会静默地
+        # 自动批准危险命令（#33057、#30882）。
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_server_loop),
             args=(
@@ -1219,52 +1204,48 @@ def execute_code(
         )
         rpc_thread.start()
 
-        # --- Spawn child process ---
-        # Build a minimal environment for the child. We intentionally exclude
-        # API keys and tokens to prevent credential exfiltration from LLM-
-        # generated scripts. The child accesses tools via RPC, not direct API.
-        # Exception: env vars declared by loaded skills (via env_passthrough
-        # registry) or explicitly allowed by the user in config.yaml
-        # (terminal.env_passthrough) are passed through.  On Windows, a small
-        # OS-essential allowlist (SYSTEMROOT, WINDIR, COMSPEC, ...) is also
-        # passed through — without those, the child can't create a socket
-        # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
+        # --- 派生子进程 ---
+        # 为子进程构造一个最小化的环境。我们刻意排除 API 密钥和令牌，
+        # 以防 LLM 生成的脚本泄露凭据。子进程通过 RPC 访问工具，而非直连 API。
+        # 例外：由已加载技能声明的环境变量（通过 env_passthrough 注册表）
+        # 或用户在 config.yaml（terminal.env_passthrough）中显式允许的变量
+        # 会透传。在 Windows 上，一小份操作系统必需的允许清单
+        # （SYSTEMROOT、WINDIR、COMSPEC 等）也会透传——缺少这些，子进程
+        # 无法创建套接字或派生子进程。规则见 ``_scrub_child_env``。
         child_env = _scrub_child_env(os.environ)
         child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
         child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-        # Force UTF-8 for the child's stdio and default file encoding.
+        # 强制子进程的 stdio 和默认文件编码为 UTF-8。
         #
-        # Without this, on Windows sys.stdout is bound to the console code
-        # page (cp1252 on US-locale installs), and any script that does
-        # ``print("café")`` or ``print("→")`` crashes with:
+        # 否则在 Windows 上，sys.stdout 会绑定到控制台代码页
+        # （美式区域安装下为 cp1252），任何执行如下脚本的代码都会崩溃：
+        # ``print("café")`` 或 ``print("→")`` 都会崩溃，报错：
         #
         #   UnicodeEncodeError: 'charmap' codec can't encode character
         #   '\u2192' in position N: character maps to <undefined>
         #
-        # PYTHONIOENCODING fixes sys.stdin/stdout/stderr.
-        # PYTHONUTF8=1 enables "UTF-8 mode" (PEP 540) which additionally
-        # makes ``open()``'s default encoding UTF-8, so user scripts that
-        # write files without specifying encoding= also work correctly.
+        # PYTHONIOENCODING 修复 sys.stdin/stdout/stderr。
+        # PYTHONUTF8=1 启用 "UTF-8 模式"（PEP 540），额外地让 ``open()``
+        # 的默认编码变为 UTF-8，这样用户脚本在未指定 encoding= 写文件时
+        # 也能正常工作。
         #
-        # On POSIX both values usually match the locale default already,
-        # so setting them is harmless belt-and-suspenders for environments
-        # with a C/POSIX locale (containers, minimal base images).
+        # 在 POSIX 上这两个值通常已经与区域默认一致，因此设置它们是
+        # 无害的双保险，适用于 C/POSIX 区域的环境（容器、最小化基础镜像）。
         child_env["PYTHONIOENCODING"] = "utf-8"
         child_env["PYTHONUTF8"] = "1"
-        # Ensure the hermes-agent root is importable in the sandbox so
-        # repo-root modules are available to child scripts.  We also prepend
-        # the staging tmpdir so ``from hermes_tools import ...`` resolves even
-        # when the subprocess CWD is not tmpdir (project mode).
+        # 确保 hermes-agent 根目录在沙箱中可导入，使仓库根目录模块对
+        # 子脚本可用。我们还把暂存 tmpdir 放到最前面，这样即使子进程的
+        # CWD 不是 tmpdir（project 模式），``from hermes_tools import ...``
+        # 也能正确解析。
         _hermes_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _existing_pp = child_env.get("PYTHONPATH", "")
         _pp_parts = [tmpdir, _hermes_root]
         if _existing_pp:
             _pp_parts.append(_existing_pp)
         child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
-        # Inject user's configured timezone so datetime.now() in sandboxed
-        # code reflects the correct wall-clock time.  Only TZ is set —
-        # HERMES_TIMEZONE is an internal Hermes setting and must not leak
-        # into child processes.
+        # 注入用户配置的时区，使沙箱代码中的 datetime.now() 反映正确的
+        # 挂钟时间。只设置 TZ——HERMES_TIMEZONE 是 Hermes 的内部设置，
+        # 不得泄露到子进程中。
         _tz_name = os.getenv("HERMES_TIMEZONE", "").strip()
         if _tz_name:
             child_env["TZ"] = _tz_name
@@ -1273,11 +1254,11 @@ def execute_code(
         from hermes_constants import apply_subprocess_home_env
         apply_subprocess_home_env(child_env)
 
-        # Resolve interpreter + CWD based on execute_code mode.
-        #   - strict : today's behavior (sys.executable + tmpdir CWD).
-        #   - project: user's venv python + session's working directory, so
-        #              project deps like pandas and user files resolve.
-        # Env scrubbing and tool whitelist apply identically in both modes.
+        # 根据 execute_code 模式解析解释器 + CWD。
+        #   - strict：当前的行为（sys.executable + tmpdir 作为 CWD）。
+        #   - project：用户的 venv python + 会话工作目录，使 pandas 等
+        #              项目依赖和用户文件能正确解析。
+        # 两种模式下，环境清洗和工具白名单完全一致地生效。
         _mode = _get_execution_mode()
         _child_python = _resolve_child_python(_mode)
         _child_cwd = _resolve_child_cwd(_mode, tmpdir)
@@ -1294,19 +1275,19 @@ def execute_code(
             creationflags=subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0,
         )
 
-        # --- Poll loop: watch for exit, timeout, and interrupt ---
+        # --- 轮询循环：监视退出、超时和中断 ---
         deadline = time.monotonic() + timeout
         stderr_chunks: list = []
 
-        # Background readers to avoid pipe buffer deadlocks.
-        # For stdout we use a head+tail strategy: keep the first HEAD_BYTES
-        # and a rolling window of the last TAIL_BYTES so the final print()
-        # output is never lost.  Stderr keeps head-only (errors appear early).
-        _STDOUT_HEAD_BYTES = int(MAX_STDOUT_BYTES * 0.4)   # 40% head
-        _STDOUT_TAIL_BYTES = MAX_STDOUT_BYTES - _STDOUT_HEAD_BYTES  # 60% tail
+        # 后台读取器，避免管道缓冲区死锁。
+        # 对 stdout 采用 head+tail 策略：保留前 HEAD_BYTES 和最后
+        # TAIL_BYTES 的滚动窗口，确保最终的 print() 输出不会丢失。
+        # stderr 只保留 head（错误出现得早）。
+        _STDOUT_HEAD_BYTES = int(MAX_STDOUT_BYTES * 0.4)   # 40% 头部
+        _STDOUT_TAIL_BYTES = MAX_STDOUT_BYTES - _STDOUT_HEAD_BYTES  # 60% 尾部
 
         def _drain(pipe, chunks, max_bytes):
-            """Simple head-only drain (used for stderr)."""
+            """简单的仅保留头部的读取（用于 stderr）。"""
             total = 0
             try:
                 while True:
@@ -1320,10 +1301,10 @@ def execute_code(
             except (ValueError, OSError) as e:
                 logger.debug("Error reading process output: %s", e, exc_info=True)
 
-        stdout_total_bytes = [0]  # mutable ref for total bytes seen
+        stdout_total_bytes = [0]  # 可变引用，记录已看到的总字节数
 
         def _drain_head_tail(pipe, head_chunks, tail_chunks, head_bytes, tail_bytes, total_ref):
-            """Drain stdout keeping both head and tail data."""
+            """读取 stdout，同时保留头部和尾部数据。"""
             head_collected = 0
             from collections import deque
             tail_buf = deque()
@@ -1334,24 +1315,24 @@ def execute_code(
                     if not data:
                         break
                     total_ref[0] += len(data)
-                    # Fill head buffer first
+                    # 先填满头部缓冲区
                     if head_collected < head_bytes:
                         keep = min(len(data), head_bytes - head_collected)
                         head_chunks.append(data[:keep])
                         head_collected += keep
-                        data = data[keep:]  # remaining goes to tail
+                        data = data[keep:]  # 剩余部分进入尾部
                         if not data:
                             continue
-                    # Everything past head goes into rolling tail buffer
+                    # 头部之外的所有数据进入滚动尾部缓冲区
                     tail_buf.append(data)
                     tail_collected += len(data)
-                    # Evict old tail data to stay within tail_bytes budget
+                    # 逐出旧的尾部数据以不超过 tail_bytes 预算
                     while tail_collected > tail_bytes and tail_buf:
                         oldest = tail_buf.popleft()
                         tail_collected -= len(oldest)
             except (ValueError, OSError):
                 pass
-            # Transfer final tail to output list
+            # 把最终的尾部转移到输出列表
             tail_chunks.extend(tail_buf)
 
         stdout_head_chunks: list = []
@@ -1389,8 +1370,8 @@ def execute_code(
                 _kill_process_group(proc, escalate=True)
                 status = "timeout"
                 break
-            # Periodic activity touch so the gateway's inactivity timeout
-            # doesn't kill the agent during long code execution (#10807).
+            # 周期性触碰活动状态，使网关的非活动超时不会在长时间代码
+            # 执行期间杀死 agent（#10807）。
             if touch_activity_if_due is not None:
                 try:
                     touch_activity_if_due(_activity_state, "execute_code running")
@@ -1402,7 +1383,7 @@ def execute_code(
                 pass
             poll_interval = min(0.2, poll_interval * 1.5)
 
-        # Wait for readers to finish draining
+        # 等待读取器完成读取
         stdout_reader.join(timeout=3)
         stderr_reader.join(timeout=3)
 
@@ -1410,7 +1391,7 @@ def execute_code(
         stdout_tail = b"".join(stdout_tail_chunks).decode("utf-8", errors="replace")
         stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
 
-        # Assemble stdout with head+tail truncation
+        # 用 head+tail 截断拼装 stdout
         total_stdout = stdout_total_bytes[0]
         if total_stdout > MAX_STDOUT_BYTES and stdout_tail:
             omitted = total_stdout - len(stdout_head) - len(stdout_tail)
@@ -1425,27 +1406,27 @@ def execute_code(
         exit_code = proc.returncode if proc.returncode is not None else -1
         duration = round(time.monotonic() - exec_start, 2)
 
-        # Wait for RPC thread to finish
+        # 等待 RPC 线程结束
         stop_event.set()
-        server_sock.close()  # break accept() so thread exits promptly
-        server_sock = None  # prevent double close in finally
+        server_sock.close()  # 打断 accept() 使线程尽快退出
+        server_sock = None  # 防止在 finally 中重复关闭
         rpc_thread.join(timeout=3)
 
-        # Strip ANSI escape sequences so the model never sees terminal
-        # formatting — prevents it from copying escapes into file writes.
+        # 去除 ANSI 转义序列，使模型永远不会看到终端格式
+        # ——避免它把转义序列复制到文件写入中。
         from tools.ansi_strip import strip_ansi
         stdout_text = strip_ansi(stdout_text)
         stderr_text = strip_ansi(stderr_text)
 
-        # Redact secrets (API keys, tokens, etc.) from sandbox output.
-        # The sandbox env-var filter (lines 434-454) blocks os.environ access,
-        # but scripts can still read secrets from disk (e.g. open('~/.hermes/.env')).
-        # This ensures leaked secrets never enter the model context.
+        # 从沙箱输出中脱敏密钥（API 密钥、令牌等）。
+        # 沙箱的环境变量过滤器（第 434-454 行）阻断了 os.environ 访问，
+        # 但脚本仍可从磁盘读取密钥（例如 open('~/.hermes/.env')）。
+        # 这一步确保泄露的密钥永远不会进入模型上下文。
         from agent.redact import redact_sensitive_text
         stdout_text = redact_sensitive_text(stdout_text)
         stderr_text = redact_sensitive_text(stderr_text)
 
-        # Build response
+        # 构造响应
         result: Dict[str, Any] = {
             "status": status,
             "output": stdout_text,
@@ -1456,10 +1437,9 @@ def execute_code(
         if status == "timeout":
             timeout_msg = f"Script timed out after {timeout}s and was killed."
             result["error"] = timeout_msg
-            # Include timeout message in output so the LLM always surfaces it
-            # to the user.  When output is empty, models often treat the result
-            # as "nothing happened" and produce an empty response, which the
-            # gateway stream consumer silently drops (#10807).
+            # 把超时消息放进输出，以便 LLM 总是能把它呈现给用户。
+            # 当输出为空时，模型常常把结果当作 "什么也没发生" 并产生空响应，
+            # 而网关的流消费者会静默丢弃它（#10807）。
             if stdout_text:
                 result["output"] = stdout_text + f"\n\n⏰ {timeout_msg}"
             else:
@@ -1473,7 +1453,7 @@ def execute_code(
         elif exit_code != 0:
             result["status"] = "error"
             result["error"] = stderr_text or f"Script exited with code {exit_code}"
-            # Include stderr in output so the LLM sees the traceback
+            # 把 stderr 放进输出，以便 LLM 看到回溯信息
             if stderr_text:
                 result["output"] = stdout_text + "\n--- stderr ---\n" + stderr_text
 
@@ -1497,7 +1477,7 @@ def execute_code(
         }, ensure_ascii=False)
 
     finally:
-        # Cleanup temp dir and socket
+        # 清理临时目录和套接字
         if server_sock is not None:
             try:
                 server_sock.close()
@@ -1506,16 +1486,16 @@ def execute_code(
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
         try:
-            # Only UDS has a filesystem socket to unlink; TCP sockets are
-            # freed by server_sock.close() above.
+            # 只有 UDS 有需要 unlink 的文件系统套接字；TCP 套接字
+            # 已由上方的 server_sock.close() 释放。
             if sock_path:
                 os.unlink(sock_path)
         except OSError:
-            pass  # already cleaned up or never created
+            pass  # 已清理或从未创建
 
 
 def _kill_process_group(proc, escalate: bool = False):
-    """Kill the child and its entire process tree (cross-platform via psutil)."""
+    """杀死子进程及其整个进程树（通过 psutil 跨平台实现）。"""
     import psutil
     try:
         parent = psutil.Process(proc.pid)
@@ -1539,7 +1519,7 @@ def _kill_process_group(proc, escalate: bool = False):
             logger.debug("Could not kill process: %s", e2, exc_info=True)
 
     if escalate:
-        # Give the process 5s to exit after SIGTERM, then SIGKILL
+        # 给进程 5 秒时间在 SIGTERM 后退出，否则 SIGKILL
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -1565,14 +1545,13 @@ def _kill_process_group(proc, escalate: bool = False):
 
 
 def _load_config() -> dict:
-    """Load code_execution config without importing the interactive CLI.
+    """在不导入交互式 CLI 的情况下加载 code_execution 配置。
 
-    This helper is called while building the module-level execute_code schema
-    during tool discovery.  Importing ``cli`` here pulls prompt_toolkit/Rich and
-    a large chunk of the classic REPL onto every agent startup path, including
-    ``hermes --tui`` where it is never used.  Read the lightweight raw config
-    instead; the config layer already caches by (mtime, size), and an absent
-    key cleanly falls back to DEFAULT_EXECUTION_MODE.
+    这个辅助函数在工具发现阶段构建模块级 execute_code schema 时被调用。
+    在这里 import ``cli`` 会把 prompt_toolkit/Rich 以及经典 REPL 的很大
+    一部分拉到每条 agent 启动路径上，包括根本用不到它的 ``hermes --tui``。
+    改为读取轻量级的原始配置；配置层已按 (mtime, size) 缓存，缺失的键
+    会干净地回退到 DEFAULT_EXECUTION_MODE。
     """
     try:
         from hermes_cli.config import read_raw_config
@@ -1584,31 +1563,29 @@ def _load_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Execution mode resolution (strict vs project)
+# 执行模式解析（strict vs project）
 # ---------------------------------------------------------------------------
 
-# Valid values for code_execution.mode. Kept as a module constant so tests
-# and the config layer can reference the canonical set.
+# code_execution.mode 的合法取值。保留为模块常量，便于测试和配置层
+# 引用这套规范集合。
 EXECUTION_MODES = ("project", "strict")
 DEFAULT_EXECUTION_MODE = "project"
 
 
 def _get_execution_mode() -> str:
-    """Return the active execute_code mode — 'project' or 'strict'.
+    """返回当前生效的 execute_code 模式——'project' 或 'strict'。
 
-    Reads ``code_execution.mode`` from config.yaml; invalid values fall back
-    to ``DEFAULT_EXECUTION_MODE`` ('project') with a log warning.
+    从 config.yaml 读取 ``code_execution.mode``；非法值回退到
+    ``DEFAULT_EXECUTION_MODE``（'project'）并记录一条警告日志。
 
-    Mode semantics:
-      - ``project`` (default): scripts run in the session's working directory
-        with the active virtual environment's python, so project dependencies
-        (pandas, torch, project packages) and files resolve naturally.
-      - ``strict``: scripts run in an isolated temp directory with
-        ``sys.executable`` (hermes-agent's python). Reproducible and the
-        interpreter is guaranteed to work, but project deps and relative paths
-        won't resolve.
+    模式语义：
+      - ``project``（默认）：脚本在会话工作目录中、用活动虚拟环境的
+        python 运行，使项目依赖（pandas、torch、项目包）和文件自然解析。
+      - ``strict``：脚本在隔离的临时目录中、用 ``sys.executable``
+        （hermes-agent 的 python）运行。可复现且解释器保证可用，但项目
+        依赖和相对路径无法解析。
 
-    Env scrubbing and tool whitelist apply identically in both modes.
+    两种模式下，环境清洗和工具白名单完全一致地生效。
     """
     cfg_value = str(_load_config().get("mode", DEFAULT_EXECUTION_MODE)).strip().lower()
     if cfg_value in EXECUTION_MODES:
@@ -1622,10 +1599,10 @@ def _get_execution_mode() -> str:
 
 @functools.lru_cache(maxsize=32)
 def _is_usable_python(python_path: str) -> bool:
-    """Check whether a candidate Python interpreter is usable for execute_code.
+    """检查候选 Python 解释器是否可用于 execute_code。
 
-    Requires Python 3.8+ (f-strings and stdlib modules the RPC stubs need).
-    Cached so we don't fork a subprocess on every execute_code call.
+    要求 Python 3.8+（RPC 桩所需的 f-string 和标准库模块）。
+    结果被缓存，避免每次 execute_code 调用都 fork 一个子进程。
     """
     try:
         result = subprocess.run(
@@ -1642,15 +1619,15 @@ def _is_usable_python(python_path: str) -> bool:
 
 
 def _resolve_child_python(mode: str) -> str:
-    """Pick the Python interpreter for the execute_code subprocess.
+    """为 execute_code 子进程挑选 Python 解释器。
 
-    In ``strict`` mode, always ``sys.executable`` — guaranteed to work and
-    keeps behavior fully reproducible across sessions.
+    在 ``strict`` 模式下，始终使用 ``sys.executable``——保证可用，并使
+    行为在不同会话间完全可复现。
 
-    In ``project`` mode, prefer the user's active virtualenv/conda env's
-    python so ``import pandas`` etc. work. Falls back to ``sys.executable``
-    if no venv is detected, the candidate binary is missing/not executable,
-    or it fails a Python 3.8+ version check.
+    在 ``project`` 模式下，优先使用用户活动 virtualenv/conda 环境的
+    python，使 ``import pandas`` 等能正常工作。若未检测到 venv、候选
+    二进制缺失/不可执行、或未通过 Python 3.8+ 版本检查，则回退到
+    ``sys.executable``。
     """
     if mode != "project":
         return sys.executable
@@ -1673,8 +1650,8 @@ def _resolve_child_python(mode: str) -> str:
                     continue
                 if _is_usable_python(candidate):
                     return candidate
-                # Found the interpreter but it failed the version check —
-                # log once and fall through to sys.executable.
+                # 找到了解释器但未通过版本检查——
+                # 记录一次日志并回退到 sys.executable。
                 logger.info(
                     "execute_code: skipping %s=%s (Python version < 3.8 or broken). "
                     "Using sys.executable instead.", var, candidate,
@@ -1685,13 +1662,12 @@ def _resolve_child_python(mode: str) -> str:
 
 
 def _resolve_child_cwd(mode: str, staging_dir: str) -> str:
-    """Resolve the working directory for the execute_code subprocess.
+    """解析 execute_code 子进程的工作目录。
 
-    - ``strict``: the staging tmpdir (today's behavior).
-    - ``project``: the session's TERMINAL_CWD (same as the terminal tool), or
-      ``os.getcwd()`` if TERMINAL_CWD is unset or doesn't point at a real dir.
-      Falls back to the staging tmpdir as a last resort so we never invoke
-      Popen with a nonexistent cwd.
+    - ``strict``：暂存 tmpdir（当前行为）。
+    - ``project``：会话的 TERMINAL_CWD（与终端工具相同），若 TERMINAL_CWD
+      未设置或不是真实目录则用 ``os.getcwd()``。最后回退到暂存 tmpdir，
+      确保永远不会用不存在的 cwd 调用 Popen。
     """
     if mode != "project":
         return staging_dir
@@ -1707,11 +1683,11 @@ def _resolve_child_cwd(mode: str, staging_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# OpenAI Function-Calling Schema
+# OpenAI 函数调用 Schema
 # ---------------------------------------------------------------------------
 
-# Per-tool documentation lines for the execute_code description.
-# Ordered to match the canonical display order.
+# execute_code 描述中各工具的文档行。
+# 顺序与规范展示顺序一致。
 _TOOL_DOC_LINES = [
     ("web_search",
      "  web_search(query: str, limit: int = 5) -> dict\n"
@@ -1739,29 +1715,28 @@ _TOOL_DOC_LINES = [
 
 def build_execute_code_schema(enabled_sandbox_tools: set = None,
                               mode: str = None) -> dict:
-    """Build the execute_code schema with description listing only enabled tools.
+    """构建 execute_code schema，其描述中只列出已启用的工具。
 
-    When tools are disabled via ``hermes tools`` (e.g. web is turned off),
-    the schema description should NOT mention web_search / web_extract —
-    otherwise the model thinks they are available and keeps trying to use them.
+    当通过 ``hermes tools`` 禁用某些工具（例如关闭 web）时，schema 描述
+    不应再提及 web_search / web_extract——否则模型会以为它们可用并不断尝试。
 
-    ``mode`` controls the working-directory sentence in the description:
-      - ``'strict'``: scripts run in a temp dir (not the session's CWD)
-      - ``'project'`` (default): scripts run in the session's CWD with the
-        active venv's python
-    If ``mode`` is None, the current ``code_execution.mode`` config is read.
+    ``mode`` 控制描述中关于工作目录的句子：
+      - ``'strict'``：脚本在临时目录中运行（而非会话的 CWD）
+      - ``'project'``（默认）：脚本在会话的 CWD 中、用活动 venv 的
+        python 运行
+    若 ``mode`` 为 None，则读取当前 ``code_execution.mode`` 配置。
     """
     if enabled_sandbox_tools is None:
         enabled_sandbox_tools = SANDBOX_ALLOWED_TOOLS
     if mode is None:
         mode = _get_execution_mode()
 
-    # Build tool documentation lines for only the enabled tools
+    # 只为已启用的工具构建文档行
     tool_lines = "\n".join(
         doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools
     )
 
-    # Build example import list from enabled tools
+    # 从已启用的工具中构建示例 import 列表
     import_examples = [n for n in ("web_search", "terminal") if n in enabled_sandbox_tools]
     if not import_examples:
         import_examples = sorted(enabled_sandbox_tools)[:2]
@@ -1770,9 +1745,9 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     else:
         import_str = "..."
 
-    # Mode-specific CWD guidance. Project mode is the default and matches
-    # terminal()'s filesystem/interpreter; strict mode retains the isolated
-    # temp-dir staging and hermes-agent's own python.
+    # 模式相关的 CWD 指引。project 模式是默认值，与 terminal() 的
+    # 文件系统/解释器一致；strict 模式保留隔离的临时目录暂存和
+    # hermes-agent 自带的 python。
     if mode == "strict":
         cwd_note = (
             "Scripts run in their own temp dir, not the session's CWD — use absolute paths "
@@ -1826,12 +1801,12 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     }
 
 
-# Default schema used at registration time (all sandbox tools listed,
-# current configured mode).  model_tools.py rebuilds per-session anyway.
+# 注册时使用的默认 schema（列出所有沙箱工具，使用当前配置的模式）。
+# model_tools.py 无论如何都会按会话重建。
 EXECUTE_CODE_SCHEMA = build_execute_code_schema()
 
 
-# --- Registry ---
+# --- 注册表 ---
 from tools.registry import registry, tool_error
 
 registry.register(

@@ -1,7 +1,7 @@
-"""``hermes slack`` subcommand parser.
+"""``hermes slack`` 子命令解析器。
 
-Extracted verbatim from ``hermes_cli/main.py:main()`` (god-file Phase 2).
-Handler injected to avoid importing ``main``.
+从 ``hermes_cli/main.py:main()`` 中原样提取（god-file 阶段 2）。
+通过注入处理器避免导入 ``main``。
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ from typing import Callable
 
 
 def build_slack_parser(subparsers, *, cmd_slack: Callable) -> None:
-    """Attach the ``slack`` subcommand to ``subparsers``."""
+    """将 ``slack`` 子命令附加到 ``subparsers``。"""
     # =========================================================================
-    # slack command
+    # slack 命令
     # =========================================================================
     slack_parser = subparsers.add_parser(
         "slack",

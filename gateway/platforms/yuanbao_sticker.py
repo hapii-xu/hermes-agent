@@ -1,19 +1,19 @@
 """
-Yuanbao sticker (TIMFaceElem) support.
+元宝贴纸（TIMFaceElem）支持。
 
-Ported from yuanbao-openclaw-plugin/src/sticker/.
+移植自 yuanbao-openclaw-plugin/src/sticker/。
 
-TIMFaceElem wire format:
+TIMFaceElem wire format：
     {
         "msg_type": "TIMFaceElem",
         "msg_content": {
-            "index": 0,          # always 0 per Yuanbao convention
-            "data": "<json>",    # serialised sticker metadata
+            "index": 0,          # 按元宝约定固定为 0
+            "data": "<json>",    # 序列化后的贴纸元数据
         }
     }
 
-The `data` field carries a JSON string with the sticker's metadata so the
-receiver can look up the correct asset in the emoji pack.
+`data` 字段携带一个 JSON 字符串，包含贴纸的元数据，以便接收方在表情包中
+查找正确的资源。
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ import unicodedata
 from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Sticker catalogue – ported from builtin-stickers.json
-# Key   : canonical name (Chinese)
+# 贴纸目录 —— 移植自 builtin-stickers.json
+# Key   : 规范名称（中文）
 # Value : {sticker_id, package_id, name, description, width, height, formats}
 # ---------------------------------------------------------------------------
 STICKER_MAP: dict[str, dict] = {
@@ -520,13 +520,13 @@ def build_face_msg_body(
       - index 固定传 0（服务端通过 data 字段识别具体表情）
       - data 为 JSON 字符串，包含 sticker_id / package_id 等字段
 
-    Args:
+    参数：
         face_index: 保留字段，暂时不影响 wire format（Yuanbao 固定 index=0）。
                     当 face_index > 0 时视为旧版 QQ 表情 ID，直接放入 index。
         face_type:  保留字段（兼容旧接口，当前未使用）。
         data:       已序列化的 JSON 字符串；为 None 时仅传 index。
 
-    Returns:
+    返回：
         符合 Yuanbao TIM 协议的 msg_body list，如::
 
             [{"msg_type": "TIMFaceElem", "msg_content": {"index": 0, "data": "..."}}]

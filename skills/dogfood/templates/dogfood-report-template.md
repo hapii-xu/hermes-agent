@@ -1,86 +1,86 @@
-# Dogfood QA Report
+# Dogfood QA 报告
 
-**Target:** {target_url}
-**Date:** {date}
-**Scope:** {scope_description}
-**Tester:** Hermes Agent (automated exploratory QA)
+**目标：** {target_url}
+**日期：** {date}
+**范围：** {scope_description}
+**测试者：** Hermes Agent（自动化探索式 QA）
 
 ---
 
-## Executive Summary
+## 执行摘要
 
-| Severity | Count |
+| 严重性 | 数量 |
 |----------|-------|
-| 🔴 Critical | {critical_count} |
-| 🟠 High | {high_count} |
-| 🟡 Medium | {medium_count} |
-| 🔵 Low | {low_count} |
-| **Total** | **{total_count}** |
+| 🔴 严重 | {critical_count} |
+| 🟠 高 | {high_count} |
+| 🟡 中 | {medium_count} |
+| 🔵 低 | {low_count} |
+| **总计** | **{total_count}** |
 
-**Overall Assessment:** {one_sentence_assessment}
+**总体评估：** {one_sentence_assessment}
 
 ---
 
-## Issues
+## 问题
 
-<!-- Repeat this section for each issue found, sorted by severity (Critical first) -->
+<!-- 为发现的每个问题重复此区块，按严重性排序（严重优先） -->
 
-### Issue #{issue_number}: {issue_title}
+### 问题 #{issue_number}：{issue_title}
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Severity** | {severity} |
-| **Category** | {category} |
+| **严重性** | {severity} |
+| **类别** | {category} |
 | **URL** | {url_where_found} |
 
-**Description:**
+**描述：**
 {detailed_description_of_the_issue}
 
-**Steps to Reproduce:**
+**复现步骤：**
 1. {step_1}
 2. {step_2}
 3. {step_3}
 
-**Expected Behavior:**
+**预期行为：**
 {what_should_happen}
 
-**Actual Behavior:**
+**实际行为：**
 {what_actually_happens}
 
-**Screenshot:**
+**截图：**
 MEDIA:{screenshot_path}
 
-**Console Errors** (if applicable):
+**控制台错误**（如适用）：
 ```
 {console_error_output}
 ```
 
 ---
 
-<!-- End of per-issue section -->
+<!-- 每个问题区块结束 -->
 
-## Issues Summary Table
+## 问题摘要表
 
-| # | Title | Severity | Category | URL |
+| # | 标题 | 严重性 | 类别 | URL |
 |---|-------|----------|----------|-----|
 | {n} | {title} | {severity} | {category} | {url} |
 
-## Testing Coverage
+## 测试覆盖范围
 
-### Pages Tested
+### 已测试页面
 - {list_of_pages_visited}
 
-### Features Tested
+### 已测试功能
 - {list_of_features_exercised}
 
-### Not Tested / Out of Scope
+### 未测试 / 超出范围
 - {areas_not_covered_and_why}
 
-### Blockers
+### 阻碍
 - {any_issues_that_prevented_testing_certain_areas}
 
 ---
 
-## Notes
+## 备注
 
 {any_additional_observations_or_recommendations}

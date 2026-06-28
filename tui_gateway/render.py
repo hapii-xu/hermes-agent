@@ -1,7 +1,7 @@
-"""Rendering bridge — routes TUI content through Python-side renderers.
+"""渲染桥接 — 通过 Python 端渲染器路由 TUI 内容。
 
-When agent.rich_output exists, its functions are used. When it doesn't,
-everything returns None and the TUI falls back to its own markdown.tsx.
+当 agent.rich_output 存在时，使用其函数进行渲染。当它不存在时，
+所有函数都返回 None，TUI 回退到自带的 markdown.tsx。
 """
 
 from __future__ import annotations

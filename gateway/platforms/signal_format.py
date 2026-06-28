@@ -1,7 +1,7 @@
-"""Shared Signal formatting helpers.
+"""Signal 格式化共享工具。
 
-Keep markdown → Signal native formatting conversion in one place so both the
-live Signal adapter and standalone send paths emit the same bodyRanges.
+将 Markdown 到 Signal 原生格式的转换集中在此处，以便实时 Signal 适配器
+和独立发送路径都能生成相同的 bodyRanges。
 """
 
 from __future__ import annotations
@@ -10,29 +10,26 @@ import re
 
 
 def markdown_to_signal(text: str) -> tuple[str, list[str]]:
-    """Convert markdown to plain text + Signal textStyles list.
+    """将 Markdown 转换为纯文本 + Signal textStyles 列表。
 
-    Signal doesn't render markdown. Instead it uses ``bodyRanges`` (exposed by
-    signal-cli as ``textStyle`` / ``textStyles`` params) with the format
-    ``start:length:STYLE``.
+    Signal 不渲染 Markdown。它使用 ``bodyRanges``（通过 signal-cli 以
+    ``textStyle`` / ``textStyles`` 参数暴露），格式为 ``start:length:STYLE``。
 
-    Positions are measured in UTF-16 code units because that's what the Signal
-    protocol uses.
+    位置以 UTF-16 代码单元计算，因为这是 Signal 协议所使用的。
 
-    Supported styles: BOLD, ITALIC, STRIKETHROUGH, MONOSPACE.
+    支持的样式：BOLD、ITALIC、STRIKETHROUGH、MONOSPACE。
     """
 
     def _utf16_len(s: str) -> int:
-        """Length of *s* in UTF-16 code units."""
+        """*s* 的 UTF-16 代码单元长度。"""
         return len(s.encode("utf-16-le")) // 2
 
     def _normalize_bullet_markers(source: str) -> str:
-        """Replace Markdown bullet markers with plain Unicode bullets.
+        """将 Markdown 列表标记替换为普通 Unicode 项目符号。
 
-        Signal does not render Markdown list syntax, so ``- item`` and
-        ``* item`` otherwise arrive as literal Markdown markers. Preserve
-        fenced code blocks byte-for-byte; list-looking lines inside code are
-        code, not prose bullets.
+        Signal 不渲染 Markdown 列表语法，``- item`` 和 ``* item`` 会以
+        原始 Markdown 标记形式显示。逐字节保留围栏代码块；
+        代码块内看起来像列表的行是代码，不是文本项目符号。
         """
         parts = re.split(r"(```.*?```)", source, flags=re.DOTALL)
         for idx, part in enumerate(parts):

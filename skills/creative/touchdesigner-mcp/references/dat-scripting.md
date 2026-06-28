@@ -1,73 +1,73 @@
-# DAT-Based Scripting Reference
+# 基于 DAT 的脚本参考
 
-TD's event/callback model — Python that runs in response to network events. The full set of "Execute DATs" plus their idiomatic patterns.
+TD 的事件/回调模型 —— 在响应网络事件时运行的 Python。完整的一组“Execute DAT”及其惯用模式。
 
-For arbitrary Python execution (not callback-based), see `python-api.md`. For the MCP's `td_execute_python` tool, see `mcp-tools.md`.
+关于任意 Python 执行（非回调驱动），见 `python-api.md`。关于 MCP 的 `td_execute_python` 工具，见 `mcp-tools.md`。
 
 ---
 
-## The Execute DAT Family
+## Execute DAT 家族
 
-Every type watches one kind of event source and fires Python on changes.
+每种类型监视一类事件源，并在变化时触发 Python。
 
-| DAT | Watches | Use for |
+| DAT | 监视 | 用于 |
 |---|---|---|
-| `chopExecuteDAT` | A CHOP's channel values | Audio triggers, threshold callbacks, state machines on numeric input |
-| `datExecuteDAT` | A DAT's content (table cells, text) | Reacting to data updates from APIs, parsing webDAT responses |
-| `parameterExecuteDAT` | A parameter's value or pulse | Reacting to user-changed params, custom pulse buttons |
-| `panelExecuteDAT` | A panel COMP's interaction | Button clicks, slider drags, field commits |
-| `opExecuteDAT` | Operator lifecycle | New operator created, deleted, name changed |
-| `executeDAT` | Project lifecycle, frame events | Run-once setup, per-frame logic, save/load hooks |
+| `chopExecuteDAT` | 某个 CHOP 的通道值 | 音频触发、阈值回调、基于数值输入的状态机 |
+| `datExecuteDAT` | 某个 DAT 的内容（表格单元格、文本） | 响应来自 API 的数据更新、解析 webDAT 响应 |
+| `parameterExecuteDAT` | 某个参数的值或脉冲 | 响应用户改动的参数、自定义脉冲按钮 |
+| `panelExecuteDAT` | 某个 panel COMP 的交互 | 按钮点击、滑块拖动、字段提交 |
+| `opExecuteDAT` | 算子生命周期 | 新算子被创建、删除、改名 |
+| `executeDAT` | 工程生命周期、帧事件 | 单次初始化、逐帧逻辑、保存/加载钩子 |
 
-All have a docked DAT with predefined callback functions. You only fill in the bodies of the ones you care about.
+它们都有一个带预定义回调函数的停靠 DAT。你只需填写关心的函数体。
 
 ---
 
-## chopExecuteDAT — Numeric Triggers
+## chopExecuteDAT —— 数值触发
 
 ```python
 ce = root.create(chopExecuteDAT, 'kick_handler')
-ce.par.chop = '/project1/audio/out_kick'      # source CHOP
-ce.par.offtoon = True                          # fire when channel rises above 0
+ce.par.chop = '/project1/audio/out_kick'      # 源 CHOP
+ce.par.offtoon = True                          # 通道从 0 升到非 0 时触发
 ce.par.ontooff = False
 ce.par.whileon = False
 ce.par.valuechange = False
 ```
 
-In the docked callback DAT:
+在停靠的回调 DAT 中：
 
 ```python
 def offToOn(channel, sampleIndex, val, prev):
-    """Channel went from 0 to non-zero. Classic beat trigger."""
+    """通道从 0 变为非 0。经典节拍触发。"""
     op('/project1/strobe').par.flash.pulse()
     op('/project1/scene').par.index = (op('/project1/scene').par.index + 1) % 8
     return
 
 def onToOff(channel, sampleIndex, val, prev):
-    """Channel went from non-zero to 0."""
+    """通道从非 0 变为 0。"""
     return
 
 def whileOn(channel, sampleIndex, val, prev):
-    """Fires every frame while channel is non-zero. Use sparingly."""
+    """通道非 0 时每帧触发。谨慎使用。"""
     return
 
 def valueChange(channel, sampleIndex, val, prev):
-    """Fires every frame the value changes (continuous). Heavy."""
+    """值发生变化的每帧都触发（连续）。开销大。"""
     return
 ```
 
-`channel` is a `Channel` object — `.name`, `.owner`, `.vals[]`. Use `channel.name == 'chan1'` to filter.
+`channel` 是一个 `Channel` 对象 —— 有 `.name`、`.owner`、`.vals[]`。用 `channel.name == 'chan1'` 做过滤。
 
-**Threshold-based custom triggers:** wire the source CHOP through a `triggerCHOP` first to get clean 0/1 pulses, then watch with `offtoon`.
+**基于阈值的自定义触发：** 先把源 CHOP 接到一个 `triggerCHOP`，得到干净的 0/1 脉冲，再用 `offtoon` 监视。
 
 ---
 
-## datExecuteDAT — Table/Text Changes
+## datExecuteDAT —— 表格/文本变化
 
 ```python
 de = root.create(datExecuteDAT, 'api_response')
-de.par.dat = '/project1/api/web1'              # source DAT
-de.par.tablechange = True                      # any cell change
+de.par.dat = '/project1/api/web1'              # 源 DAT
+de.par.tablechange = True                      # 任意单元格变化
 de.par.cellchange = False
 de.par.rowchange = False
 de.par.colchange = False
@@ -75,51 +75,51 @@ de.par.colchange = False
 
 ```python
 def onTableChange(dat):
-    """Whole table changed (including text DAT content updates)."""
+    """整个表格变化（包括文本 DAT 内容更新）。"""
     if dat.numRows == 0:
         return
-    # If it's a webDAT response, parse JSON
+    # 如果是 webDAT 响应，解析 JSON
     import json
     try:
         data = json.loads(dat.text)
     except json.JSONDecodeError:
         debug(f'Bad JSON: {dat.text[:100]}')
         return
-    # Write to a CHOP
+    # 写入一个 CHOP
     op('/project1/api_value').par.value0 = float(data.get('count', 0))
     return
 
 def onCellChange(dat, cells, prev):
-    """Specific cells changed."""
+    """特定单元格变化。"""
     for cell in cells:
-        # cell.row, cell.col, cell.val
+        # cell.row、cell.col、cell.val
         pass
     return
 ```
 
-`debug()` prints to the textport — readable via `td_read_textport`.
+`debug()` 会打印到 textport —— 可通过 `td_read_textport` 读取。
 
 ---
 
-## parameterExecuteDAT — Param Changes & Pulse
+## parameterExecuteDAT —— 参数变化与脉冲
 
 ```python
 pe = root.create(parameterExecuteDAT, 'comp_params')
-pe.par.op = '/project1/my_component'           # COMP whose params to watch
-pe.par.parameters = '*'                         # or specific names like 'Intensity Reset'
+pe.par.op = '/project1/my_component'           # 要监视参数的 COMP
+pe.par.parameters = '*'                         # 或具体名称如 'Intensity Reset'
 pe.par.valuechange = True
 pe.par.pulse = True
 ```
 
 ```python
 def onValueChange(par, prev):
-    """par is a Par object. par.name, par.eval(), par.owner."""
+    """par 是一个 Par 对象。par.name、par.eval()、par.owner。"""
     if par.name == 'Intensity':
         op('/project1/bloom').par.threshold = par.eval()
     return
 
 def onPulse(par):
-    """Pulse param was triggered."""
+    """脉冲参数被触发。"""
     if par.name == 'Reset':
         op('/project1/scene').par.index = 0
         op('/project1/audio_player').par.cuepoint = 0
@@ -127,60 +127,60 @@ def onPulse(par):
     return
 
 def onExpressionChange(par, val, prev):
-    """User changed the expression on a param."""
+    """用户改动了某参数的表达式。"""
     return
 
 def onExportChange(par, val, prev):
-    """Export source changed."""
+    """export 源发生变化。"""
     return
 
 def onModeChange(par, val, prev):
-    """Param mode changed (CONSTANT / EXPRESSION / EXPORT / etc)."""
+    """参数模式变化（CONSTANT / EXPRESSION / EXPORT 等）。"""
     return
 ```
 
 ---
 
-## panelExecuteDAT — UI Events
+## panelExecuteDAT —— UI 事件
 
-For interactive control surfaces. See `panel-ui.md` for the full panel COMP context.
+用于交互式控制面板。完整的 panel COMP 上下文见 `panel-ui.md`。
 
 ```python
 pe = root.create(panelExecuteDAT, 'btn_handler')
 pe.par.panel = '/project1/play_btn'
-pe.par.click = True              # mouse click events
-pe.par.value = True              # state changes (toggle)
+pe.par.click = True              # 鼠标点击事件
+pe.par.value = True              # 状态变化（切换）
 pe.par.lockedchange = False
 ```
 
 ```python
 def onOffToOn(panelValue):
-    """Panel value rose to 1 (button pressed, slider crossed threshold)."""
+    """panel 值升到 1（按钮按下、滑块越过阈值）。"""
     op('/project1/scene_timer').par.start.pulse()
     return
 
 def onOnToOff(panelValue):
-    """Panel value dropped to 0."""
+    """panel 值降到 0。"""
     return
 
 def onValueChange(panelValue):
-    """Continuous: every frame the value changes."""
+    """连续：值变化的每帧都触发。"""
     val = panelValue.eval()
     op('/project1/master').par.opacity = val
     return
 
 def onClick(panelValue):
-    """Discrete click event, fires once per click."""
+    """离散点击事件，每次点击触发一次。"""
     return
 ```
 
-`panelValue` is a `Par` object on the panel COMP.
+`panelValue` 是 panel COMP 上的一个 `Par` 对象。
 
 ---
 
-## opExecuteDAT — Operator Lifecycle
+## opExecuteDAT —— 算子生命周期
 
-Watches creation/deletion/renaming of operators in a parent COMP.
+监视父 COMP 内算子的创建/删除/改名。
 
 ```python
 oe = root.create(opExecuteDAT, 'lifecycle')
@@ -193,29 +193,29 @@ oe.par.flagchange = False
 
 ```python
 def onCreate(opCreated):
-    """A new operator was created. Useful for auto-applying conventions."""
+    """创建了新算子。便于自动应用约定。"""
     if opCreated.OPType == 'glslTOP':
-        # Always wrap with a null
+        # 总是用一个 null 包一层
         n = opCreated.parent().create(nullTOP, opCreated.name + '_out')
         n.inputConnectors[0].connect(opCreated)
     return
 
 def onDestroy(opDestroyed):
-    """Operator was deleted. opDestroyed.path is still valid for one frame."""
+    """算子被删除。opDestroyed.path 在一帧内仍然有效。"""
     return
 
 def onNameChange(opChanged):
-    """Operator was renamed."""
+    """算子被改名。"""
     return
 ```
 
-Useful for dev-time scaffolding (auto-create downstream nullTOPs, auto-name conventions). Disable in production projects to avoid surprise side effects.
+适合开发期的脚手架（自动创建下游 nullTOP、自动命名约定）。生产项目中应禁用，以避免意外副作用。
 
 ---
 
-## executeDAT — Project Lifecycle & Per-Frame
+## executeDAT —— 工程生命周期与逐帧
 
-The catch-all. Gets you hooks into project start, save, load, frame-start, frame-end.
+万能兜底。提供工程启动、保存、加载、帧起始、帧结束的钩子。
 
 ```python
 exec_dat = root.create(executeDAT, 'lifecycle')
@@ -227,57 +227,57 @@ exec_dat.par.frameend = False
 
 ```python
 def onStart():
-    """Project just started cooking. Run once."""
+    """工程刚开始 cook。运行一次。"""
     op('/project1/scene').par.index = 0
     debug('Project started')
     return
 
 def onCreate():
-    """Component was just created (only fires for component executeDATs, not project root)."""
+    """组件刚被创建（仅对组件 executeDAT 触发，工程根不会）。"""
     return
 
 def onFrameStart(frame):
-    """Per-frame, BEFORE network cooks. Heavy logic here = bottleneck."""
+    """每帧、网络 cook 之前。此处放重逻辑会造成瓶颈。"""
     return
 
 def onFrameEnd(frame):
-    """Per-frame, AFTER network cooks. Use for capture, recording, post-network logic."""
+    """每帧、网络 cook 之后。用于捕获、录制、网络后处理。"""
     return
 
 def onPlayStateChange(playing):
-    """Project play/pause toggled."""
+    """工程播放/暂停切换。"""
     return
 
 def onProjectPreSave():
-    """Right before saving the .toe file."""
+    """保存 .toe 文件之前。"""
     return
 
 def onProjectPostSave():
     return
 ```
 
-Heavy per-frame logic in `onFrameStart` is one of the top performance regressions in TD projects. Use CHOPs for per-frame computation, scripts for events.
+在 `onFrameStart` 里放繁重的逐帧逻辑是 TD 项目中最常见的性能退化之一。逐帧计算请用 CHOP，脚本用于处理事件。
 
 ---
 
-## Pattern: Triggering an Animation Sequence on Beat
+## 模式：节拍触发动画序列
 
 ```python
-# Source: a kick trigger CHOP
-# Goal: on each kick, run a 1.5s scale pulse + color flash
+# 源：一个底鼓触发 CHOP
+# 目标：每次底鼓运行一个 1.5 秒的缩放脉冲 + 颜色闪烁
 
-# Setup (create once)
+# 初始化（创建一次）
 animator = root.create(timerCHOP, 'pulse_anim')
 animator.par.length = 1.5
 animator.par.cycle = False
 
-# Param expressions on visual targets:
+# 视觉目标上的参数表达式：
 op('logo').par.sx.expr = "1.0 + (1 - op('pulse_anim')['timer_fraction']) * 0.3"
 op('logo').par.sx.mode = ParMode.EXPRESSION
 op('logo').par.sy.expr = "1.0 + (1 - op('pulse_anim')['timer_fraction']) * 0.3"
 op('logo').par.sy.mode = ParMode.EXPRESSION
 
-# In a chopExecuteDAT watching the kick CHOP:
+# 在监视底鼓 CHOP 的 chopExecuteDAT 中：
 def offToOn(channel, sampleIndex, val, prev):
     op('pulse_anim').par.start.pulse()
     return
@@ -285,11 +285,11 @@ def offToOn(channel, sampleIndex, val, prev):
 
 ---
 
-## Pattern: Live Editing a CHOP from API Data
+## 模式：用 API 数据实时编辑 CHOP
 
 ```python
-# webDAT polls an API every 5 seconds
-# datExecuteDAT parses the response and writes to a constantCHOP
+# webDAT 每 5 秒轮询一次 API
+# datExecuteDAT 解析响应并写入 constantCHOP
 
 def onTableChange(dat):
     import json
@@ -305,14 +305,14 @@ def onTableChange(dat):
     return
 ```
 
-Visuals just reference `op('external_state')['temperature']` — they update live.
+视觉只需引用 `op('external_state')['temperature']` —— 即可实时更新。
 
 ---
 
-## Pattern: Self-Cleaning Network
+## 模式：自清理网络
 
 ```python
-# An opExecuteDAT watching for orphaned helper ops, deleting them after their parent disappears
+# 一个 opExecuteDAT 监视孤立的辅助算子，在其父算子消失后删除它们
 
 def onDestroy(opDestroyed):
     parent_name = opDestroyed.name
@@ -324,29 +324,29 @@ def onDestroy(opDestroyed):
 
 ---
 
-## Pitfalls
+## 陷阱
 
-1. **Callbacks crash silently** — exceptions print to the textport but don't show up in the UI. Always `td_clear_textport` before debugging, then `td_read_textport` after.
-2. **`debug()` vs `print()`** — both write to textport, but `debug()` includes the file/line of the calling DAT. Prefer `debug()` for scripts.
-3. **`val` is the new value, `prev` is old** — easy to swap. Always: `def offToOn(channel, sampleIndex, val, prev)`. Check parameter order in TD docs if confused.
-4. **`whileOn` and `valueChange` are per-frame** — heavy. Avoid unless absolutely needed. Drive via expressions instead.
-5. **Callbacks don't run during cooking-paused state** — if the parent COMP has `allowCooking=False`, callbacks freeze. Useful for "disable me" toggles.
-6. **`par` vs `panelValue`** — parameterExecuteDAT gives `par` (a Par object), panelExecuteDAT gives `panelValue` (also a Par-like object). Both have `.name` and `.eval()` but their context differs.
-7. **`opExecuteDAT` fires for itself** — when you create an opExecuteDAT, it can fire `onCreate` for itself if `par.create=True` and parent matches. Filter by `if opCreated == me: return`.
-8. **Reload behavior** — when reloading an extension (`td_reinit_extension`), all callback DATs reset their internal state. Module-level vars are lost. Persist state in tableDATs or the docked DAT itself, not in module globals.
-9. **Cooking dependencies** — if a callback writes to an op that's upstream of the callback's source, you get a cooking loop. TD warns about it but doesn't always block. Keep dataflow one-directional.
-10. **Active flag** — every Execute DAT has `par.active`. False = silent. Easy to toggle for testing without deleting wiring.
+1. **回调静默崩溃** —— 异常会打印到 textport 但不会显示在 UI 中。调试前务必先 `td_clear_textport`，之后用 `td_read_textport` 读取。
+2. **`debug()` 与 `print()`** —— 两者都写入 textport，但 `debug()` 会附带调用 DAT 的文件/行号。脚本中优先用 `debug()`。
+3. **`val` 是新值，`prev` 是旧值** —— 容易写反。始终是：`def offToOn(channel, sampleIndex, val, prev)`。混淆时查阅 TD 文档确认参数顺序。
+4. **`whileOn` 与 `valueChange` 是逐帧的** —— 开销大。除非确有必要否则避免。改用表达式驱动。
+5. **回调在 cook 暂停状态不运行** —— 如果父 COMP 设置了 `allowCooking=False`，回调会冻结。可当作“禁用我”的开关使用。
+6. **`par` 与 `panelValue`** —— parameterExecuteDAT 给的是 `par`（一个 Par 对象），panelExecuteDAT 给的是 `panelValue`（也是 Par 类对象）。两者都有 `.name` 和 `.eval()`，但上下文不同。
+7. **`opExecuteDAT` 会对自己触发** —— 当你创建一个 opExecuteDAT 时，若 `par.create=True` 且父级匹配，它可能对自己触发 `onCreate`。用 `if opCreated == me: return` 过滤。
+8. **重载行为** —— 重新加载扩展（`td_reinit_extension`）时，所有回调 DAT 会重置内部状态。模块级变量会丢失。请把状态存在 tableDAT 或停靠 DAT 中，而不是模块全局变量里。
+9. **cook 依赖** —— 如果回调写入的算子位于回调源的上游，会形成 cook 循环。TD 会告警但未必拦截。保持数据流单向。
+10. **active 标志** —— 每个 Execute DAT 都有 `par.active`。为 False 时静默。便于在不删接线的情况下切换以进行测试。
 
 ---
 
-## Quick Recipes
+## 快速配方
 
-| Goal | Setup |
+| 目标 | 设置 |
 |---|---|
-| Beat trigger | `chopExecuteDAT.par.offtoon=True` watching a `triggerCHOP` |
-| API response handler | `datExecuteDAT.par.tablechange=True` watching a `webDAT` |
-| Custom button → action | `parameterExecuteDAT.par.pulse=True` watching a custom pulse param |
-| Slider → continuous param | `panelExecuteDAT.par.value=True` watching a `sliderCOMP` |
-| Run-once setup | `executeDAT.par.start=True` with logic in `onStart()` |
-| Per-frame metrics | `executeDAT.par.frameend=True` recording values to a CHOP |
-| Auto-name new ops | `opExecuteDAT.par.create=True` enforcing naming conventions |
+| 节拍触发 | `chopExecuteDAT.par.offtoon=True` 监视一个 `triggerCHOP` |
+| API 响应处理 | `datExecuteDAT.par.tablechange=True` 监视一个 `webDAT` |
+| 自定义按钮 → 动作 | `parameterExecuteDAT.par.pulse=True` 监视一个自定义脉冲参数 |
+| 滑块 → 连续参数 | `panelExecuteDAT.par.value=True` 监视一个 `sliderCOMP` |
+| 单次初始化 | `executeDAT.par.start=True`，逻辑写在 `onStart()` 中 |
+| 逐帧指标 | `executeDAT.par.frameend=True`，把值记录到 CHOP |
+| 自动为新算子命名 | `opExecuteDAT.par.create=True`，强制命名约定 |

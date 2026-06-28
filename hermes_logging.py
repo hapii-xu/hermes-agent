@@ -1,30 +1,29 @@
-"""Centralized logging setup for Hermes Agent.
+"""Hermes Agent 的集中式日志配置。
 
-Provides a single ``setup_logging()`` entry point that both the CLI and
-gateway call early in their startup path.  All log files live under
-``~/.hermes/logs/`` (profile-aware via ``get_hermes_home()``).
+提供单一的 ``setup_logging()`` 入口点，CLI 和 gateway 均在启动早期调用。
+所有日志文件存放于 ``~/.hermes/logs/``（通过 ``get_hermes_home()`` 感知 profile）。
 
-Log files produced:
-    agent.log   — INFO+, all agent/tool/session activity (the main log)
-    errors.log  — WARNING+, errors and warnings only (quick triage)
-    gateway.log — INFO+, gateway-only events (created when mode="gateway")
-    gui.log     — INFO+, dashboard/websocket/TUI-gateway events
-                  (created when mode="gui")
+生成的日志文件：
+    agent.log   — INFO+，所有 agent/工具/会话活动（主日志）
+    errors.log  — WARNING+，仅错误和警告（快速排查）
+    gateway.log — INFO+，gateway 专属事件（当 mode="gateway" 时创建）
+    gui.log     — INFO+，dashboard/websocket/TUI-gateway 事件
+                  （当 mode="gui" 时创建）
 
-All files use ``RotatingFileHandler`` with ``RedactingFormatter`` so
-secrets are never written to disk.
+所有文件使用 ``RotatingFileHandler`` 搭配 ``RedactingFormatter``，
+确保密钥永远不会写入磁盘。
 
-Component separation:
-    gateway.log only receives records from ``gateway.*`` loggers —
-    platform adapters, session management, slash commands, delivery.
-    gui.log receives dashboard-side records from ``hermes_cli.web_server``,
-    ``hermes_cli.pty_bridge``, ``tui_gateway.*``, and ``uvicorn.*``.
-    agent.log remains the catch-all (everything goes there).
+组件分离：
+    gateway.log 只接收来自 ``gateway.*`` logger 的记录——
+    包括平台适配器、会话管理、斜杠命令、消息投递。
+    gui.log 接收来自 ``hermes_cli.web_server``、
+    ``hermes_cli.pty_bridge``、``tui_gateway.*`` 和 ``uvicorn.*`` 的 dashboard 侧记录。
+    agent.log 保持为兜底日志（所有记录都写入此处）。
 
-Session context:
-    Call ``set_session_context(session_id)`` at the start of a conversation
-    and ``clear_session_context()`` when done.  All log lines emitted on
-    that thread will include ``[session_id]`` for filtering/correlation.
+会话上下文：
+    在 ``run_conversation()`` 开始时调用 ``set_session_context(session_id)``，
+    结束时调用 ``clear_session_context()``。该线程上发出的所有日志行
+    都会包含 ``[session_id]`` 以便过滤和关联。
 """
 
 import io
@@ -35,28 +34,24 @@ import threading
 from pathlib import Path
 from typing import Optional, Sequence
 
-# On Windows, stdlib ``RotatingFileHandler`` calls ``os.rename()`` in
-# ``doRollover()`` and fails with ``PermissionError [WinError 32]`` whenever
-# another process holds an append-mode handle on ``agent.log`` — which is
-# essentially always in Hermes (TUI, gateway, ``hy_memory`` server, MCP
-# servers, and on-demand CLI commands all log from separate processes),
-# pinning ``agent.log`` at the 5 MiB threshold and spamming stderr with
-# a traceback on every emit. ``concurrent-log-handler`` wraps the rename in a
-# cross-process file lock (via ``portalocker``: pywin32 on Windows) so only
-# one process rotates at a time and the others wait their turn.
+# 在 Windows 上，stdlib 的 ``RotatingFileHandler`` 在 ``doRollover()`` 中调用
+# ``os.rename()``，当另一个进程以追加模式持有 ``agent.log`` 的句柄时会抛出
+# ``PermissionError [WinError 32]``——在 Hermes 中这几乎是常态（TUI、gateway、
+# ``hy_memory`` 服务器、MCP 服务器以及按需 CLI 命令均从独立进程写日志），
+# 导致 ``agent.log`` 卡在 5 MiB 阈值处，并在每次 emit 时向 stderr 输出回溯。
+# ``concurrent-log-handler`` 将 rename 包裹在跨进程文件锁中（通过
+# ``portalocker``：Windows 上使用 pywin32），使得同一时刻只有一个进程执行轮转，
+# 其他进程等待轮到自己。
 #
-# This swap is Windows-ONLY and deliberately so:
-#   * The bug (WinError 32 on rename-while-open) is specific to Windows file
-#     locking semantics — POSIX renames an open file fine, so stdlib already
-#     works correctly on Linux/macOS.
-#   * On POSIX, managed-mode (NixOS) relies on the exact ``_open()`` /
-#     ``doRollover()`` lifecycle of stdlib ``RotatingFileHandler`` (the
-#     ``_ManagedRotatingFileHandler`` subclass chmods 0660 after each). CLH
-#     opens lazily and rotates differently, which breaks the group-writable
-#     guarantee and the eager file-creation those paths depend on.
-# Aliasing keeps every existing ``RotatingFileHandler`` reference in this
-# module (class declaration, ``isinstance`` checks, docstring) working
-# unchanged. See #44873.
+# 此替换仅限 Windows，这是有意为之：
+#   * 该 bug（打开文件时 rename 触发 WinError 32）特定于 Windows 文件锁语义——
+#     POSIX 对已打开文件的 rename 没有问题，stdlib 在 Linux/macOS 上已能正确工作。
+#   * 在 POSIX 的受管理模式（NixOS）下，路径依赖 stdlib ``RotatingFileHandler``
+#     精确的 ``_open()`` / ``doRollover()`` 生命周期（``_ManagedRotatingFileHandler``
+#     子类在每次操作后执行 chmod 0660）。CLH 采用懒加载打开和不同的轮转方式，
+#     会破坏组可写保证以及这些路径依赖的主动文件创建行为。
+# 使用别名可确保本模块中所有现有的 ``RotatingFileHandler`` 引用
+#（类声明、``isinstance`` 检查、docstring）无需改动即可继续工作。参见 #44873。
 if sys.platform == "win32":
     from concurrent_log_handler import (  # noqa: E402
         ConcurrentRotatingFileHandler as RotatingFileHandler,
@@ -67,9 +62,8 @@ else:
 
 from hermes_constants import get_config_path, get_hermes_home
 
-# Sentinel to track whether setup_logging() has already run.  The function
-# is idempotent — calling it twice is safe but the second call is a no-op
-# unless ``force=True``.
+# 用于追踪 setup_logging() 是否已执行的哨兵标志。该函数具有幂等性——
+# 重复调用是安全的，但第二次调用为空操作，除非传入 ``force=True``。
 _logging_initialized = False
 
 # Thread-local storage for per-conversation session context.

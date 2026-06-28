@@ -1,4 +1,4 @@
-"""Managed Modal environment backed by tool-gateway."""
+"""由 tool-gateway 支撑的托管型 Modal 环境。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class _ManagedModalExecHandle:
 
 
 class ManagedModalEnvironment(BaseModalExecutionEnvironment):
-    """Gateway-owned Modal sandbox with Hermes-compatible execute/cleanup."""
+    """网关拥有的 Modal 沙箱，提供与 Hermes 兼容的 execute/cleanup。"""
 
     _CONNECT_TIMEOUT_SECONDS = _request_timeout_env("TERMINAL_MANAGED_MODAL_CONNECT_TIMEOUT_SECONDS", 1.0)
     _POLL_READ_TIMEOUT_SECONDS = _request_timeout_env("TERMINAL_MANAGED_MODAL_POLL_READ_TIMEOUT_SECONDS", 5.0)
@@ -212,7 +212,7 @@ class ManagedModalEnvironment(BaseModalExecutionEnvironment):
         return sandbox_id
 
     def _guard_unsupported_credential_passthrough(self) -> None:
-        """Managed Modal does not sync or mount host credential files."""
+        """托管型 Modal 不会同步或挂载宿主机的凭证文件。"""
         try:
             from tools.credential_files import get_credential_file_mounts
         except Exception:

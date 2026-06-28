@@ -1,47 +1,43 @@
-"""SimpleX Chat platform adapter (Hermes plugin).
+"""SimpleX Chat 平台适配器（Hermes 插件）。
 
-Connects to a simplex-chat daemon running in WebSocket mode.
-Inbound messages arrive via a persistent WebSocket connection.
-Outbound messages use the same WebSocket with JSON commands.
+连接到以 WebSocket 模式运行的 simplex-chat 守护进程。
+入站消息通过持久化的 WebSocket 连接接收。
+出站消息使用相同的 WebSocket 发送 JSON 命令。
 
-This adapter ships as a Hermes platform plugin under
-``plugins/platforms/simplex/``. The Hermes plugin loader scans the
-directory at startup, calls ``register(ctx)``, and the platform
-becomes available to ``gateway/run.py`` and ``tools/send_message_tool``
-through the registry — no edits to core files are required.
+此适配器作为 Hermes 平台插件存放在
+``plugins/platforms/simplex/`` 目录下。Hermes 插件加载器在启动时扫描该
+目录，调用 ``register(ctx)``，然后该平台即可通过注册表被
+``gateway/run.py`` 和 ``tools/send_message_tool`` 使用——无需修改核心文件。
 
-SimpleX chat daemon setup:
-    simplex-chat -p 5225          # start daemon on port 5225
-    # or via Docker:
+SimpleX chat 守护进程启动方式：
+    simplex-chat -p 5225          # 在端口 5225 上启动守护进程
+    # 或通过 Docker：
     # docker run -p 5225:5225 simplexchat/simplex-chat-cli -p 5225
 
-Required environment variables:
-    SIMPLEX_WS_URL             WebSocket URL of the daemon
-                               (default: ws://127.0.0.1:5225)
+必需的环境变量：
+    SIMPLEX_WS_URL             守护进程的 WebSocket URL
+                               （默认值：ws://127.0.0.1:5225）
 
-Optional environment variables:
-    SIMPLEX_ALLOWED_USERS      Comma-separated allowlist. Each entry may be
-                               either a numeric contactId (stable across
-                               renames; visible via `/contacts` in the CLI)
-                               or a contact display name (what the SimpleX
-                               UI shows). Both forms are accepted.
-    SIMPLEX_ALLOW_ALL_USERS    Set 'true' to allow all contacts
-    SIMPLEX_AUTO_ACCEPT        Set 'false' to disable contact-request auto-accept
-                               (default: 'true')
-    SIMPLEX_GROUP_ALLOWED      Comma-separated group IDs to monitor, or '*'
-                               for any group. Omit to disable groups entirely.
-    SIMPLEX_HOME_CHANNEL       Default contact/group ID for cron delivery
-    SIMPLEX_HOME_CHANNEL_NAME  Human label for the home channel
+可选的环境变量：
+    SIMPLEX_ALLOWED_USERS      逗号分隔的白名单。每个条目可以是数字类型的
+                               contactId（重命名后保持不变；可通过 CLI 中的
+                               `/contacts` 查看），也可以是联系人显示名称
+                               （SimpleX UI 中显示的名称）。两种形式均可接受。
+    SIMPLEX_ALLOW_ALL_USERS    设为 'true' 以允许所有联系人
+    SIMPLEX_AUTO_ACCEPT        设为 'false' 以禁用自动接受联系人请求
+                               （默认值：'true'）
+    SIMPLEX_GROUP_ALLOWED      逗号分隔的群组 ID 列表，或 '*' 表示接受所有
+                               群组。留空则完全禁用群组功能。
+    SIMPLEX_HOME_CHANNEL       用于 cron 投递的默认联系人/群组 ID
+    SIMPLEX_HOME_CHANNEL_NAME  主频道的可读标签
     HERMES_SIMPLEX_TEXT_BATCH_DELAY
-                               Quiet-period seconds (default: 0.8) used to
-                               concatenate rapid-fire inbound text messages
-                               into a single MessageEvent — same pattern as
-                               Telegram's text batching.
+                               静默等待秒数（默认值：0.8），用于将快速连续
+                               发送的入站文本消息合并为单个 MessageEvent——
+                               与 Telegram 的文本批处理模式相同。
 
-The ``websockets`` Python package is imported lazily — the plugin is
-discoverable and ``hermes setup`` can describe it even when websockets is
-not installed. ``check_requirements()`` returns False until the package
-is present, so the gateway will not attempt to instantiate the adapter.
+``websockets`` Python 包采用延迟导入——即使未安装 websockets，该插件也
+可被发现，且 ``hermes setup`` 可以描述它。``check_requirements()`` 在
+该包存在之前返回 False，因此网关不会尝试实例化此适配器。
 """
 
 import asyncio
@@ -56,9 +52,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Lazy import: BasePlatformAdapter and friends live in the main repo.
-# Imported at module top because they're stdlib-only inside Hermes — no
-# external dependency that would block the plugin from loading.
+# 延迟导入：BasePlatformAdapter 及其相关类位于主仓库中。
+# 在模块顶部导入，因为它们在 Hermes 内部仅依赖标准库——没有
+# 会阻止插件加载的外部依赖。
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
     BasePlatformAdapter,
@@ -70,9 +66,9 @@ from gateway.platforms.base import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
-MAX_MESSAGE_LENGTH = 8000  # SimpleX has no hard limit; chunk for sanity
+MAX_MESSAGE_LENGTH = 8000  # SimpleX 没有硬性限制；分块以保证安全
 WS_RETRY_DELAY_INITIAL = 2.0
 WS_RETRY_DELAY_MAX = 60.0
 HEALTH_CHECK_INTERVAL = 30.0

@@ -1,55 +1,55 @@
-# Framework Integrations Guide
+# 框架集成指南
 
-Complete guide to integrating W&B with popular ML frameworks.
+将 W&B 与主流 ML 框架集成的完整指南。
 
-## Table of Contents
+## 目录
 - HuggingFace Transformers
 - PyTorch Lightning
 - Keras/TensorFlow
 - Fast.ai
 - XGBoost/LightGBM
-- PyTorch Native
-- Custom Integrations
+- PyTorch 原生
+- 自定义集成
 
 ## HuggingFace Transformers
 
-### Automatic Integration
+### 自动集成
 
 ```python
 from transformers import Trainer, TrainingArguments
 import wandb
 
-# Initialize W&B
+# 初始化 W&B
 wandb.init(project="hf-transformers", name="bert-finetuning")
 
-# Training arguments with W&B
+# 带 W&B 的训练参数
 training_args = TrainingArguments(
     output_dir="./results",
-    report_to="wandb",  # Enable W&B logging
+    report_to="wandb",  # 启用 W&B 记录
     run_name="bert-base-finetuning",
 
-    # Training params
+    # 训练参数
     num_train_epochs=3,
     per_device_train_batch_size=16,
     per_device_eval_batch_size=64,
     learning_rate=2e-5,
 
-    # Logging
+    # 记录
     logging_dir="./logs",
     logging_steps=100,
     logging_first_step=True,
 
-    # Evaluation
+    # 评估
     evaluation_strategy="steps",
     eval_steps=500,
     save_steps=500,
 
-    # Other
+    # 其他
     load_best_model_at_end=True,
     metric_for_best_model="eval_accuracy"
 )
 
-# Trainer automatically logs to W&B
+# Trainer 会自动记录到 W&B
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -58,14 +58,14 @@ trainer = Trainer(
     compute_metrics=compute_metrics
 )
 
-# Train (metrics logged automatically)
+# 训练（指标自动记录）
 trainer.train()
 
-# Finish W&B run
+# 结束 W&B run
 wandb.finish()
 ```
 
-### Custom Logging
+### 自定义记录
 
 ```python
 from transformers import Trainer, TrainingArguments
@@ -76,13 +76,13 @@ class CustomWandbCallback(WandbCallback):
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         super().on_evaluate(args, state, control, metrics, **kwargs)
 
-        # Log custom metrics
+        # 记录自定义指标
         wandb.log({
             "custom/eval_score": metrics["eval_accuracy"] * 100,
             "custom/epoch": state.epoch
         })
 
-# Use custom callback
+# 使用自定义回调
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -92,7 +92,7 @@ trainer = Trainer(
 )
 ```
 
-### Log Model to Registry
+### 把模型记录到注册表
 
 ```python
 from transformers import Trainer, TrainingArguments
@@ -112,40 +112,40 @@ trainer = Trainer(
 
 trainer.train()
 
-# Save final model as artifact
+# 把最终模型保存为 artifact
 model_artifact = wandb.Artifact(
     'hf-bert-model',
     type='model',
     description='BERT finetuned on sentiment analysis'
 )
 
-# Save model files
+# 保存模型文件
 trainer.save_model("./final_model")
 model_artifact.add_dir("./final_model")
 
-# Log artifact
+# 记录 artifact
 wandb.log_artifact(model_artifact, aliases=['best', 'production'])
 wandb.finish()
 ```
 
 ## PyTorch Lightning
 
-### Basic Integration
+### 基础集成
 
 ```python
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-# Create W&B logger
+# 创建 W&B logger
 wandb_logger = WandbLogger(
     project="lightning-demo",
     name="resnet50-training",
-    log_model=True,  # Log model checkpoints as artifacts
-    save_code=True   # Save code as artifact
+    log_model=True,  # 把模型检查点作为 artifact 记录
+    save_code=True   # 把代码作为 artifact 保存
 )
 
-# Lightning module
+# Lightning 模块
 class LitModel(pl.LightningModule):
     def __init__(self, learning_rate=0.001):
         super().__init__()
@@ -157,7 +157,7 @@ class LitModel(pl.LightningModule):
         y_hat = self.model(x)
         loss = F.cross_entropy(y_hat, y)
 
-        # Log metrics (automatically sent to W&B)
+        # 记录指标（自动发送到 W&B）
         self.log('train/loss', loss, on_step=True, on_epoch=True)
         self.log('train/accuracy', accuracy(y_hat, y), on_epoch=True)
 
@@ -176,7 +176,7 @@ class LitModel(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
-# Trainer with W&B logger
+# 带 W&B logger 的 Trainer
 trainer = pl.Trainer(
     logger=wandb_logger,
     max_epochs=10,
@@ -184,14 +184,14 @@ trainer = pl.Trainer(
     devices=1
 )
 
-# Train (metrics logged automatically)
+# 训练（指标自动记录）
 trainer.fit(model, datamodule=dm)
 
-# Finish W&B run
+# 结束 W&B run
 wandb.finish()
 ```
 
-### Log Media
+### 记录媒体
 
 ```python
 class LitModel(pl.LightningModule):
@@ -199,7 +199,7 @@ class LitModel(pl.LightningModule):
         x, y = batch
         y_hat = self.model(x)
 
-        # Log images (first batch only)
+        # 记录图像（仅第一个 batch）
         if batch_idx == 0:
             self.logger.experiment.log({
                 "examples": [wandb.Image(img) for img in x[:8]]
@@ -208,7 +208,7 @@ class LitModel(pl.LightningModule):
         return loss
 
     def on_validation_epoch_end(self):
-        # Log confusion matrix
+        # 记录混淆矩阵
         cm = compute_confusion_matrix(self.all_preds, self.all_targets)
 
         self.logger.experiment.log({
@@ -221,14 +221,14 @@ class LitModel(pl.LightningModule):
         })
 ```
 
-### Hyperparameter Sweeps
+### 超参数 Sweep
 
 ```python
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-# Define sweep
+# 定义 sweep
 sweep_config = {
     'method': 'bayes',
     'metric': {'name': 'val/accuracy', 'goal': 'maximize'},
@@ -242,42 +242,42 @@ sweep_config = {
 sweep_id = wandb.sweep(sweep_config, project="lightning-sweeps")
 
 def train():
-    # Initialize W&B
+    # 初始化 W&B
     run = wandb.init()
 
-    # Get hyperparameters
+    # 获取超参数
     config = wandb.config
 
-    # Create logger
+    # 创建 logger
     wandb_logger = WandbLogger()
 
-    # Create model with sweep params
+    # 用 sweep 参数创建模型
     model = LitModel(
         learning_rate=config.learning_rate,
         hidden_size=config.hidden_size
     )
 
-    # Create datamodule with sweep batch size
+    # 用 sweep 的 batch size 创建 datamodule
     dm = DataModule(batch_size=config.batch_size)
 
-    # Train
+    # 训练
     trainer = pl.Trainer(logger=wandb_logger, max_epochs=10)
     trainer.fit(model, dm)
 
-# Run sweep
+# 运行 sweep
 wandb.agent(sweep_id, function=train, count=30)
 ```
 
 ## Keras/TensorFlow
 
-### With Callback
+### 用回调
 
 ```python
 import tensorflow as tf
 from wandb.keras import WandbCallback
 import wandb
 
-# Initialize W&B
+# 初始化 W&B
 wandb.init(
     project="keras-demo",
     config={
@@ -289,7 +289,7 @@ wandb.init(
 
 config = wandb.config
 
-# Build model
+# 构建模型
 model = tf.keras.Sequential([
     tf.keras.layers.Dense(128, activation='relu'),
     tf.keras.layers.Dropout(0.2),
@@ -302,7 +302,7 @@ model.compile(
     metrics=['accuracy']
 )
 
-# Train with W&B callback
+# 带 W&B 回调训练
 history = model.fit(
     x_train, y_train,
     validation_data=(x_val, y_val),
@@ -310,8 +310,8 @@ history = model.fit(
     batch_size=config.batch_size,
     callbacks=[
         WandbCallback(
-            log_weights=True,      # Log model weights
-            log_gradients=True,    # Log gradients
+            log_weights=True,      # 记录模型权重
+            log_gradients=True,    # 记录梯度
             training_data=(x_train, y_train),
             validation_data=(x_val, y_val),
             labels=class_names
@@ -319,7 +319,7 @@ history = model.fit(
     ]
 )
 
-# Save model as artifact
+# 把模型保存为 artifact
 model.save('model.h5')
 artifact = wandb.Artifact('keras-model', type='model')
 artifact.add_file('model.h5')
@@ -328,7 +328,7 @@ wandb.log_artifact(artifact)
 wandb.finish()
 ```
 
-### Custom Training Loop
+### 自定义训练循环
 
 ```python
 import tensorflow as tf
@@ -336,12 +336,12 @@ import wandb
 
 wandb.init(project="tf-custom-loop")
 
-# Model, optimizer, loss
+# 模型、优化器、损失
 model = create_model()
 optimizer = tf.keras.optimizers.Adam(1e-3)
 loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
 
-# Metrics
+# 指标
 train_loss = tf.keras.metrics.Mean(name='train_loss')
 train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
 
@@ -357,7 +357,7 @@ def train_step(x, y):
     train_loss(loss)
     train_accuracy(y, predictions)
 
-# Training loop
+# 训练循环
 for epoch in range(EPOCHS):
     train_loss.reset_states()
     train_accuracy.reset_states()
@@ -365,7 +365,7 @@ for epoch in range(EPOCHS):
     for step, (x, y) in enumerate(train_dataset):
         train_step(x, y)
 
-        # Log every 100 steps
+        # 每 100 步记录一次
         if step % 100 == 0:
             wandb.log({
                 'train/loss': train_loss.result().numpy(),
@@ -374,7 +374,7 @@ for epoch in range(EPOCHS):
                 'step': step
             })
 
-    # Log epoch metrics
+    # 记录每轮指标
     wandb.log({
         'epoch/train_loss': train_loss.result().numpy(),
         'epoch/train_accuracy': train_accuracy.result().numpy(),
@@ -386,17 +386,17 @@ wandb.finish()
 
 ## Fast.ai
 
-### With Callback
+### 用回调
 
 ```python
 from fastai.vision.all import *
 from fastai.callback.wandb import *
 import wandb
 
-# Initialize W&B
+# 初始化 W&B
 wandb.init(project="fastai-demo")
 
-# Create data loaders
+# 创建数据加载器
 dls = ImageDataLoaders.from_folder(
     path,
     train='train',
@@ -404,19 +404,19 @@ dls = ImageDataLoaders.from_folder(
     bs=64
 )
 
-# Create learner with W&B callback
+# 用 W&B 回调创建 learner
 learn = vision_learner(
     dls,
     resnet34,
     metrics=accuracy,
     cbs=WandbCallback(
-        log_preds=True,     # Log predictions
-        log_model=True,     # Log model as artifact
-        log_dataset=True    # Log dataset as artifact
+        log_preds=True,     # 记录预测
+        log_model=True,     # 把模型作为 artifact 记录
+        log_dataset=True    # 把数据集作为 artifact 记录
     )
 )
 
-# Train (metrics logged automatically)
+# 训练（指标自动记录）
 learn.fine_tune(5)
 
 wandb.finish()
@@ -430,7 +430,7 @@ wandb.finish()
 import xgboost as xgb
 import wandb
 
-# Initialize W&B
+# 初始化 W&B
 run = wandb.init(project="xgboost-demo", config={
     "max_depth": 6,
     "learning_rate": 0.1,
@@ -439,11 +439,11 @@ run = wandb.init(project="xgboost-demo", config={
 
 config = wandb.config
 
-# Create DMatrix
+# 创建 DMatrix
 dtrain = xgb.DMatrix(X_train, label=y_train)
 dval = xgb.DMatrix(X_val, label=y_val)
 
-# XGBoost params
+# XGBoost 参数
 params = {
     'max_depth': config.max_depth,
     'learning_rate': config.learning_rate,
@@ -451,16 +451,16 @@ params = {
     'eval_metric': ['logloss', 'auc']
 }
 
-# Custom callback for W&B
+# 用于 W&B 的自定义回调
 def wandb_callback(env):
-    """Log XGBoost metrics to W&B."""
+    """把 XGBoost 指标记录到 W&B。"""
     for metric_name, metric_value in env.evaluation_result_list:
         wandb.log({
             f"{metric_name}": metric_value,
             "iteration": env.iteration
         })
 
-# Train with callback
+# 带回调训练
 model = xgb.train(
     params,
     dtrain,
@@ -470,7 +470,7 @@ model = xgb.train(
     verbose_eval=10
 )
 
-# Save model
+# 保存模型
 model.save_model('xgboost_model.json')
 artifact = wandb.Artifact('xgboost-model', type='model')
 artifact.add_file('xgboost_model.json')
@@ -487,11 +487,11 @@ import wandb
 
 run = wandb.init(project="lgbm-demo")
 
-# Create datasets
+# 创建数据集
 train_data = lgb.Dataset(X_train, label=y_train)
 val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
 
-# Parameters
+# 参数
 params = {
     'objective': 'binary',
     'metric': ['binary_logloss', 'auc'],
@@ -499,9 +499,9 @@ params = {
     'num_leaves': 31
 }
 
-# Custom callback
+# 自定义回调
 def log_to_wandb(env):
-    """Log LightGBM metrics to W&B."""
+    """把 LightGBM 指标记录到 W&B。"""
     for entry in env.evaluation_result_list:
         dataset_name, metric_name, metric_value, _ = entry
         wandb.log({
@@ -509,7 +509,7 @@ def log_to_wandb(env):
             "iteration": env.iteration
         })
 
-# Train
+# 训练
 model = lgb.train(
     params,
     train_data,
@@ -519,7 +519,7 @@ model = lgb.train(
     callbacks=[log_to_wandb]
 )
 
-# Save model
+# 保存模型
 model.save_model('lgbm_model.txt')
 artifact = wandb.Artifact('lgbm-model', type='model')
 artifact.add_file('lgbm_model.txt')
@@ -528,9 +528,9 @@ wandb.log_artifact(artifact)
 wandb.finish()
 ```
 
-## PyTorch Native
+## PyTorch 原生
 
-### Training Loop Integration
+### 训练循环集成
 
 ```python
 import torch
@@ -538,7 +538,7 @@ import torch.nn as nn
 import torch.optim as optim
 import wandb
 
-# Initialize W&B
+# 初始化 W&B
 wandb.init(project="pytorch-native", config={
     "learning_rate": 0.001,
     "epochs": 10,
@@ -547,15 +547,15 @@ wandb.init(project="pytorch-native", config={
 
 config = wandb.config
 
-# Model, loss, optimizer
+# 模型、损失、优化器
 model = create_model()
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
-# Watch model (logs gradients and parameters)
+# 监视模型（记录梯度和参数）
 wandb.watch(model, criterion, log="all", log_freq=100)
 
-# Training loop
+# 训练循环
 for epoch in range(config.epochs):
     model.train()
     train_loss = 0.0
@@ -565,22 +565,22 @@ for epoch in range(config.epochs):
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
-        # Forward pass
+        # 前向传播
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
 
-        # Backward pass
+        # 反向传播
         loss.backward()
         optimizer.step()
 
-        # Track metrics
+        # 跟踪指标
         train_loss += loss.item()
         _, predicted = output.max(1)
         total += target.size(0)
         correct += predicted.eq(target).sum().item()
 
-        # Log every 100 batches
+        # 每 100 个 batch 记录一次
         if batch_idx % 100 == 0:
             wandb.log({
                 'train/loss': loss.item(),
@@ -589,7 +589,7 @@ for epoch in range(config.epochs):
                 'batch': batch_idx
             })
 
-    # Validation
+    # 验证
     model.eval()
     val_loss = 0.0
     val_correct = 0
@@ -606,7 +606,7 @@ for epoch in range(config.epochs):
             val_total += target.size(0)
             val_correct += predicted.eq(target).sum().item()
 
-    # Log epoch metrics
+    # 记录每轮指标
     wandb.log({
         'epoch/train_loss': train_loss / len(train_loader),
         'epoch/train_accuracy': 100. * correct / total,
@@ -615,7 +615,7 @@ for epoch in range(config.epochs):
         'epoch': epoch
     })
 
-# Save final model
+# 保存最终模型
 torch.save(model.state_dict(), 'model.pth')
 artifact = wandb.Artifact('final-model', type='model')
 artifact.add_file('model.pth')
@@ -624,15 +624,15 @@ wandb.log_artifact(artifact)
 wandb.finish()
 ```
 
-## Custom Integrations
+## 自定义集成
 
-### Generic Framework Integration
+### 通用框架集成
 
 ```python
 import wandb
 
 class WandbIntegration:
-    """Generic W&B integration wrapper."""
+    """通用 W&B 集成封装。"""
 
     def __init__(self, project, config):
         self.run = wandb.init(project=project, config=config)
@@ -640,7 +640,7 @@ class WandbIntegration:
         self.step = 0
 
     def log_metrics(self, metrics, step=None):
-        """Log training metrics."""
+        """记录训练指标。"""
         if step is None:
             step = self.step
             self.step += 1
@@ -648,18 +648,18 @@ class WandbIntegration:
         wandb.log(metrics, step=step)
 
     def log_images(self, images, caption=""):
-        """Log images."""
+        """记录图像。"""
         wandb.log({
             caption: [wandb.Image(img) for img in images]
         })
 
     def log_table(self, data, columns):
-        """Log tabular data."""
+        """记录表格数据。"""
         table = wandb.Table(columns=columns, data=data)
         wandb.log({"table": table})
 
     def save_model(self, model_path, metadata=None):
-        """Save model as artifact."""
+        """把模型保存为 artifact。"""
         artifact = wandb.Artifact(
             'model',
             type='model',
@@ -669,32 +669,32 @@ class WandbIntegration:
         self.run.log_artifact(artifact)
 
     def finish(self):
-        """Finish W&B run."""
+        """结束 W&B run。"""
         wandb.finish()
 
-# Usage
+# 用法
 wb = WandbIntegration(project="my-project", config={"lr": 0.001})
 
-# Training loop
+# 训练循环
 for epoch in range(10):
-    # Your training code
+    # 你的训练代码
     loss, accuracy = train_epoch()
 
-    # Log metrics
+    # 记录指标
     wb.log_metrics({
         'train/loss': loss,
         'train/accuracy': accuracy
     })
 
-# Save model
+# 保存模型
 wb.save_model('model.pth', metadata={'accuracy': 0.95})
 wb.finish()
 ```
 
-## Resources
+## 资源
 
-- **Integrations Guide**: https://docs.wandb.ai/guides/integrations
-- **HuggingFace**: https://docs.wandb.ai/guides/integrations/huggingface
-- **PyTorch Lightning**: https://docs.wandb.ai/guides/integrations/lightning
-- **Keras**: https://docs.wandb.ai/guides/integrations/keras
-- **Examples**: https://github.com/wandb/examples
+- **集成指南**：https://docs.wandb.ai/guides/integrations
+- **HuggingFace**：https://docs.wandb.ai/guides/integrations/huggingface
+- **PyTorch Lightning**：https://docs.wandb.ai/guides/integrations/lightning
+- **Keras**：https://docs.wandb.ai/guides/integrations/keras
+- **示例**：https://github.com/wandb/examples

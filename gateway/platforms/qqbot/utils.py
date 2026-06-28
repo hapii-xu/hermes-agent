@@ -1,4 +1,4 @@
-"""QQBot shared utilities — User-Agent, HTTP helpers, config coercion."""
+"""QQBot 共享工具函数 — User-Agent、HTTP 辅助函数、配置值类型转换。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .constants import QQBOT_VERSION
 # ---------------------------------------------------------------------------
 
 def _get_hermes_version() -> str:
-    """Return the hermes-agent package version, or 'dev' if unavailable."""
+    """返回 hermes-agent 包的版本号，若无法获取则返回 'dev'。"""
     try:
         from importlib.metadata import version
         return version("hermes-agent")
@@ -23,13 +23,13 @@ def _get_hermes_version() -> str:
 
 
 def build_user_agent() -> str:
-    """Build a descriptive User-Agent string.
+    """构建描述性的 User-Agent 字符串。
 
-    Format::
+    格式::
 
         QQBotAdapter/<qqbot_version> (Python/<py_version>; <os>; Hermes/<hermes_version>)
 
-    Example::
+    示例::
 
         QQBotAdapter/1.0.0 (Python/3.11.15; darwin; Hermes/0.9.0)
     """
@@ -40,11 +40,11 @@ def build_user_agent() -> str:
 
 
 def get_api_headers() -> Dict[str, str]:
-    """Return standard HTTP headers for QQBot API requests.
+    """返回 QQBot API 请求的标准 HTTP 请求头。
 
-    Includes ``Content-Type``, ``Accept``, and a dynamic ``User-Agent``.
-    ``q.qq.com`` requires ``Accept: application/json`` — without it,
-    the server returns a JavaScript anti-bot challenge page.
+    包含 ``Content-Type``、``Accept`` 和动态生成的 ``User-Agent``。
+    ``q.qq.com`` 要求携带 ``Accept: application/json``，否则
+    服务器会返回 JavaScript 反爬虫挑战页面。
     """
     return {
         "Content-Type": "application/json",
@@ -54,13 +54,13 @@ def get_api_headers() -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Config helpers
+# 配置辅助函数
 # ---------------------------------------------------------------------------
 
 def coerce_list(value: Any) -> List[str]:
-    """Coerce config values into a trimmed string list.
+    """将配置值转换为去除首尾空白的字符串列表。
 
-    Accepts comma-separated strings, lists, tuples, sets, or single values.
+    接受逗号分隔的字符串、列表、元组、集合或单一值。
     """
     if value is None:
         return []

@@ -1,6 +1,6 @@
 ---
 name: imessage
-description: Send and receive iMessages/SMS via the imsg CLI on macOS.
+description: 在 macOS 上通过 imsg CLI 收发 iMessage/SMS。
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -14,89 +14,89 @@ prerequisites:
 
 # iMessage
 
-Use `imsg` to read and send iMessage/SMS via macOS Messages.app.
+使用 `imsg` 通过 macOS 的 Messages.app 读取和发送 iMessage/SMS。
 
-## Prerequisites
+## 前置条件
 
-- **macOS** with Messages.app signed in
-- Install: `brew install steipete/tap/imsg`
-- Grant Full Disk Access for terminal (System Settings → Privacy → Full Disk Access)
-- Grant Automation permission for Messages.app when prompted
+- 已登录账户的 Messages.app 所在的 **macOS**
+- 安装：`brew install steipete/tap/imsg`
+- 为终端授予完全磁盘访问权限（系统设置 → 隐私 → 完全磁盘访问权限）
+- 出现提示时授予对 Messages.app 的自动化权限
 
-## When to Use
+## 适用场景
 
-- User asks to send an iMessage or text message
-- Reading iMessage conversation history
-- Checking recent Messages.app chats
-- Sending to phone numbers or Apple IDs
+- 用户要求发送 iMessage 或短信
+- 读取 iMessage 对话历史
+- 查看最近的 Messages.app 聊天
+- 发送到手机号或 Apple ID
 
-## When NOT to Use
+## 不适用场景
 
-- Telegram/Discord/Slack/WhatsApp messages → use the appropriate gateway channel
-- Group chat management (adding/removing members) → not supported
-- Bulk/mass messaging → always confirm with user first
+- Telegram/Discord/Slack/WhatsApp 消息 → 使用相应的网关频道
+- 群聊管理（添加/移除成员）→ 不支持
+- 批量/群发消息 → 始终先与用户确认
 
-## Quick Reference
+## 快速参考
 
-### List Chats
+### 列出聊天
 
 ```bash
 imsg chats --limit 10 --json
 ```
 
-### View History
+### 查看历史
 
 ```bash
-# By chat ID
+# 按聊天 ID
 imsg history --chat-id 1 --limit 20 --json
 
-# With attachments info
+# 包含附件信息
 imsg history --chat-id 1 --limit 20 --attachments --json
 ```
 
-### Send Messages
+### 发送消息
 
 ```bash
-# Text only
+# 仅文本
 imsg send --to "+14155551212" --text "Hello!"
 
-# With attachment
+# 带附件
 imsg send --to "+14155551212" --text "Check this out" --file /path/to/image.jpg
 
-# Force iMessage or SMS
+# 强制使用 iMessage 或 SMS
 imsg send --to "+14155551212" --text "Hi" --service imessage
 imsg send --to "+14155551212" --text "Hi" --service sms
 ```
 
-### Watch for New Messages
+### 监听新消息
 
 ```bash
 imsg watch --chat-id 1 --attachments
 ```
 
-## Service Options
+## 服务选项
 
-- `--service imessage` — Force iMessage (requires recipient has iMessage)
-- `--service sms` — Force SMS (green bubble)
-- `--service auto` — Let Messages.app decide (default)
+- `--service imessage` — 强制使用 iMessage（要求收件人支持 iMessage）
+- `--service sms` — 强制使用 SMS（绿色气泡）
+- `--service auto` — 由 Messages.app 决定（默认）
 
-## Rules
+## 规则
 
-1. **Always confirm recipient and message content** before sending
-2. **Never send to unknown numbers** without explicit user approval
-3. **Verify file paths** exist before attaching
-4. **Don't spam** — rate-limit yourself
+1. **发送前始终确认收件人和消息内容**
+2. **未经用户明确同意，绝不向未知号码发送**
+3. **附加文件前先验证**文件路径是否存在
+4. **不要刷屏** — 自行控制发送频率
 
-## Example Workflow
+## 示例工作流
 
-User: "Text mom that I'll be late"
+用户：“发短信告诉妈妈我会晚到”
 
 ```bash
-# 1. Find mom's chat
+# 1. 查找妈妈的聊天
 imsg chats --limit 20 --json | jq '.[] | select(.displayName | contains("Mom"))'
 
-# 2. Confirm with user: "Found Mom at +1555123456. Send 'I'll be late' via iMessage?"
+# 2. 与用户确认：“找到 Mom，号码 +1555123456。是否通过 iMessage 发送 'I'll be late'？”
 
-# 3. Send after confirmation
+# 3. 确认后发送
 imsg send --to "+1555123456" --text "I'll be late"
 ```

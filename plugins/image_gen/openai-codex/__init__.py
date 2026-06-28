@@ -1,20 +1,19 @@
-"""OpenAI image generation backend — ChatGPT/Codex OAuth variant.
+"""OpenAI 图像生成后端 — ChatGPT/Codex OAuth 变体。
 
-Identical model catalog and tier semantics to the ``openai`` image-gen plugin
-(``gpt-image-2`` at low/medium/high quality), but routes the request through
-the Codex Responses API ``image_generation`` tool instead of the
-``images.generate`` REST endpoint. This lets users who are already
-authenticated with Codex/ChatGPT generate images without configuring a
-separate ``OPENAI_API_KEY``.
+模型目录和层级语义与 ``openai`` 图像生成插件完全一致
+（``gpt-image-2`` 支持 low/medium/high 质量），但通过 Codex Responses API 的
+``image_generation`` 工具路由请求，而非 ``images.generate`` REST 端点。
+这使得已经通过 Codex/ChatGPT 认证的用户无需配置单独的 ``OPENAI_API_KEY``
+即可生成图像。
 
-Selection precedence for the tier (first hit wins):
+层级选择优先级（首个匹配生效）：
 
-1. ``OPENAI_IMAGE_MODEL`` env var (escape hatch for scripts / tests)
-2. ``image_gen.openai-codex.model`` in ``config.yaml``
-3. ``image_gen.model`` in ``config.yaml`` (when it's one of our tier IDs)
+1. ``OPENAI_IMAGE_MODEL`` 环境变量（脚本/测试的备用入口）
+2. ``config.yaml`` 中的 ``image_gen.openai-codex.model``
+3. ``config.yaml`` 中的 ``image_gen.model``（当其值为本插件的层级 ID 时）
 4. :data:`DEFAULT_MODEL` — ``gpt-image-2-medium``
 
-Output is saved as PNG under ``$HERMES_HOME/cache/images/``.
+输出以 PNG 格式保存至 ``$HERMES_HOME/cache/images/``。
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Model catalog — mirrors the ``openai`` plugin so the picker UX is identical.
+# 模型目录 — 与 ``openai`` 插件镜像，保持选择器体验一致。
 # ---------------------------------------------------------------------------
 
 API_MODEL = "gpt-image-2"
@@ -70,9 +69,8 @@ _SIZES = {
     "portrait": "1024x1536",
 }
 
-# Codex Responses surface used for the request. The chat model itself is only
-# the host that calls the ``image_generation`` tool; the actual image work is
-# done by ``API_MODEL``.
+# 用于发起请求的 Codex Responses 接口。聊天模型本身仅作为调用
+# ``image_generation`` 工具的宿主；实际的图像生成工作由 ``API_MODEL`` 完成。
 _CODEX_CHAT_MODEL = "gpt-5.5"
 _CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 _CODEX_INSTRUCTIONS = (

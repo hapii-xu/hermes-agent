@@ -1,41 +1,41 @@
 # winding-roadmap
 
-Curved path showing journey with milestones and checkpoints.
+蜿蜒路径，展示带里程碑和检查点的旅程。
 
-## Structure
+## 结构
 
-- S-curve or winding path
-- Milestones along the path
-- Start and destination points
-- Side elements (obstacles, helpers)
-- Progress indicators
+- S 型曲线或蜿蜒路径
+- 路径上设里程碑
+- 起点和终点
+- 旁侧元素（障碍、助手）
+- 进度指示器
 
-## Best For
+## 最适用于
 
-- Project roadmaps
-- Career paths
-- Customer journeys
-- Learning paths
-- Strategy timelines
+- 项目路线图
+- 职业路径
+- 客户旅程
+- 学习路径
+- 战略时间线
 
-## Visual Elements
+## 视觉元素
 
-- Curving road or river
-- Milestone markers/flags
-- Scene elements along path
-- Vehicle/character on journey
-- Destination landmark
+- 弯曲的道路或河流
+- 里程碑标记/旗帜
+- 路径沿线的场景元素
+- 旅途中的载具/角色
+- 目的地地标
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Milestone labels at each point
-- Path section names
-- Destination description
-- Optional timeline indicators
+- 标题置于顶部
+- 各点的里程碑标签
+- 路径区段名称
+- 目的地描述
+- 可选的时间线指示
 
-## Recommended Pairings
+## 推荐搭配
 
-- `storybook-watercolor`: Whimsical journeys
-- `cartoon-hand-drawn`: Friendly roadmaps
-- `isometric-3d`: Technical project paths
+- `storybook-watercolor`：奇幻旅程
+- `cartoon-hand-drawn`：友好型路线图
+- `isometric-3d`：技术项目路径

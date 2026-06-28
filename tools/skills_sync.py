@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """
-Skills Sync -- Manifest-based seeding and updating of bundled skills.
+Skills Sync -- 基于清单的内置技能播种与更新。
 
-Copies bundled skills from the repo's skills/ directory into ~/.hermes/skills/
-and uses a manifest to track which skills have been synced and their origin hash.
+把仓库 skills/ 目录下的内置技能拷贝到 ~/.hermes/skills/，并用一份
+清单跟踪哪些技能已被同步及其来源哈希。
 
-Manifest format (v2): each line is "skill_name:origin_hash" where origin_hash
-is the MD5 of the bundled skill at the time it was last synced to the user dir.
-Old v1 manifests (plain names without hashes) are auto-migrated.
+清单格式（v2）：每行为 "skill_name:origin_hash"，其中 origin_hash
+是该内置技能上次同步到用户目录时的 MD5。旧的 v1 清单（只有名称、
+没有哈希）会被自动迁移。
 
-Update logic:
-  - NEW skills (not in manifest): copied to user dir, origin hash recorded.
-  - EXISTING skills (in manifest, present in user dir):
-      * If user copy matches origin hash: user hasn't modified it → safe to
-        update from bundled if bundled changed. New origin hash recorded.
-      * If user copy differs from origin hash: user customized it → SKIP.
-  - DELETED by user (in manifest, absent from user dir): respected, not re-added.
-  - REMOVED from bundled (in manifest, gone from repo): cleaned from manifest.
+更新逻辑：
+  - NEW 技能（不在清单中）：拷贝到用户目录，并记录来源哈希。
+  - EXISTING 技能（在清单中且存在于用户目录）：
+      * 若用户副本与来源哈希一致：用户未改动 → 在内置版本变化时
+        可安全地从内置更新。记录新的来源哈希。
+      * 若用户副本与来源哈希不一致：用户做了定制 → 跳过。
+  - DELETED by user（在清单中但用户目录里不存在）：尊重，不再重新加入。
+  - REMOVED from bundled（在清单中但仓库里已移除）：从清单清理。
 
-The manifest lives at ~/.hermes/skills/.bundled_manifest.
+清单位于 ~/.hermes/skills/.bundled_manifest。
 """
 
 import hashlib
@@ -40,37 +40,36 @@ HERMES_HOME = get_hermes_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 
-# Marker file written by `hermes profile create --no-skills` (named profiles)
-# and by the installer's `--no-skills` flag (the default ~/.hermes profile).
-# When present in HERMES_HOME, sync_skills() is a no-op so neither the
-# installer, `hermes update`, nor a direct sync re-injects bundled skills.
-# Delete the file to opt back in. Mirrors
-# hermes_cli.profiles.NO_BUNDLED_SKILLS_MARKER (kept as a literal here to
-# avoid importing the CLI layer into this low-level sync module).
+# 由 `hermes profile create --no-skills`（命名配置文件）和安装器的
+# `--no-skills` 标志（默认的 ~/.hermes 配置文件）写入的标记文件。
+# 当它出现在 HERMES_HOME 中时，sync_skills() 变成空操作，这样无论是
+# 安装器、`hermes update` 还是直接同步，都不会再注入内置技能。
+# 删除该文件即可重新开启。对应
+# hermes_cli.profiles.NO_BUNDLED_SKILLS_MARKER（此处保留字面量，以
+# 免把这个底层同步模块引入 CLI 层）。
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
 
 def _get_bundled_dir() -> Path:
-    """Locate the bundled skills/ directory.
+    """定位内置 skills/ 目录。
 
-    Checks HERMES_BUNDLED_SKILLS env var first (set by Nix wrapper),
-    then a wheel-installed data dir, then falls back to the relative
-    path from this source file.
+    先检查 HERMES_BUNDLED_SKILLS 环境变量（由 Nix 包装脚本设置），
+    再检查 wheel 安装的数据目录，最后回退到相对本源文件的路径。
     """
     return get_bundled_skills_dir(Path(__file__).parent.parent / "skills")
 
 
 def _get_optional_dir() -> Path:
-    """Locate the official optional-skills/ directory."""
+    """定位官方 optional-skills/ 目录。"""
     return get_optional_skills_dir(Path(__file__).parent.parent / "optional-skills")
 
 
 def _read_manifest() -> Dict[str, str]:
     """
-    Read the manifest as a dict of {skill_name: origin_hash}.
+    把清单读取为 {skill_name: origin_hash} 形式的 dict。
 
-    Handles both v1 (plain names) and v2 (name:hash) formats.
-    v1 entries get an empty hash string which triggers migration on next sync.
+    同时兼容 v1（纯名称）和 v2（name:hash）格式。
+    v1 条目获得一个空哈希字符串，会在下次同步时触发迁移。
     """
     if not MANIFEST_FILE.exists():
         return {}
@@ -81,11 +80,11 @@ def _read_manifest() -> Dict[str, str]:
             if not line:
                 continue
             if ":" in line:
-                # v2 format: name:hash
+                # v2 格式：name:hash
                 name, _, hash_val = line.partition(":")
                 result[name.strip()] = hash_val.strip()
             else:
-                # v1 format: plain name — empty hash triggers migration
+                # v1 格式：纯名称 —— 空哈希触发迁移
                 result[line] = ""
         return result
     except (OSError, IOError):
@@ -93,11 +92,11 @@ def _read_manifest() -> Dict[str, str]:
 
 
 def _read_suppressed_names() -> set:
-    """Built-in skills the curator pruned — must NOT be re-seeded on sync.
+    """被 curator 修剪掉的内置技能 —— 同步时绝不能重新播种。
 
-    Delegates to ``tools.skill_usage`` (single source of truth) and falls back
-    to reading ``~/.hermes/skills/.curator_suppressed`` directly if that import
-    is unavailable in a packaged/update context.
+    委托给 ``tools.skill_usage``（唯一可信源），若该导入在打包/更新
+    场景下不可用，则直接回退读取
+    ``~/.hermes/skills/.curator_suppressed``。
     """
     try:
         from tools.skill_usage import read_suppressed_names
@@ -119,10 +118,10 @@ def _read_suppressed_names() -> set:
 
 
 def _write_manifest(entries: Dict[str, str]):
-    """Write the manifest file atomically in v2 format (name:hash).
+    """以 v2 格式（name:hash）原子地写入清单文件。
 
-    Uses a temp file + os.replace() to avoid corruption if the process
-    crashes or is interrupted mid-write.
+    使用临时文件 + os.replace()，避免进程崩溃或写入中途被打断导致
+    文件损坏。
     """
     import tempfile
 
@@ -152,7 +151,7 @@ def _write_manifest(entries: Dict[str, str]):
 
 
 def _read_skill_name(skill_md: Path, fallback: str) -> str:
-    """Read the name field from SKILL.md YAML frontmatter, falling back to *fallback*."""
+    """从 SKILL.md 的 YAML frontmatter 中读取 name 字段，失败则回退到 *fallback*。"""
     try:
         content = skill_md.read_text(encoding="utf-8", errors="replace")[:4000]
     except OSError:
@@ -174,8 +173,8 @@ def _read_skill_name(skill_md: Path, fallback: str) -> str:
 
 def _discover_bundled_skills(bundled_dir: Path) -> List[Tuple[str, Path]]:
     """
-    Find all SKILL.md files in the bundled directory.
-    Returns list of (skill_name, skill_directory_path) tuples.
+    在内置目录下查找所有 SKILL.md 文件。
+    返回 (skill_name, skill_directory_path) 元组的列表。
     """
     skills = []
     if not bundled_dir.exists():
@@ -193,15 +192,15 @@ def _discover_bundled_skills(bundled_dir: Path) -> List[Tuple[str, Path]]:
 
 def _compute_relative_dest(skill_dir: Path, bundled_dir: Path) -> Path:
     """
-    Compute the destination path in SKILLS_DIR preserving the category structure.
-    e.g., bundled/skills/mlops/axolotl -> ~/.hermes/skills/mlops/axolotl
+    计算 SKILLS_DIR 下的目标路径，保留分类结构。
+    例如 bundled/skills/mlops/axolotl -> ~/.hermes/skills/mlops/axolotl
     """
     rel = skill_dir.relative_to(bundled_dir)
     return SKILLS_DIR / rel
 
 
 def _dir_hash(directory: Path) -> str:
-    """Compute a hash of all file contents in a directory for change detection."""
+    """对目录下所有文件内容计算哈希，用于变更检测。"""
     hasher = hashlib.md5()
     try:
         for fpath in sorted(directory.rglob("*")):
@@ -215,7 +214,7 @@ def _dir_hash(directory: Path) -> str:
 
 
 def _safe_rel_install_path(path: Path, base: Path) -> str:
-    """Return a normalized relative POSIX path, rejecting traversal/absolute paths."""
+    """返回规范化的相对 POSIX 路径，拒绝穿越/绝对路径。"""
     rel = path.relative_to(base)
     posix = rel.as_posix()
     pure = PurePosixPath(posix)
@@ -226,7 +225,7 @@ def _safe_rel_install_path(path: Path, base: Path) -> str:
 
 
 def _skill_file_list(skill_dir: Path) -> List[str]:
-    """List files inside a skill directory in lock-file format."""
+    """以 lock-file 格式列出某个技能目录内的文件。"""
     files: List[str] = []
     for fpath in sorted(skill_dir.rglob("*")):
         if fpath.is_file():
@@ -235,23 +234,23 @@ def _skill_file_list(skill_dir: Path) -> List[str]:
 
 
 def _content_hash(directory: Path) -> str:
-    """Return the same hash style the skills hub lock uses, falling back locally."""
+    """返回与 skills hub lock 一致的哈希风格，本地则回退。"""
     try:
         from tools.skills_guard import content_hash
 
         return content_hash(directory)
     except Exception:
-        # Hashing is provenance metadata only; keep sync resilient if guard
-        # dependencies are unavailable in a packaged/update context.
+        # 哈希仅用于来源元数据；在打包/更新场景下 guard 依赖不可用时
+        # 保持同步的健壮性。
         return _dir_hash(directory)
 
 
 def _optional_skill_index() -> Dict[str, Tuple[str, str, Path]]:
-    """Return official optional skills keyed by folder name and frontmatter name.
+    """以文件夹名和 frontmatter 名为键，返回官方可选技能。
 
-    Values are ``(folder_name, install_path, source_dir)``. Multiple keys may
-    point to the same skill so callers can accept either the folder slug used
-    by the hub lock or the user-facing frontmatter name.
+    值为 ``(folder_name, install_path, source_dir)``。多个键可能指向
+    同一个技能，这样调用方既能接受 hub lock 使用的文件夹 slug，
+    也能接受面向用户的 frontmatter 名。
     """
     optional_dir = _get_optional_dir()
     index: Dict[str, Tuple[str, str, Path]] = {}
@@ -274,7 +273,7 @@ def _optional_skill_index() -> Dict[str, Tuple[str, str, Path]]:
 
 
 def _move_to_restore_backup(path: Path, backup_root: Path) -> str:
-    """Move an existing skill directory into a restore backup, preserving rel path."""
+    """把已有技能目录移到恢复备份中，保留相对路径。"""
     rel = path.relative_to(SKILLS_DIR)
     target = backup_root / rel
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -288,11 +287,11 @@ def _move_to_restore_backup(path: Path, backup_root: Path) -> str:
 
 
 def restore_official_optional_skill(name: str, *, restore: bool = False) -> dict:
-    """Restore one or all official optional skills from repo source.
+    """从仓库源恢复一个或全部官方可选技能。
 
-    ``restore=False`` only performs exact-match provenance backfill. ``restore=True``
-    repairs already-mutated/reorganized skills by backing up matching active
-    copies and copying the official optional source into its canonical path.
+    ``restore=False`` 仅执行精确匹配的来源回填。``restore=True`` 通过
+    备份匹配的活动副本并把官方可选源拷贝到其规范路径，修复已被改动/
+    重组的技能。
     """
     index = _optional_skill_index()
     if not index:
@@ -315,8 +314,8 @@ def restore_official_optional_skill(name: str, *, restore: bool = False) -> dict
         src_hash = _dir_hash(src)
         canonical_ok = dest.exists() and _dir_hash(dest) == src_hash
 
-        # Find already-active copies of this official skill by frontmatter name
-        # or folder slug, even if curator moved it into another category.
+        # 按 frontmatter 名或文件夹 slug 查找该官方技能已经活动的副本，
+        # 即便 curator 把它移到了另一个分类下。
         src_frontmatter = _read_skill_name(src / "SKILL.md", folder_name)
         matches: List[Path] = []
         if SKILLS_DIR.exists():
@@ -359,13 +358,12 @@ def restore_official_optional_skill(name: str, *, restore: bool = False) -> dict
 
 
 def _backfill_optional_provenance(quiet: bool = False) -> List[str]:
-    """Mark already-present official optional skills as hub-installed.
+    """把已存在的官方可选技能标记为 hub 安装。
 
-    This covers the migration case where a skill used to be bundled (or was
-    manually copied into the active skills tree) and later lives under
-    optional-skills/. If the active copy is byte-identical to the official
-    optional source, record official hub provenance without copying or
-    reinstalling anything. Modified/local skills are left alone.
+    这覆盖了这样的迁移场景：某个技能曾经是内置的（或被手动拷贝进
+    活动技能树），后来又出现在 optional-skills/ 下。若活动副本与官方
+    可选源逐字节一致，就记录官方 hub 来源，而无需拷贝或重装。已改动/
+    本地化的技能保持不动。
     """
     optional_dir = _get_optional_dir()
     if not optional_dir.exists():
@@ -425,9 +423,8 @@ def _backfill_optional_provenance(quiet: bool = False) -> List[str]:
 
     if changed:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write so a crash mid-write can't silently wipe all provenance
-        # via the JSONDecodeError fallback above (which resets `installed` to
-        # an empty dict).
+        # 原子写入，这样写入中途崩溃不会因为上面的 JSONDecodeError 回退
+        # （它会把 `installed` 重置为空 dict）而静默抹掉全部来源。
         import tempfile
 
         payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
@@ -453,17 +450,17 @@ def _backfill_optional_provenance(quiet: bool = False) -> List[str]:
 
 def sync_skills(quiet: bool = False) -> dict:
     """
-    Sync bundled skills into ~/.hermes/skills/ using the manifest.
+    用清单把内置技能同步到 ~/.hermes/skills/。
 
-    Returns:
-        dict with keys: copied (list), updated (list), skipped (int),
-                        user_modified (list), cleaned (list), total_bundled (int)
+    返回：
+        dict，键为：copied（list）、updated（list）、skipped（int）、
+                        user_modified（list）、cleaned（list）、total_bundled（int）
     """
-    # Opt-out: a profile (named or the default ~/.hermes) that wrote the
-    # .no-bundled-skills marker gets zero bundled-skill seeding. Returning the
-    # empty-result shape with skipped_opt_out lets callers report "opted out"
-    # instead of "synced 0 / failed". This is the default-profile counterpart
-    # to seed_profile_skills()'s marker check for named profiles.
+    # 主动退出：写入过 .no-bundled-skills 标记的配置文件（命名或默认
+    # ~/.hermes）不会播种任何内置技能。返回带 skipped_opt_out 的空
+    # 结果结构，让调用方报告「已退出」而非「同步 0 / 失败」。这是
+    # seed_profile_skills() 针对命名配置文件的标记检查在默认配置
+    # 文件上的对应物。
     if (HERMES_HOME / NO_BUNDLED_SKILLS_MARKER).exists():
         if not quiet:
             print("  (skipped — profile opted out of bundled skills via .no-bundled-skills)")
@@ -494,11 +491,11 @@ def sync_skills(quiet: bool = False) -> dict:
     skipped = 0
 
     for skill_name, skill_src in bundled_skills:
-        # Curator-pruned built-ins: do not re-seed. The suppression list
-        # (~/.hermes/skills/.curator_suppressed) is written when the curator
-        # archives a bundled skill with curator.prune_builtins enabled. Without
-        # this skip, every `hermes update` would resurrect a skill the user
-        # deliberately pruned. Restoring the skill clears its suppression entry.
+        # curator 修剪过的内置技能：不重新播种。抑制列表
+        # （~/.hermes/skills/.curator_suppressed）在 curator 归档某个
+        # 内置技能且 curator.prune_builtins 启用时写入。若不跳过，每
+        # 次 `hermes update` 都会让用户刻意修剪掉的技能死灰复燃。
+        # 恢复该技能会清除其抑制条目。
         if skill_name in suppressed:
             suppressed_skipped.append(skill_name)
             continue
@@ -506,12 +503,11 @@ def sync_skills(quiet: bool = False) -> dict:
         dest = _compute_relative_dest(skill_src, bundled_dir)
         bundled_hash = _dir_hash(skill_src)
 
-        # Recover an orphaned backup before classifying. If a previous
-        # update was interrupted between moving dest aside and copying the
-        # new version in, the user's only copy sits in ``dest.bak`` while
-        # dest is gone — without this, the "in manifest but not on disk"
-        # branch below misreads the skill as user-deleted and it silently
-        # vanishes from discovery.
+        # 在分类前先恢复孤立的备份。若上一次更新在「把 dest 移到一旁」
+        # 和「拷入新版本」之间被打断，用户唯一的副本就在 ``dest.bak``
+        # 里，而 dest 已不存在 —— 若不恢复，下面「在清单中但磁盘上
+        # 没有」分支会把该技能误判为用户删除，于是它悄无声息地从
+        # 发现结果中消失。
         _orphan = dest.with_suffix(".bak")
         if _orphan.exists() and not dest.exists():
             try:
@@ -525,18 +521,17 @@ def sync_skills(quiet: bool = False) -> dict:
                 )
 
         if skill_name not in manifest:
-            # ── New skill — never offered before ──
+            # ── 新技能 —— 从未提供过 ──
             try:
                 if dest.exists():
-                    # User already has a skill with the same name — don't overwrite.
-                    # Only baseline in the manifest when the on-disk copy is
-                    # byte-identical to bundled (e.g. a reset that re-syncs, or
-                    # a coincidentally identical install); that case is harmless
-                    # to track. If the copy differs (custom skill, hub-installed,
-                    # or user-edited) skip the manifest write: recording
-                    # bundled_hash there would poison update detection by making
-                    # user_hash != origin_hash read as "user-modified" on every
-                    # subsequent sync, permanently blocking bundled updates.
+                    # 用户已有一个同名技能 —— 不覆盖。仅当磁盘上的副本
+                    # 与内置逐字节一致时（例如重置后重新同步，或恰好
+                    # 相同的安装）才记入清单；这种情况无害可跟踪。若
+                    # 副本不同（自定义技能、hub 安装或用户编辑过），
+                    # 跳过清单写入：在那里记录 bundled_hash 会让
+                    # user_hash != origin_hash 在随后的每次同步中都被
+                    # 读作「用户改动」，从而毒化更新检测，永久阻断
+                    # 内置更新。
                     skipped += 1
                     if _dir_hash(dest) == bundled_hash:
                         manifest[skill_name] = bundled_hash
@@ -557,40 +552,39 @@ def sync_skills(quiet: bool = False) -> dict:
             except (OSError, IOError) as e:
                 if not quiet:
                     print(f"  ! Failed to copy {skill_name}: {e}")
-                # Do NOT add to manifest — next sync should retry
+                # 不要加入清单 —— 下次同步应重试
 
         elif dest.exists():
-            # ── Existing skill — in manifest AND on disk ──
+            # ── 既有技能 —— 在清单中且磁盘上存在 ──
             origin_hash = manifest.get(skill_name, "")
             user_hash = _dir_hash(dest)
 
             if not origin_hash:
-                # v1 migration: no origin hash recorded. Set baseline from
-                # user's current copy so future syncs can detect modifications.
+                # v1 迁移：没有记录来源哈希。用用户当前副本设定基线，
+                # 以便后续同步能检测改动。
                 manifest[skill_name] = user_hash
                 if user_hash == bundled_hash:
-                    skipped += 1  # already in sync
+                    skipped += 1  # 已同步
                 else:
-                    # Can't tell if user modified or bundled changed — be safe
+                    # 无法判断是用户改动还是内置变化 —— 保险起见跳过
                     skipped += 1
                 continue
 
             if _is_tracked_user_modification(origin_hash, user_hash):
-                # User modified this skill — don't overwrite their changes
+                # 用户改动了该技能 —— 不覆盖他们的改动
                 user_modified.append(skill_name)
                 if not quiet:
                     print(f"  ~ {skill_name} (user-modified, skipping)")
                 continue
 
-            # User copy matches origin — check if bundled has a newer version
+            # 用户副本与来源一致 —— 检查内置是否有更新版本
             if bundled_hash != origin_hash:
                 try:
-                    # Move old copy to a backup so we can restore on failure
+                    # 把旧副本移到备份，以便失败时恢复
                     backup = dest.with_suffix(".bak")
-                    # A stale backup left by an earlier failure would make
-                    # shutil.move() nest dest *inside* it (or fail outright)
-                    # and would poison the restore path below. The current
-                    # dest is the authoritative copy — clear the leftover.
+                    # 早先失败留下的陈旧备份会让 shutil.move() 把
+                    # dest 嵌套进它里面（或直接失败），并毒化下方的
+                    # 恢复路径。当前 dest 才是权威副本 —— 清掉遗留。
                     if backup.exists():
                         _rmtree_writable(backup)
                     shutil.move(str(dest), str(backup))
@@ -600,15 +594,14 @@ def sync_skills(quiet: bool = False) -> dict:
                         updated.append(skill_name)
                         if not quiet:
                             print(f"  ↑ {skill_name} (updated)")
-                        # Remove backup after successful copy
+                        # 拷贝成功后移除备份
                         try:
                             _rmtree_writable(backup)
                         except (OSError, IOError):
                             logger.debug("Could not remove backup %s", backup, exc_info=True)
                     except (OSError, IOError):
-                        # Restore from backup. A partially-written dest must
-                        # not shadow the user's copy or block the restore —
-                        # clear it first, then move the backup home.
+                        # 从备份恢复。写了一半的 dest 绝不能遮蔽用户
+                        # 副本或阻碍恢复 —— 先清掉它，再把备份移回原位。
                         if backup.exists():
                             if dest.exists():
                                 try:
@@ -625,18 +618,18 @@ def sync_skills(quiet: bool = False) -> dict:
                     if not quiet:
                         print(f"  ! Failed to update {skill_name}: {e}")
             else:
-                skipped += 1  # bundled unchanged, user unchanged
+                skipped += 1  # 内置未变，用户未变
 
         else:
-            # ── In manifest but not on disk — user deleted it ──
+            # ── 在清单中但磁盘上不存在 —— 用户删除了它 ──
             skipped += 1
 
-    # Clean stale manifest entries (skills removed from bundled dir)
+    # 清理陈旧的清单条目（已从内置目录移除的技能）
     cleaned = sorted(set(manifest.keys()) - bundled_names)
     for name in cleaned:
         del manifest[name]
 
-    # Also copy DESCRIPTION.md files for categories (if not already present)
+    # 同时拷贝分类的 DESCRIPTION.md 文件（若尚未存在）
     for desc_md in bundled_dir.rglob("DESCRIPTION.md"):
         rel = desc_md.relative_to(bundled_dir)
         dest_desc = SKILLS_DIR / rel
@@ -663,34 +656,30 @@ def sync_skills(quiet: bool = False) -> dict:
 
 
 def _rmtree_writable(path: Path) -> None:
-    """Remove a directory tree, making read-only entries writable first.
+    """移除一个目录树，先把只读条目改为可写。
 
-    Handles immutable package sources (Nix store, deb/rpm installs) that
-    preserve read-only permissions on copied files *and* directories
-    (``r-xr-xr-x``).  Removing a child requires write permission on its
-    parent directory, so the retry handler makes the failing path **and its
-    parent** writable before re-attempting.  See #34860, #34972.
+    处理不可变包源（Nix store、deb/rpm 安装）—— 它们对拷贝出来的
+    文件*和*目录都保留只读权限（``r-xr-xr-x``）。删除子项需要其父
+    目录的写权限，因此重试处理器在再次尝试前会把失败路径**及其
+    父目录**都改为可写。参见 #34860、#34972。
     """
-    # Defense in depth (#48200): refuse to rmtree anything outside
-    # ``HERMES_HOME/skills/`` to prevent the catastrophic wipe of
-    # ``~/.hermes/`` (``.env``, ``MEMORY.md``, ``kanban.db``, custom
-    # skills, scripts, …) that an earlier incident observed. Five call
-    # sites in this file invoke this helper; if any one of them ever
-    # computes a destination outside the skills root — through a bad
-    # path join, a missing ``HERMES_HOME`` default, a malicious
-    # bundled-manifest entry, or a mid-flight exception that leaves a
-    # stale path in scope — this guard turns the resulting
-    # ``shutil.rmtree(~/.hermes)`` into a loud, recoverable ``ValueError``
-    # instead of silently destroying the user's install.
+    # 纵深防御（#48200）：拒绝 rmtree ``HERMES_HOME/skills/`` 之外的
+    # 任何东西，以防早先某次事故中出现的灾难性清空
+    # ``~/.hermes/``（``.env``、``MEMORY.md``、``kanban.db``、自定义
+    # 技能、脚本……）。本文件中有五处调用点使用此辅助函数；只要其中
+    # 任何一处——通过糟糕的路径拼接、缺失的 ``HERMES_HOME`` 默认值、
+    # 恶意的内置清单条目，或飞行途中异常留下的陈旧路径——把目标算
+    # 出了技能根之外，这道防线就会把随之而来的
+    # ``shutil.rmtree(~/.hermes)`` 变成响亮、可恢复的
+    # ``ValueError``，而非静默销毁用户的安装。
     target = Path(path).resolve()
     skills_root = SKILLS_DIR.resolve()
-    # Every legitimate caller passes a skill directory or its ``.bak``
-    # sibling — always a strict child of the skills root. The skills root
-    # itself must never be removed: a ``dest`` that collapses to
-    # ``SKILLS_DIR`` (e.g. a relative path resolving to ``.``) would wipe
-    # every installed skill, and its ``.bak`` sibling lands one level up in
-    # ``HERMES_HOME``. Require a strict-child relationship so both escape
-    # into the skills root and out of it are refused.
+    # 每个合法调用方传入的都是一个技能目录或其 ``.bak`` 兄弟目录 ——
+    # 永远是技能根的严格子项。技能根本身绝不能移除：一个坍缩为
+    # ``SKILLS_DIR`` 的 ``dest``（例如相对路径解析为 ``.``）会清空
+    # 每个已安装技能，而其 ``.bak`` 兄弟目录会落到上一层的
+    # ``HERMES_HOME`` 里。要求严格子项关系，从而无论逃逸进技能根
+    # 还是逃逸出技能根都被拒绝。
     if skills_root not in target.parents:
         raise ValueError(
             f"refusing to rmtree {target!r}: not strictly under {skills_root!r} "
@@ -699,8 +688,8 @@ def _rmtree_writable(path: Path) -> None:
     import stat
 
     def _on_error(func, fpath, exc_info):
-        # Unlinking a child requires the parent dir to be writable, so chmod
-        # the parent as well as the failing path, then retry.
+        # 删除子项需要其父目录可写，因此对失败路径和其父目录都做
+        # chmod，然后重试。
         for target in (os.path.dirname(fpath), fpath):
             try:
                 os.chmod(target, stat.S_IRWXU)
@@ -713,27 +702,26 @@ def _rmtree_writable(path: Path) -> None:
 
 def reset_bundled_skill(name: str, restore: bool = False) -> dict:
     """
-    Reset a bundled skill's manifest tracking so future syncs work normally.
+    重置某个内置技能的清单跟踪，使后续同步正常工作。
 
-    When a user edits a bundled skill, subsequent syncs mark it as
-    ``user_modified`` and skip it forever — even if the user later copies
-    the bundled version back into place, because the manifest still holds
-    the *old* origin hash. This function breaks that loop.
+    当用户编辑了某个内置技能，后续同步会把它标记为
+    ``user_modified`` 并永远跳过 —— 即便用户后来把内置版本原样拷回，
+    因为清单里仍持有*旧*的来源哈希。本函数打破该循环。
 
-    Args:
-        name: The skill name (matches the manifest key / skill frontmatter name).
-        restore: If True, also delete the user's copy in SKILLS_DIR and let
-                 the next sync re-copy the current bundled version. If False
-                 (default), only clear the manifest entry — the user's
-                 current copy is preserved but future updates work again.
+    参数：
+        name: 技能名（与清单键 / 技能 frontmatter 名一致）。
+        restore: 若为 True，还删除用户在 SKILLS_DIR 的副本，让下次
+                 同步重新拷贝当前内置版本。若为 False（默认），仅清
+                 除清单条目 —— 用户当前副本被保留，但未来的更新重新
+                 生效。
 
-    Returns:
-        dict with keys:
-          - ok: bool, whether the reset succeeded
-          - action: one of "manifest_cleared", "restored", "not_in_manifest",
-                    "bundled_missing"
-          - message: human-readable description
-          - synced: dict from sync_skills() if a sync was triggered, else None
+    返回：
+        dict，键为：
+          - ok: bool，重置是否成功
+          - action: 取值为 "manifest_cleared"、"restored"、
+                    "not_in_manifest"、"bundled_missing" 之一
+          - message: 人类可读的描述
+          - synced: 若触发了同步则为 sync_skills() 的 dict，否则为 None
     """
     manifest = _read_manifest()
     bundled_dir = _get_bundled_dir()
@@ -754,9 +742,9 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
             "synced": None,
         }
 
-    # Step 1 (optional): delete the user's copy so next sync re-copies bundled.
-    # Must happen BEFORE manifest deletion so that a failed rmtree does not
-    # leave the skill in a manifest-less limbo state (see #34972).
+    # 第 1 步（可选）：删除用户副本，以便下次同步重新拷贝内置。
+    # 必须在清单删除之前进行，这样 rmtree 失败时不会让技能陷入
+    # 无清单的中间状态（参见 #34972）。
     deleted_user_copy = False
     if restore:
         if not is_bundled:
@@ -785,19 +773,19 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
                     "synced": None,
                 }
 
-    # Step 2: drop the manifest entry so next sync treats it as new
+    # 第 2 步：删除清单条目，以便下次同步把它当作新技能
     if in_manifest:
         del manifest[name]
         _write_manifest(manifest)
 
-    # Step 3: run sync to re-baseline (or re-copy if we deleted)
+    # 第 3 步：运行同步重新设定基线（或若我们删除过则重新拷贝）
     synced = sync_skills(quiet=True)
 
     if restore and deleted_user_copy:
         action = "restored"
         message = f"Restored '{name}' from bundled source."
     elif restore:
-        # Nothing on disk to delete, but we re-synced — acts like a fresh install
+        # 磁盘上没有可删除的东西，但我们重新同步了 —— 行为类似全新安装
         action = "restored"
         message = f"Restored '{name}' (no prior user copy, re-copied from bundled)."
     else:
@@ -811,31 +799,28 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
 
 
 def _is_tracked_user_modification(origin_hash: str, user_hash: str) -> bool:
-    """Whether an on-disk skill counts as a user modification ``hermes update`` keeps.
+    """磁盘上的某技能是否算作 ``hermes update`` 保留的用户改动。
 
-    Shared by the sync loop (which decides what to skip) and
-    ``list_user_modified_bundled_skills`` (which surfaces the names) so the two
-    can never drift. A skill is a tracked modification only when it has a
-    recorded origin hash (an un-baselined / v1 entry with an empty hash is not)
-    and its current content hash differs from that origin.
+    由同步循环（决定跳过什么）和 ``list_user_modified_bundled_skills``
+    （暴露名称）共享，使两者永不会漂移。仅当技能有记录的来源哈希
+    （未设定基线 / v1 条目带空哈希则不算）且其当前内容哈希与该来源
+    不同时，才算作被跟踪的改动。
     """
     return bool(origin_hash) and user_hash != origin_hash
 
 
 def list_user_modified_bundled_skills() -> List[dict]:
-    """Return the bundled skills that ``hermes update`` keeps because the user
-    edited them locally.
+    """返回 ``hermes update`` 因用户本地编辑而保留的内置技能。
 
-    A skill counts as user-modified when its on-disk copy no longer matches the
-    origin hash recorded in the manifest the last time it was synced — the exact
-    same test the sync loop uses to decide what to skip. This is the discovery
-    half of that behavior, so a user can find the names the ``~ N user-modified
-    (kept)`` notice only counts.
+    当某技能的磁盘副本不再与清单中上次同步时记录的来源哈希匹配，
+    即算作用户改动 —— 这正是同步循环用来决定跳过什么的判据。这是
+    该行为的发现侧，让用户能找到 ``~ N user-modified (kept)`` 提示
+    实际计入的那些名称。
 
-    Returns a list (sorted by name) of dicts:
+    返回按名称排序的 dict 列表：
         ``{"name": str, "dest": Path, "bundled_src": Path}``
-    where ``dest`` is the user's copy and ``bundled_src`` is the current stock
-    copy (so callers can diff or restore).
+    其中 ``dest`` 是用户副本，``bundled_src`` 是当前内置副本（便于
+    调用方 diff 或恢复）。
     """
     manifest = _read_manifest()
     if not manifest:
@@ -844,8 +829,8 @@ def list_user_modified_bundled_skills() -> List[dict]:
     modified: List[dict] = []
     for skill_name, skill_dir in _discover_bundled_skills(bundled_dir):
         origin_hash = manifest.get(skill_name, "")
-        # No entry, or a v1 entry not yet baselined (empty hash): not a tracked
-        # modification — the next sync handles it.
+        # 无条目，或尚未设定基线的 v1 条目（空哈希）：不是被跟踪的
+        # 改动 —— 由下次同步处理。
         if not origin_hash:
             continue
         dest = _compute_relative_dest(skill_dir, bundled_dir)
@@ -860,11 +845,11 @@ def list_user_modified_bundled_skills() -> List[dict]:
 
 
 def _read_for_diff(path: Path) -> Tuple[Optional[bytes], Optional[str]]:
-    """Read a file once for diffing.
+    """为 diff 一次性读取文件。
 
-    Returns ``(raw_bytes, text)`` where ``text`` is ``None`` if the file is
-    binary; ``(None, None)`` if it could not be read. Returning the raw bytes
-    lets the caller compare binary files without re-reading them.
+    返回 ``(raw_bytes, text)``，其中文件为二进制时 ``text`` 为
+    ``None``；无法读取时为 ``(None, None)``。返回原始字节让调用方
+    无需重读即可比较二进制文件。
     """
     try:
         data = path.read_bytes()
@@ -879,17 +864,17 @@ def _read_for_diff(path: Path) -> Tuple[Optional[bytes], Optional[str]]:
 
 
 def diff_bundled_skill(name: str) -> dict:
-    """Diff a user's copy of a bundled skill against the current stock version.
+    """把用户副本与当前内置版本做 diff。
 
-    Lets a user see exactly what diverged before deciding whether to keep their
-    edits or ``hermes skills reset`` back to upstream.
+    让用户在决定保留自己的编辑还是 ``hermes skills reset`` 回到上游
+    之前，看清到底有哪些分歧。
 
-    Returns a dict:
-        ``ok`` (bool), ``name`` (str), ``found`` (bool — bundled source exists),
-        ``modified`` (bool), ``message`` (str),
-        ``diffs``: list of ``{"path": str, "status": str, "diff": str}`` where
-        status is one of ``modified`` / ``added`` (only in user copy) /
-        ``removed`` (only in bundled) / ``binary``.
+    返回一个 dict：
+        ``ok``（bool）、``name``（str）、``found``（bool —— 内置源
+        是否存在）、``modified``（bool）、``message``（str）、
+        ``diffs``：``{"path": str, "status": str, "diff": str}`` 的
+        列表，其中 status 取值为 ``modified`` / ``added``（仅用户副本
+        有）/ ``removed``（仅内置有）/ ``binary`` 之一。
     """
     import difflib
 
@@ -935,8 +920,8 @@ def diff_bundled_skill(name: str) -> dict:
 
         if in_user and in_stock:
             if user_text is None or stock_text is None:
-                # At least one side is binary — report only if bytes differ
-                # (reuse the bytes already read above, no second read).
+                # 至少一侧是二进制 —— 仅在字节不同时报告
+                # （复用上面已读到的字节，不再读第二次）。
                 if user_bytes != stock_bytes:
                     diffs.append(
                         {"path": rel, "status": "binary", "diff": "<binary file differs>"}
@@ -978,18 +963,18 @@ def diff_bundled_skill(name: str) -> dict:
 
 
 def set_bundled_skills_opt_out(enabled: bool) -> dict:
-    """Toggle the .no-bundled-skills opt-out marker for the active profile.
+    """切换当前配置文件的 .no-bundled-skills 退出标记。
 
-    When ``enabled`` is True, writes HERMES_HOME/.no-bundled-skills so the
-    installer, ``hermes update``, and any direct sync stop seeding bundled
-    skills. When False, removes the marker so seeding resumes on the next
-    sync. This is the on-disk-state half of ``hermes skills opt-out`` /
-    ``opt-in``; removal of already-present skills is a separate, explicit
-    step (see ``remove_pristine_bundled_skills``).
+    当 ``enabled`` 为 True 时，写入 HERMES_HOME/.no-bundled-skills，
+    使安装器、``hermes update`` 以及任何直接同步都停止播种内置技能。
+    为 False 时移除该标记，使下次同步恢复播种。这是
+    ``hermes skills opt-out`` / ``opt-in`` 的磁盘状态半部分；移除
+    已存在的技能是独立的、显式步骤（见
+    ``remove_pristine_bundled_skills``）。
 
-    Returns:
-        dict with keys: ok (bool), changed (bool), marker (str path),
-                        message (str).
+    返回：
+        dict，键为：ok（bool）、changed（bool）、marker（str 路径）、
+                        message（str）。
     """
     marker = HERMES_HOME / NO_BUNDLED_SKILLS_MARKER
     existed = marker.exists()
@@ -1028,32 +1013,31 @@ def set_bundled_skills_opt_out(enabled: bool) -> dict:
 
 
 def is_bundled_skills_opt_out() -> bool:
-    """Return True if the active profile carries the opt-out marker."""
+    """当前配置文件是否带有退出标记，是则返回 True。"""
     return (HERMES_HOME / NO_BUNDLED_SKILLS_MARKER).exists()
 
 
 def remove_pristine_bundled_skills(dry_run: bool = False) -> dict:
-    """Delete bundled skills that are present, manifest-tracked, AND unmodified.
+    """删除存在、被清单跟踪且未被改动的内置技能。
 
-    Safety is the whole point of this function. A skill on disk is removed
-    ONLY when all of these hold:
-      - it is recorded in the sync manifest (so it is genuinely a bundled
-        skill, not a hub-installed or hand-written one), AND
-      - it still exists in the bundled source (so we can hash-compare), AND
-      - its on-disk copy is byte-identical to the manifest origin hash
-        (so the user has not edited it).
+    安全是本函数的全部意义。只有当下列条件全部满足时，才会移除
+    磁盘上的某技能：
+      - 它记录在同步清单里（即确为内置技能，而非 hub 安装或手写），
+        且
+      - 它仍存在于内置源中（这样我们才能做哈希比较），且
+      - 它的磁盘副本与清单来源哈希逐字节一致（即用户未编辑过）。
 
-    Anything user-modified, hub-installed, or locally authored is left
-    untouched and reported under ``skipped``. The manifest entry for each
-    removed skill is dropped so a later opt-in re-seed treats it as new.
+    任何用户改动过、hub 安装或本地编写的技能都原样保留，并在
+    ``skipped`` 中报告。每个被移除技能的清单条目都会被丢弃，这样
+    之后的重新开启播种会把它当作新技能。
 
-    Args:
-        dry_run: When True, compute what would be removed without deleting.
+    参数：
+        dry_run: 为 True 时，只计算会被移除什么而不实际删除。
 
-    Returns:
-        dict with keys: ok (bool), removed (list[str]),
-                        skipped (list[dict]) where each dict is
-                        {name, reason}, dry_run (bool), message (str).
+    返回：
+        dict，键为：ok（bool）、removed（list[str]）、
+                        skipped（list[dict]），其中每个 dict 为
+                        {name, reason}、dry_run（bool）、message（str）。
     """
     manifest = _read_manifest()
     bundled_dir = _get_bundled_dir()
@@ -1065,12 +1049,12 @@ def remove_pristine_bundled_skills(dry_run: bool = False) -> dict:
     for name, origin_hash in sorted(manifest.items()):
         src = bundled_by_name.get(name)
         if src is None:
-            # Tracked but no longer bundled upstream — leave it; not ours to judge.
+            # 被跟踪但上游已不再内置 —— 保留；轮不到我们评判。
             skipped.append({"name": name, "reason": "no bundled source (removed upstream)"})
             continue
         dest = _compute_relative_dest(src, bundled_dir)
         if not dest.exists():
-            # Already gone from disk; just forget the stale manifest entry.
+            # 磁盘上已不存在；仅遗忘陈旧的清单条目。
             if not dry_run and name in manifest:
                 del manifest[name]
             continue
@@ -1078,7 +1062,7 @@ def remove_pristine_bundled_skills(dry_run: bool = False) -> dict:
         if on_disk != origin_hash:
             skipped.append({"name": name, "reason": "user-modified (kept)"})
             continue
-        # Pristine bundled copy — safe to remove.
+        # 干净的内置副本 —— 可安全移除。
         if dry_run:
             removed.append(name)
             continue

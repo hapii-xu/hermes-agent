@@ -1,34 +1,32 @@
-"""Cross-agent file state coordination.
+"""跨 agent 的文件状态协调。
 
-Prevents mangled edits when concurrent subagents (same process, same
-filesystem) touch the same file. Complements the single-agent path-overlap
-check in ``run_agent._should_parallelize_tool_batch`` — this module catches
-the case where subagent B writes a file that subagent A already read, so
-A's next write would overwrite B's changes with stale content.
+防止并发子 agent（同一进程、同一文件系统）触碰同一个文件时出现错乱的编辑。它是对
+``run_agent._should_parallelize_tool_batch`` 中单 agent 路径重叠检查的补充 —— 本模块
+负责捕获「子 agent B 写入了一个子 agent A 已经读过的文件」这种情况，否则 A 的下一次
+写入会用陈旧内容覆盖 B 的改动。
 
-Design
+设计
 ------
-A process-wide singleton ``FileStateRegistry`` tracks, per resolved path:
+一个进程范围的单例 ``FileStateRegistry`` 按解析后的路径跟踪：
 
-  * per-agent read stamps: {task_id: {path: (mtime, read_ts, partial)}}
-  * last writer globally: {path: (task_id, write_ts)}
-  * per-path ``threading.Lock`` for read→modify→write critical sections
+  * 每个 agent 的读取戳：{task_id: {path: (mtime, read_ts, partial)}}
+  * 全局最后一次写入者：{path: (task_id, write_ts)}
+  * 用于「读→改→写」临界区的每路径 ``threading.Lock``
 
-Three public hooks are used by the file tools:
+文件工具使用三个公开钩子：
 
-  * ``record_read(task_id, path, *, partial)`` — called by read_file
-  * ``note_write(task_id, path)`` — called after write_file / patch
-  * ``check_stale(task_id, path)`` — called BEFORE write_file / patch
+  * ``record_read(task_id, path, *, partial)`` —— 由 read_file 调用
+  * ``note_write(task_id, path)`` —— 在 write_file / patch 之后调用
+  * ``check_stale(task_id, path)`` —— 在 write_file / patch 之前调用
 
-Plus ``lock_path(path)`` — a context-manager returning a per-path lock to
-wrap the whole read→modify→write block. And ``writes_since(task_id,
-since_ts, paths)`` for the subagent-completion reminder in delegate_tool.
+此外还有 ``lock_path(path)`` —— 一个上下文管理器，返回每路径的锁，用于包裹整个
+「读→改→写」块。以及 ``writes_since(task_id, since_ts, paths)``，供 delegate_tool 中
+的子 agent 完成提醒使用。
 
-All methods are no-ops when ``HERMES_DISABLE_FILE_STATE_GUARD=1`` is set.
+当设置了 ``HERMES_DISABLE_FILE_STATE_GUARD=1`` 时，所有方法都是无操作。
 
-This module is intentionally separate from ``_read_tracker`` in
-``file_tools.py`` — that tracker is per-task and handles consecutive-read
-loop detection, which is a different concern.
+本模块刻意与 ``file_tools.py`` 中的 ``_read_tracker`` 分开 —— 那个跟踪器是按任务
+（per-task）的，负责处理「连续读取循环」检测，那是另一个关注点。
 """
 from __future__ import annotations
 
@@ -41,32 +39,31 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 
-# ── Public stamp type ────────────────────────────────────────────────
-# (mtime, read_ts, partial).  partial=True when read_file returned a
-# windowed view (offset > 1 or limit < total_lines) — writes that happen
-# after a partial read should still warn so the model re-reads in full.
+# ── 公开的戳类型 ────────────────────────────────────────────────
+# (mtime, read_ts, partial)。当 read_file 返回的是分窗口视图
+# （offset > 1 或 limit < total_lines）时 partial=True —— 在部分读取之后发生的写入
+# 仍应告警，以便模型重新完整读取。
 ReadStamp = Tuple[float, float, bool]
 
-# Number of resolved-path entries retained per agent.  Bounded to keep
-# long sessions from accumulating unbounded state.  On overflow we drop
-# the oldest entries by insertion order.
+# 每个 agent 保留的已解析路径条目数量。有上限，以防长会话累积无上限的状态。
+# 溢出时按插入顺序丢弃最旧的条目。
 _MAX_PATHS_PER_AGENT = 4096
 
-# Global last-writer map cap.  Same policy.
+# 全局最后写入者映射的容量上限。同样的策略。
 _MAX_GLOBAL_WRITERS = 4096
 
 
 class FileStateRegistry:
-    """Process-wide coordinator for cross-agent file edits."""
+    """跨 agent 文件编辑的进程级协调器。"""
 
     def __init__(self) -> None:
         self._reads: Dict[str, Dict[str, ReadStamp]] = defaultdict(dict)
         self._last_writer: Dict[str, Tuple[str, float]] = {}
         self._path_locks: Dict[str, threading.Lock] = {}
-        self._meta_lock = threading.Lock()  # guards _path_locks
-        self._state_lock = threading.Lock()  # guards _reads + _last_writer
+        self._meta_lock = threading.Lock()  # 保护 _path_locks
+        self._state_lock = threading.Lock()  # 保护 _reads + _last_writer
 
-    # ── Path lock management ────────────────────────────────────────
+    # ── 路径锁管理 ────────────────────────────────────────────────
     def _lock_for(self, resolved: str) -> threading.Lock:
         with self._meta_lock:
             lock = self._path_locks.get(resolved)
@@ -77,10 +74,9 @@ class FileStateRegistry:
 
     @contextmanager
     def lock_path(self, resolved: str):
-        """Acquire the per-path lock for a read→modify→write section.
+        """为「读→改→写」区段获取每路径锁。
 
-        Same process, same filesystem — threads on the same path serialize.
-        Different paths proceed in parallel.
+        同一进程、同一文件系统 —— 同一路径上的线程会串行化。不同路径则并行推进。
         """
         lock = self._lock_for(resolved)
         lock.acquire()
@@ -89,7 +85,7 @@ class FileStateRegistry:
         finally:
             lock.release()
 
-    # ── Read/write accounting ───────────────────────────────────────
+    # ── 读/写记账 ───────────────────────────────────────────────
     def record_read(
         self,
         task_id: str,
@@ -118,11 +114,10 @@ class FileStateRegistry:
         *,
         mtime: Optional[float] = None,
     ) -> None:
-        """Record a successful write.
+        """记录一次成功的写入。
 
-        Updates the global last-writer map AND this agent's own read stamp
-        (a write is an implicit read — the agent now knows the current
-        content).
+        同时更新全局最后写入者映射以及该 agent 自己的读取戳
+        （一次写入隐含一次读取 —— 此刻 agent 已知当前内容）。
         """
         if _disabled():
             return
@@ -135,21 +130,20 @@ class FileStateRegistry:
         with self._state_lock:
             self._last_writer[resolved] = (task_id, now)
             _cap_dict(self._last_writer, _MAX_GLOBAL_WRITERS)
-            # Writer's own view is now up-to-date.
+            # 写入者自己的视图现在是最新的。
             self._reads[task_id][resolved] = (float(mtime), now, False)
             _cap_dict(self._reads[task_id], _MAX_PATHS_PER_AGENT)
 
     def check_stale(self, task_id: str, resolved: str) -> Optional[str]:
-        """Return a model-facing warning if this write would be stale.
+        """当这次写入会变成陈旧写入时，返回一条面向模型的告警。
 
-        Three staleness classes, in order of severity:
+        三类陈旧情况，按严重程度排序：
 
-          1. Sibling subagent wrote this file after this agent's last read.
-          2. External/unknown change (mtime differs from our last read).
-          3. Agent never read the file (write-without-read).
+          1. 兄弟子 agent 在本 agent 上次读取之后写入了该文件。
+          2. 外部/未知变更（mtime 与我们上次读取时不同）。
+          3. agent 从未读取过该文件（只写不读）。
 
-        Returns ``None`` when the write is safe.  Does not raise — callers
-        decide whether to block or warn.
+        当写入安全时返回 ``None``。不会抛异常 —— 由调用方决定是阻断还是告警。
         """
         if _disabled():
             return None
@@ -157,19 +151,19 @@ class FileStateRegistry:
             stamp = self._reads.get(task_id, {}).get(resolved)
             last_writer = self._last_writer.get(resolved)
 
-        # Case 3: never read AND we have no write record — net-new file or
-        # first touch by this agent.  Let existing _check_sensitive_path
-        # and file-exists logic handle it; nothing to warn about here.
+        # 情况 3：从未读取过，并且我们也没有写入记录 —— 全新文件，或本 agent 首次
+        # 触碰。交给已有的 _check_sensitive_path 和文件存在性逻辑去处理；这里没什么
+        # 可告警的。
         if stamp is None and last_writer is None:
             return None
 
         try:
             current_mtime = os.path.getmtime(resolved)
         except OSError:
-            # File doesn't exist — write will create it; not stale.
+            # 文件不存在 —— 写入会创建它；不算陈旧。
             return None
 
-        # Case 1: sibling subagent modified after our last read.
+        # 情况 1：兄弟子 agent 在我们上次读取之后做了修改。
         if last_writer is not None:
             writer_tid, writer_ts = last_writer
             if writer_tid != task_id:
@@ -189,7 +183,7 @@ class FileStateRegistry:
                         "Re-read the file before writing."
                     )
 
-        # Case 2: external / unknown modification (mtime drifted).
+        # 情况 2：外部/未知修改（mtime 漂移）。
         if stamp is not None:
             read_mtime, _read_ts, partial = stamp
             if current_mtime != read_mtime:
@@ -205,7 +199,7 @@ class FileStateRegistry:
                     "overwriting it."
                 )
 
-        # Case 3b: agent truly never read the file.
+        # 情况 3b：agent 确实从未读取过该文件。
         if stamp is None:
             return (
                 f"{resolved} was not read by this agent. "
@@ -214,18 +208,18 @@ class FileStateRegistry:
 
         return None
 
-    # ── Reminder helper for delegate_tool ───────────────────────────
+    # ── delegate_tool 的提醒辅助 ───────────────────────────────────
     def writes_since(
         self,
         exclude_task_id: str,
         since_ts: float,
         paths: Iterable[str],
     ) -> Dict[str, List[str]]:
-        """Return ``{writer_task_id: [paths]}`` for writes done after
-        ``since_ts`` by agents OTHER than ``exclude_task_id``.
+        """返回 ``since_ts`` 之后、由 ``exclude_task_id`` 以外的 agent 所做的写入对应的
+        ``{writer_task_id: [paths]}``。
 
-        Used by delegate_task to append a "subagent modified files the
-        parent previously read" reminder to the delegation result.
+        供 delegate_task 在委派结果后追加一条「子 agent 修改了父 agent 之前读过的文件」
+        的提醒。
         """
         if _disabled():
             return {}
@@ -242,15 +236,15 @@ class FileStateRegistry:
         return dict(out)
 
     def known_reads(self, task_id: str) -> List[str]:
-        """Return the list of resolved paths this agent has read."""
+        """返回该 agent 已读取过的已解析路径列表。"""
         if _disabled():
             return []
         with self._state_lock:
             return list(self._reads.get(task_id, {}).keys())
 
-    # ── Testing hooks ───────────────────────────────────────────────
+    # ── 测试钩子 ───────────────────────────────────────────────
     def clear(self) -> None:
-        """Reset all state.  Intended for tests only."""
+        """重置全部状态。仅供测试使用。"""
         with self._state_lock:
             self._reads.clear()
             self._last_writer.clear()
@@ -258,7 +252,7 @@ class FileStateRegistry:
             self._path_locks.clear()
 
 
-# ── Module-level singleton + helpers ─────────────────────────────────
+# ── 模块级单例 + 辅助函数 ─────────────────────────────────────────
 _registry = FileStateRegistry()
 
 
@@ -267,22 +261,21 @@ def get_registry() -> FileStateRegistry:
 
 
 def _disabled() -> bool:
-    # Re-read each call so tests can toggle via monkeypatch.setenv.
+    # 每次调用都重新读取，以便测试能通过 monkeypatch.setenv 来切换。
     return os.environ.get("HERMES_DISABLE_FILE_STATE_GUARD", "").strip() == "1"
 
 
 def _fmt_ts(ts: float) -> str:
-    # Short relative wall-clock for error messages; avoids pulling in
-    # datetime formatting overhead on the hot path.
+    # 用于错误信息的简短相对挂钟时间；避免在热路径上引入 datetime 格式化的开销。
     return time.strftime("%H:%M:%S", time.localtime(ts))
 
 
 def _cap_dict(d: dict, limit: int) -> None:
-    """Trim a dict to ``limit`` entries by dropping insertion-order oldest."""
+    """通过按插入顺序丢弃最旧条目，把 dict 裁剪到 ``limit`` 个条目。"""
     over = len(d) - limit
     if over <= 0:
         return
-    # dict preserves insertion order (PY>=3.7) — pop the oldest keys.
+    # dict 保留插入顺序（PY>=3.7）—— 弹出最旧的键。
     it = iter(d)
     for _ in range(over):
         try:
@@ -291,7 +284,7 @@ def _cap_dict(d: dict, limit: int) -> None:
             break
 
 
-# ── Convenience wrappers (short names used at call sites) ────────────
+# ── 便捷封装（调用点使用这些短名字）────────────
 def record_read(task_id: str, resolved_or_path: str | Path, *, partial: bool = False) -> None:
     _registry.record_read(task_id, str(resolved_or_path), partial=partial)
 

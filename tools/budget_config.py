@@ -1,19 +1,19 @@
-"""Configurable budget constants for tool result persistence.
+"""用于工具结果持久化的可配置预算常量。
 
-Per-tool resolution: pinned > config overrides > registry > default.
+按工具解析优先级：pinned > 配置覆盖 > registry > 默认值。
 """
 
 from dataclasses import dataclass, field
 from typing import Dict
 
-# Tools whose thresholds must never be overridden.
-# read_file=inf prevents infinite persist->read->persist loops.
+# 阈值绝不允许被覆盖的工具。
+# read_file=inf 防止无限循环 persist->read->persist。
 PINNED_THRESHOLDS: Dict[str, float] = {
     "read_file": float("inf"),
 }
 
-# Defaults matching the current hardcoded values in tool_result_storage.py.
-# Kept here as the single source of truth; tool_result_storage.py imports these.
+# 与 tool_result_storage.py 中当前硬编码值一致的默认值。
+# 在此作为唯一的真相来源；tool_result_storage.py 会导入这些值。
 DEFAULT_RESULT_SIZE_CHARS: int = 100_000
 DEFAULT_TURN_BUDGET_CHARS: int = 200_000
 DEFAULT_PREVIEW_SIZE_CHARS: int = 1_500
@@ -21,12 +21,12 @@ DEFAULT_PREVIEW_SIZE_CHARS: int = 1_500
 
 @dataclass(frozen=True)
 class BudgetConfig:
-    """Immutable budget constants for the 3-layer tool result persistence system.
+    """用于三层工具结果持久化系统的不可变预算常量。
 
-    Layer 2 (per-result): resolve_threshold(tool_name) -> threshold in chars.
-    Layer 3 (per-turn):   turn_budget -> aggregate char budget across all tool
-                          results in a single assistant turn.
-    Preview:              preview_size -> inline snippet size after persistence.
+    第 2 层（按结果）：resolve_threshold(tool_name) -> 以字符为单位的阈值。
+    第 3 层（按轮次）：turn_budget -> 单个 assistant 轮次内所有工具
+                          结果的合计字符预算。
+    预览：              preview_size -> 持久化后的内联片段大小。
     """
 
     default_result_size: int = DEFAULT_RESULT_SIZE_CHARS
@@ -35,16 +35,15 @@ class BudgetConfig:
     tool_overrides: Dict[str, int] = field(default_factory=dict)
 
     def resolve_threshold(self, tool_name: str) -> int | float:
-        """Resolve the persistence threshold for a tool.
+        """解析某个工具的持久化阈值。
 
-        Priority: pinned -> tool_overrides -> registry per-tool -> default.
+        优先级：pinned -> tool_overrides -> registry 按工具 -> 默认值。
 
-        The registry per-tool value is capped at ``default_result_size`` so a
-        context-scaled budget (small model) actually constrains tools that
-        register a large fixed ``max_result_size_chars`` (web/terminal/x_search
-        all register 100K). For the default budget this is a no-op because both
-        equal 100K; for a scaled-down budget it prevents a per-tool registry
-        value from re-inflating the cap past the model's window (#23767).
+        registry 的按工具值会被限制在 ``default_result_size`` 以内，这样
+        一个按上下文缩放的预算（小模型）才能真正约束那些注册了较大固定
+        ``max_result_size_chars`` 的工具（web/terminal/x_search 都注册了 100K）。
+        对于默认预算这是空操作，因为两者都等于 100K；对于缩小后的预算，
+        它能防止某个按工具的 registry 值把上限重新撑大到超过模型窗口（#23767）。
         """
         if tool_name in PINNED_THRESHOLDS:
             return PINNED_THRESHOLDS[tool_name]
@@ -57,43 +56,41 @@ class BudgetConfig:
         return min(registry_value, self.default_result_size)
 
 
-# Default config -- matches current hardcoded behavior exactly.
+# 默认配置 —— 与当前硬编码行为完全一致。
 DEFAULT_BUDGET = BudgetConfig()
 
 
-# Token<->char conversion used when scaling the budget to a model's context
-# window. Deliberately conservative (a smaller divisor = more chars per token =
-# a larger char budget) would UNDER-protect small models, so we use the same
-# rough 4-chars-per-token ratio the estimator uses (agent/model_metadata.py).
+# 在把预算缩放到模型的上下文窗口时所用的 token<->字符 转换。
+# 刻意采用保守值：更小的除数（= 每个 token 更多字符 = 更大的字符预算）
+# 会让小模型保护不足，所以我们采用估算器所用的同样约略的
+# 每 token 4 字符比例（agent/model_metadata.py）。
 _CHARS_PER_TOKEN: int = 4
 
-# Fraction of a model's context window we allow a SINGLE tool result to occupy
-# before persisting/truncating it, and the fraction the WHOLE turn's tool
-# output may occupy. Tool output is not the only thing in the window (system
-# prompt, tool schemas, conversation history, the model's own reply all
-# compete), so these stay well under 1.0.
+# 在持久化/截断之前，我们允许单个工具结果占据模型上下文窗口的比例，
+# 以及整个轮次的工具输出可占据的比例。工具输出并不是窗口里唯一的东西
+#（系统提示词、工具 schema、对话历史、模型自身的回复都在竞争），
+# 所以这些值都远低于 1.0。
 _PER_RESULT_WINDOW_FRACTION: float = 0.15
 _PER_TURN_WINDOW_FRACTION: float = 0.30
 
-# Floor so even a tiny-but-admitted model still gets a usable preview/result
-# rather than a 0-char budget.
+# 下限值：保证即便是一个体量极小但仍被允许的模型也能得到可用的预览/结果，
+# 而不是一个 0 字符的预算。
 _MIN_RESULT_SIZE_CHARS: int = 8_000
 _MIN_TURN_BUDGET_CHARS: int = 16_000
 
 
 def budget_for_context_window(context_length: int | None) -> BudgetConfig:
-    """Return a BudgetConfig scaled to the active model's context window.
+    """返回一个按当前模型上下文窗口缩放后的 BudgetConfig。
 
-    The fixed defaults (100K result / 200K turn chars) are correct for large
-    (200K+ token) models but blind to small ones: on a 65K-token model a single
-    tool result persisted at the 100K-char threshold, or a 200K-char turn
-    budget (~50K tokens), can by itself approach or exceed the whole window and
-    force an oversized request (#23767).
+    固定默认值（100K 结果 / 200K 轮次字符）对于大型
+    （200K+ token）模型是正确的，但对小模型却视而不见：在一个 65K-token
+    的模型上，按 100K 字符阈值持久化的单个工具结果，或一个 200K 字符的
+    轮次预算（约 50K token），仅凭自身就可能接近或超过整个窗口，
+    并迫使请求过大（#23767）。
 
-    Scaling keeps large models byte-identical to today (the proportional value
-    is clamped to the existing defaults as a CAP) while shrinking the budget for
-    small models proportionally to their window, floored so a usable preview
-    always survives.
+    缩放让大模型与今天逐字节一致（比例值被限制在现有默认值作为上限），
+    同时按小模型窗口的比例缩小其预算，并设有下限，
+    使一个可用的预览总能保留下来。
     """
     if not context_length or context_length <= 0:
         return DEFAULT_BUDGET
@@ -102,8 +99,8 @@ def budget_for_context_window(context_length: int | None) -> BudgetConfig:
     per_result = int(window_chars * _PER_RESULT_WINDOW_FRACTION)
     per_turn = int(window_chars * _PER_TURN_WINDOW_FRACTION)
 
-    # Clamp: never exceed the historical defaults (so large models are
-    # unchanged), never drop below the floor (so tiny models stay usable).
+    # 夹取：永不超过历史默认值（让大模型保持不变），
+    # 也永不低于下限（让极小模型保持可用）。
     per_result = max(_MIN_RESULT_SIZE_CHARS, min(per_result, DEFAULT_RESULT_SIZE_CHARS))
     per_turn = max(_MIN_TURN_BUDGET_CHARS, min(per_turn, DEFAULT_TURN_BUDGET_CHARS))
 

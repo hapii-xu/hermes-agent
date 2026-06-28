@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Vision Tools Module
+视觉工具模块
 
-This module provides vision analysis tools that work with image URLs.
-Uses the centralized auxiliary vision router, which can select OpenRouter,
-Nous, Codex, native Anthropic, or a custom OpenAI-compatible endpoint.
+本模块提供基于图片 URL 的视觉分析工具。
+使用集中式的辅助视觉路由器，可以选择 OpenRouter、Nous、Codex、
+原生 Anthropic 或自定义的 OpenAI 兼容端点。
 
-Available tools:
-- vision_analyze_tool: Analyze images from URLs with custom prompts
+可用工具：
+- vision_analyze_tool：使用自定义提示词分析来自 URL 的图片
 
-Features:
-- Downloads images from URLs and converts to base64 for API compatibility
-- Comprehensive image description
-- Context-aware analysis based on user queries
-- Automatic temporary file cleanup
-- Proper error handling and validation
-- Debug logging support
+功能特性：
+- 从 URL 下载图片并转换为 base64，以保证 API 兼容性
+- 全面的图像描述
+- 基于用户查询的上下文感知分析
+- 自动清理临时文件
+- 完善的错误处理与校验
+- 调试日志支持
 
-Usage:
+用法：
     from vision_tools import vision_analyze_tool
     import asyncio
-    
-    # Analyze an image
+
+    # 分析一张图片
     result = await vision_analyze_tool(
         image_url="https://example.com/image.jpg",
         user_prompt="What architectural style is this building?"
@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 
 _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")
 
-# Configurable HTTP download timeout for _download_image().
-# Separate from auxiliary.vision.timeout which governs the LLM API call.
-# Resolution: config.yaml auxiliary.vision.download_timeout → env var → 30s default.
+# _download_image() 可配置的 HTTP 下载超时时间。
+# 与控制 LLM API 调用的 auxiliary.vision.timeout 相互独立。
+# 解析顺序：config.yaml 的 auxiliary.vision.download_timeout → 环境变量 → 默认 30 秒。
 def _resolve_download_timeout() -> float:
     env_val = os.getenv("HERMES_VISION_DOWNLOAD_TIMEOUT", "").strip()
     if env_val:
@@ -69,20 +69,20 @@ def _resolve_download_timeout() -> float:
 
 _VISION_DOWNLOAD_TIMEOUT = _resolve_download_timeout()
 
-# Hard cap on downloaded image file size (50 MB). Prevents OOM from
-# attacker-hosted multi-gigabyte files or decompression bombs.
+# 下载图片文件大小的硬性上限（50 MB）。防止攻击者托管的多 GB 文件
+# 或解压炸弹导致 OOM（内存溢出）。
 _VISION_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 
 
 def _image_url_shape_ok(url: str) -> bool:
-    """HTTP(S) shape check only (scheme, netloc). No DNS."""
+    """仅做 HTTP(S) 格式检查（scheme、netloc），不做 DNS 解析。"""
     if not url or not isinstance(url, str):
         return False
-    # Basic HTTP/HTTPS URL check
+    # 基本的 HTTP/HTTPS URL 检查
     if not url.startswith(("http://", "https://")):
         return False
-    # Parse to ensure we at least have a network location; still allow URLs
-    # without file extensions (e.g. CDN endpoints that redirect to images).
+    # 解析以确保至少存在网络位置；仍然允许没有文件扩展名的 URL
+    # （例如会重定向到图片的 CDN 端点）。
     parsed = urlparse(url)
     if not parsed.netloc:
         return False
@@ -90,16 +90,16 @@ def _image_url_shape_ok(url: str) -> bool:
 
 
 def _validate_image_url(url: str) -> bool:
-    """Validate image URL for sync callers and tests (SSRF via sync DNS check)."""
+    """为同步调用方和测试校验图片 URL（通过同步 DNS 检查防范 SSRF）。"""
     if not _image_url_shape_ok(url):
         return False
-    # Block private/internal addresses to prevent SSRF
+    # 屏蔽私有/内部地址，防止 SSRF
     from tools.url_safety import is_safe_url
     return is_safe_url(url)
 
 
 async def _validate_image_url_async(url: str) -> bool:
-    """Validate remote image URL without blocking the event loop on DNS."""
+    """校验远程图片 URL，且不会在 DNS 解析时阻塞事件循环。"""
     if not _image_url_shape_ok(url):
         return False
     from tools.url_safety import async_is_safe_url
@@ -107,7 +107,7 @@ async def _validate_image_url_async(url: str) -> bool:
 
 
 def _detect_image_mime_type(image_path: Path) -> Optional[str]:
-    """Return a MIME type when the file looks like a supported image."""
+    """当文件看起来是受支持的图片时，返回其 MIME 类型。"""
     with image_path.open("rb") as f:
         header = f.read(64)
 
@@ -129,18 +129,18 @@ def _detect_image_mime_type(image_path: Path) -> Optional[str]:
 
 
 def _is_retryable_download_error(error: Exception) -> bool:
-    """Return True only for transient image-download failures worth retrying.
+    """仅当图片下载失败属于值得重试的瞬时错误时返回 True。
 
-    Non-retryable (fail-fast):
-      - httpx.HTTPStatusError with a 4xx status other than 429 (404/403/410/...):
-        the resource is missing or forbidden; retrying can't change that.
-      - PermissionError: blocked by website policy / SSRF guard.
-      - ValueError: image too large or blocked redirect — deterministic.
+    不可重试（立即失败）：
+      - httpx.HTTPStatusError 且状态码为 429 以外的 4xx（404/403/410/...）：
+        资源缺失或被禁止访问；重试无法改变这一点。
+      - PermissionError：被网站策略 / SSRF 防护拦截。
+      - ValueError：图片过大或重定向被拦截——属于确定性错误。
 
-    Retryable (transient):
-      - httpx 429 (rate limited) and 5xx (server-side) errors.
-      - Connection/timeout/transport errors (httpx.TransportError) and any
-        other unclassified exception, which may be a flaky network blip.
+    可重试（瞬时）：
+      - httpx 的 429（限流）和 5xx（服务端）错误。
+      - 连接/超时/传输错误（httpx.TransportError）以及任何其他未分类的异常，
+        这些可能是网络抖动。
     """
     if isinstance(error, (PermissionError, ValueError)):
         return False
@@ -154,31 +154,31 @@ def _is_retryable_download_error(error: Exception) -> bool:
 
 async def _download_image(image_url: str, destination: Path, max_retries: int = 3) -> Path:
     """
-    Download an image from a URL to a local destination (async) with retry logic.
-    
-    Args:
-        image_url (str): The URL of the image to download
-        destination (Path): The path where the image should be saved
-        max_retries (int): Maximum number of retry attempts (default: 3)
-        
-    Returns:
-        Path: The path to the downloaded image
-        
-    Raises:
-        Exception: If download fails after all retries
+    从 URL 下载图片到本地目标路径（异步），带有重试逻辑。
+
+    参数：
+        image_url (str)：要下载的图片 URL
+        destination (Path)：图片保存的目标路径
+        max_retries (int)：最大重试次数（默认：3）
+
+    返回：
+        Path：已下载图片的路径
+
+    抛出：
+        Exception：如果所有重试后下载仍然失败
     """
     import asyncio
-    
-    # Create parent directories if they don't exist
+
+    # 如果父目录不存在则创建
     destination.parent.mkdir(parents=True, exist_ok=True)
-    
+
     async def _ssrf_redirect_guard(response):
-        """Re-validate each redirect target to prevent redirect-based SSRF.
+        """对每个重定向目标重新校验，防止基于重定向的 SSRF。
 
-        Without this, an attacker can host a public URL that 302-redirects
-        to http://169.254.169.254/ and bypass the pre-flight is_safe_url check.
+        如果不做这一步，攻击者可以托管一个公开 URL，让它 302 重定向到
+        http://169.254.169.254/，从而绕过预检阶段的 is_safe_url 检查。
 
-        Must be async because httpx.AsyncClient awaits event hooks.
+        必须是 async 的，因为 httpx.AsyncClient 会 await 事件钩子。
         """
         if response.is_redirect and response.next_request:
             redirect_url = str(response.next_request.url)
@@ -195,9 +195,9 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
             if blocked:
                 raise PermissionError(blocked["message"])
 
-            # Download the image with appropriate headers using async httpx
-            # Enable follow_redirects to handle image CDNs that redirect (e.g., Imgur, Picsum)
-            # SSRF: event_hooks validates each redirect target against private IP ranges
+            # 使用异步 httpx 带上合适的请求头下载图片
+            # 开启 follow_redirects 以处理会重定向的图片 CDN（例如 Imgur、Picsum）
+            # SSRF 防护：event_hooks 会对每个重定向目标校验是否属于私有 IP 段
             async with httpx.AsyncClient(
                 timeout=_VISION_DOWNLOAD_TIMEOUT,
                 follow_redirects=True,
@@ -212,7 +212,7 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
                 )
                 response.raise_for_status()
 
-                # Reject overly large images early via Content-Length header.
+                # 通过 Content-Length 头尽早拒绝过大的图片。
                 cl = response.headers.get("content-length")
                 if cl and int(cl) > _VISION_MAX_DOWNLOAD_BYTES:
                     raise ValueError(
@@ -224,7 +224,7 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
                 if blocked:
                     raise PermissionError(blocked["message"])
                 
-                # Save the image content (double-check actual size)
+                # 保存图片内容（再次校验实际大小）
                 body = response.content
                 if len(body) > _VISION_MAX_DOWNLOAD_BYTES:
                     raise ValueError(
@@ -235,12 +235,11 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
             return destination
         except Exception as e:
             last_error = e
-            # Error-class-aware retry: only retry transient failures. A 4xx
-            # client error (404/403/410, etc.) will never succeed on retry —
-            # the resource isn't there or we're not allowed — so burning 3
-            # attempts with 2s/4s/8s backoff just inflates latency. 429 (rate
-            # limit) and 5xx remain retryable. PermissionError (policy block)
-            # and ValueError (too-large / SSRF redirect) are also terminal.
+            # 错误分类感知的重试：只重试瞬时错误。4xx 客户端错误
+            # （404/403/410 等）重试永远不会成功——资源不存在或无权访问——
+            # 因此用 2s/4s/8s 的退避消耗 3 次尝试只会徒增延迟。429（限流）
+            # 和 5xx 仍然可重试。PermissionError（策略拦截）和 ValueError
+            # （过大 / SSRF 重定向）同样是终态错误。
             if not _is_retryable_download_error(e) or attempt >= max_retries - 1:
                 logger.error(
                     "Image download failed after %s attempt(s): %s",
@@ -254,8 +253,8 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
             logger.warning("Retrying in %ss...", wait_time)
             await asyncio.sleep(wait_time)
 
-    # The loop always returns on success or re-raises on the final/non-retryable
-    # attempt, so reaching here means max_retries was non-positive.
+    # 循环总会在成功时返回，或在最后一次/不可重试的尝试时重新抛出异常，
+    # 因此到达这里意味着 max_retries 为非正数。
     if last_error is not None:
         raise last_error
     raise RuntimeError(
@@ -265,13 +264,13 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
 
 def _determine_mime_type(image_path: Path) -> str:
     """
-    Determine the MIME type of an image based on its file extension.
-    
-    Args:
-        image_path (Path): Path to the image file
-        
-    Returns:
-        str: The MIME type (defaults to image/jpeg if unknown)
+    根据文件扩展名判断图片的 MIME 类型。
+
+    参数：
+        image_path (Path)：图片文件的路径
+
+    返回：
+        str：MIME 类型（未知时默认为 image/jpeg）
     """
     extension = image_path.suffix.lower()
     mime_types = {
@@ -288,61 +287,59 @@ def _determine_mime_type(image_path: Path) -> str:
 
 def _image_to_base64_data_url(image_path: Path, mime_type: Optional[str] = None) -> str:
     """
-    Convert an image file to a base64-encoded data URL.
-    
-    Args:
-        image_path (Path): Path to the image file
-        mime_type (Optional[str]): MIME type of the image (auto-detected if None)
-        
-    Returns:
-        str: Base64-encoded data URL (e.g., "data:image/jpeg;base64,...")
+    将图片文件转换为 base64 编码的 data URL。
+
+    参数：
+        image_path (Path)：图片文件的路径
+        mime_type (Optional[str])：图片的 MIME 类型（为 None 时自动检测）
+
+    返回：
+        str：base64 编码的 data URL（例如 "data:image/jpeg;base64,..."）
     """
-    # Read the image as bytes
+    # 以字节方式读取图片
     data = image_path.read_bytes()
-    
-    # Encode to base64
+
+    # 编码为 base64
     encoded = base64.b64encode(data).decode("ascii")
-    
-    # Determine MIME type
+
+    # 确定 MIME 类型
     mime = mime_type or _determine_mime_type(image_path)
-    
-    # Create data URL
+
+    # 创建 data URL
     data_url = f"data:{mime};base64,{encoded}"
-    
+
     return data_url
 
 
-# Absolute hard ceiling for vision API payloads (20 MB) — above this, no major
-# provider accepts the image and we reject outright.
+# 视觉 API 载荷的绝对硬性上限（20 MB）——超过此大小，没有主流
+# 提供商会接受该图片，我们会直接拒绝。
 _MAX_BASE64_BYTES = 20 * 1024 * 1024
 
-# Proactive embed cap (4 MB).  This is the size we resize an image DOWN to
-# before embedding it into conversation history, regardless of the 20 MB hard
-# ceiling.  Anthropic's per-image base64 limit is 5 MB; once an oversized image
-# is baked into history (e.g. a vision tool-result), it is re-sent on every
-# subsequent turn and permanently wedges the session with a 400 that retries
-# can't clear (the bad bytes are immutable history).  Capping at embed time —
-# with headroom under 5 MB — is the only durable fix.  Matches the post-failure
-# shrink target in agent.conversation_compression so behaviour is consistent
-# whether we resize proactively or reactively.
+# 主动嵌入上限（4 MB）。这是我们在把图片嵌入到对话历史之前，将图片
+# 缩小到的目标大小，与 20 MB 的硬性上限无关。Anthropic 的单张 base64
+# 图片限制是 5 MB；一旦一张过大的图片被固化到历史中（例如某个视觉
+# 工具结果），它会在后续每一轮被重新发送，并用一个重试也无法清除的
+# 400 错误永久卡死会话（这些坏字节是不可变的历史）。在嵌入时进行限制
+# ——并在 5 MB 以下留有余量——是唯一持久的修复方式。此目标值与
+# agent.conversation_compression 中失败后缩小到的目标一致，这样无论
+# 是主动缩小还是被动缩小，行为都保持一致。
 _EMBED_TARGET_BYTES = 4 * 1024 * 1024
 
-# Proactive embed dimension cap (px, longest side).  Anthropic enforces an
-# 8000px per-side ceiling INDEPENDENTLY of the 5 MB byte cap — a tall full-page
-# screenshot can be well under 5 MB yet far over 8000px (e.g. 1200×12000 at
-# 0.06 MB), so the byte-only embed check above lets it slip into immutable
-# history un-resized and the session bricks on a non-retryable 400.  We cap at
-# 7900 (headroom under 8000) so the proactive resize shrinks tall small-byte
-# images before they are embedded.
+# 主动嵌入的尺寸上限（像素，最长边）。Anthropic 在 5 MB 字节上限之外，
+# 独立地强制执行 8000px 每边的上限——一张高大的整页截图可能远低于
+# 5 MB，却远超 8000px（例如 1200×12000 仅 0.06 MB），因此上面仅基于
+# 字节的嵌入检查会让它未经缩小就溜进不可变历史，导致会话因一个不可
+# 重试的 400 错误而卡死。我们将上限设为 7900（在 8000 以下留有余量），
+# 这样主动缩小就会在嵌入之前把高大的小字节图片缩小。
 _EMBED_MAX_DIMENSION = 7900
 
-# Target size when auto-resizing on API failure (5 MB).  After a provider
-# rejects an image, we downscale to this target and retry once.
+# API 失败时自动缩小的目标大小（5 MB）。当提供商拒绝某张图片后，
+# 我们会缩小到此目标大小并重试一次。
 _RESIZE_TARGET_BYTES = 5 * 1024 * 1024
 
 
 def _is_image_size_error(error: Exception) -> bool:
-    """Detect if an API error is related to image or payload size."""
+    """检测某个 API 错误是否与图片或载荷大小相关。"""
     err_str = str(error).lower()
     return any(hint in err_str for hint in (
         "too large", "payload", "413", "content_too_large",
@@ -352,14 +349,13 @@ def _is_image_size_error(error: Exception) -> bool:
 
 
 def _image_exceeds_dimension(image_path: Path, max_dimension: int) -> bool:
-    """True if the image's longest side exceeds ``max_dimension`` px.
+    """当图片的最长边超过 ``max_dimension`` 像素时返回 True。
 
-    Anthropic enforces an 8000px per-side cap independently of the 5 MB byte
-    cap, so a tall small-byte screenshot can pass every byte check yet trip a
-    non-retryable 400.  Returns False (don't force a resize) when Pillow is
-    unavailable or the file can't be read as an image — the byte-based checks
-    still apply, and we never want a missing soft dependency to break the
-    embed path.
+    Anthropic 在 5 MB 字节上限之外，独立地强制执行 8000px 每边的上限，
+    因此一张高大的小字节截图可能通过所有字节检查，却触发一个不可重试的
+    400 错误。当 Pillow 不可用或文件无法作为图片读取时返回 False（不强制
+    缩小）——基于字节的检查仍然适用，我们绝不希望因为缺少一个软依赖而
+    破坏嵌入流程。
     """
     try:
         from PIL import Image as _PILImage
@@ -372,27 +368,25 @@ def _image_exceeds_dimension(image_path: Path, max_dimension: int) -> bool:
 def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
                               max_base64_bytes: int = _RESIZE_TARGET_BYTES,
                               max_dimension: Optional[int] = None) -> str:
-    """Convert an image to a base64 data URL, auto-resizing if too large.
+    """将图片转换为 base64 data URL，如果过大则自动缩小。
 
-    Tries Pillow first to progressively downscale oversized images.  If Pillow
-    is not installed or resizing still exceeds the limit, falls back to the raw
-    bytes and lets the caller handle the size check.
+    优先使用 Pillow 逐步缩小过大的图片。如果未安装 Pillow 或缩小后仍
+    超出限制，则回退到原始字节，由调用方处理大小检查。
 
-    Args:
-        max_dimension: If set, images whose longest side exceeds this pixel
-            count are forcibly downscaled even if they're under the byte
-            budget.  Anthropic enforces an 8000 px per-side cap independently
-            of the 5 MB byte cap.
+    参数：
+        max_dimension：设置后，最长边超过此像素数的图片会被强制缩小，
+            即使它们在字节预算之内。Anthropic 在 5 MB 字节上限之外，
+            独立地强制执行 8000px 每边的上限。
 
-    Returns the base64 data URL string.
+    返回 base64 data URL 字符串。
     """
-    # Quick file-size estimate: base64 expands by ~4/3, plus data URL header.
-    # Skip the expensive full-read + encode if Pillow can resize directly.
+    # 快速估算文件大小：base64 会膨胀约 4/3，再加上 data URL 头部开销。
+    # 如果 Pillow 可以直接缩小，就跳过昂贵的完整读取 + 编码。
     file_size = image_path.stat().st_size
     estimated_b64 = (file_size * 4) // 3 + 100  # ~header overhead
     needs_resize_for_bytes = estimated_b64 > max_base64_bytes
 
-    # Check pixel dimensions even if bytes are fine.
+    # 即使字节没问题，也要检查像素尺寸。
     needs_resize_for_dims = False
     if max_dimension is not None:
         try:
@@ -401,31 +395,31 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
                 if max(_quick_img.size) > max_dimension:
                     needs_resize_for_dims = True
         except Exception:
-            pass  # can't check; Pillow path below will handle or skip
+            pass  # 无法检查；下面的 Pillow 路径会处理或跳过
 
     if not needs_resize_for_bytes and not needs_resize_for_dims:
-        # Small enough — just encode directly.
+        # 足够小——直接编码。
         data_url = _image_to_base64_data_url(image_path, mime_type=mime_type)
         if len(data_url) <= max_base64_bytes:
             return data_url
     else:
-        data_url = None  # defer full encode; try Pillow resize first
+        data_url = None  # 推迟完整编码；先尝试 Pillow 缩小
 
-    # Attempt auto-resize with Pillow (soft dependency)
+    # 尝试用 Pillow 自动缩小（软依赖）
     try:
         from PIL import Image
         import io as _io
     except ImportError:
-        # Pillow is a lazy-installable soft dependency. Try a best-effort
-        # install (respects security.allow_lazy_installs; no-op if disabled or
-        # offline), then re-import. If it still isn't importable, fall back to
-        # the raw bytes and let the caller raise the size error.
+        # Pillow 是一个可按需安装的软依赖。尝试尽力安装（遵循
+        # security.allow_lazy_installs；如果被禁用或离线则为空操作），
+        # 然后重新导入。如果仍然无法导入，则回退到原始字节，让调用方
+        # 抛出大小错误。
         try:
             from tools.lazy_deps import ensure as _ensure_dep
-            # prompt=False: never raise a blocking input() prompt mid-session.
-            # Under the interactive CLI prompt_toolkit owns stdin, so a bare
-            # input() deadlocks the terminal (#40490). The install is already
-            # gated by security.allow_lazy_installs, so reaching here is opt-in.
+            # prompt=False：在会话过程中绝不弹出阻塞式的 input() 提示。
+            # 在交互式 CLI 下，prompt_toolkit 占用了 stdin，因此裸的
+            # input() 会卡死终端（#40490）。安装本身已受
+            # security.allow_lazy_installs 控制，所以走到这里是用户主动选择。
             _ensure_dep("tool.vision", prompt=False)
             from PIL import Image
             import io as _io
@@ -433,14 +427,14 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
             logger.info("Pillow not installed — cannot auto-resize oversized image")
             if data_url is None:
                 data_url = _image_to_base64_data_url(image_path, mime_type=mime_type)
-            return data_url  # caller will raise the size error
+            return data_url  # 调用方会抛出大小错误
 
     logger.info("Image file is %.1f MB (estimated base64 %.1f MB, limit %.1f MB, max_dimension=%s), auto-resizing...",
                 file_size / (1024 * 1024), estimated_b64 / (1024 * 1024),
                 max_base64_bytes / (1024 * 1024), max_dimension)
 
     mime = mime_type or _determine_mime_type(image_path)
-    # Choose output format: JPEG for photos (smaller), PNG for transparency
+    # 选择输出格式：照片用 JPEG（更小），需要透明度时用 PNG
     pil_format = "PNG" if mime == "image/png" else "JPEG"
     out_mime = "image/png" if pil_format == "PNG" else "image/jpeg"
 
@@ -450,41 +444,40 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
         logger.info("Pillow cannot open image for resizing: %s", exc)
         if data_url is None:
             data_url = _image_to_base64_data_url(image_path, mime_type=mime_type)
-        return data_url  # fall through to size-check in caller
-    # Convert RGBA to RGB for JPEG output
+        return data_url  # 回落到调用方的大小检查
+    # 为 JPEG 输出将 RGBA 转换为 RGB
     if pil_format == "JPEG" and img.mode in {"RGBA", "P"}:
         img = img.convert("RGB")
 
-    # Strategy: halve dimensions until both base64 fits AND pixel dimensions
-    # are within limits, up to 4 rounds.
-    # For JPEG, also try reducing quality at each size step.
-    # For PNG, quality is irrelevant — only dimension reduction helps.
+    # 策略：不断将尺寸减半，直到 base64 装得下且像素尺寸也在限制之内，
+    # 最多 4 轮。
+    # 对于 JPEG，还会在每个尺寸步骤尝试降低质量。
+    # 对于 PNG，质量无关紧要——只有缩小尺寸才有效。
     quality_steps = (85, 70, 50) if pil_format == "JPEG" else (None,)
     prev_dims = (img.width, img.height)
-    candidate = None  # will be set on first loop iteration
+    candidate = None  # 会在第一次循环迭代时被赋值
 
     def _dims_ok(w: int, h: int) -> bool:
-        """True if both pixel dimensions are within the limit."""
+        """当两个像素尺寸都在限制之内时返回 True。"""
         if max_dimension is None:
             return True
         return max(w, h) <= max_dimension
 
     for attempt in range(5):
         if attempt > 0:
-            # Proportional scaling: halve the longer side and scale the
-            # shorter side to preserve aspect ratio (min dimension 64).
+            # 按比例缩放：将较长边减半，并缩放较短边以保持宽高比（最小尺寸 64）。
             scale = 0.5
             new_w = max(int(img.width * scale), 64)
             new_h = max(int(img.height * scale), 64)
-            # Re-derive the scale from whichever dimension hit the floor
-            # so both axes shrink by the same factor.
+            # 从触碰到下限的那个维度重新推导缩放比例，
+            # 使两个轴按相同比例缩小。
             if new_w == 64 and img.width > 0:
                 effective_scale = 64 / img.width
                 new_h = max(int(img.height * effective_scale), 64)
             elif new_h == 64 and img.height > 0:
                 effective_scale = 64 / img.height
                 new_w = max(int(img.width * effective_scale), 64)
-            # Stop if dimensions can't shrink further
+            # 如果尺寸无法进一步缩小则停止
             if (new_w, new_h) == prev_dims:
                 break
             img = img.resize((new_w, new_h), Image.LANCZOS)
@@ -505,48 +498,45 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
                             img.width, img.height)
                 return candidate
 
-    # If we still can't get it small enough, return the best attempt
-    # and let the caller decide
+    # 如果仍然无法缩小到足够小，则返回最佳尝试结果，
+    # 让调用方决定
     if candidate is not None:
         logger.warning("Auto-resize could not fit image under %.1f MB (best: %.1f MB)",
                        max_base64_bytes / (1024 * 1024), len(candidate) / (1024 * 1024))
         return candidate
 
-    # Shouldn't reach here, but fall back to full encode
+    # 不应到达这里，但作为兜底回退到完整编码
     return data_url or _image_to_base64_data_url(image_path, mime_type=mime_type)
 
 
 # ---------------------------------------------------------------------------
-# Native fast path: short-circuit the auxiliary LLM when the active main model
-# supports native vision. Instead of asking a separate LLM to describe the
-# image and returning text, we load the image, base64-encode it, and return a
-# multimodal tool-result envelope. The agent loop unwraps the envelope into an
-# OpenAI-style content list on the `tool` role; provider adapters (anthropic,
-# codex_responses, chat_completions) translate that into Anthropic
-# tool_result image blocks / Responses input_image / OpenAI image_url tool
-# content. The main model then "sees" the pixels directly on its next turn.
+# 原生快速路径：当当前主模型支持原生视觉时，短路辅助 LLM。
+# 我们不再请求一个独立的 LLM 来描述图片并返回文本，而是加载图片、
+# 进行 base64 编码，并返回一个多模态工具结果封装。agent 循环会把该封装
+# 解包成 `tool` 角色上的 OpenAI 风格 content 列表；provider 适配器
+# （anthropic、codex_responses、chat_completions）将其转换为 Anthropic 的
+# tool_result image 块 / Responses 的 input_image / OpenAI 的 image_url 工具
+# content。随后主模型在其下一轮直接“看到”像素。
 # ---------------------------------------------------------------------------
 
 
 def _supports_media_in_tool_results(provider: str, model: str) -> bool:
-    """Whether the given provider+model combination accepts image content
-    inside a tool-result message.
+    """判断给定的 provider+model 组合是否接受工具结果消息中的图片内容。
 
-    Providers covered today (per spec docs verified Apr-2026):
+    目前覆盖的提供商（依据 2026 年 4 月核实的规范文档）：
 
-      * Anthropic Messages API (``anthropic`` provider, plus aggregators that
-        proxy Claude — ``openrouter``, ``nous``, ``vertex``, ``bedrock``):
-        ``tool_result`` blocks accept ``image`` content blocks.
-      * OpenAI Chat Completions: tool messages accept array content with
-        ``image_url`` parts.
-      * OpenAI Responses (``openai-codex``): ``function_call_output.output``
-        accepts an array of ``input_text``/``input_image`` items.
-      * Gemini 3 (and proxied via aggregators): supports multimodal tool
-        results. Older Gemini does NOT.
+      * Anthropic Messages API（``anthropic`` provider，以及代理 Claude 的
+        聚合器——``openrouter``、``nous``、``vertex``、``bedrock``）：
+        ``tool_result`` 块接受 ``image`` content 块。
+      * OpenAI Chat Completions：tool 消息接受带有 ``image_url`` 部分的数组
+        content。
+      * OpenAI Responses（``openai-codex``）：``function_call_output.output``
+        接受 ``input_text``/``input_image`` 项的数组。
+      * Gemini 3（以及通过聚合器代理）：支持多模态工具结果。旧版 Gemini 不支持。
 
-    For unknown / legacy providers we conservatively return False — the
-    caller falls back to the legacy aux-LLM text path.  The check is relaxed
-    when the provider's ``ProviderProfile`` declares ``supports_vision=True``.
+    对于未知 / 遗留 provider，我们保守地返回 False——调用方会回退到遗留的
+    aux-LLM 文本路径。当 provider 的 ``ProviderProfile`` 声明了
+    ``supports_vision=True`` 时，此检查会放宽。
     """
     if not isinstance(provider, str):
         return False
@@ -554,10 +544,9 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
     if not p:
         return False
 
-    # Aggregators that route to multiple vendors — assume support since
-    # users on these aggregators are typically using vision-capable
-    # frontier models. Falling back to text would be a regression for
-    # them.
+    # 路由到多个厂商的聚合器——假设其支持，因为使用这些聚合器的用户
+    # 通常使用的是具备视觉能力的前沿模型。回退到文本对他们来说是一种
+    # 退化。
     _AGGREGATORS = {
         "openrouter", "nous", "vertex", "bedrock", "anthropic-vertex",
         "google-vertex",
@@ -565,16 +554,16 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
     if p in _AGGREGATORS:
         return True
 
-    # Native Anthropic
+    # 原生 Anthropic
     if p in {"anthropic", "claude", "anthropic-direct"}:
         return True
 
-    # OpenAI Chat Completions and Responses
+    # OpenAI Chat Completions 和 Responses
     if p in {"openai", "openai-chat", "openai-codex", "azure-openai"}:
         return True
 
-    # Gemini — gate on model name; older Gemini variants did not support
-    # multimodal functionResponse. Gemini 3.x does.
+    # Gemini——依据模型名判断；旧版 Gemini 变体不支持多模态
+    # functionResponse。Gemini 3.x 支持。
     if p in {"google", "gemini", "google-gemini", "google-vertex-gemini"}:
         if not isinstance(model, str):
             return False
@@ -583,9 +572,9 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
             return True
         return False
 
-    # Check the provider's registered profile for the supports_vision flag.
-    # This covers vision-capable providers like xiaomi, minimax, etc. that
-    # aren't in the hardcoded list above.
+    # 检查 provider 注册的 profile 中的 supports_vision 标志。
+    # 这覆盖了上面硬编码列表中没有的、具备视觉能力的 provider，例如
+    # xiaomi、minimax 等。
     try:
         from providers import get_provider_profile
         profile = get_provider_profile(p)
@@ -594,22 +583,19 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
     except Exception:
         pass
 
-    # Other vision-capable provider stacks. Conservative default: False.
-    # Add explicit entries here as we verify each provider's tool-result
-    # multimodal support empirically.
+    # 其他具备视觉能力的 provider 栈。保守默认值：False。
+    # 随着我们逐一经验性地核实每个 provider 的工具结果多模态支持，
+    # 在此添加显式条目。
     return False
 
 
 def _should_use_native_vision_fast_path() -> bool:
-    """Whether vision tools should attach the image to the main model directly
-    instead of routing through the auxiliary vision LLM.
+    """判断视觉工具是否应直接把图片附加给主模型，而不是路由到辅助视觉 LLM。
 
-    True when image routing resolves to ``native`` AND either the provider is
-    known to accept images inside tool results, or the user explicitly declared
-    the model vision-capable via the ``model.supports_vision`` config override.
-    The override is the escape hatch for custom/local providers that aren't in
-    the static allowlist. Best-effort: any resolution failure returns False so
-    the caller falls back to the legacy aux-LLM path.
+    当图片路由解析结果为 ``native``，并且 provider 已知接受工具结果中的图片，
+    或者用户通过 ``model.supports_vision`` 配置覆盖显式声明该模型具备视觉能力时，
+    返回 True。该覆盖是针对不在静态白名单中的自定义/本地 provider 的逃生通道。
+    尽力而为：任何解析失败都返回 False，使调用方回退到遗留的 aux-LLM 路径。
     """
     try:
         from agent.auxiliary_client import _read_main_provider, _read_main_model
@@ -636,27 +622,25 @@ def _build_native_vision_tool_result(
     image_data_url: str,
     image_size_bytes: int,
 ) -> Dict[str, Any]:
-    """Build the multimodal tool-result envelope returned by the fast path.
+    """构建由快速路径返回的多模态工具结果封装。
 
-    Shape:
+    结构：
       {
         "_multimodal": True,
         "content": [
-          {"type": "text", "text": "<short note + the user's question>"},
+          {"type": "text", "text": "<简短说明 + 用户的问题>"},
           {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
         ],
-        "text_summary": "<plain-text fallback>",
+        "text_summary": "<纯文本回退>",
         "meta": {"image_url": ..., "size_bytes": N},
       }
 
-    The text part exists for two reasons: (1) it gives the model an
-    instruction to act on now that the pixels are in context, and
-    (2) providers that don't support multimodal tool results can fall back
-    to ``text_summary``.
+    文本部分的存在有两个原因：(1) 既然像素已在上下文中，它给模型一个
+    可立即执行的指令；(2) 不支持多模态工具结果的 provider 可以回退到
+    ``text_summary``。
     """
-    # The tool-result text part is intentionally minimal. The model already
-    # has the user's original question in context; this just acknowledges
-    # the image is now visible and reminds it what it was asked.
+    # 工具结果的文本部分刻意保持精简。模型在上下文中已经有用户的原始问题；
+    # 这里只是确认图片现在可见，并提醒它被问到了什么。
     text_part = (
         "Image loaded into your context — you can see it natively now. "
         "Use your built-in vision to answer the user."
@@ -689,17 +673,16 @@ async def _vision_analyze_native(
     image_url: str,
     question: str,
 ) -> Any:
-    """Fast path for vision-capable main models.
+    """具备视觉能力的主模型的快速路径。
 
-    Loads the image (local file OR remote URL), base64-encodes it, and
-    returns a multimodal tool-result envelope. The agent loop unwraps it;
-    provider adapters serialize it into the right tool-result-with-image
-    shape for each backend.
+    加载图片（本地文件或远程 URL），进行 base64 编码，并返回一个多模态
+    工具结果封装。agent 循环会将其解包；provider 适配器将其序列化为每个
+    后端所需的“带图片的工具结果”格式。
 
-    Returns:
-        A ``_multimodal`` envelope dict on success.
-        A JSON error string on failure (matches the existing tool-result
-        contract so the agent loop displays errors normally).
+    返回：
+        成功时返回 ``_multimodal`` 封装字典。
+        失败时返回 JSON 错误字符串（与现有的工具结果约定一致，以便 agent
+        循环正常显示错误）。
     """
     if not isinstance(image_url, str) or not image_url.strip():
         return tool_error("image_url is required", success=False)
@@ -711,8 +694,8 @@ async def _vision_analyze_native(
         if is_interrupted():
             return tool_error("Interrupted", success=False)
 
-        # Resolve the image source (mirrors vision_analyze_tool's logic
-        # exactly so behaviour is consistent).
+        # 解析图片来源（与 vision_analyze_tool 的逻辑完全镜像，
+        # 以保证行为一致）。
         resolved_url = image_url
         if resolved_url.startswith("file://"):
             resolved_url = resolved_url[len("file://"):]
@@ -748,14 +731,12 @@ async def _vision_analyze_native(
             temp_image_path, mime_type=detected_mime_type,
         )
 
-        # Proactive embed cap: this image gets baked into conversation
-        # history and re-sent on every subsequent turn.  Anthropic rejects
-        # any single base64 image over 5 MB OR over 8000px per side with a
-        # 400, and because history is immutable, an oversized embed
-        # permanently wedges the session — retries can't clear bytes (or
-        # pixels) that are already in the request.  Resize DOWN to the embed
-        # target (4 MB / 7900px, headroom under both ceilings) whenever the
-        # payload exceeds either limit, not just at the 20 MB hard ceiling.
+        # 主动嵌入上限：这张图片会被固化到对话历史中，并在后续每一轮重新发送。
+        # Anthropic 会以 400 拒绝任何超过 5 MB 或每边超过 8000px 的单张
+        # base64 图片，而由于历史是不可变的，一个过大的嵌入会永久卡死会话——
+        # 重试无法清除已存在于请求中的字节（或像素）。只要载荷超过任一限制，
+        # 就缩小到嵌入目标（4 MB / 7900px，在两个上限之下留有余量），
+        # 而不仅仅是在 20 MB 硬性上限处。
         _over_bytes = len(image_data_url) > _EMBED_TARGET_BYTES
         _over_dims = _image_exceeds_dimension(temp_image_path, _EMBED_MAX_DIMENSION)
         if _over_bytes or _over_dims:
@@ -764,9 +745,8 @@ async def _vision_analyze_native(
                 max_base64_bytes=_EMBED_TARGET_BYTES,
                 max_dimension=_EMBED_MAX_DIMENSION,
             )
-            # If even resizing can't get under the absolute hard ceiling,
-            # there's nothing more we can do — reject rather than embed a
-            # session-wedging payload.
+            # 如果即使缩小也无法低于绝对硬性上限，
+            # 那就无能为力了——拒绝而不是嵌入一个会卡死会话的载荷。
             if len(image_data_url) > _MAX_BASE64_BYTES:
                 return tool_error(
                     f"Image too large for vision API: base64 payload is "
@@ -789,7 +769,7 @@ async def _vision_analyze_native(
         logger.warning("Native vision fast path failed: %s", exc)
         return tool_error(f"Native vision failed: {exc}", success=False)
     finally:
-        # Only delete temp files we created — never user-provided paths.
+        # 只删除我们创建的临时文件——绝不删除用户提供的路径。
         if should_cleanup and temp_image_path is not None:
             try:
                 if temp_image_path.exists():
@@ -804,36 +784,35 @@ async def vision_analyze_tool(
     model: str = None,
 ) -> str:
     """
-    Analyze an image from a URL or local file path using vision AI.
-    
-    This tool accepts either an HTTP/HTTPS URL or a local file path. For URLs,
-    it downloads the image first. In both cases, the image is converted to base64
-    and processed using Gemini 3 Flash Preview via OpenRouter API.
-    
-    The user_prompt parameter is expected to be pre-formatted by the calling
-    function (typically model_tools.py) to include both full description
-    requests and specific questions.
-    
-    Args:
-        image_url (str): The URL or local file path of the image to analyze.
-                         Accepts http://, https:// URLs or absolute/relative file paths.
-        user_prompt (str): The pre-formatted prompt for the vision model
-        model (str): The vision model to use (default: google/gemini-3-flash-preview)
-    
-    Returns:
-        str: JSON string containing the analysis results with the following structure:
+    使用视觉 AI 分析来自 URL 或本地文件路径的图片。
+
+    本工具接受 HTTP/HTTPS URL 或本地文件路径。对于 URL，会先下载图片。
+    两种情况下，图片都会被转换为 base64，并通过 OpenRouter API 使用
+    Gemini 3 Flash Preview 进行处理。
+
+    user_prompt 参数应由调用方（通常是 model_tools.py）预先格式化，以同时
+    包含完整的描述请求和具体问题。
+
+    参数：
+        image_url (str)：要分析的图片 URL 或本地文件路径。
+                         接受 http://、https:// URL 或绝对/相对文件路径。
+        user_prompt (str)：为视觉模型预先格式化的提示词
+        model (str)：要使用的视觉模型（默认：google/gemini-3-flash-preview）
+
+    返回：
+        str：包含分析结果的 JSON 字符串，结构如下：
              {
                  "success": bool,
-                 "analysis": str (defaults to error message if None)
+                 "analysis": str (为 None 时默认为错误信息)
              }
-    
-    Raises:
-        Exception: If download fails, analysis fails, or API key is not set
-        
-    Note:
-        - For URLs, temporary images are stored under $HERMES_HOME/cache/vision/ and cleaned up
-        - For local file paths, the file is used directly and NOT deleted
-        - Supports common image formats (JPEG, PNG, GIF, WebP, etc.)
+
+    抛出：
+        Exception：如果下载失败、分析失败或未设置 API key
+
+    说明：
+        - 对于 URL，临时图片会存放在 $HERMES_HOME/cache/vision/ 下并会被清理
+        - 对于本地文件路径，文件会被直接使用且不会被删除
+        - 支持常见图片格式（JPEG、PNG、GIF、WebP 等）
     """
     if not isinstance(user_prompt, str):
         user_prompt = str(user_prompt) if user_prompt is not None else ""
@@ -851,8 +830,8 @@ async def vision_analyze_tool(
     }
     
     temp_image_path = None
-    # Track whether we should clean up the file after processing.
-    # Local files (e.g. from the image cache) should NOT be deleted.
+    # 跟踪处理完成后是否应清理该文件。
+    # 本地文件（例如来自图片缓存）不应被删除。
     should_cleanup = True
     detected_mime_type = None
     
@@ -864,19 +843,19 @@ async def vision_analyze_tool(
         logger.info("Analyzing image: %s", image_url[:60])
         logger.info("User prompt: %s", user_prompt[:100])
         
-        # Determine if this is a local file path or a remote URL
-        # Strip file:// scheme so file URIs resolve as local paths.
+        # 判断这是本地文件路径还是远程 URL
+        # 去掉 file:// 前缀，使 file URI 能解析为本地路径。
         resolved_url = image_url
         if resolved_url.startswith("file://"):
             resolved_url = resolved_url[len("file://"):]
         local_path = Path(os.path.expanduser(resolved_url))
         if local_path.is_file():
-            # Local file path (e.g. from platform image cache) -- skip download
+            # 本地文件路径（例如来自平台图片缓存）——跳过下载
             logger.info("Using local image file: %s", image_url)
             temp_image_path = local_path
-            should_cleanup = False  # Don't delete cached/local files
+            should_cleanup = False  # 不删除缓存/本地文件
         elif await _validate_image_url_async(image_url):
-            # Remote URL -- download to a temporary location
+            # 远程 URL——下载到临时位置
             blocked = check_website_access(image_url)
             if blocked:
                 raise PermissionError(blocked["message"])
@@ -890,7 +869,7 @@ async def vision_analyze_tool(
                 "Invalid image source. Provide an HTTP/HTTPS URL or a valid local file path."
             )
         
-        # Get image file size for logging
+        # 获取图片文件大小用于日志记录
         image_size_bytes = temp_image_path.stat().st_size
         image_size_kb = image_size_bytes / 1024
         logger.info("Image ready (%.1f KB)", image_size_kb)
@@ -899,16 +878,16 @@ async def vision_analyze_tool(
         if not detected_mime_type:
             raise ValueError("Only real image files are supported for vision analysis.")
         
-        # Convert image to base64 — send at full resolution first.
-        # If the provider rejects it as too large, we auto-resize and retry.
+        # 将图片转换为 base64——先以全分辨率发送。
+        # 如果提供商因其过大而拒绝，我们会自动缩小并重试。
         logger.info("Converting image to base64...")
         image_data_url = _image_to_base64_data_url(temp_image_path, mime_type=detected_mime_type)
         data_size_kb = len(image_data_url) / 1024
         logger.info("Image converted to base64 (%.1f KB)", data_size_kb)
 
-        # Hard limit (20 MB) — no provider accepts payloads this large.
+        # 硬性限制（20 MB）——没有提供商会接受这么大的载荷。
         if len(image_data_url) > _MAX_BASE64_BYTES:
-            # Try to resize down to 5 MB before giving up.
+            # 在放弃之前尝试缩小到 5 MB。
             image_data_url = _resize_image_for_vision(
                 temp_image_path, mime_type=detected_mime_type)
             if len(image_data_url) > _MAX_BASE64_BYTES:
@@ -923,10 +902,10 @@ async def vision_analyze_tool(
 
         debug_call_data["image_size_bytes"] = image_size_bytes
         
-        # Use the prompt as provided (model_tools.py now handles full description formatting)
+        # 按原样使用提示词（model_tools.py 现在负责完整的描述格式化）
         comprehensive_prompt = user_prompt
-        
-        # Prepare the message with base64-encoded image
+
+        # 用 base64 编码的图片构造消息
         messages = [
             {
                 "role": "user",
@@ -947,9 +926,9 @@ async def vision_analyze_tool(
         
         logger.info("Processing image with vision model...")
         
-        # Call the vision API via centralized router.
-        # Read timeout from config.yaml (auxiliary.vision.timeout), default 120s.
-        # Local vision models (llama.cpp, ollama) can take well over 30s.
+        # 通过集中式路由器调用视觉 API。
+        # 从 config.yaml 读取超时时间（auxiliary.vision.timeout），默认 120 秒。
+        # 本地视觉模型（llama.cpp、ollama）可能需要远超 30 秒。
         vision_timeout = 120.0
         vision_temperature = 0.1
         try:
@@ -973,7 +952,7 @@ async def vision_analyze_tool(
         }
         if model:
             call_kwargs["model"] = model
-        # Try full-size image first; on size-related rejection, downscale and retry.
+        # 先尝试全尺寸图片；如果因大小被拒绝，则缩小并重试。
         try:
             response = await async_call_llm(**call_kwargs)
         except Exception as _api_err:
@@ -992,10 +971,10 @@ async def vision_analyze_tool(
             else:
                 raise
         
-        # Extract the analysis — fall back to reasoning if content is empty
+        # 提取分析结果——如果 content 为空则回退到 reasoning
         analysis = extract_content_or_reasoning(response)
 
-        # Retry once on empty content (reasoning-only response)
+        # 内容为空时（仅含 reasoning 的响应）重试一次
         if not analysis:
             logger.warning("Vision LLM returned empty content, retrying once")
             response = await async_call_llm(**call_kwargs)
@@ -1005,7 +984,7 @@ async def vision_analyze_tool(
         
         logger.info("Image analysis completed (%s characters)", analysis_length)
         
-        # Prepare successful response
+        # 准备成功响应
         result = {
             "success": True,
             "analysis": analysis or "There was a problem with the request and the image could not be analyzed."
@@ -1014,7 +993,7 @@ async def vision_analyze_tool(
         debug_call_data["success"] = True
         debug_call_data["analysis_length"] = analysis_length
         
-        # Log debug information
+        # 记录调试信息
         _debug.log_call("vision_analyze_tool", debug_call_data)
         _debug.save()
         
@@ -1024,8 +1003,8 @@ async def vision_analyze_tool(
         error_msg = f"Error analyzing image: {str(e)}"
         logger.error("%s", error_msg, exc_info=True)
         
-        # Detect vision capability errors — give the model a clear message
-        # so it can inform the user instead of a cryptic API error.
+        # 检测视觉能力相关的错误——给模型一个清晰的信息，
+        # 以便它能通知用户，而不是一个晦涩的 API 错误。
         err_str = str(e).lower()
         if any(hint in err_str for hint in (
             "402", "insufficient", "payment required", "credits", "billing",
@@ -1056,7 +1035,7 @@ async def vision_analyze_tool(
                 f"be analyzed. Error: {e}"
             )
         
-        # Prepare error response
+        # 准备错误响应
         result = {
             "success": False,
             "error": error_msg,
@@ -1070,7 +1049,7 @@ async def vision_analyze_tool(
         return json.dumps(result, indent=2, ensure_ascii=False)
     
     finally:
-        # Clean up temporary image file (but NOT local/cached files)
+        # 清理临时图片文件（但不清理本地/缓存文件）
         if should_cleanup and temp_image_path and temp_image_path.exists():
             try:
                 temp_image_path.unlink()
@@ -1082,14 +1061,13 @@ async def vision_analyze_tool(
 
 
 def check_vision_requirements() -> bool:
-    """Check if the configured runtime vision path can resolve a client.
+    """检查已配置的运行时视觉路径能否解析出一个客户端。
 
-    Mirrors the fallback chain that ``call_llm(task="vision")`` actually uses
-    at runtime: first the explicit ``auxiliary.vision.provider`` (if any),
-    and if that fails, the auto chain (main provider → openrouter → nous).
-    Without the auto-fallback step the tool would disappear from the model's
-    tool list whenever the explicit provider name was unresolvable, even
-    when the auto chain would have served the request (issue #31179).
+    镜像了 ``call_llm(task="vision")`` 在运行时实际使用的回退链：
+    先尝试显式的 ``auxiliary.vision.provider``（如果有），如果失败再用
+    自动链（主 provider → openrouter → nous）。如果没有自动回退这一步，
+    那么每当显式 provider 名称无法解析时，该工具就会从模型的工具列表中
+    消失，即使自动链本可以处理该请求（issue #31179）。
     """
     try:
         from agent.auxiliary_client import resolve_vision_provider_client
@@ -1099,8 +1077,7 @@ def check_vision_requirements() -> bool:
         _provider, client, _model = resolve_vision_provider_client()
         if client is not None:
             return True
-        # Same fallback to "auto" that call_llm performs when the configured
-        # provider can't be resolved.
+        # 与 call_llm 在配置的 provider 无法解析时执行的“auto”回退相同。
         _provider, client, _model = resolve_vision_provider_client(provider="auto")
         return client is not None
     except Exception:
@@ -1110,12 +1087,12 @@ def check_vision_requirements() -> bool:
 
 if __name__ == "__main__":
     """
-    Simple test/demo when run directly
+    直接运行时的简单测试/演示
     """
     print("👁️ Vision Tools Module")
     print("=" * 40)
-    
-    # Check if vision model is available
+
+    # 检查视觉模型是否可用
     api_available = check_vision_requirements()
     
     if not api_available:
@@ -1127,7 +1104,7 @@ if __name__ == "__main__":
     
     print("🛠️ Vision tools ready for use!")
     
-    # Show debug mode status
+    # 显示调试模式状态
     if _debug.active:
         print(f"🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
         print(f"   Debug logs will be saved to: ./logs/vision_tools_debug_{_debug.session_id}.json")
@@ -1161,7 +1138,7 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# 注册表
 # ---------------------------------------------------------------------------
 from tools.registry import registry, tool_error
 
@@ -1198,17 +1175,15 @@ def _handle_vision_analyze(args: Dict[str, Any], **kw: Any) -> Awaitable[str]:
     image_url = args.get("image_url", "")
     question = args.get("question", "")
 
-    # Fast path: when native image routing is in effect for the active main
-    # model (provider accepts images in tool results, or the user set the
-    # model.supports_vision override), short-circuit the auxiliary LLM and
-    # return the image bytes as a multimodal tool-result envelope. The main
-    # model sees the pixels directly on its next turn — no aux call, no
-    # information loss, no extra latency.
+    # 快速路径：当当前主模型的图片原生路由生效时（provider 接受工具结果中的
+    # 图片，或用户设置了 model.supports_vision 覆盖），短路辅助 LLM，并将图片
+    # 字节作为多模态工具结果封装返回。主模型在其下一轮直接看到像素——
+    # 没有 aux 调用、没有信息损失、没有额外延迟。
     if _should_use_native_vision_fast_path():
         logger.info("vision_analyze: native fast path")
         return _vision_analyze_native(image_url, question)
 
-    # Legacy path: aux LLM describes the image and we return its text.
+    # 遗留路径：aux LLM 描述图片，我们返回其文本。
     full_prompt = (
         "Fully describe and explain everything about this image, then answer the "
         f"following question:\n\n{question}"
@@ -1229,10 +1204,10 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
-# Video Analysis Tool
+# 视频分析工具
 # ---------------------------------------------------------------------------
 
-# Extension → MIME. avi/mkv fall back to mp4.
+# 扩展名 → MIME。avi/mkv 回退为 mp4。
 _VIDEO_MIME_TYPES = {
     ".mp4": "video/mp4",
     ".webm": "video/webm",
@@ -1243,18 +1218,18 @@ _VIDEO_MIME_TYPES = {
     ".mpg": "video/mpeg",
 }
 
-_MAX_VIDEO_BASE64_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
+_MAX_VIDEO_BASE64_BYTES = 50 * 1024 * 1024  # 50 MB 硬性上限
 _VIDEO_SIZE_WARN_BYTES = 20 * 1024 * 1024
 
 
 def _detect_video_mime_type(video_path: Path) -> Optional[str]:
-    """Return a video MIME type based on file extension, or None if unsupported."""
+    """根据文件扩展名返回视频 MIME 类型，不支持时返回 None。"""
     ext = video_path.suffix.lower()
     return _VIDEO_MIME_TYPES.get(ext)
 
 
 def _video_to_base64_data_url(video_path: Path, mime_type: Optional[str] = None) -> str:
-    """Convert a video file to a base64-encoded data URL."""
+    """将视频文件转换为 base64 编码的 data URL。"""
     data = video_path.read_bytes()
     encoded = base64.b64encode(data).decode("ascii")
     mime = mime_type or _VIDEO_MIME_TYPES.get(video_path.suffix.lower(), "video/mp4")
@@ -1262,7 +1237,7 @@ def _video_to_base64_data_url(video_path: Path, mime_type: Optional[str] = None)
 
 
 async def _download_video(video_url: str, destination: Path, max_retries: int = 3) -> Path:
-    """Download video from URL with SSRF protection and retry."""
+    """从 URL 下载视频，带 SSRF 防护和重试。"""
     import asyncio
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1340,7 +1315,7 @@ async def video_analyze_tool(
     user_prompt: str,
     model: str = None,
 ) -> str:
-    """Analyze a video via multimodal LLM. Returns JSON {success, analysis}."""
+    """通过多模态 LLM 分析视频。返回 JSON {success, analysis}。"""
     if not isinstance(user_prompt, str):
         user_prompt = str(user_prompt) if user_prompt is not None else ""
     debug_call_data = {
@@ -1367,7 +1342,7 @@ async def video_analyze_tool(
         logger.info("Analyzing video: %s", video_url[:60])
         logger.info("User prompt: %s", user_prompt[:100])
 
-        # Resolve local path vs remote URL
+        # 解析本地路径还是远程 URL
         resolved_url = video_url
         if resolved_url.startswith("file://"):
             resolved_url = resolved_url[len("file://"):]

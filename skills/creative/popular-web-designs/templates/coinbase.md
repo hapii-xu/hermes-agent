@@ -1,142 +1,142 @@
-# Design System: Coinbase
+# 设计系统：Coinbase
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `DM Sans` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主字体：** `DM Sans` | **等宽字体：** `system monospace stack`
+> - **字体栈（CSS）：** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` 技能（cloudflared 隧道）提供服务。
+> 生成后用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Coinbase's website is a clean, trustworthy crypto platform that communicates financial reliability through a blue-and-white binary palette. The design uses Coinbase Blue (`#0052ff`) — a deep, saturated blue — as the singular brand accent against white and near-black surfaces. The proprietary font family includes CoinbaseDisplay for hero headlines, CoinbaseSans for UI text, CoinbaseText for body reading, and CoinbaseIcons for iconography — a comprehensive four-font system.
+Coinbase 的网站是一个干净、可信赖的加密平台，通过蓝白二元配色传达出金融可靠性。设计使用 Coinbase 蓝（`#0052ff`）—— 一种深沉、饱和的蓝色 —— 作为白色和近黑表面上唯一的品牌点缀色。专有字体家族包括用于英雄标题的 CoinbaseDisplay、用于 UI 文字的 CoinbaseSans、用于正文阅读的 CoinbaseText，以及用于图标体系的 CoinbaseIcons —— 一套完整的四字体系统。
 
-The button system uses a distinctive 56px radius for pill-shaped CTAs with hover transitions to a lighter blue (`#578bfa`). The design alternates between white content sections and dark (`#0a0b0d`, `#282b31`) feature sections, creating a professional, financial-grade interface.
+按钮系统使用独特的 56px 圆角，打造药丸形 CTA，悬停时过渡到更浅的蓝色（`#578bfa`）。设计在白色内容区块和深色（`#0a0b0d`、`#282b31`）功能区之间交替，营造出专业、金融级的界面。
 
-**Key Characteristics:**
-- Coinbase Blue (`#0052ff`) as singular brand accent
-- Four-font proprietary family: Display, Sans, Text, Icons
-- 56px radius pill buttons with blue hover transition
-- Near-black (`#0a0b0d`) dark sections + white light sections
-- 1.00 line-height on display headings — ultra-tight
-- Cool gray secondary surface (`#eef0f3`) with blue tint
-- `text-transform: lowercase` on some button labels — unusual
+**关键特征：**
+- Coinbase 蓝（`#0052ff`）作为唯一的品牌点缀色
+- 四字体专有家族：Display、Sans、Text、Icons
+- 56px 圆角药丸按钮，带蓝色悬停过渡
+- 近黑（`#0a0b0d`）深色区块 + 白色浅色区块
+- 展示标题使用 1.00 行高 —— 超紧凑
+- 冷灰色次要表面（`#eef0f3`）带蓝色调
+- 部分按钮标签使用 `text-transform: lowercase` —— 不常见
 
-## 2. Color Palette & Roles
+## 2. 配色方案与角色
 
-### Primary
-- **Coinbase Blue** (`#0052ff`): Primary brand, links, CTA borders
-- **Pure White** (`#ffffff`): Primary light surface
-- **Near Black** (`#0a0b0d`): Text, dark section backgrounds
-- **Cool Gray Surface** (`#eef0f3`): Secondary button background
+### 主色
+- **Coinbase Blue**（`#0052ff`）：主要品牌色、链接、CTA 边框
+- **Pure White**（`#ffffff`）：主要浅色表面
+- **Near Black**（`#0a0b0d`）：文字、深色区块背景
+- **Cool Gray Surface**（`#eef0f3`）：次要按钮背景
 
-### Interactive
-- **Hover Blue** (`#578bfa`): Button hover background
-- **Link Blue** (`#0667d0`): Secondary link color
-- **Muted Blue** (`#5b616e`): Border color at 20% opacity
+### 交互色
+- **Hover Blue**（`#578bfa`）：按钮悬停背景
+- **Link Blue**（`#0667d0`）：次要链接颜色
+- **Muted Blue**（`#5b616e`）：20% 不透明度的边框色
 
-### Surface
-- **Dark Card** (`#282b31`): Dark button/card backgrounds
-- **Light Surface** (`rgba(247,247,247,0.88)`): Subtle surface
+### 表面色
+- **Dark Card**（`#282b31`）：深色按钮/卡片背景
+- **Light Surface**（`rgba(247,247,247,0.88)`）：细微表面
 
-## 3. Typography Rules
+## 3. 字体规则
 
-### Font Families
-- **Display**: `CoinbaseDisplay` — hero headlines
-- **UI / Sans**: `CoinbaseSans` — buttons, headings, nav
-- **Body**: `CoinbaseText` — reading text
-- **Icons**: `CoinbaseIcons` — icon font
+### 字体家族
+- **Display**：`CoinbaseDisplay` —— 英雄标题
+- **UI / Sans**：`CoinbaseSans` —— 按钮、标题、导航
+- **Body**：`CoinbaseText` —— 阅读文字
+- **Icons**：`CoinbaseIcons` —— 图标字体
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 备注 |
 |------|------|------|--------|-------------|-------|
-| Display Hero | CoinbaseDisplay | 80px | 400 | 1.00 (tight) | Maximum impact |
-| Display Secondary | CoinbaseDisplay | 64px | 400 | 1.00 | Sub-hero |
-| Display Third | CoinbaseDisplay | 52px | 400 | 1.00 | Third tier |
-| Section Heading | CoinbaseSans | 36px | 400 | 1.11 (tight) | Feature sections |
-| Card Title | CoinbaseSans | 32px | 400 | 1.13 | Card headings |
-| Feature Title | CoinbaseSans | 18px | 600 | 1.33 | Feature emphasis |
-| Body Bold | CoinbaseSans | 16px | 700 | 1.50 | Strong body |
-| Body Semibold | CoinbaseSans | 16px | 600 | 1.25 | Buttons, nav |
-| Body | CoinbaseText | 18px | 400 | 1.56 | Standard reading |
-| Body Small | CoinbaseText | 16px | 400 | 1.50 | Secondary reading |
-| Button | CoinbaseSans | 16px | 600 | 1.20 | +0.16px tracking |
-| Caption | CoinbaseSans | 14px | 600–700 | 1.50 | Metadata |
-| Small | CoinbaseSans | 13px | 600 | 1.23 | Tags |
+| Display Hero | CoinbaseDisplay | 80px | 400 | 1.00（紧凑） | 最大冲击力 |
+| Display Secondary | CoinbaseDisplay | 64px | 400 | 1.00 | 次级英雄 |
+| Display Third | CoinbaseDisplay | 52px | 400 | 1.00 | 第三层级 |
+| Section Heading | CoinbaseSans | 36px | 400 | 1.11（紧凑） | 功能区块 |
+| Card Title | CoinbaseSans | 32px | 400 | 1.13 | 卡片标题 |
+| Feature Title | CoinbaseSans | 18px | 600 | 1.33 | 功能强调 |
+| Body Bold | CoinbaseSans | 16px | 700 | 1.50 | 强壮正文 |
+| Body Semibold | CoinbaseSans | 16px | 600 | 1.25 | 按钮、导航 |
+| Body | CoinbaseText | 18px | 400 | 1.56 | 标准阅读 |
+| Body Small | CoinbaseText | 16px | 400 | 1.50 | 次要阅读 |
+| Button | CoinbaseSans | 16px | 600 | 1.20 | +0.16px 字距 |
+| Caption | CoinbaseSans | 14px | 600–700 | 1.50 | 元数据 |
+| Small | CoinbaseSans | 13px | 600 | 1.23 | 标签 |
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Pill (56px radius)**
-- Background: `#eef0f3` or `#282b31`
-- Radius: 56px
-- Border: `1px solid` matching background
-- Hover: `#578bfa` (light blue)
-- Focus: `2px solid black` outline
+**主药丸（56px 圆角）**
+- 背景：`#eef0f3` 或 `#282b31`
+- 圆角：56px
+- 边框：`1px solid` 与背景同色
+- 悬停：`#578bfa`（浅蓝）
+- 聚焦：`2px solid black` 轮廓
 
-**Full Pill (100000px radius)**
-- Used for maximum pill shape
+**全药丸（100000px 圆角）**
+- 用于最大化的药丸形状
 
-**Blue Bordered**
-- Border: `1px solid #0052ff`
-- Background: transparent
+**蓝色描边**
+- 边框：`1px solid #0052ff`
+- 背景：透明
 
-### Cards & Containers
-- Radius: 8px–40px range
-- Borders: `1px solid rgba(91,97,110,0.2)`
+### 卡片与容器
+- 圆角：8px–40px 范围
+- 边框：`1px solid rgba(91,97,110,0.2)`
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base: 8px
-- Scale: 1px, 3px, 4px, 5px, 6px, 8px, 10px, 12px, 15px, 16px, 20px, 24px, 25px, 32px, 48px
+### 间距系统
+- 基准：8px
+- 比例：1px, 3px, 4px, 5px, 6px, 8px, 10px, 12px, 15px, 16px, 20px, 24px, 25px, 32px, 48px
 
-### Border Radius Scale
-- Small (4px–8px): Article links, small cards
-- Standard (12px–16px): Cards, menus
-- Large (24px–32px): Feature containers
-- XL (40px): Large buttons/containers
-- Pill (56px): Primary CTAs
-- Full (100000px): Maximum pill
+### 圆角比例
+- 小（4px–8px）：文章链接、小卡片
+- 标准（12px–16px）：卡片、菜单
+- 大（24px–32px）：功能容器
+- 超大（40px）：大型按钮/容器
+- 药丸（56px）：主 CTA
+- 全圆（100000px）：最大化药丸
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-Minimal shadow system — depth from color contrast between dark/light sections.
+极简阴影系统 —— 深度来自深/浅区块之间的颜色对比。
 
-## 7. Do's and Don'ts
+## 7. 宜与不宜
 
-### Do
-- Use Coinbase Blue (#0052ff) for primary interactive elements
-- Apply 56px radius for all CTA buttons
-- Use CoinbaseDisplay for hero headings only
-- Alternate dark (#0a0b0d) and white sections
+### 宜
+- 主要交互元素使用 Coinbase 蓝（#0052ff）
+- 所有 CTA 按钮应用 56px 圆角
+- 仅在英雄标题上使用 CoinbaseDisplay
+- 深色（#0a0b0d）与白色区块交替
 
-### Don't
-- Don't use the blue decoratively — it's functional only
-- Don't use sharp corners on CTAs — 56px minimum
+### 不宜
+- 不要将蓝色用作装饰 —— 它仅承担功能性
+- CTA 不要使用尖角 —— 至少 56px 圆角
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-Breakpoints: 400px, 576px, 640px, 768px, 896px, 1280px, 1440px, 1600px
+断点：400px, 576px, 640px, 768px, 896px, 1280px, 1440px, 1600px
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示词指南
 
-### Quick Color Reference
-- Brand: Coinbase Blue (`#0052ff`)
-- Background: White (`#ffffff`)
-- Dark surface: `#0a0b0d`
-- Secondary surface: `#eef0f3`
-- Hover: `#578bfa`
-- Text: `#0a0b0d`
+### 快速颜色参考
+- 品牌：Coinbase 蓝（`#0052ff`）
+- 背景：白色（`#ffffff`）
+- 深色表面：`#0a0b0d`
+- 次要表面：`#eef0f3`
+- 悬停：`#578bfa`
+- 文字：`#0a0b0d`
 
-### Example Component Prompts
-- "Create hero: white background. CoinbaseDisplay 80px, line-height 1.00. Pill CTA (#eef0f3, 56px radius). Hover: #578bfa."
-- "Build dark section: #0a0b0d background. CoinbaseDisplay 64px white text. Blue accent link (#0052ff)."
+### 组件示例提示词
+- "创建 hero：白色背景。CoinbaseDisplay 80px，行高 1.00。药丸 CTA（#eef0f3，56px 圆角）。悬停：#578bfa。"
+- "构建深色区块：#0a0b0d 背景。CoinbaseDisplay 64px 白色文字。蓝色点缀链接（#0052ff）。"

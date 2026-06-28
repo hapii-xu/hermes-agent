@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Raw Chrome DevTools Protocol (CDP) passthrough tool.
+原始 Chrome DevTools Protocol (CDP) 透传工具。
 
-Exposes a single tool, ``browser_cdp``, that sends arbitrary CDP commands to
-the browser's DevTools WebSocket endpoint.  Works when a CDP URL is
-configured — either via ``/browser connect`` (sets ``BROWSER_CDP_URL``) or
-``browser.cdp_url`` in ``config.yaml`` — or when a CDP-backed cloud provider
-session is active.
+对外暴露单个工具 ``browser_cdp``，用于向浏览器的 DevTools WebSocket 端点发送任意
+CDP 命令。在已配置 CDP URL 时可用——可通过 ``/browser connect``（会设置
+``BROWSER_CDP_URL``）或 ``config.yaml`` 中的 ``browser.cdp_url`` 配置——或在有基于
+CDP 的云服务商会话处于活动状态时也可用。
 
-This is the escape hatch for browser operations not covered by the main
-browser tool surface (``browser_navigate``, ``browser_click``,
-``browser_console``, etc.) — handling native dialogs, iframe-scoped
-evaluation, cookie/network control, low-level tab management, etc.
+这是主浏览器工具集（``browser_navigate``、``browser_click``、``browser_console``
+等）未覆盖的浏览器操作的逃生通道——例如处理原生对话框、iframe 作用域内的求值、
+cookie/网络控制、底层标签页管理等。
 
-Method reference: https://chromedevtools.github.io/devtools-protocol/
+方法参考：https://chromedevtools.github.io/devtools-protocol/
 """
 from __future__ import annotations
 
@@ -28,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 CDP_DOCS_URL = "https://chromedevtools.github.io/devtools-protocol/"
 
-# ``websockets`` is a direct hermes-agent dependency because the browser CDP
-# supervisor and browser_dialog tool import it during tool discovery. Wrap the
-# import so a clean error surfaces if an environment is stale or incomplete.
+# ``websockets`` 是 hermes-agent 的直接依赖，因为浏览器 CDP
+# 监督器和 browser_dialog 工具在工具发现阶段会导入它。这里把导入
+# 包裹起来，以便在环境过期或不完整时能抛出清晰的错误。
 try:
     import websockets
     from websockets.exceptions import WebSocketException
@@ -43,12 +41,12 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Async-from-sync bridge (matches the pattern in homeassistant_tool.py)
+# 同步调用中桥接异步函数（与 homeassistant_tool.py 中的模式一致）
 # ---------------------------------------------------------------------------
 
 
 def _run_async(coro):
-    """Run an async coroutine from a sync handler, safe inside or outside a loop."""
+    """从同步处理器中运行异步协程，无论是否已在事件循环内都安全。"""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -64,18 +62,18 @@ def _run_async(coro):
 
 
 # ---------------------------------------------------------------------------
-# Endpoint resolution
+# 端点解析
 # ---------------------------------------------------------------------------
 
 
 def _resolve_cdp_endpoint() -> str:
-    """Return the normalized CDP WebSocket URL, or empty string if unavailable.
+    """返回归一化后的 CDP WebSocket URL，若不可用则返回空字符串。
 
-    Delegates to ``tools.browser_tool._get_cdp_override`` so precedence stays
-    consistent with the rest of the browser tool surface:
+    委托给 ``tools.browser_tool._get_cdp_override``，使优先级与浏览器工具集的其余
+    部分保持一致：
 
-    1. ``BROWSER_CDP_URL`` env var (live override from ``/browser connect``)
-    2. ``browser.cdp_url`` in ``config.yaml``
+    1. ``BROWSER_CDP_URL`` 环境变量（通过 ``/browser connect`` 实时覆盖）
+    2. ``config.yaml`` 中的 ``browser.cdp_url``
     """
     try:
         from tools.browser_tool import _get_cdp_override  # type: ignore[import-not-found]
@@ -87,7 +85,7 @@ def _resolve_cdp_endpoint() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Core CDP call
+# 核心 CDP 调用
 # ---------------------------------------------------------------------------
 
 
@@ -98,28 +96,27 @@ async def _cdp_call(
     target_id: Optional[str],
     timeout: float,
 ) -> Dict[str, Any]:
-    """Make a single CDP call, optionally attaching to a target first.
+    """发起一次 CDP 调用，可选择先附加到某个 target。
 
-    When ``target_id`` is provided, we call ``Target.attachToTarget`` with
-    ``flatten=True`` to multiplex a page-level session over the same
-    browser-level WebSocket, then send ``method`` with that ``sessionId``.
-    When ``target_id`` is None, ``method`` is sent at browser level — which
-    works for ``Target.*``, ``Browser.*``, ``Storage.*`` and a few other
-    globally-scoped domains.
+    当传入 ``target_id`` 时，会调用 ``Target.attachToTarget`` 并设置
+    ``flatten=True``，从而在同一个浏览器级 WebSocket 上复用一个页面级会话，
+    然后用该 ``sessionId`` 发送 ``method``。
+    当 ``target_id`` 为 None 时，``method`` 在浏览器级别发送——这适用于
+    ``Target.*``、``Browser.*``、``Storage.*`` 以及其他少数全局作用域的域。
     """
-    assert websockets is not None  # guarded by _WS_AVAILABLE at call-site
+    assert websockets is not None  # 在调用处由 _WS_AVAILABLE 保护
 
     async with websockets.connect(
         ws_url,
-        max_size=None,  # CDP responses (e.g. DOM.getDocument) can be large
+        max_size=None,  # CDP 响应（例如 DOM.getDocument）可能很大
         open_timeout=timeout,
         close_timeout=5,
-        ping_interval=None,  # CDP server doesn't expect pings
+        ping_interval=None,  # CDP 服务器不期望收到 ping
     ) as ws:
         next_id = 1
         session_id: Optional[str] = None
 
-        # --- Step 1: attach to target if requested ---
+        # --- 步骤 1：如请求则附加到 target ---
         if target_id:
             attach_id = next_id
             next_id += 1
@@ -152,9 +149,9 @@ async def _cdp_call(
                             "Target.attachToTarget did not return a sessionId"
                         )
                     break
-                # Ignore events (messages without "id") while waiting
+                # 等待期间忽略事件（不带 "id" 的消息）
 
-        # --- Step 2: dispatch the real method ---
+        # --- 步骤 2：派发真正的方法 ---
         call_id = next_id
         next_id += 1
         req: Dict[str, Any] = {
@@ -179,11 +176,11 @@ async def _cdp_call(
                 if "error" in msg:
                     raise RuntimeError(f"CDP error: {msg['error']}")
                 return msg.get("result", {})
-            # Ignore events / out-of-order responses
+            # 忽略事件 / 乱序响应
 
 
 # ---------------------------------------------------------------------------
-# Public tool function
+# 公共工具函数
 # ---------------------------------------------------------------------------
 
 
@@ -194,12 +191,11 @@ def _browser_cdp_via_supervisor(
     params: Optional[Dict[str, Any]],
     timeout: float,
 ) -> str:
-    """Route a CDP call through the live supervisor session for an OOPIF frame.
+    """通过 OOPIF frame 对应的活动监督器会话来路由一次 CDP 调用。
 
-    Looks up the frame in the supervisor's snapshot, extracts its child
-    ``cdp_session_id``, and dispatches ``method`` with that sessionId via
-    the supervisor's already-connected WebSocket (using
-    ``asyncio.run_coroutine_threadsafe`` onto the supervisor loop).
+    在监督器的快照中查找该 frame，取出其子级的 ``cdp_session_id``，然后通过
+    监督器已连接的 WebSocket（使用 ``asyncio.run_coroutine_threadsafe``
+    调度到监督器的事件循环上）以该 sessionId 派发 ``method``。
     """
     try:
         from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
@@ -220,7 +216,7 @@ def _browser_cdp_via_supervisor(
         )
 
     snap = supervisor.snapshot()
-    # Search both the top frame and the children for the requested id.
+    # 同时在顶层 frame 和子 frame 中查找所请求的 id。
     top = snap.frame_tree.get("top")
     frame_info: Optional[Dict[str, Any]] = None
     if top and top.get("frame_id") == frame_id:
@@ -231,7 +227,7 @@ def _browser_cdp_via_supervisor(
                 frame_info = child
                 break
     if frame_info is None:
-        # Check the raw frames dict too (frame_tree is capped at 30 entries)
+        # 同时检查原始 frames 字典（frame_tree 最多保留 30 条）
         with supervisor._state_lock:  # type: ignore[attr-defined]
             raw = supervisor._frames.get(frame_id)  # type: ignore[attr-defined]
         if raw is not None:
@@ -245,9 +241,9 @@ def _browser_cdp_via_supervisor(
 
     child_sid = frame_info.get("session_id")
     if not child_sid:
-        # Not an OOPIF — fall back to top-level session (evaluating at page
-        # scope).  Same-origin iframes don't get their own sessionId; the
-        # agent can still use contentWindow/contentDocument from the parent.
+        # 不是 OOPIF —— 回退到顶层会话（在页面作用域内求值）。
+        # 同源 iframe 不会获得自己的 sessionId；agent 仍可从父级使用
+        # contentWindow/contentDocument。
         return tool_error(
             f"frame_id {frame_id!r} is not an out-of-process iframe (no "
             f"dedicated CDP session). For same-origin iframes, use "
@@ -256,7 +252,7 @@ def _browser_cdp_via_supervisor(
             f"at the top-level page instead."
         )
 
-    # Dispatch onto the supervisor's loop.
+    # 派发到监督器的事件循环上。
     loop = supervisor._loop  # type: ignore[attr-defined]
     if loop is None or not loop.is_running():
         return tool_error(
@@ -305,32 +301,29 @@ def browser_cdp(
     timeout: float = 30.0,
     task_id: Optional[str] = None,
 ) -> str:
-    """Send a raw CDP command.  See ``CDP_DOCS_URL`` for method documentation.
+    """发送一条原始 CDP 命令。方法文档见 ``CDP_DOCS_URL``。
 
-    Args:
-        method: CDP method name, e.g. ``"Target.getTargets"``.
-        params: Method-specific parameters; defaults to ``{}``.
-        target_id: Optional target/tab ID for page-level methods.  When set,
-            we first attach to the target (``flatten=True``) and send
-            ``method`` with the resulting ``sessionId``.  Uses a fresh
-            stateless CDP connection.
-        frame_id: Optional cross-origin (OOPIF) iframe ``frame_id`` from
-            ``browser_snapshot.frame_tree.children[]``.  When set (and the
-            frame is an OOPIF with a live session tracked by the CDP
-            supervisor), routes the call through the supervisor's existing
-            WebSocket — which is how you Runtime.evaluate *inside* an
-            iframe on backends where per-call fresh CDP connections would
-            hit signed-URL expiry (Browserbase) or expensive reattach.
-        timeout: Seconds to wait for the call to complete.
-        task_id: Task identifier for supervisor lookup.  When ``frame_id``
-            is set, this identifies which task's supervisor to use; the
-            handler will default to ``"default"`` otherwise.
+    参数：
+        method: CDP 方法名，例如 ``"Target.getTargets"``。
+        params: 方法专用参数；默认为 ``{}``。
+        target_id: 用于页面级方法的可选 target/标签页 ID。设置后，
+            会先附加到该 target（``flatten=True``），再用得到的
+            ``sessionId`` 发送 ``method``。使用全新的无状态 CDP 连接。
+        frame_id: 可选的跨源（OOPIF）iframe ``frame_id``，取自
+            ``browser_snapshot.frame_tree.children[]``。设置后（且该
+            frame 是被 CDP 监督器跟踪的、拥有活动会话的 OOPIF），会
+            通过监督器已有的 WebSocket 路由本次调用——这就是在那些「逐次
+            新建 CDP 连接会触发签名 URL 过期（Browserbase）或昂贵重连」
+            的后端上，在 iframe *内部* 执行 Runtime.evaluate 的方式。
+        timeout: 等待调用完成的秒数。
+        task_id: 用于监督器查找的任务标识符。当设置了 ``frame_id`` 时，
+            它指定使用哪个任务的监督器；否则处理器默认为 ``"default"``。
 
-    Returns:
-        JSON string ``{"success": True, "method": ..., "result": {...}}`` on
-        success, or ``{"error": "..."}`` on failure.
+    返回：
+        成功时返回 JSON 字符串 ``{"success": True, "method": ..., "result": {...}}``，
+        失败时返回 ``{"error": "..."}``。
     """
-    # --- Route iframe-scoped calls through the supervisor ---------------
+    # --- 将 iframe 作用域的调用经由监督器路由 ---------------
     if frame_id:
         return _browser_cdp_via_supervisor(
             task_id=task_id or "default",
@@ -339,7 +332,7 @@ def browser_cdp(
             params=params,
             timeout=timeout,
         )
-    del task_id  # stateless path below
+    del task_id  # 下方为无状态路径
 
     if not method or not isinstance(method, str):
         return tool_error(
@@ -420,7 +413,7 @@ def browser_cdp(
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# 注册表
 # ---------------------------------------------------------------------------
 
 
@@ -523,21 +516,19 @@ BROWSER_CDP_SCHEMA: Dict[str, Any] = {
 
 
 def _browser_cdp_check() -> bool:
-    """Availability check for browser_cdp.
+    """browser_cdp 的可用性检查。
 
-    The tool is only offered when the Python side can actually reach a CDP
-    endpoint right now — meaning a static URL is set via ``/browser connect``
-    (``BROWSER_CDP_URL``) or ``browser.cdp_url`` in ``config.yaml``.
+    仅当 Python 端此刻确实能访问到某个 CDP 端点时才提供该工具——即通过
+    ``/browser connect``（``BROWSER_CDP_URL``）或 ``config.yaml`` 中的
+    ``browser.cdp_url`` 设置了一个静态 URL。
 
-    Backends that do *not* currently expose CDP to us — Camofox (REST-only),
-    the default local agent-browser mode (Playwright hides its internal CDP
-    port), and cloud providers whose per-session ``cdp_url`` is not yet
-    surfaced — are gated out so the model doesn't see a tool that would
-    reliably fail.  Cloud-provider CDP routing is a follow-up.
+    目前*不*向我们暴露 CDP 的后端——Camofox（仅 REST）、默认的本地
+    agent-browser 模式（Playwright 隐藏了其内部 CDP 端口），以及尚未暴露
+    每会话 ``cdp_url`` 的云服务商——会被挡在外面，以免模型看到一个必然
+    失败的工具。云服务商的 CDP 路由是后续工作。
 
-    Kept in a thin wrapper so the registration statement stays at module top
-    level (the tool-discovery AST scan only picks up top-level
-    ``registry.register(...)`` calls).
+    保留在一个薄包装函数里，使注册语句保持在模块顶层（工具发现的 AST
+    扫描只会拾取顶层的 ``registry.register(...)`` 调用）。
     """
     try:
         from tools.browser_tool import (  # type: ignore[import-not-found]

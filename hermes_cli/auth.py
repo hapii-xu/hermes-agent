@@ -1,19 +1,19 @@
 """
-Multi-provider authentication system for Hermes Agent.
+Hermes Agent 的多 Provider 认证系统。
 
-Supports OAuth device code flows (Nous Portal, future: OpenAI Codex) and
-traditional API key providers (OpenRouter, custom endpoints). Auth state
-is persisted in ~/.hermes/auth.json with cross-process file locking.
+支持 OAuth 设备码流程（Nous Portal，未来：OpenAI Codex）以及
+传统的 API key Provider（OpenRouter、自定义端点）。认证状态
+持久化在 ~/.hermes/auth.json 中，具有跨进程文件锁。
 
-Architecture:
-- ProviderConfig registry defines known OAuth providers
-- Auth store (auth.json) holds per-provider credential state
-- resolve_provider() picks the active provider via priority chain
-- resolve_*_runtime_credentials() handles token refresh and runtime keys
-- logout_command() is the CLI entry point for clearing auth
+架构：
+- ProviderConfig 注册表定义已知的 OAuth Provider
+- Auth store（auth.json）保存每个 Provider 的凭证状态
+- resolve_provider() 通过优先级链选择当前活跃的 Provider
+- resolve_*_runtime_credentials() 处理 token 刷新和运行时密钥
+- logout_command() 是清除认证的 CLI 入口
 
-Nous authentication paths:
-- Invoke JWT (preferred): use a scoped access_token directly for inference.
+Nous 认证路径：
+- Invoke JWT（首选）：直接使用作用域 access_token 进行推理。
 """
 
 from __future__ import annotations
@@ -60,13 +60,13 @@ except Exception:
     msvcrt = None
 
 # =============================================================================
-# Constants
+# 常量
 # =============================================================================
 
 AUTH_STORE_VERSION = 1
 AUTH_LOCK_TIMEOUT_SECONDS = 15.0
 
-# Nous Portal defaults
+# Nous Portal 默认值
 DEFAULT_NOUS_PORTAL_URL = "https://portal.nousresearch.com"
 DEFAULT_NOUS_INFERENCE_URL = "https://inference-api.nousresearch.com/v1"
 DEFAULT_NOUS_CLIENT_ID = "hermes-cli"
@@ -104,11 +104,11 @@ XAI_OAUTH_SCOPE = "openid profile email offline_access grok-cli:access api:acces
 XAI_OAUTH_REDIRECT_HOST = "127.0.0.1"
 XAI_OAUTH_REDIRECT_PORT = 56121
 XAI_OAUTH_REDIRECT_PATH = "/callback"
-# xAI/Grok OAuth access tokens are intentionally short-lived (about 6h in
-# current SuperGrok flows). A two-minute refresh window is too narrow for
-# gateway/cron workloads that may only touch the provider every 30 minutes,
-# leaving brief but noisy credential-expiry gaps. Refresh up to one hour
-# early so ordinary runtime calls keep the token warm without user reauth.
+# xAI/Grok OAuth access token 故意设计为短期有效（在当前 SuperGrok
+# 流程中约为 6 小时）。两分钟的刷新窗口对于可能每 30 分钟才访问一次
+# provider 的 gateway/cron 工作负载来说太窄了，会导致短暂但频繁的
+# 凭证过期间隙。提前最多一小时刷新，这样普通运行时调用可以保持
+# token 活跃而无需用户重新认证。
 XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 3600
 QWEN_OAUTH_CLIENT_ID = "f0304373b74a44d2b584a3fb70ca9e56"
 QWEN_OAUTH_TOKEN_URL = "https://chat.qwen.ai/api/v1/oauth2/token"
@@ -138,31 +138,31 @@ SERVICE_PROVIDER_NAMES: Dict[str, str] = {
     "spotify": "Spotify",
 }
 
-# LM Studio's default no-auth mode still requires *some* non-empty bearer for
-# the API-key code paths (auxiliary_client, runtime resolver) to treat the
-# provider as configured. This sentinel is sent only to LM Studio, never to
-# any remote service.
+# LM Studio 的默认无认证模式仍然需要*某个*非空的 bearer token，
+# 以便 API-key 代码路径（auxiliary_client、runtime resolver）将该
+# provider 视为已配置。这个哨兵值只发送给 LM Studio，永远不会发送
+# 给任何远程服务。
 LMSTUDIO_NOAUTH_PLACEHOLDER = "dummy-lm-api-key"
 
 
 # =============================================================================
-# Provider Registry
+# Provider 注册表
 # =============================================================================
 
 @dataclass
 class ProviderConfig:
-    """Describes a known inference provider."""
+    """描述一个已知的推理 provider。"""
     id: str
     name: str
-    auth_type: str  # "oauth_device_code", "oauth_external", "oauth_minimax", or "api_key"
+    auth_type: str  # "oauth_device_code"、"oauth_external"、"oauth_minimax" 或 "api_key"
     portal_base_url: str = ""
     inference_base_url: str = ""
     client_id: str = ""
     scope: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
-    # For API-key providers: env vars to check (in priority order)
+    # 对于 API-key provider：要检查的环境变量（按优先级顺序）
     api_key_env_vars: tuple = ()
-    # Optional env var for base URL override
+    # 可选的 base URL 覆盖环境变量
     base_url_env_var: str = ""
 
 
@@ -431,15 +431,15 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         id="azure-foundry",
         name="Azure Foundry",
         auth_type="api_key",
-        inference_base_url="",  # User-provided endpoint
+        inference_base_url="",  # 用户提供的端点
         api_key_env_vars=("AZURE_FOUNDRY_API_KEY",),
         base_url_env_var="AZURE_FOUNDRY_BASE_URL",
     ),
 }
 
-# Auto-extend PROVIDER_REGISTRY with any api-key provider registered in
-# providers/ that is not already declared above.  New providers only need a
-# plugins/model-providers/<name>/ plugin — no edits to this file required.
+# 使用 providers/ 中注册的任何 api-key provider 自动扩展
+# PROVIDER_REGISTRY，只要它尚未在上面声明。新 provider 只需要一个
+# plugins/model-providers/<name>/ 插件 —— 无需编辑此文件。
 try:
     from providers import list_providers as _list_providers_for_registry
     for _pp in _list_providers_for_registry():
@@ -447,11 +447,11 @@ try:
             continue
         if _pp.auth_type != "api_key" or not _pp.env_vars:
             continue
-        # Skip providers that need custom token resolution or are special-cased
-        # in resolve_provider() (copilot/kimi/zai have bespoke token refresh;
-        # openrouter/custom are aggregator/user-supplied and handled outside
-        # the registry — adding them here breaks runtime_provider resolution
-        # that relies on `openrouter not in PROVIDER_REGISTRY`).
+        # 跳过需要自定义 token 解析或在 resolve_provider() 中有特殊处理的
+        # provider（copilot/kimi/zai 有定制的 token 刷新逻辑；
+        # openrouter/custom 是聚合器/用户提供的，在注册表外处理 ——
+        # 在这里添加它们会破坏依赖 `openrouter not in PROVIDER_REGISTRY`
+        # 的 runtime_provider 解析）。
         if _pp.name in {"copilot", "kimi-coding", "kimi-coding-cn", "zai", "openrouter", "custom"}:
             continue
         _api_key_vars = tuple(v for v in _pp.env_vars if not v.endswith("_BASE_URL") and not v.endswith("_URL"))
@@ -464,7 +464,7 @@ try:
             api_key_env_vars=_api_key_vars or _pp.env_vars,
             base_url_env_var=_base_url_var or "",
         )
-        # Also register aliases so resolve_provider() resolves them
+        # 同时注册别名，以便 resolve_provider() 可以解析它们
         for _alias in _pp.aliases:
             if _alias not in PROVIDER_REGISTRY:
                 PROVIDER_REGISTRY[_alias] = PROVIDER_REGISTRY[_pp.name]
@@ -473,15 +473,15 @@ except Exception:
 
 
 # =============================================================================
-# Anthropic Key Helper
+# Anthropic 密钥辅助函数
 # =============================================================================
 
 def get_anthropic_key() -> str:
-    """Return the first usable Anthropic credential, or ``""``.
+    """返回第一个可用的 Anthropic 凭证，或 ``""``。
 
-    Checks both the ``.env`` file (via ``get_env_value``) and the process
-    environment (``os.getenv``).  The fallback order mirrors the
-    ``PROVIDER_REGISTRY["anthropic"].api_key_env_vars`` tuple:
+    同时检查 ``.env`` 文件（通过 ``get_env_value``）和进程
+    环境（``os.getenv``）。回退顺序与
+    ``PROVIDER_REGISTRY["anthropic"].api_key_env_vars`` 元组一致：
 
         ANTHROPIC_API_KEY -> ANTHROPIC_TOKEN -> CLAUDE_CODE_OAUTH_TOKEN
     """
@@ -495,31 +495,30 @@ def get_anthropic_key() -> str:
 
 
 # =============================================================================
-# Kimi Code Endpoint Detection
+# Kimi Code 端点检测
 # =============================================================================
 
-# Kimi Code (kimi.com/code) issues keys prefixed "sk-kimi-" that only work
-# on api.kimi.com/coding.  Legacy keys from platform.moonshot.ai work on
-# api.moonshot.ai/v1 (the old default).  Auto-detect when user hasn't set
-# KIMI_BASE_URL explicitly.
+# Kimi Code (kimi.com/code) 签发的密钥以 "sk-kimi-" 为前缀，只能在
+# api.kimi.com/coding 上使用。来自 platform.moonshot.ai 的旧版密钥可在
+# api.moonshot.ai/v1（旧默认值）上使用。当用户未显式设置 KIMI_BASE_URL
+# 时自动检测。
 #
-# Note: the base URL intentionally has NO /v1 suffix.  The /coding endpoint
-# speaks the Anthropic Messages protocol, and the anthropic SDK appends
-# "/v1/messages" internally — so "/coding" + SDK suffix → "/coding/v1/messages"
-# (the correct target). Using "/coding/v1" here would produce
-# "/coding/v1/v1/messages" (a 404).
+# 注意：base URL 故意没有 /v1 后缀。/coding 端点使用 Anthropic Messages
+# 协议，而 anthropic SDK 会在内部追加 "/v1/messages" —— 所以 "/coding" +
+# SDK 后缀 → "/coding/v1/messages"（正确的目标）。如果在这里使用
+# "/coding/v1" 会产生 "/coding/v1/v1/messages"（404 错误）。
 KIMI_CODE_BASE_URL = "https://api.kimi.com/coding"
 
 
 def _resolve_kimi_base_url(api_key: str, default_url: str, env_override: str) -> str:
-    """Return the correct Kimi base URL based on the API key prefix.
+    """根据 API 密钥前缀返回正确的 Kimi base URL。
 
-    If the user has explicitly set KIMI_BASE_URL, that always wins.
-    Otherwise, sk-kimi- prefixed keys route to api.kimi.com/coding/v1.
+    如果用户已显式设置 KIMI_BASE_URL，则始终优先使用该值。
+    否则，sk-kimi- 前缀的密钥路由到 api.kimi.com/coding/v1。
     """
     if env_override:
         return env_override
-    # No key → nothing to infer from.  Return default without inspecting.
+    # 没有密钥 → 无法推断。直接返回默认值，不进行检查。
     if not api_key:
         return default_url
     if api_key.startswith("sk-kimi-"):
@@ -545,7 +544,7 @@ _PLACEHOLDER_SECRET_VALUES = {
 
 
 def has_usable_secret(value: Any, *, min_length: int = 4) -> bool:
-    """Return True when a configured secret looks usable, not empty/placeholder."""
+    """当配置的密钥看起来可用（而非空/占位符）时返回 True。"""
     if not isinstance(value, str):
         return False
     cleaned = value.strip()
@@ -559,9 +558,9 @@ def has_usable_secret(value: Any, *, min_length: int = 4) -> bool:
 def _resolve_api_key_provider_secret(
     provider_id: str, pconfig: ProviderConfig
 ) -> tuple[str, str]:
-    """Resolve an API-key provider's token and indicate where it came from."""
+    """解析 API-key provider 的 token 并指示其来源。"""
     if provider_id == "copilot":
-        # Use the dedicated copilot auth module for proper token validation
+        # 使用专用的 copilot auth 模块进行正确的 token 验证
         try:
             from hermes_cli.copilot_auth import resolve_copilot_token, get_copilot_api_token
             token, source = resolve_copilot_token()
@@ -575,12 +574,12 @@ def _resolve_api_key_provider_secret(
 
     from hermes_cli.config import get_env_value
     for env_var in pconfig.api_key_env_vars:
-        # Check both os.environ and ~/.hermes/.env file
+        # 同时检查 os.environ 和 ~/.hermes/.env 文件
         val = (get_env_value(env_var) or "").strip()
         if has_usable_secret(val):
             return val, env_var
 
-    # Fallback: try credential pool (e.g. zai key stored via auth.json)
+    # 回退：尝试凭证池（例如通过 auth.json 存储的 zai 密钥）
     try:
         from agent.credential_pool import load_pool
         pool = load_pool(provider_id)
@@ -598,15 +597,14 @@ def _resolve_api_key_provider_secret(
 
 
 # =============================================================================
-# Z.AI Endpoint Detection
+# Z.AI 端点检测
 # =============================================================================
 
-# Z.AI has separate billing for general vs coding plans, and global vs China
-# endpoints.  A key that works on one may return "Insufficient balance" on
-# another.  We probe at setup time and store the working endpoint.
-# Each entry lists candidate models to try in order — newer coding plan accounts
-# may only have access to recent models (glm-5.1, glm-5v-turbo) while older
-# ones still use glm-4.7.
+# Z.AI 对通用套餐和编程套餐、全球端点和中国端点有独立的计费。
+# 在一个端点上有效的密钥可能在另一个端点上返回 "Insufficient balance"。
+# 我们在设置时进行探测并存储有效的端点。
+# 每个条目列出按顺序尝试的候选模型 —— 较新的编程套餐账户可能只能
+# 访问最新模型（glm-5.1、glm-5v-turbo），而较旧的账户仍使用 glm-4.7。
 
 ZAI_ENDPOINTS = [
     # (id, base_url, probe_models, label)
@@ -618,11 +616,11 @@ ZAI_ENDPOINTS = [
 
 
 def detect_zai_endpoint(api_key: str, timeout: float = 8.0) -> Optional[Dict[str, str]]:
-    """Probe z.ai endpoints to find one that accepts this API key.
+    """探测 z.ai 端点以找到接受此 API 密钥的端点。
 
-    Returns {"id": ..., "base_url": ..., "model": ..., "label": ...} for the
-    first working endpoint, or None if all fail.  For endpoints with multiple
-    candidate models, tries each in order and returns the first that succeeds.
+    返回第一个有效端点的 {"id": ..., "base_url": ..., "model": ..., "label": ...}，
+    如果全部失败则返回 None。对于有多个候选模型的端点，按顺序尝试每个模型
+    并返回第一个成功的。
     """
     for ep_id, base_url, probe_models, label in ZAI_ENDPOINTS:
         for model in probe_models:
@@ -656,25 +654,24 @@ def detect_zai_endpoint(api_key: str, timeout: float = 8.0) -> Optional[Dict[str
 
 
 def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> str:
-    """Return the correct Z.AI base URL by probing endpoints.
+    """通过探测端点返回正确的 Z.AI base URL。
 
-    If the user has explicitly set GLM_BASE_URL, that always wins.
-    Otherwise, probe the candidate endpoints to find one that accepts the
-    key.  The detected endpoint is cached in provider state (auth.json) keyed
-    on a hash of the API key so subsequent starts skip the probe.
+    如果用户已显式设置 GLM_BASE_URL，则始终优先使用该值。
+    否则，探测候选端点以找到接受该密钥的端点。检测到的端点
+    缓存在 provider 状态（auth.json）中，以 API 密钥的哈希值为键，
+    这样后续启动可以跳过探测。
     """
     if env_override:
         return env_override
 
-    # No API key set → don't probe (would fire N×M HTTPS requests with an
-    # empty Bearer token, all returning 401).  This path is hit during
-    # auxiliary-client auto-detection when the user has no Z.AI credentials
-    # at all — the caller discards the result immediately, so the probe is
-    # pure latency for every AIAgent construction.
+    # 未设置 API 密钥 → 不进行探测（会使用空的 Bearer token 发送 N×M 个
+    # HTTPS 请求，全部返回 401）。在辅助客户端自动检测时会命中此路径，
+    # 此时用户完全没有 Z.AI 凭证 —— 调用者会立即丢弃结果，因此探测对
+    # 每次 AIAgent 构造来说只是纯粹的延迟。
     if not api_key:
         return default_url
 
-    # Check provider-state cache for a previously-detected endpoint.
+    # 检查 provider 状态缓存中是否有之前检测到的端点。
     auth_store = _load_auth_store()
     state = _load_provider_state(auth_store, "zai") or {}
     cached = state.get("detected_endpoint")
@@ -684,10 +681,10 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
             logger.debug("Z.AI: using cached endpoint %s", cached["base_url"])
             return cached["base_url"]
 
-    # Probe — may take up to ~8s per endpoint.
+    # 探测 —— 每个端点可能需要最多约 8 秒。
     detected = detect_zai_endpoint(api_key)
     if detected and detected.get("base_url"):
-        # Persist the detection result keyed on the API key hash.
+        # 以 API 密钥哈希值为键持久化检测结果。
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
         state["detected_endpoint"] = {
             "base_url": detected["base_url"],
@@ -705,17 +702,17 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
 
 
 # =============================================================================
-# Error Types
+# 错误类型
 # =============================================================================
 
-# Error code marking upstream rate-limit / usage-quota exhaustion (HTTP 429).
-# Such failures are transient and re-authenticating cannot resolve them, so
-# they must be kept distinct from missing/expired-credential errors.
+# 标记上游速率限制/使用配额耗尽（HTTP 429）的错误代码。
+# 此类故障是暂时的，重新认证无法解决，因此必须将其与
+# 缺失/过期凭证错误区分开来。
 CODEX_RATE_LIMITED_CODE = "codex_rate_limited"
 
 
 class AuthError(RuntimeError):
-    """Structured auth error with UX mapping hints."""
+    """带有 UX 映射提示的结构化认证错误。"""
 
     def __init__(
         self,
@@ -732,12 +729,12 @@ class AuthError(RuntimeError):
 
 
 def is_rate_limited_auth_error(error: Exception) -> bool:
-    """True when an :class:`AuthError` represents upstream rate-limiting / quota
-    exhaustion rather than missing or invalid credentials.
+    """当 :class:`AuthError` 表示上游速率限制/配额耗尽而非
+    缺失或无效凭证时返回 True。
 
-    These failures are transient — re-authenticating cannot resolve them — so
-    callers should surface a "retry later" notice and prefer a fallback chain
-    instead of prompting the operator to run ``hermes auth``.
+    此类故障是暂时的 —— 重新认证无法解决 —— 因此调用者应显示
+    "稍后重试" 提示，并优先使用回退链，而不是提示用户运行
+    ``hermes auth``。
     """
     return (
         isinstance(error, AuthError)
@@ -747,10 +744,10 @@ def is_rate_limited_auth_error(error: Exception) -> bool:
 
 
 def _parse_retry_after_seconds(headers: Any) -> Optional[int]:
-    """Best-effort parse of a ``Retry-After`` header into whole seconds.
+    """尽力将 ``Retry-After`` 头解析为整秒数。
 
-    Supports the delta-seconds form (e.g. ``"120"``). HTTP-date forms and
-    missing/unparseable values return ``None`` rather than guessing.
+    支持增量秒数形式（例如 ``"120"``）。HTTP 日期形式以及
+    缺失/不可解析的值返回 ``None`` 而不是猜测。
     """
     if headers is None:
         return None
@@ -768,12 +765,12 @@ def _parse_retry_after_seconds(headers: Any) -> Optional[int]:
 
 
 def format_auth_error(error: Exception) -> str:
-    """Map auth failures to concise user-facing guidance."""
+    """将认证失败映射为简洁的用户提示。"""
     if not isinstance(error, AuthError):
         return str(error)
 
-    # Rate-limit / quota errors are not credential problems — never append the
-    # "re-authenticate" remediation, which would mislead the operator.
+    # 速率限制/配额错误不是凭证问题 —— 永远不要附加 "重新认证"
+    # 的修复建议，这会误导用户。
     if is_rate_limited_auth_error(error):
         return str(error)
 

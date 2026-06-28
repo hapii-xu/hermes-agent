@@ -1,19 +1,18 @@
-"""``hermes slack ...`` CLI subcommands.
+"""``hermes slack ...`` CLI 子命令。
 
-Today only ``hermes slack manifest`` is implemented — it generates the
-Slack app manifest JSON for registering every gateway command as a native
-Slack slash (``/btw``, ``/stop``, ``/model``, …) so users get the same
-first-class slash UX Discord and Telegram already have.
+目前仅实现了 ``hermes slack manifest`` —— 它生成 Slack 应用 manifest JSON，
+用于将每个 gateway 命令注册为原生 Slack 斜杠命令（``/btw``、``/stop``、
+``/model`` 等），使用户获得与 Discord 和 Telegram 相同的一等斜杠命令体验。
 
-Typical workflow::
+典型工作流程::
 
     $ hermes slack manifest > slack-manifest.json
-    # or:
+    # 或者：
     $ hermes slack manifest --write
 
-Then paste the printed JSON into the Slack app config (Features → App
-Manifest → Edit) and click Save. Slack diffs the manifest and prompts
-for reinstall when scopes/commands change.
+然后将打印的 JSON 粘贴到 Slack 应用配置中（Features → App
+Manifest → Edit），点击 Save。Slack 会对比 manifest 差异，并在
+scope/命令变更时提示重新安装。
 """
 from __future__ import annotations
 
@@ -28,22 +27,18 @@ def _build_full_manifest(
     bot_description: str,
     include_assistant: bool = True,
 ) -> dict:
-    """Build a full Slack manifest merging display info + our slash list.
+    """构建完整的 Slack manifest，合并显示信息 + 斜杠命令列表。
 
-    The slash-command list is always generated from ``COMMAND_REGISTRY`` so
-    it stays in sync with the rest of Hermes. Other manifest sections
-    (display info, OAuth scopes, socket mode) are set to sensible defaults
-    for a Hermes deployment — users can tweak them in the Slack UI after
-    pasting.
+    斜杠命令列表始终从 ``COMMAND_REGISTRY`` 生成，以便与 Hermes 的其余部分
+    保持同步。其他 manifest 部分（显示信息、OAuth scope、socket mode）设置为
+    Hermes 部署的合理默认值 —— 用户可以在粘贴后在 Slack UI 中调整它们。
 
-    When ``include_assistant`` is True (default) the manifest opts the app
-    into Slack's AI Assistant container: the ``assistant_view`` feature, the
-    ``assistant:write`` scope, and the ``assistant_thread_*`` events. Slack
-    then renders DMs as the right-hand Assistant split-pane, where every
-    exchange is a thread and bare slash commands are not delivered as normal
-    ``command`` events. Pass ``include_assistant=False`` (``--no-assistant``)
-    to omit those three pieces and get a flat DM surface where ``/help``,
-    ``/new``, etc. work inline.
+    当 ``include_assistant`` 为 True（默认值）时，manifest 将应用加入 Slack
+    的 AI Assistant 容器：``assistant_view`` 功能、``assistant:write`` scope
+    以及 ``assistant_thread_*`` 事件。Slack 随后将 DM 渲染为右侧的 Assistant
+    分栏，每次交互都是一个线程，裸斜杠命令不会作为普通 ``command`` 事件传递。
+    传入 ``include_assistant=False``（``--no-assistant``）以省略这三部分，
+    获得扁平的 DM 界面，其中 ``/help``、``/new`` 等可以内联工作。
     """
     from hermes_cli.commands import slack_app_manifest
 
@@ -131,19 +126,19 @@ def _build_full_manifest(
 
 
 def slack_manifest_command(args) -> int:
-    """Print or write a Slack app manifest JSON.
+    """打印或写入 Slack 应用 manifest JSON。
 
-    Flags (all parsed in ``hermes_cli/main.py``):
-      --write [PATH]  Write to file instead of stdout (default path:
-                      ``$HERMES_HOME/slack-manifest.json``)
-      --name NAME     Override the bot display name (default: "Hermes")
-      --description DESC  Override the bot description
-      --slashes-only  Emit only the ``features.slash_commands`` array (for
-                      merging into an existing manifest manually)
-      --no-assistant  Omit Slack AI Assistant mode (assistant_view feature,
-                      assistant:write scope, assistant_thread_* events) so
-                      DMs render as a flat chat where bare slash commands
-                      work inline instead of the Assistant thread pane.
+    参数（均在 ``hermes_cli/main.py`` 中解析）：
+      --write [PATH]  写入文件而非 stdout（默认路径：
+                      ``$HERMES_HOME/slack-manifest.json``）
+      --name NAME     覆盖 bot 显示名称（默认："Hermes"）
+      --description DESC  覆盖 bot 描述
+      --slashes-only  仅输出 ``features.slash_commands`` 数组（用于
+                      手动合并到现有 manifest 中）
+      --no-assistant  省略 Slack AI Assistant 模式（assistant_view 功能、
+                      assistant:write scope、assistant_thread_* 事件），
+                      使 DM 渲染为扁平聊天界面，裸斜杠命令可以内联工作，
+                      而不是 Assistant 线程面板。
     """
     name = getattr(args, "name", None) or "Hermes"
     description = getattr(args, "description", None) or "Your Hermes agent on Slack"
@@ -161,7 +156,7 @@ def slack_manifest_command(args) -> int:
     write_target = getattr(args, "write", None)
     if write_target is not None:
         if isinstance(write_target, bool) and write_target:
-            # --write with no value → default location
+            # --write 无值 → 默认位置
             try:
                 from hermes_constants import get_hermes_home
 

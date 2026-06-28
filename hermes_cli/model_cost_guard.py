@@ -1,4 +1,4 @@
-"""Expensive-model confirmation helpers for model selection surfaces."""
+"""模型选择界面的高成本模型确认辅助函数。"""
 
 from __future__ import annotations
 

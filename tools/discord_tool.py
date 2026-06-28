@@ -1,28 +1,28 @@
-"""Discord server introspection and management tool.
+"""Discord 服务器内省与管理工具。
 
-Provides the agent with the ability to interact with Discord servers
-when running on the Discord gateway. Uses Discord REST API directly
-with the bot token — no dependency on the gateway adapter's client.
+为 agent 提供在 Discord gateway 上运行时与 Discord 服务器交互的
+能力。直接使用 bot token 调用 Discord REST API——不依赖
+gateway adapter 的 client。
 
-Only included in the hermes-discord toolset, so it has zero cost
-for users on other platforms.
+仅包含在 hermes-discord toolset 中，因此对其他平台上的
+用户零成本。
 
-The schema exposed to the model is filtered by two gates:
+暴露给模型的 schema 由两个门控过滤：
 
-1. Privileged intents detected from GET /applications/@me at schema
-   build time. Actions that require an intent the bot doesn't have
-   (search_members / member_info → GUILD_MEMBERS intent) are hidden.
-   fetch_messages is kept regardless of MESSAGE_CONTENT intent, but
-   its description is annotated when the intent is missing.
+1. 在 schema 构建时从 GET /applications/@me 检测到的特权
+   intent。需要 bot 不具备的 intent 的动作
+   （search_members / member_info → GUILD_MEMBERS intent）会被隐藏。
+   fetch_messages 无论是否有 MESSAGE_CONTENT intent 都保留，但
+   当缺少该 intent 时其描述会被标注。
 
-2. User config allowlist at ``discord.server_actions``. If the user
-   sets a comma-separated list (or YAML list) of action names, only
-   those appear in the schema. Empty/unset means all intent-available
-   actions are exposed.
+2. ``discord.server_actions`` 处的用户配置白名单。若用户
+   设置了一个逗号分隔列表（或 YAML 列表）的动作名，则只有
+   这些动作出现在 schema 中。空/未设置意味着暴露所有 intent 可用
+   的动作。
 
-Per-guild permissions (MANAGE_ROLES etc.) are NOT pre-checked — Discord
-returns a 403 at call time and :func:`_enrich_403` maps it to
-actionable guidance the model can relay to the user.
+按 guild 的权限（MANAGE_ROLES 等）不做预检——Discord
+在调用时返回 403，而 :func:`_enrich_403` 把它映射为
+模型可转达给用户的可操作指引。
 """
 
 import json
@@ -39,19 +39,19 @@ logger = logging.getLogger(__name__)
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
-# Application flag bits (from GET /applications/@me → "flags").
-# Source: https://discord.com/developers/docs/resources/application#application-object-application-flags
+# 应用标志位（来自 GET /applications/@me → "flags"）。
+# 来源：https://discord.com/developers/docs/resources/application#application-object-application-flags
 _FLAG_GATEWAY_GUILD_MEMBERS = 1 << 14
 _FLAG_GATEWAY_GUILD_MEMBERS_LIMITED = 1 << 15
 _FLAG_GATEWAY_MESSAGE_CONTENT = 1 << 18
 _FLAG_GATEWAY_MESSAGE_CONTENT_LIMITED = 1 << 19
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 def _get_bot_token() -> Optional[str]:
-    """Resolve the Discord bot token from environment."""
+    """从环境变量解析 Discord bot token。"""
     return os.getenv("DISCORD_BOT_TOKEN", "").strip() or None
 
 
@@ -63,7 +63,7 @@ def _discord_request(
     body: Optional[Dict[str, Any]] = None,
     timeout: int = 15,
 ) -> Any:
-    """Make a request to the Discord REST API."""
+    """向 Discord REST API 发起一个请求。"""
     url = f"{DISCORD_API_BASE}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -98,7 +98,7 @@ def _discord_request(
 
 
 class DiscordAPIError(Exception):
-    """Raised when a Discord API call fails."""
+    """当 Discord API 调用失败时抛出。"""
     def __init__(self, status: int, body: str):
         self.status = status
         self.body = body
@@ -106,7 +106,7 @@ class DiscordAPIError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Channel type mapping
+# 频道类型映射
 # ---------------------------------------------------------------------------
 
 _CHANNEL_TYPE_NAMES = {
@@ -128,24 +128,24 @@ def _channel_type_name(type_id: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Capability detection (application intents)
+# 能力检测（应用 intent）
 # ---------------------------------------------------------------------------
 
-# Module-level cache so the app/me endpoint is hit at most once per process.
+# 模块级缓存，使 app/me 端点每个进程最多命中一次。
 _capability_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def _detect_capabilities(token: str, *, force: bool = False) -> Dict[str, Any]:
-    """Detect the bot's app-wide capabilities via GET /applications/@me.
+    """通过 GET /applications/@me 检测 bot 的应用级能力。
 
-    Returns a dict with keys:
+    返回一个字典，键为：
 
-    - ``has_members_intent``: GUILD_MEMBERS intent is enabled
-    - ``has_message_content``: MESSAGE_CONTENT intent is enabled
-    - ``detected``: detection succeeded (False means exposing everything
-      and letting runtime errors handle it)
+    - ``has_members_intent``：GUILD_MEMBERS intent 已启用
+    - ``has_message_content``：MESSAGE_CONTENT intent 已启用
+    - ``detected``：检测成功（False 表示暴露所有动作
+      并让运行时错误来处理）
 
-    Cached in a module-global. Pass ``force=True`` to re-fetch.
+    缓存在一个模块全局中。传 ``force=True`` 重新获取。
     """
     global _capability_cache
     if token in _capability_cache and not force:
@@ -167,7 +167,7 @@ def _detect_capabilities(token: str, *, force: bool = False) -> Dict[str, Any]:
             flags & (_FLAG_GATEWAY_MESSAGE_CONTENT | _FLAG_GATEWAY_MESSAGE_CONTENT_LIMITED)
         )
         caps["detected"] = True
-    except Exception as exc:  # nosec — detection is best-effort
+    except Exception as exc:  # nosec — 检测是尽力而为
         logger.info(
             "Discord capability detection failed (%s); exposing all actions.", exc,
         )
@@ -177,17 +177,17 @@ def _detect_capabilities(token: str, *, force: bool = False) -> Dict[str, Any]:
 
 
 def _reset_capability_cache() -> None:
-    """Test hook: clear the detection cache."""
+    """测试钩子：清除检测缓存。"""
     global _capability_cache
     _capability_cache = {}
 
 
 # ---------------------------------------------------------------------------
-# Action implementations
+# 动作实现
 # ---------------------------------------------------------------------------
 
 def _list_guilds(token: str, **_kwargs: Any) -> str:
-    """List all guilds the bot is a member of."""
+    """列出 bot 加入的所有 guild。"""
     guilds = _discord_request("GET", "/users/@me/guilds", token)
     result = []
     for g in guilds:
@@ -202,7 +202,7 @@ def _list_guilds(token: str, **_kwargs: Any) -> str:
 
 
 def _server_info(token: str, guild_id: str, **_kwargs: Any) -> str:
-    """Get detailed information about a guild."""
+    """获取一个 guild 的详细信息。"""
     g = _discord_request("GET", f"/guilds/{guild_id}", token, params={"with_counts": "true"})
     return json.dumps({
         "id": g["id"],
@@ -220,14 +220,14 @@ def _server_info(token: str, guild_id: str, **_kwargs: Any) -> str:
 
 
 def _list_channels(token: str, guild_id: str, **_kwargs: Any) -> str:
-    """List all channels in a guild, organized by category."""
+    """列出一个 guild 中的所有频道，按分类组织。"""
     channels = _discord_request("GET", f"/guilds/{guild_id}/channels", token)
 
-    # Organize: categories first, then channels under each
+    # 组织：分类在前，然后是各分类下的频道
     categories: Dict[Optional[str], Dict[str, Any]] = {}
     uncategorized: List[Dict[str, Any]] = []
 
-    # First pass: collect categories
+    # 第一遍：收集分类
     for ch in channels:
         if ch["type"] == 4:  # category
             categories[ch["id"]] = {
@@ -237,7 +237,7 @@ def _list_channels(token: str, guild_id: str, **_kwargs: Any) -> str:
                 "channels": [],
             }
 
-    # Second pass: assign channels to categories
+    # 第二遍：把频道分配到分类
     for ch in channels:
         if ch["type"] == 4:
             continue
@@ -255,7 +255,7 @@ def _list_channels(token: str, guild_id: str, **_kwargs: Any) -> str:
         else:
             uncategorized.append(entry)
 
-    # Sort
+    # 排序
     sorted_cats = sorted(categories.values(), key=lambda c: c["position"])
     for cat in sorted_cats:
         cat["channels"].sort(key=lambda c: c["position"])
@@ -275,7 +275,7 @@ def _list_channels(token: str, guild_id: str, **_kwargs: Any) -> str:
 
 
 def _channel_info(token: str, channel_id: str, **_kwargs: Any) -> str:
-    """Get detailed info about a specific channel."""
+    """获取某个特定频道的详细信息。"""
     ch = _discord_request("GET", f"/channels/{channel_id}", token)
     return json.dumps({
         "id": ch["id"],
@@ -292,7 +292,7 @@ def _channel_info(token: str, channel_id: str, **_kwargs: Any) -> str:
 
 
 def _list_roles(token: str, guild_id: str, **_kwargs: Any) -> str:
-    """List all roles in a guild."""
+    """列出一个 guild 中的所有角色。"""
     roles = _discord_request("GET", f"/guilds/{guild_id}/roles", token)
     result = []
     for r in sorted(roles, key=lambda r: r.get("position", 0), reverse=True):
@@ -310,7 +310,7 @@ def _list_roles(token: str, guild_id: str, **_kwargs: Any) -> str:
 
 
 def _member_info(token: str, guild_id: str, user_id: str, **_kwargs: Any) -> str:
-    """Get info about a specific guild member."""
+    """获取某个特定 guild 成员的信息。"""
     m = _discord_request("GET", f"/guilds/{guild_id}/members/{user_id}", token)
     user = m.get("user", {})
     return json.dumps({
@@ -327,7 +327,7 @@ def _member_info(token: str, guild_id: str, user_id: str, **_kwargs: Any) -> str
 
 
 def _search_members(token: str, guild_id: str, query: str, limit: int = 20, **_kwargs: Any) -> str:
-    """Search for guild members by name."""
+    """按名称搜索 guild 成员。"""
     try:
         limit = int(limit)
     except (TypeError, ValueError):
@@ -353,7 +353,7 @@ def _fetch_messages(
     before: Optional[str] = None, after: Optional[str] = None,
     **_kwargs: Any,
 ) -> str:
-    """Fetch recent messages from a channel."""
+    """获取一个频道的近期消息。"""
     try:
         limit = int(limit)
     except (TypeError, ValueError):
@@ -392,14 +392,14 @@ def _fetch_messages(
 
 
 def _list_pins(token: str, channel_id: str, **_kwargs: Any) -> str:
-    """List pinned messages in a channel."""
+    """列出一个频道中的置顶消息。"""
     messages = _discord_request("GET", f"/channels/{channel_id}/pins", token)
     result = []
     for msg in messages:
         author = msg.get("author", {})
         result.append({
             "id": msg["id"],
-            "content": msg.get("content", "")[:200],  # Truncate for overview
+            "content": msg.get("content", "")[:200],  # 为概览截断
             "author": author.get("username"),
             "timestamp": msg.get("timestamp"),
         })
@@ -407,19 +407,19 @@ def _list_pins(token: str, channel_id: str, **_kwargs: Any) -> str:
 
 
 def _pin_message(token: str, channel_id: str, message_id: str, **_kwargs: Any) -> str:
-    """Pin a message in a channel."""
+    """在一个频道中置顶一条消息。"""
     _discord_request("PUT", f"/channels/{channel_id}/pins/{message_id}", token)
     return json.dumps({"success": True, "message": f"Message {message_id} pinned."})
 
 
 def _unpin_message(token: str, channel_id: str, message_id: str, **_kwargs: Any) -> str:
-    """Unpin a message from a channel."""
+    """在一个频道中取消置顶一条消息。"""
     _discord_request("DELETE", f"/channels/{channel_id}/pins/{message_id}", token)
     return json.dumps({"success": True, "message": f"Message {message_id} unpinned."})
 
 
 def _delete_message(token: str, channel_id: str, message_id: str, **_kwargs: Any) -> str:
-    """Delete a message from a channel or thread."""
+    """从一个频道或串中删除一条消息。"""
     _discord_request("DELETE", f"/channels/{channel_id}/messages/{message_id}", token)
     return json.dumps({"success": True, "message": f"Message {message_id} deleted."})
 
@@ -430,16 +430,16 @@ def _create_thread(
     auto_archive_duration: int = 1440,
     **_kwargs: Any,
 ) -> str:
-    """Create a thread in a channel."""
+    """在一个频道中创建一个串。"""
     if message_id:
-        # Create thread from an existing message
+        # 从一条已存在的消息创建串
         path = f"/channels/{channel_id}/messages/{message_id}/threads"
         body: Dict[str, Any] = {
             "name": name,
             "auto_archive_duration": auto_archive_duration,
         }
     else:
-        # Create a standalone thread
+        # 创建一个独立串
         path = f"/channels/{channel_id}/threads"
         body = {
             "name": name,
@@ -455,19 +455,19 @@ def _create_thread(
 
 
 def _add_role(token: str, guild_id: str, user_id: str, role_id: str, **_kwargs: Any) -> str:
-    """Add a role to a guild member."""
+    """为一个 guild 成员添加角色。"""
     _discord_request("PUT", f"/guilds/{guild_id}/members/{user_id}/roles/{role_id}", token)
     return json.dumps({"success": True, "message": f"Role {role_id} added to user {user_id}."})
 
 
 def _remove_role(token: str, guild_id: str, user_id: str, role_id: str, **_kwargs: Any) -> str:
-    """Remove a role from a guild member."""
+    """移除一个 guild 成员的角色。"""
     _discord_request("DELETE", f"/guilds/{guild_id}/members/{user_id}/roles/{role_id}", token)
     return json.dumps({"success": True, "message": f"Role {role_id} removed from user {user_id}."})
 
 
 # ---------------------------------------------------------------------------
-# Action dispatch + metadata
+# 动作分派 + 元数据
 # ---------------------------------------------------------------------------
 
 _ACTIONS = {
@@ -494,9 +494,9 @@ _ADMIN_ACTION_NAMES = frozenset(_ACTIONS.keys()) - _CORE_ACTION_NAMES
 _CORE_ACTIONS = {k: v for k, v in _ACTIONS.items() if k in _CORE_ACTION_NAMES}
 _ADMIN_ACTIONS = {k: v for k, v in _ACTIONS.items() if k in _ADMIN_ACTION_NAMES}
 
-# Single-source-of-truth manifest: action → (signature, one-line description).
-# Consumed by :func:`_build_schema` so the schema's top-level description
-# always matches the registered action set.
+# 单一事实来源清单：action → (签名, 单行描述)。
+# 由 :func:`_build_schema` 消费，以便 schema 的顶层描述
+# 始终与已注册的动作集合一致。
 _ACTION_MANIFEST: List[Tuple[str, str, str]] = [
     ("list_guilds", "()", "list servers the bot is in"),
     ("server_info", "(guild_id)", "server details + member counts"),
@@ -515,10 +515,10 @@ _ACTION_MANIFEST: List[Tuple[str, str, str]] = [
     ("remove_role", "(guild_id, user_id, role_id)", "remove a role"),
 ]
 
-# Actions that require the GUILD_MEMBERS privileged intent.
+# 需要 GUILD_MEMBERS 特权 intent 的动作。
 _INTENT_GATED_MEMBERS = frozenset({"member_info", "search_members"})
 
-# Per-action required params for runtime validation.
+# 用于运行时校验的按动作必需参数。
 _REQUIRED_PARAMS: Dict[str, List[str]] = {
     "server_info": ["guild_id"],
     "list_channels": ["guild_id"],
@@ -538,17 +538,17 @@ _REQUIRED_PARAMS: Dict[str, List[str]] = {
 
 
 # ---------------------------------------------------------------------------
-# Config-based action allowlist
+# 基于配置的动作白名单
 # ---------------------------------------------------------------------------
 
 def _load_allowed_actions_config() -> Optional[List[str]]:
-    """Read ``discord.server_actions`` from user config.
+    """从用户配置读取 ``discord.server_actions``。
 
-    Returns a list of allowed action names, or ``None`` if the user
-    hasn't restricted the set (default: all actions allowed).
+    返回允许的动作名列表，若用户未限制该集合则返回 ``None``
+    （默认：允许所有动作）。
 
-    Accepts either a comma-separated string or a YAML list.
-    Unknown action names are dropped with a log warning.
+    接受逗号分隔的字符串或 YAML 列表。
+    未知的动作名会被丢弃并记录一条日志警告。
     """
     try:
         from hermes_cli.config import load_config
@@ -586,16 +586,16 @@ def _available_actions(
     caps: Dict[str, Any],
     allowlist: Optional[List[str]],
 ) -> List[str]:
-    """Compute the visible action list from intents + config allowlist.
+    """从 intent + 配置白名单计算可见的动作列表。
 
-    Preserves the canonical order from :data:`_ACTIONS`.
+    保留来自 :data:`_ACTIONS` 的规范顺序。
     """
     actions: List[str] = []
     for name in _ACTIONS:
-        # Intent filter
+        # intent 过滤
         if not caps.get("has_members_intent", True) and name in _INTENT_GATED_MEMBERS:
             continue
-        # Config allowlist filter
+        # 配置白名单过滤
         if allowlist is not None and name not in allowlist:
             continue
         actions.append(name)
@@ -603,7 +603,7 @@ def _available_actions(
 
 
 # ---------------------------------------------------------------------------
-# Schema construction
+# Schema 构建
 # ---------------------------------------------------------------------------
 
 def _build_schema(
@@ -611,16 +611,16 @@ def _build_schema(
     caps: Optional[Dict[str, Any]] = None,
     tool_name: str = "discord",
 ) -> Optional[Dict[str, Any]]:
-    """Build the tool schema for the given filtered action list.
+    """为给定的已过滤动作列表构建工具 schema。
 
-    Returns ``None`` when *actions* is empty — callers should drop the
-    tool from registration in that case.
+    当 *actions* 为空时返回 ``None``——调用者此时应从注册中
+    丢弃该工具。
     """
     caps = caps or {}
     if not actions:
         return None
 
-    # Action manifest lines (action-first, parameter-scoped).
+    # 动作清单行（动作在前，参数限定作用域）。
     manifest_lines = [
         f"  {name}{sig}  — {desc}"
         for name, sig, desc in _ACTION_MANIFEST
@@ -729,7 +729,7 @@ def _get_dynamic_schema(
     action_subset: Dict[str, Any],
     tool_name: str,
 ) -> Optional[Dict[str, Any]]:
-    """Build a dynamic schema for *action_subset* filtered by intents + config."""
+    """为由 intent + 配置过滤后的 *action_subset* 构建动态 schema。"""
     token = _get_bot_token()
     if not token:
         return None
@@ -750,12 +750,12 @@ def get_dynamic_schema_admin() -> Optional[Dict[str, Any]]:
 
 
 def get_dynamic_schema() -> Optional[Dict[str, Any]]:
-    """Backward-compat wrapper — returns core schema."""
+    """向后兼容包装——返回核心 schema。"""
     return get_dynamic_schema_core()
 
 
 # ---------------------------------------------------------------------------
-# 403 error enrichment
+# 403 错误丰富
 # ---------------------------------------------------------------------------
 
 _ACTION_403_HINT = {
@@ -803,7 +803,7 @@ _ACTION_403_HINT = {
 
 
 def _enrich_403(action: str, body: str) -> str:
-    """Return a user-friendly guidance string for a 403 on ``action``."""
+    """为 ``action`` 上的 403 返回一条用户友好的指引字符串。"""
     hint = _ACTION_403_HINT.get(action)
     base = f"Discord API 403 (forbidden) on '{action}'."
     if hint:
@@ -812,16 +812,16 @@ def _enrich_403(action: str, body: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Check function
+# 检查函数
 # ---------------------------------------------------------------------------
 
 def check_discord_tool_requirements() -> bool:
-    """Tool is available only when a Discord bot token is configured."""
+    """仅当配置了 Discord bot token 时工具才可用。"""
     return bool(_get_bot_token())
 
 
 # ---------------------------------------------------------------------------
-# Handlers
+# 处理器
 # ---------------------------------------------------------------------------
 
 def _run_discord_action(
@@ -840,7 +840,7 @@ def _run_discord_action(
     after: str = "",
     auto_archive_duration: int = 1440,
 ) -> str:
-    """Shared handler logic for both discord tools."""
+    """两个 discord 工具共享的处理器逻辑。"""
     token = _get_bot_token()
     if not token:
         return json.dumps({"error": "DISCORD_BOT_TOKEN not configured."})
@@ -852,9 +852,9 @@ def _run_discord_action(
             "available_actions": list(valid_actions.keys()),
         })
 
-    # Config-level allowlist gate (defense in depth — schema already filtered,
-    # but a stale cached schema from a prior config should not let denied
-    # actions through).
+    # 配置级白名单门控（纵深防御——schema 已经过滤，
+    # 但来自先前配置的陈旧缓存 schema 不应让被拒绝的
+    # 动作通过）。
     allowlist = _load_allowed_actions_config()
     if allowlist is not None and action not in allowlist:
         return json.dumps({
@@ -906,17 +906,17 @@ def _run_discord_action(
 
 
 def discord_core(action: str, **kwargs) -> str:
-    """Execute a core Discord action (fetch_messages, search_members, create_thread)."""
+    """执行一个核心 Discord 动作（fetch_messages、search_members、create_thread）。"""
     return _run_discord_action(action, _CORE_ACTIONS, "discord", **kwargs)
 
 
 def discord_admin_handler(action: str, **kwargs) -> str:
-    """Execute a Discord admin action (server management)."""
+    """执行一个 Discord 管理动作（服务器管理）。"""
     return _run_discord_action(action, _ADMIN_ACTIONS, "discord_admin", **kwargs)
 
 
 # ---------------------------------------------------------------------------
-# Tool registration
+# 工具注册
 # ---------------------------------------------------------------------------
 
 _HANDLER_DEFAULTS = {
@@ -927,7 +927,7 @@ _HANDLER_DEFAULTS = {
 
 
 def _make_handler(handler_fn):
-    """Create a registry-compatible handler lambda for a discord handler."""
+    """为一个 discord 处理器创建一个 registry 兼容的 handler lambda。"""
     return lambda args, **kw: handler_fn(
         **{k: args.get(k, v) for k, v in _HANDLER_DEFAULTS.items()},
     )

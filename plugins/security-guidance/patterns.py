@@ -1,11 +1,11 @@
 """
-Regex-based security pattern definitions for the security-guidance plugin.
+security-guidance 插件的基于正则的安全模式定义。
 
-Pure data + one pure helper. No env-var reads, no I/O — kept side-effect-free
-so it can be imported in isolation.
+纯数据 + 一个纯辅助函数。不读取环境变量，无 I/O — 保持无副作用，
+以便可以单独导入。
 
-Forked verbatim from Anthropic's claude-plugins-official repository
-(plugins/security-guidance/hooks/patterns.py) under the Apache License 2.0:
+逐字 fork 自 Anthropic 的 claude-plugins-official 仓库
+（plugins/security-guidance/hooks/patterns.py），遵循 Apache License 2.0：
 
     https://github.com/anthropics/claude-plugins-official
 
@@ -22,10 +22,10 @@ Forked verbatim from Anthropic's claude-plugins-official repository
   See the License for the specific language governing permissions and
   limitations under the License.
 
-Modifications by NousResearch for the Hermes Agent plugin port:
-  - none to the pattern data itself; this file is byte-for-byte the upstream
-    patterns.py at commit 0bde168 (2026-05-26). Hermes-side wiring lives in
-    __init__.py.
+NousResearch 为 Hermes Agent 插件移植所做的修改：
+  - 模式数据本身无任何修改；此文件在 commit 0bde168（2026-05-26）处
+    与上游 patterns.py 逐字节相同。Hermes 侧的接线逻辑在
+    __init__.py 中。
 """
 from enum import IntEnum
 
@@ -49,7 +49,7 @@ _UNSAFE_TORCH_LOAD_REMINDER = """⚠️ Security Warning: torch.load() defaults 
 
 If the file only contains tensors and simple data structures, pass weights_only=True (or set TORCH_FORCE_WEIGHTS_ONLY_LOAD=1)."""
 
-# Security patterns configuration
+# 安全模式配置
 SECURITY_PATTERNS = [
     {
         "ruleName": "github_actions_workflow",
@@ -93,8 +93,8 @@ Other risky inputs to be careful with:
     },
     {
         "ruleName": "child_process_exec",
-        # Gate to JS/TS files — bare `exec(` otherwise fires on Python's
-        # exec() and on prose/docstrings mentioning exec.
+        # 限制为 JS/TS 文件 — 裸 `exec(` 否则会误匹配 Python 的
+        # exec() 以及文档/文档字符串中提及 exec 的内容。
         "path_filter": lambda p: p.endswith(_JS_EXTS),
         "substrings": ["child_process.exec", "execSync("],
         "regex": r"(?<![a-zA-Z0-9_\.])exec\(",
@@ -122,8 +122,8 @@ Only use exec() if you absolutely need shell features and the input is guarantee
     },
     {
         "ruleName": "eval_injection",
-        # Lookbehind excludes `.` so method calls like PyTorch model.eval(),
-        # redis.eval(), spec.eval() don't match. Skip doc/prose files.
+        # 回溯排除 `.`，避免匹配 PyTorch 的 model.eval()、
+        # redis.eval()、spec.eval() 等方法调用。跳过文档/说明性文件。
         "path_filter": lambda p: not p.endswith(_DOC_EXTS),
         "regex": r"(?<![a-zA-Z0-9_\.])eval\(",
         "reminder": "⚠️ Security Warning: eval() executes arbitrary code and is a major security risk. Use JSON.parse() for data, ast.literal_eval() for Python literals, or a safe expression parser. If this is safe or is explicitly needed, briefly document that in a comment before continuing.",
@@ -145,9 +145,8 @@ Only use exec() if you absolutely need shell features and the input is guarantee
     },
     {
         "ruleName": "pickle_deserialization",
-        # Match deserialization only (load/loads/Unpickler). pickle.dump is
-        # not the RCE surface. `pkl_load` needs a word boundary so similarly
-        # named safe loaders don't match.
+        # 仅匹配反序列化操作（load/loads/Unpickler）。pickle.dump 不是
+        # RCE 的攻击面。`pkl_load` 需要单词边界，避免匹配名称相似的安全加载器。
         "path_filter": lambda p: p.endswith(_PY_EXTS),
         "regex": r"(?<![a-zA-Z0-9_])pickle\.(loads?|Unpickler)\b|(?<![a-zA-Z0-9_])pkl_load\(",
         "reminder": _UNSAFE_DESERIALIZATION_REMINDER,
@@ -175,11 +174,11 @@ SAFE - pass arguments as a list without shell:
 When arguments are passed as a list without shell=True, special characters cannot be interpreted as shell metacharacters.""",
     },
     # =====================================================================
-    # Go-specific security patterns
+    # Go 特定安全模式
     # =====================================================================
     {
         "ruleName": "go_exec_shell_injection",
-        # Detect exec.Command with shell invocation (sh, bash, /bin/sh, /bin/bash)
+        # 检测 exec.Command 使用 shell 解释器（sh、bash、/bin/sh、/bin/bash）的情况
         "regex": r'exec\.Command\(\s*"(?:sh|bash|/bin/sh|/bin/bash)"',
         "reminder": """⚠️ Security Warning: Using exec.Command with a shell interpreter (sh/bash) enables command injection.
 
@@ -250,8 +249,8 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "script_src_without_sri",
-        # Detect remote code execution via dynamic import/eval of fetched content.
-        # Negative lookahead after src checks for integrity= anywhere in the remaining tag.
+        # 检测通过获取内容进行的动态 import/eval 远程代码执行。
+        # src 之后的负向前瞻检查标签剩余部分是否存在 integrity=。
         "regex": (
             r"<script\s+(?![^>]{0,400}integrity\s*=)"
             r"[^>]{0,200}src\s*=\s*[\x22\x27](?:https?:)?//"
@@ -262,22 +261,22 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "torch_unsafe_load",
-        # Suppressed by weights_only=True on the same line (within 200 chars). weights_only=False
-        # still triggers. Multi-line calls false-positive — same known limitation as unsafe_yaml_load.
+        # 同一行（200 字符内）存在 weights_only=True 时抑制。weights_only=False
+        # 仍会触发。多行调用会误报 — 与 unsafe_yaml_load 相同的已知限制。
         "regex": r"(?:\btorch\.load|\.torch_load)\s*\((?![^)\n]{0,200}weights_only\s*=\s*True)",
         "reminder": _UNSAFE_TORCH_LOAD_REMINDER,
     },
     {
         "ruleName": "yaml_unsafe_load_variants",
-        # yaml.unsafe_load (stdlib alias) plus unsafe wrapper method names seen in the wild.
-        # Bare yaml.load() is unsafe_yaml_load's job (RuleId 12).
+        # yaml.unsafe_load（标准库别名）以及实际中见到的不安全包装方法名。
+        # 裸 yaml.load() 是 unsafe_yaml_load 的职责（RuleId 12）。
         "regex": r"(?:\byaml\.unsafe_load|\.yaml_unsafe_load)\s*\(",
         "reminder": _UNSAFE_YAML_LOAD_REMINDER,
     },
     {
         "ruleName": "pickle_wrapper_load",
-        # Library APIs that unpickle without saying "pickle". numpy.load only triggers
-        # when allow_pickle=True is explicit (defaults to False since numpy 1.16.3).
+        # 不以 "pickle" 命名的 unpickle 库 API。numpy.load 仅在
+        # allow_pickle=True 显式设置时触发（numpy 1.16.3 起默认为 False）。
         "regex": r"\bjoblib\.load\s*\(|\b(?:pd|pandas)\.read_pickle\s*\(|\.cloudpickle_load\s*\(|\b(?:np|numpy)\.load\s*\([^)\n]{0,200}allow_pickle\s*=\s*True",
         "reminder": _UNSAFE_DESERIALIZATION_REMINDER,
     },
@@ -286,12 +285,12 @@ Additionally, validate user inputs:
 
 class RuleId(IntEnum):
     """
-    Stable numeric IDs for SECURITY_PATTERNS rules, emitted via the PostToolUse
-    metrics field so telemetry can attribute pattern-warning events to
-    specific checks. The metrics schema only allows bool|number values (no
-    strings), so rule names can't be sent directly.
+    SECURITY_PATTERNS 规则的稳定数字 ID，通过 PostToolUse
+    metrics 字段发出，以便遥测能将模式警告事件归因到
+    具体的检查项。metrics schema 仅允许 bool|number 值（不支持
+    字符串），因此规则名称无法直接发送。
 
-    Values are frozen: do not renumber existing entries. Append new ones.
+    数值已冻结：请勿重新编号已有条目。新条目追加到末尾即可。
     """
     GITHUB_ACTIONS_WORKFLOW = 1
     CHILD_PROCESS_EXEC = 2
@@ -348,8 +347,8 @@ _RULE_NAME_TO_ID = {
     "pickle_wrapper_load": RuleId.PICKLE_WRAPPER_LOAD,
 }
 
-# Fail loudly at import time if a pattern is added without a RuleId.
-# This fires in pytest on every PR, so desync is caught before merge.
+# 若新增模式未对应 RuleId，则在导入时立即报错。
+# 每次 PR 的 pytest 都会触发此检查，确保合入前能发现不同步问题。
 assert set(_RULE_NAME_TO_ID) == {p["ruleName"] for p in SECURITY_PATTERNS}, (
     f"RuleId enum out of sync with SECURITY_PATTERNS: "
     f"missing={set(p['ruleName'] for p in SECURITY_PATTERNS) - set(_RULE_NAME_TO_ID)}, "
@@ -358,9 +357,9 @@ assert set(_RULE_NAME_TO_ID) == {p["ruleName"] for p in SECURITY_PATTERNS}, (
 
 
 def rule_names_to_mask(rule_names):
-    """Pack a set of rule names into a bitmask. Bit N set means RuleId(N) matched.
-    User-defined patterns (rule_name starting with "user:") have no static
-    RuleId and are excluded from the mask."""
+    """将一组规则名称打包为位掩码。第 N 位为 1 表示 RuleId(N) 匹配。
+    用户自定义模式（rule_name 以 "user:" 开头）没有静态
+    RuleId，不包含在掩码中。"""
     mask = 0
     for name in rule_names:
         if name in _RULE_NAME_TO_ID:

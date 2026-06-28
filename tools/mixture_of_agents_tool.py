@@ -1,47 +1,46 @@
 #!/usr/bin/env python3
 """
-Mixture-of-Agents Tool Module
+Mixture-of-Agents 工具模块
 
-This module implements the Mixture-of-Agents (MoA) methodology that leverages
-the collective strengths of multiple LLMs through a layered architecture to
-achieve state-of-the-art performance on complex reasoning tasks.
+本模块实现了 Mixture-of-Agents (MoA) 方法，通过分层架构利用多个 LLM 的集体优势，
+在复杂推理任务上实现最先进的性能。
 
-Based on the research paper: "Mixture-of-Agents Enhances Large Language Model Capabilities"
-by Junlin Wang et al. (arXiv:2406.04692v1)
+基于研究论文："Mixture-of-Agents Enhances Large Language Model Capabilities"
+作者：Junlin Wang 等 (arXiv:2406.04692v1)
 
-Key Features:
-- Multi-layer LLM collaboration for enhanced reasoning
-- Parallel processing of reference models for efficiency
-- Intelligent aggregation and synthesis of diverse responses
-- Specialized for extremely difficult problems requiring intense reasoning
-- Optimized for coding, mathematics, and complex analytical tasks
+核心特性：
+- 多层 LLM 协作，增强推理能力
+- 参考模型并行处理，提高效率
+- 智能聚合与合成多样化响应
+- 专注于需要深度推理的极难问题
+- 针对编码、数学和复杂分析任务优化
 
-Available Tool:
-- mixture_of_agents_tool: Process complex queries using multiple frontier models
+可用工具：
+- mixture_of_agents_tool：使用多个前沿模型处理复杂查询
 
-Architecture:
-1. Reference models generate diverse initial responses in parallel
-2. Aggregator model synthesizes responses into a high-quality output
-3. Multiple layers can be used for iterative refinement (future enhancement)
+架构：
+1. 参考模型并行生成多样化的初始响应
+2. 聚合模型将响应合成为高质量输出
+3. 可使用多层进行迭代优化（未来增强）
 
-Models Used (via OpenRouter):
-- Reference Models: claude-opus-4.6, gemini-3-pro-preview, gpt-5.4-pro, deepseek-v3.2
-- Aggregator Model: claude-opus-4.6 (highest capability for synthesis)
+使用的模型（通过 OpenRouter）：
+- 参考模型：claude-opus-4.6、gemini-3-pro-preview、gpt-5.4-pro、deepseek-v3.2
+- 聚合模型：claude-opus-4.6（用于合成的最强模型）
 
-Configuration:
-    To customize the MoA setup, modify the configuration constants at the top of this file:
-    - REFERENCE_MODELS: List of models for generating diverse initial responses
-    - AGGREGATOR_MODEL: Model used to synthesize the final response
-    - REFERENCE_TEMPERATURE/AGGREGATOR_TEMPERATURE: Sampling temperatures
-    - MIN_SUCCESSFUL_REFERENCES: Minimum successful models needed to proceed
+配置：
+    要自定义 MoA 设置，修改本文件顶部的配置常量：
+    - REFERENCE_MODELS：用于生成多样化初始响应的模型列表
+    - AGGREGATOR_MODEL：用于合成最终响应的模型
+    - REFERENCE_TEMPERATURE/AGGREGATOR_TEMPERATURE：采样温度
+    - MIN_SUCCESSFUL_REFERENCES：继续处理所需的最少成功模型数
 
-Usage:
+用法：
     from mixture_of_agents_tool import mixture_of_agents_tool
     import asyncio
-    
-    # Process a complex query
+
+    # 处理复杂查询
     result = await mixture_of_agents_tool(
-        user_prompt="Solve this complex mathematical proof..."
+        user_prompt="解决这个复杂的数学证明..."
     )
 """
 
@@ -58,9 +57,9 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-# Configuration for MoA processing
-# Reference models - these generate diverse initial responses in parallel.
-# Keep this list aligned with current top-tier OpenRouter frontier options.
+# MoA 处理配置
+# 参考模型 - 并行生成多样化的初始响应。
+# 保持此列表与当前顶级 OpenRouter 前沿选项一致。
 REFERENCE_MODELS = [
     "anthropic/claude-opus-4.6",
     "google/gemini-2.5-pro",
@@ -68,18 +67,18 @@ REFERENCE_MODELS = [
     "deepseek/deepseek-v3.2",
 ]
 
-# Aggregator model - synthesizes reference responses into final output.
-# Prefer the strongest synthesis model in the current OpenRouter lineup.
+# 聚合模型 - 将参考响应合成为最终输出。
+# 优先选择当前 OpenRouter 阵容中最强的合成模型。
 AGGREGATOR_MODEL = "anthropic/claude-opus-4.6"
 
-# Temperature settings optimized for MoA performance
-REFERENCE_TEMPERATURE = 0.6  # Balanced creativity for diverse perspectives
-AGGREGATOR_TEMPERATURE = 0.4  # Focused synthesis for consistency
+# 针对 MoA 性能优化的温度设置
+REFERENCE_TEMPERATURE = 0.6  # 平衡创造性以获得多样化视角
+AGGREGATOR_TEMPERATURE = 0.4  # 聚焦合成以保证一致性
 
-# Failure handling configuration
-MIN_SUCCESSFUL_REFERENCES = 1  # Minimum successful reference models needed to proceed
+# 失败处理配置
+MIN_SUCCESSFUL_REFERENCES = 1  # 继续处理所需的最少成功参考模型数
 
-# System prompt for the aggregator model (from the research paper)
+# 聚合模型的系统提示词（来自研究论文）
 AGGREGATOR_SYSTEM_PROMPT = """You have been provided with a set of responses from various open-source models to the latest user query. Your task is to synthesize these responses into a single, high-quality response. It is crucial to critically evaluate the information provided in these responses, recognizing that some of it may be biased or incorrect. Your response should not simply replicate the given answers but should offer a refined, accurate, and comprehensive reply to the instruction. Ensure your response is well-structured, coherent, and adheres to the highest standards of accuracy and reliability.
 
 Responses from models:"""
@@ -89,14 +88,14 @@ _debug = DebugSession("moa_tools", env_var="MOA_TOOLS_DEBUG")
 
 def _construct_aggregator_prompt(system_prompt: str, responses: List[str]) -> str:
     """
-    Construct the final system prompt for the aggregator including all model responses.
-    
+    构造聚合器的最终系统提示词，包含所有模型响应。
+
     Args:
-        system_prompt (str): Base system prompt for aggregation
-        responses (List[str]): List of responses from reference models
-        
+        system_prompt (str)：聚合的基础系统提示词
+        responses (List[str])：参考模型的响应列表
+
     Returns:
-        str: Complete system prompt with enumerated responses
+        str：包含编号响应的完整系统提示词
     """
     response_text = "\n".join([f"{i+1}. {response}" for i, response in enumerate(responses)])
     return f"{system_prompt}\n\n{response_text}"
@@ -110,23 +109,23 @@ async def _run_reference_model_safe(
     max_retries: int = 6
 ) -> tuple[str, str, bool]:
     """
-    Run a single reference model with retry logic and graceful failure handling.
-    
+    运行单个参考模型，带有重试逻辑和优雅失败处理。
+
     Args:
-        model (str): Model identifier to use
-        user_prompt (str): The user's query
-        temperature (float): Sampling temperature for response generation
-        max_tokens (int): Maximum tokens in response
-        max_retries (int): Maximum number of retry attempts
-        
+        model (str)：要使用的模型标识符
+        user_prompt (str)：用户的查询
+        temperature (float)：响应生成的采样温度
+        max_tokens (int)：响应中的最大 token 数
+        max_retries (int)：最大重试次数
+
     Returns:
-        tuple[str, str, bool]: (model_name, response_content_or_error, success_flag)
+        tuple[str, str, bool]：(模型名称, 响应内容或错误, 成功标志)
     """
     for attempt in range(max_retries):
         try:
             logger.info("Querying %s (attempt %s/%s)", model, attempt + 1, max_retries)
-            
-            # Build parameters for the API call
+
+            # 构造 API 调用的参数
             api_params = {
                 "model": model,
                 "messages": [{"role": "user", "content": user_prompt}],
@@ -138,28 +137,28 @@ async def _run_reference_model_safe(
                     }
                 }
             }
-            
-            # GPT models (especially gpt-4o-mini) don't support custom temperature values
-            # Only include temperature for non-GPT models
+
+            # GPT 模型（尤其是 gpt-4o-mini）不支持自定义 temperature 值，
+            # 因此只对非 GPT 模型传入 temperature
             if not model.lower().startswith('gpt-'):
                 api_params["temperature"] = temperature
-            
+
             response = await _get_openrouter_client().chat.completions.create(**api_params)
-            
+
             content = extract_content_or_reasoning(response)
             if not content:
-                # Reasoning-only response — let the retry loop handle it
+                # 仅含推理的响应——交给重试循环处理
                 logger.warning("%s returned empty content (attempt %s/%s), retrying", model, attempt + 1, max_retries)
                 if attempt < max_retries - 1:
                     await asyncio.sleep(min(2 ** (attempt + 1), 60))
                     continue
             logger.info("%s responded (%s characters)", model, len(content))
             return model, content, True
-            
+
         except Exception as e:
             error_str = str(e)
-            # Keep retry-path logging concise; full tracebacks are reserved for
-            # terminal failure paths so long-running MoA retries don't flood logs.
+            # 重试路径的日志保持简洁；完整的 traceback 留给最终失败路径，
+            # 以免长时间运行的 MoA 重试淹没日志。
             if "invalid" in error_str.lower():
                 logger.warning("%s invalid request error (attempt %s): %s", model, attempt + 1, error_str)
             elif "rate" in error_str.lower() or "limit" in error_str.lower():
@@ -168,7 +167,7 @@ async def _run_reference_model_safe(
                 logger.warning("%s unknown error (attempt %s): %s", model, attempt + 1, error_str)
 
             if attempt < max_retries - 1:
-                # Exponential backoff for rate limiting: 2s, 4s, 8s, 16s, 32s, 60s
+                # 针对限流的指数退避：2s、4s、8s、16s、32s、60s
                 sleep_time = min(2 ** (attempt + 1), 60)
                 logger.info("Retrying in %ss...", sleep_time)
                 await asyncio.sleep(sleep_time)
@@ -185,20 +184,20 @@ async def _run_aggregator_model(
     max_tokens: int = None
 ) -> str:
     """
-    Run the aggregator model to synthesize the final response.
-    
+    运行聚合模型以合成最终响应。
+
     Args:
-        system_prompt (str): System prompt with all reference responses
-        user_prompt (str): Original user query
-        temperature (float): Focused temperature for consistent aggregation
-        max_tokens (int): Maximum tokens in final response
-        
+        system_prompt (str)：包含所有参考响应的系统提示词
+        user_prompt (str)：原始用户查询
+        temperature (float)：聚焦的温度，用于一致的聚合
+        max_tokens (int)：最终响应中的最大 token 数
+
     Returns:
-        str: Synthesized final response
+        str：合成后的最终响应
     """
     logger.info("Running aggregator model: %s", AGGREGATOR_MODEL)
 
-    # Build parameters for the API call
+    # 构造 API 调用的参数
     api_params = {
         "model": AGGREGATOR_MODEL,
         "messages": [
@@ -214,8 +213,8 @@ async def _run_aggregator_model(
         }
     }
 
-    # GPT models (especially gpt-4o-mini) don't support custom temperature values
-    # Only include temperature for non-GPT models
+    # GPT 模型（尤其是 gpt-4o-mini）不支持自定义 temperature 值，
+    # 因此只对非 GPT 模型传入 temperature
     if not AGGREGATOR_MODEL.lower().startswith('gpt-'):
         api_params["temperature"] = temperature
 
@@ -223,7 +222,7 @@ async def _run_aggregator_model(
 
     content = extract_content_or_reasoning(response)
 
-    # Retry once on empty content (reasoning-only response)
+    # 内容为空（仅含推理的响应）时重试一次
     if not content:
         logger.warning("Aggregator returned empty content, retrying once")
         response = await _get_openrouter_client().chat.completions.create(**api_params)
@@ -239,28 +238,26 @@ async def mixture_of_agents_tool(
     aggregator_model: Optional[str] = None
 ) -> str:
     """
-    Process a complex query using the Mixture-of-Agents methodology.
-    
-    This tool leverages multiple frontier language models to collaboratively solve
-    extremely difficult problems requiring intense reasoning. It's particularly
-    effective for:
-    - Complex mathematical proofs and calculations
-    - Advanced coding problems and algorithm design
-    - Multi-step analytical reasoning tasks
-    - Problems requiring diverse domain expertise
-    - Tasks where single models show limitations
-    
-    The MoA approach uses a fixed 2-layer architecture:
-    1. Layer 1: Multiple reference models generate diverse responses in parallel (temp=0.6)
-    2. Layer 2: Aggregator model synthesizes the best elements into final response (temp=0.4)
-    
+    使用 Mixture-of-Agents 方法处理复杂查询。
+
+    本工具利用多个前沿语言模型协作解决需要高强度推理的极难问题。它特别适用于：
+    - 复杂的数学证明和计算
+    - 高级编码问题与算法设计
+    - 多步骤分析推理任务
+    - 需要多样化领域专业知识的问题
+    - 单一模型存在局限的任务
+
+    MoA 方法采用固定的 2 层架构：
+    1. 第 1 层：多个参考模型并行生成多样化响应（temp=0.6）
+    2. 第 2 层：聚合模型把最佳要素合成为最终响应（temp=0.4）
+
     Args:
-        user_prompt (str): The complex query or problem to solve
-        reference_models (Optional[List[str]]): Custom reference models to use
-        aggregator_model (Optional[str]): Custom aggregator model to use
-    
+        user_prompt (str)：要解决的复杂查询或问题
+        reference_models (Optional[List[str]])：自定义的参考模型列表
+        aggregator_model (Optional[str])：自定义的聚合模型
+
     Returns:
-        str: JSON string containing the MoA results with the following structure:
+        str：包含 MoA 结果的 JSON 字符串，结构如下：
              {
                  "success": bool,
                  "response": str,
@@ -270,12 +267,12 @@ async def mixture_of_agents_tool(
                  },
                  "processing_time": float
              }
-    
+
     Raises:
-        Exception: If MoA processing fails or API key is not set
+        Exception：如果 MoA 处理失败或未设置 API key
     """
     start_time = datetime.datetime.now()
-    
+
     debug_call_data = {
         "parameters": {
             "user_prompt": user_prompt[:200] + "..." if len(user_prompt) > 200 else user_prompt,
@@ -294,74 +291,74 @@ async def mixture_of_agents_tool(
         "processing_time_seconds": 0,
         "models_used": {}
     }
-    
+
     try:
         logger.info("Starting Mixture-of-Agents processing...")
         logger.info("Query: %s", user_prompt[:100])
-        
-        # Validate API key availability
+
+        # 校验 API key 是否可用
         if not os.getenv("OPENROUTER_API_KEY"):
             raise ValueError("OPENROUTER_API_KEY environment variable not set")
-        
-        # Use provided models or defaults
+
+        # 使用传入的模型或默认值
         ref_models = reference_models or REFERENCE_MODELS
         agg_model = aggregator_model or AGGREGATOR_MODEL
-        
+
         logger.info("Using %s reference models in 2-layer MoA architecture", len(ref_models))
-        
-        # Layer 1: Generate diverse responses from reference models (with failure handling)
+
+        # 第 1 层：由参考模型生成多样化响应（带失败处理）
         logger.info("Layer 1: Generating reference responses...")
         model_results = await asyncio.gather(*[
             _run_reference_model_safe(model, user_prompt, REFERENCE_TEMPERATURE)
             for model in ref_models
         ])
-        
-        # Separate successful and failed responses
+
+        # 分离成功和失败的响应
         successful_responses = []
         failed_models = []
-        
+
         for model_name, content, success in model_results:
             if success:
                 successful_responses.append(content)
             else:
                 failed_models.append(model_name)
-        
+
         successful_count = len(successful_responses)
         failed_count = len(failed_models)
-        
+
         logger.info("Reference model results: %s successful, %s failed", successful_count, failed_count)
-        
+
         if failed_models:
             logger.warning("Failed models: %s", ', '.join(failed_models))
-        
-        # Check if we have enough successful responses to proceed
+
+        # 检查是否有足够的成功响应可以继续
         if successful_count < MIN_SUCCESSFUL_REFERENCES:
             raise ValueError(f"Insufficient successful reference models ({successful_count}/{len(ref_models)}). Need at least {MIN_SUCCESSFUL_REFERENCES} successful responses.")
-        
+
         debug_call_data["reference_responses_count"] = successful_count
         debug_call_data["failed_models_count"] = failed_count
         debug_call_data["failed_models"] = failed_models
-        
-        # Layer 2: Aggregate responses using the aggregator model
+
+        # 第 2 层：用聚合模型聚合响应
         logger.info("Layer 2: Synthesizing final response...")
         aggregator_system_prompt = _construct_aggregator_prompt(
-            AGGREGATOR_SYSTEM_PROMPT, 
+            AGGREGATOR_SYSTEM_PROMPT,
             successful_responses
         )
-        
+
         final_response = await _run_aggregator_model(
             aggregator_system_prompt,
             user_prompt,
             AGGREGATOR_TEMPERATURE
         )
-        
-        # Calculate processing time
+
+        # 计算处理耗时
         end_time = datetime.datetime.now()
         processing_time = (end_time - start_time).total_seconds()
-        
+
         logger.info("MoA processing completed in %.2f seconds", processing_time)
-        
-        # Prepare successful response (only final aggregated result, minimal fields)
+
+        # 准备成功响应（仅最终聚合结果，字段精简）
         result = {
             "success": True,
             "response": final_response,
@@ -370,27 +367,27 @@ async def mixture_of_agents_tool(
                 "aggregator_model": agg_model
             }
         }
-        
+
         debug_call_data["success"] = True
         debug_call_data["final_response_length"] = len(final_response)
         debug_call_data["processing_time_seconds"] = processing_time
         debug_call_data["models_used"] = result["models_used"]
-        
-        # Log debug information
+
+        # 记录调试信息
         _debug.log_call("mixture_of_agents_tool", debug_call_data)
         _debug.save()
-        
+
         return json.dumps(result, indent=2, ensure_ascii=False)
-        
+
     except Exception as e:
         error_msg = f"Error in MoA processing: {str(e)}"
         logger.error("%s", error_msg, exc_info=True)
-        
-        # Calculate processing time even for errors
+
+        # 即使出错也计算处理耗时
         end_time = datetime.datetime.now()
         processing_time = (end_time - start_time).total_seconds()
-        
-        # Prepare error response (minimal fields)
+
+        # 准备错误响应（字段精简）
         result = {
             "success": False,
             "response": "MoA processing failed. Please try again or use a single model for this query.",
@@ -400,21 +397,21 @@ async def mixture_of_agents_tool(
             },
             "error": error_msg
         }
-        
+
         debug_call_data["error"] = error_msg
         debug_call_data["processing_time_seconds"] = processing_time
         _debug.log_call("mixture_of_agents_tool", debug_call_data)
         _debug.save()
-        
+
         return json.dumps(result, indent=2, ensure_ascii=False)
 
 
 def check_moa_requirements() -> bool:
     """
-    Check if all requirements for MoA tools are met.
-    
+    检查 MoA 工具的所有依赖是否满足。
+
     Returns:
-        bool: True if requirements are met, False otherwise
+        bool：依赖满足返回 True，否则返回 False
     """
     return check_openrouter_api_key()
 
@@ -422,10 +419,10 @@ def check_moa_requirements() -> bool:
 
 def get_moa_configuration() -> Dict[str, Any]:
     """
-    Get the current MoA configuration settings.
-    
+    获取当前的 MoA 配置设置。
+
     Returns:
-        Dict[str, Any]: Dictionary containing all configuration parameters
+        Dict[str, Any]：包含所有配置参数的字典
     """
     return {
         "reference_models": REFERENCE_MODELS,
@@ -440,14 +437,14 @@ def get_moa_configuration() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     """
-    Simple test/demo when run directly
+    直接运行时的简单测试/演示
     """
     print("🤖 Mixture-of-Agents Tool Module")
     print("=" * 50)
-    
-    # Check if API key is available
+
+    # 检查 API key 是否可用
     api_available = check_openrouter_api_key()
-    
+
     if not api_available:
         print("❌ OPENROUTER_API_KEY environment variable not set")
         print("Please set your API key: export OPENROUTER_API_KEY='your-key-here'")
@@ -455,10 +452,10 @@ if __name__ == "__main__":
         sys.exit(1)
     else:
         print("✅ OpenRouter API key found")
-    
+
     print("🛠️  MoA tools ready for use!")
-    
-    # Show current configuration
+
+    # 显示当前配置
     config = get_moa_configuration()
     print("\n⚙️  Current Configuration:")
     print(f"  🤖 Reference models ({len(config['reference_models'])}): {', '.join(config['reference_models'])}")
@@ -467,14 +464,14 @@ if __name__ == "__main__":
     print(f"  🌡️  Aggregator temperature: {config['aggregator_temperature']}")
     print(f"  🛡️  Failure tolerance: {config['failure_tolerance']}")
     print(f"  📊 Minimum successful models: {config['min_successful_references']}")
-    
-    # Show debug mode status
+
+    # 显示调试模式状态
     if _debug.active:
         print(f"\n🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
         print(f"   Debug logs will be saved to: ./logs/moa_tools_debug_{_debug.session_id}.json")
     else:
         print("\n🐛 Debug mode disabled (set MOA_TOOLS_DEBUG=true to enable)")
-    
+
     print("\nBasic usage:")
     print("  from mixture_of_agents_tool import mixture_of_agents_tool")
     print("  import asyncio")
@@ -485,14 +482,14 @@ if __name__ == "__main__":
     print("      )")
     print("      print(result)")
     print("  asyncio.run(main())")
-    
+
     print("\nBest use cases:")
     print("  - Complex mathematical proofs and calculations")
     print("  - Advanced coding problems and algorithm design")
     print("  - Multi-step analytical reasoning tasks")
     print("  - Problems requiring diverse domain expertise")
     print("  - Tasks where single models show limitations")
-    
+
     print("\nPerformance characteristics:")
     print("  - Higher latency due to multiple model calls")
     print("  - Significantly improved quality for complex tasks")
@@ -502,7 +499,7 @@ if __name__ == "__main__":
     print("  - Resilient: continues with partial model failures")
     print("  - Configurable: easy to modify models and settings at top of file")
     print("  - State-of-the-art results on challenging benchmarks")
-    
+
     print("\nDebug mode:")
     print("  # Enable debug logging")
     print("  export MOA_TOOLS_DEBUG=true")
@@ -511,7 +508,7 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# 注册表
 # ---------------------------------------------------------------------------
 from tools.registry import registry
 

@@ -1,25 +1,23 @@
 /**
- * Pinned regression for the multi-line composer cursor-drift bug.
+ * 多行 composer cursor 漂移 bug 的固定回归测试。
  *
- * Symptom: in `hermes --tui`, typing into the composer until the input
- * wraps across multiple visual rows would leave several blank cells
- * between the last typed character and the (hardware) cursor block.
- * Worse on narrow terminals (the Cursor IDE built-in terminal in
- * particular).
+ * 症状：在 `hermes --tui` 中，向 composer 输入内容直到文本
+ * 换行成多行视觉行时，最后一个输入的字符与（硬件）cursor
+ * 块之间会出现多个空白单元格。在窄终端上（尤其是 Cursor IDE
+ * 内置终端）问题更为严重。
  *
- * Root cause: the composer's `cursorLayout` (used by `useDeclaredCursor`
- * to place the hardware cursor) ran a hand-rolled word-wrap algorithm,
- * while Ink's `<Text wrap="wrap">` renders via `wrap-ansi`. The two
- * disagreed on many real inputs — wrap-ansi would keep "branch
- * investigate" on one row while cursorLayout claimed it had wrapped,
- * etc. — so the declared cursor position drifted from where the text
- * was actually rendered. The fix sources cursorLayout's line breaks
- * directly from wrap-ansi, guaranteeing agreement.
+ * 根本原因：composer 的 `cursorLayout`（由 `useDeclaredCursor`
+ * 用来放置硬件 cursor）使用了一个手写的 word-wrap 算法，
+ * 而 Ink 的 `<Text wrap="wrap">` 通过 `wrap-ansi` 进行渲染。两者
+ * 在许多实际输入上不一致——wrap-ansi 会将 "branch
+ * investigate" 保持在一行，而 cursorLayout 却认为它已经换行，
+ * 等等——导致声明的 cursor 位置与实际文本渲染位置发生漂移。
+ * 修复方案是让 cursorLayout 的行断点直接取自 wrap-ansi，
+ * 从而保证两者一致。
  *
- * This test pins the contract: for every char that would be typed into
- * the composer, the cursor position reported by cursorLayout MUST equal
- * the end-of-text position that wrap-ansi would render. Any future
- * regression that lets the two diverge re-introduces the drift.
+ * 此测试固定了这一契约：对于向 composer 输入的每一个字符，
+ * cursorLayout 报告的 cursor 位置必须等于 wrap-ansi 渲染的
+ * 文本末尾位置。任何让两者重新产生分歧的回归都会重新引入漂移。
  */
 import { wrapAnsi } from '@hermes/ink'
 import { describe, expect, it } from 'vitest'
@@ -35,9 +33,9 @@ function wrapAnsiEnd(text: string, cols: number): { line: number; column: number
 }
 
 const USER_REPORT_MESSAGE =
-  // Paraphrase of the user's actual bug report, included verbatim so the
-  // test is grounded in a realistic typing pattern (long single line,
-  // mixed-length words, punctuation, no hard newlines).
+  // 用户实际 bug 报告的改写，逐字包含以便测试
+  // 基于真实的输入模式（长单行、混合长度的单词、
+  // 标点符号、无硬换行）。
   'im in cursor terminal using hermes --tui and as i type multiline my caret at the end will often ' +
   'go.. randomly.. like multiple spaces away lol and idk why. theres no rhyme/reason really but ' +
   'there should literally never be a non-user added space at the end of my composer input right? ' +
@@ -47,12 +45,12 @@ const USER_REPORT_MESSAGE =
 
 describe('cursor-drift regression — composer cursorLayout matches Ink rendering', () => {
   it('agrees with wrap-ansi at every typing-prefix of the user-reported message', () => {
-    // Walks the message char-by-char (mirroring what the TUI sees when a
-    // user types). At every prefix, cursorLayout must place the cursor
-    // exactly where wrap-ansi would render the end of the text.
+    // 逐字符遍历消息（模拟 TUI 在用户输入时看到的内容）。
+    // 在每个前缀处，cursorLayout 必须将 cursor 放置在
+    // wrap-ansi 渲染文本末尾的确切位置。
     //
-    // Pre-fix: this failed on most narrow widths because the hand-rolled
-    // wrap algorithm broke at slightly different points than wrap-ansi.
+    // 修复前：在大多数窄宽度上会失败，因为手写的
+    // wrap 算法在略不同于 wrap-ansi 的位置断行。
     for (const cols of [40, 50, 55, 60, 65, 70, 80]) {
       let acc = ''
 
@@ -71,10 +69,9 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
   })
 
   it('keeps cursor on the same row when text exactly fills the terminal width', () => {
-    // wrap-ansi does NOT push exact-fill text onto a phantom next line.
-    // The previous algorithm did — that's what produced the visible
-    // "cursor parked one row below the last char" symptom on narrow
-    // terminals at certain message lengths.
+    // wrap-ansi 不会将刚好填满的文本推到下一行虚拟行。
+    // 之前的算法会这样做——这就是在窄终端上某些消息长度时
+    // 产生"cursor 停在最后一个字符下一行"可见症状的原因。
     for (const cols of [8, 12, 18, 24]) {
       const text = 'a'.repeat(cols)
       const layout = cursorLayout(text, text.length, cols)
@@ -88,10 +85,10 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
   })
 
   it('does not stuff a trailing whitespace word onto a phantom line', () => {
-    // "branch investigate" at cols=20 fits on one row in wrap-ansi. The
-    // bug claimed otherwise, parking the cursor at (line=1, col=?) and
-    // leaving the user's "branch investigate" rendered alone on row 0
-    // with the cursor block several cells past it.
+    // "branch investigate" 在 cols=20 时在 wrap-ansi 中适合一行。
+    // bug 却声称 otherwise，将 cursor 停在 (line=1, col=?)，
+    // 导致用户的 "branch investigate" 单独渲染在第 0 行，
+    // 而 cursor 块在其后几个单元格处。
     const text = 'branch investigate'
     const cols = 20
 
@@ -100,11 +97,11 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
   })
 
   it('agrees with wrap-ansi for word-wrap that pushes a word onto the next line', () => {
-    // "hello world" at cols=8 wraps to ["hello ", "world"] in wrap-ansi.
-    // The cursor at end-of-text must land at line=1, col=5 — where Ink
-    // actually renders the last 'd'. The previous algorithm reported
-    // (line=2, col=0) here (phantom extra wrap), which parked the
-    // cursor on a row Ink never painted.
+    // "hello world" 在 cols=8 时在 wrap-ansi 中换行为 ["hello ", "world"]。
+    // 文本末尾的 cursor 必须落在 line=1, col=5——即 Ink
+    // 实际渲染最后一个 'd' 的位置。之前的算法在此报告
+    // (line=2, col=0)（虚拟的额外换行），导致 cursor
+    // 停在 Ink 从未绘制的一行上。
     const text = 'hello world'
     const cols = 8
 

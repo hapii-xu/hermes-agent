@@ -1,12 +1,12 @@
 """
-Session mirroring for cross-platform message delivery.
+用于跨平台消息投递的会话镜像（mirroring）。
 
-When a message is sent to a platform (via send_message or cron delivery),
-this module appends a "delivery-mirror" record to the target session's
-transcript so the receiving-side agent has context about what was sent.
+当一条消息被发送到某个平台（通过 send_message 或 cron 投递）时，本模块会
+向目标会话的 transcript 追加一条“投递镜像（delivery-mirror）”记录，这样
+接收侧的 agent 就能获得关于已发送内容的上下文。
 
-Standalone -- works from CLI, cron, and gateway contexts without needing
-the full SessionStore machinery.
+独立运行——无需完整的 SessionStore 机制，即可在 CLI、cron 和 gateway
+上下文中工作。
 """
 
 import json
@@ -32,24 +32,23 @@ def mirror_to_session(
     role: str = "assistant",
 ) -> bool:
     """
-    Append a delivery-mirror message to the target session's transcript.
+    向目标会话的 transcript 追加一条投递镜像消息。
 
-    Finds the gateway session that matches the given platform + chat_id,
-    then writes a mirror entry to both the JSONL transcript and SQLite DB.
+    查找与给定 platform + chat_id 匹配的 gateway 会话，然后向 JSONL
+    transcript 和 SQLite DB 同时写入一条镜像条目。
 
-    ``role`` defaults to ``"assistant"`` — correct for the interactive
-    ``send_message`` mirror, where the mirrored text is the agent's own
-    outgoing reply (a genuine assistant turn). Callers mirroring text that is
-    NOT the agent speaking — e.g. a cron brief delivered out-of-band — must
-    pass ``role="user"``: the ``mirror``/``mirror_source`` metadata is dropped
-    at the SQLite boundary (only role+content persist), so on replay an
-    assistant-role mirror is indistinguishable from a real assistant turn and
-    produces ``assistant → assistant`` pairs that break strict-alternation
-    providers (issue #2221). A user-role mirror collapses safely via
-    ``repair_message_sequence``'s consecutive-user merge on every provider.
+    ``role`` 默认为 ``"assistant"`` —— 这对于交互式 ``send_message``
+    镜像是正确的，因为被镜像的文本是 agent 自己发出去的回复（一次真正的
+    assistant turn）。对于那些镜像的文本并非 agent 发言的调用方——例如
+    一份通过带外方式投递的 cron 简报——必须传入 ``role="user"``：
+    ``mirror``/``mirror_source`` 元数据会在 SQLite 边界被丢弃（只有
+    role+content 会被持久化），因此在重放时，assistant 角色的镜像与真正的
+    assistant turn 无法区分，会产生 ``assistant → assistant`` 对，从而破坏
+    严格要求交替的 provider（issue #2221）。而 user 角色的镜像可以通过
+    ``repair_message_sequence`` 在每个 provider 上安全地合并连续 user 消息。
 
-    Returns True if mirrored successfully, False if no matching session or error.
-    All errors are caught -- this is never fatal.
+    镜像成功时返回 True，找不到匹配会话或出错时返回 False。
+    所有错误都会被捕获——此操作绝不会是致命的。
     """
     try:
         session_id = _find_session_id(
@@ -100,15 +99,14 @@ def _find_session_id(
     user_id: Optional[str] = None,
 ) -> Optional[str]:
     """
-    Find the active session_id for a platform + chat_id pair.
+    查找 platform + chat_id 对应的活动 session_id。
 
-    Scans sessions.json entries and matches where origin.chat_id == chat_id
-    on the right platform.  DM session keys don't embed the chat_id
-    (e.g. "agent:main:telegram:dm"), so we check the origin dict.
+    扫描 sessions.json 条目，匹配 origin.chat_id == chat_id 且平台正确的
+    记录。DM 会话键中并不内嵌 chat_id（例如 "agent:main:telegram:dm"），
+    因此我们检查 origin dict。
 
-    When *user_id* is provided, prefer exact sender matches. If multiple
-    same-chat candidates exist and none matches the user, return None instead
-    of guessing and contaminating another participant's session.
+    当提供了 *user_id* 时，优先匹配精确的发送者。如果存在多个同聊天候选
+    且没有一个匹配该用户，则返回 None，而不是猜测并污染其他参与者的会话。
     """
     if not _SESSIONS_INDEX.exists():
         return None
@@ -123,8 +121,8 @@ def _find_session_id(
     candidates = []
 
     for _key, entry in data.items():
-        # Skip documentation/metadata sentinels (keys starting with "_", e.g.
-        # the gateway's "_README" note) — they are not session entries.
+        # 跳过文档/元数据哨兵（以 "_" 开头的键，例如 gateway 的 "_README"
+        # 备注）——它们不是会话条目。
         if str(_key).startswith("_") or not isinstance(entry, dict):
             continue
         origin = entry.get("origin") or {}
@@ -167,7 +165,7 @@ def _find_session_id(
 
 
 def _append_to_sqlite(session_id: str, message: dict) -> None:
-    """Append a message to the SQLite session database."""
+    """向 SQLite 会话数据库追加一条消息。"""
     db = None
     try:
         from hermes_state import SessionDB

@@ -1,29 +1,29 @@
 """
-DingTalk platform adapter using Stream Mode.
+使用 Stream Mode 的钉钉平台适配器。
 
-Uses dingtalk-stream SDK (>=0.20) for real-time message reception without webhooks.
-Responses are sent via DingTalk's session webhook (markdown format).
-Supports: text, images, audio, video, rich text, files, and group @mentions.
+使用 dingtalk-stream SDK (>=0.20) 实现无需 webhook 的实时消息接收。
+响应通过钉钉的 session webhook（markdown 格式）发送。
+支持：文本、图片、音频、视频、富文本、文件和群聊 @提及。
 
-Requires:
+依赖：
     pip install "dingtalk-stream>=0.20" httpx
-    DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET env vars
+    需要设置 DINGTALK_CLIENT_ID 和 DINGTALK_CLIENT_SECRET 环境变量
 
-Configuration in config.yaml:
+config.yaml 中的配置：
     platforms:
       dingtalk:
         enabled: true
-        # Optional group-chat gating (mirrors Slack/Telegram/Discord):
-        require_mention: true            # or DINGTALK_REQUIRE_MENTION env var
-        # free_response_chats:           # conversations that skip require_mention
+        # 可选的群聊门控（与 Slack/Telegram/Discord 一致）：
+        require_mention: true            # 或通过 DINGTALK_REQUIRE_MENTION 环境变量
+        # free_response_chats:           # 跳过 require_mention 的对话
         #   - cidABC==
-        # mention_patterns:              # regex wake-words (e.g. Chinese bot names)
+        # mention_patterns:              # 正则唤醒词（例如中文机器人名称）
         #   - "^小马"
-        # allowed_users:                 # staff_id or sender_id list; "*" = any
+        # allowed_users:                 # staff_id 或 sender_id 列表；"*" = 任意用户
         #   - "manager1234"
         extra:
-          client_id: "your-app-key"      # or DINGTALK_CLIENT_ID env var
-          client_secret: "your-secret"   # or DINGTALK_CLIENT_SECRET env var
+          client_id: "your-app-key"      # 或通过 DINGTALK_CLIENT_ID 环境变量
+          client_secret: "your-secret"   # 或通过 DINGTALK_CLIENT_SECRET 环境变量
 """
 
 import asyncio

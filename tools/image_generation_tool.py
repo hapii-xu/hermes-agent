@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 """
-Image Generation Tools Module
+图像生成工具模块
 
-Provides image generation via FAL.ai. Multiple FAL models are supported and
-selectable via ``hermes tools`` → Image Generation; the active model is
-persisted to ``image_gen.model`` in ``config.yaml``.
+通过 FAL.ai 提供图像生成能力。支持多个 FAL 模型，可通过 ``hermes tools`` →
+Image Generation 进行选择；当前生效的模型会持久化到 ``config.yaml`` 的
+``image_gen.model`` 中。
 
-Architecture:
-- ``FAL_MODELS`` is a catalog of supported models with per-model metadata
-  (size-style family, defaults, ``supports`` whitelist, upscaler flag).
-- ``_build_fal_payload()`` translates the agent's unified inputs (prompt +
-  aspect_ratio) into the model-specific payload and filters to the
-  ``supports`` whitelist so models never receive rejected keys.
-- Upscaling via FAL's Clarity Upscaler is gated per-model via the ``upscale``
-  flag — on for FLUX 2 Pro (backward-compat), off for all faster/newer models
-  where upscaling would either hurt latency or add marginal quality.
+架构：
+- ``FAL_MODELS`` 是受支持模型的目录，包含每个模型的元数据（尺寸风格族、
+  默认值、``supports`` 白名单、放大器开关）。
+- ``_build_fal_payload()`` 把 agent 统一的输入（prompt + aspect_ratio）
+  翻译成模型专属的 payload，并按 ``supports`` 白名单过滤，确保模型不会
+  收到被拒绝的键。
+- 通过 FAL 的 Clarity Upscaler 进行放大，按模型用 ``upscale`` 开关控制——
+  FLUX 2 Pro 默认开启（向后兼容），所有更快/更新的模型默认关闭，因为对它们
+  而言放大要么拖慢延迟，要么带来的画质提升微乎其微。
 
-Pricing shown in UI strings is as-of the initial commit; we accept drift and
-update when it's noticed.
+UI 字符串中显示的价格为初始提交时的价格；我们允许其漂移，发现时再更新。
 """
 
 import json
@@ -28,25 +27,23 @@ import threading
 import uuid
 from typing import Any, Dict, Optional
 
-# fal_client is imported lazily — see _load_fal_client(). Pulling it
-# eagerly added ~64 ms to every CLI cold start because
-# discover_builtin_tools() imports this module unconditionally during
-# the registry walk, even when image generation is never used.
+# fal_client 采用惰性导入——见 _load_fal_client()。如果急切导入，会让每次
+# CLI 冷启动多花约 64 ms，因为 discover_builtin_tools() 在注册表遍历时会
+# 无条件导入本模块，哪怕根本没用到图像生成。
 #
-# Tests that monkeypatch this attribute (e.g.
-# ``monkeypatch.setattr(image_tool, "fal_client", fake_fal_client)``)
-# still work: _load_fal_client() short-circuits when the attribute is
-# anything truthy, so a test-installed mock is not overwritten by a
-# subsequent real import.
+# 测试中 monkeypatch 这个属性（例如
+# ``monkeypatch.setattr(image_tool, "fal_client", fake_fal_client)``）
+# 仍然有效：当该属性为任何真值时 _load_fal_client() 会短路返回，因此
+# 测试安装的 mock 不会被后续的真实导入覆盖。
 fal_client: Any = None
 
 
 def _load_fal_client() -> Any:
-    """Lazily import fal_client and rebind the module global on first use.
+    """惰性导入 fal_client，并在首次使用时重新绑定模块级全局变量。
 
-    Idempotent. Returns the (now-loaded) ``fal_client`` module reference.
-    Skips the import if the global is already truthy — this preserves the
-    test pattern of monkeypatching the module global to install a mock.
+    幂等操作。返回（此时已加载的）``fal_client`` 模块引用。
+    如果全局变量已是真值则跳过导入——这样保留了通过 monkeypatch
+    模块级全局变量来安装 mock 的测试模式。
     """
     global fal_client
     if fal_client is not None:
@@ -60,7 +57,7 @@ from tools.debug_helpers import DebugSession
 from tools.fal_common import (
     _ManagedFalSyncClient,
     _extract_http_status,
-    _normalize_fal_queue_url_format,  # noqa: F401 — re-exported for tests
+    _normalize_fal_queue_url_format,  # noqa: F401 — 为测试重新导出
 )
 from tools.managed_tool_gateway import resolve_managed_tool_gateway
 from tools.tool_backend_helpers import (
@@ -74,25 +71,24 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# FAL model catalog
+# FAL 模型目录
 # ---------------------------------------------------------------------------
 #
-# Each entry declares how to translate our unified inputs into the model's
-# native payload shape. Size specification falls into three families:
+# 每个条目声明了如何把我们统一的输入翻译成该模型原生的 payload 形状。
+# 尺寸规格分为三族：
 #
-#   "image_size_preset" — preset enum ("square_hd", "landscape_16_9", ...)
-#                          used by the flux family, z-image, qwen, recraft,
-#                          ideogram.
-#   "aspect_ratio"      — aspect ratio enum ("16:9", "1:1", ...) used by
-#                          nano-banana (Gemini).
-#   "gpt_literal"       — literal dimension strings ("1024x1024", etc.)
-#                          used by gpt-image-1.5.
+#   "image_size_preset" — 预设枚举（"square_hd"、"landscape_16_9" 等），
+#                          flux 系列、z-image、qwen、recraft、ideogram 使用。
+#   "aspect_ratio"      — 宽高比枚举（"16:9"、"1:1" 等），nano-banana
+#                          （Gemini）使用。
+#   "gpt_literal"       — 字面尺寸字符串（"1024x1024" 等），gpt-image-1.5
+#                          使用。
 #
-# ``supports`` is a whitelist of keys allowed in the outgoing payload — any
-# key outside this set is stripped before submission so models never receive
-# rejected parameters (each FAL model rejects unknown keys differently).
+# ``supports`` 是允许出现在出站 payload 中的键的白名单——任何不在此集合
+# 中的键在提交前都会被剥离，确保模型不会收到被拒绝的参数（每个 FAL 模型
+# 拒绝未知键的方式各不相同）。
 #
-# ``upscale`` controls whether to chain Clarity Upscaler after generation.
+# ``upscale`` 控制是否在生成后串联 Clarity Upscaler 进行放大。
 
 FAL_MODELS: Dict[str, Dict[str, Any]] = {
     "fal-ai/flux-2/klein/9b": {
@@ -116,8 +112,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "output_format", "enable_safety_checker",
         },
         "upscale": False,
-        # Image-to-image / editing: FLUX.2 [klein] 9B edit endpoint takes
-        # `image_urls` (list). Natural-language edits, multi-ref.
+        # 图生图 / 编辑：FLUX.2 [klein] 9B 的编辑端点接收
+        # `image_urls`（列表）。支持自然语言编辑、多参考图。
         "edit_endpoint": "fal-ai/flux-2/klein/9b/edit",
         "edit_supports": {
             "prompt", "image_urls", "num_inference_steps", "seed",
@@ -150,8 +146,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "num_images", "output_format", "enable_safety_checker",
             "safety_tolerance", "sync_mode", "seed",
         },
-        "upscale": True,   # Backward-compat: current default behavior.
-        # Edit endpoint accepts up to 9 reference images.
+        "upscale": True,   # 向后兼容：保持当前的默认行为。
+        # 编辑端点最多接受 9 张参考图。
         "edit_endpoint": "fal-ai/flux-2-pro/edit",
         "edit_supports": {
             "prompt", "image_urls", "num_inference_steps", "guidance_scale",
@@ -176,7 +172,7 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "num_images": 1,
             "output_format": "png",
             "enable_safety_checker": False,
-            "enable_prompt_expansion": False,  # avoid the extra per-request charge
+            "enable_prompt_expansion": False,  # 避免每次请求的额外计费
         },
         "supports": {
             "prompt", "image_size", "num_inference_steps", "num_images",
@@ -200,8 +196,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "num_images": 1,
             "output_format": "png",
             "safety_tolerance": "5",
-            # "1K" is the cheapest tier; 4K doubles the per-image cost.
-            # Users on Nous Subscription should stay at 1K for predictable billing.
+            # "1K" 是最便宜的档位；4K 会让单图价格翻倍。
+            # Nous 订阅用户应保持在 1K，以便账单可预测。
             "resolution": "1K",
         },
         "supports": {
@@ -210,8 +206,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "enable_web_search", "limit_generations",
         },
         "upscale": False,
-        # Nano Banana Pro edit (Gemini 3 Pro Image): natural-language edits
-        # with up to 2 reference images via `image_urls`.
+        # Nano Banana Pro 编辑（Gemini 3 Pro Image）：通过 `image_urls`
+        # 进行自然语言编辑，最多支持 2 张参考图。
         "edit_endpoint": "fal-ai/nano-banana-pro/edit",
         "edit_supports": {
             "prompt", "image_urls", "aspect_ratio", "num_images",
@@ -232,8 +228,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "portrait": "1024x1536",
         },
         "defaults": {
-            # Quality is pinned to medium to keep portal billing predictable
-            # across all users (low is too rough, high is 4-6x more expensive).
+            # 画质固定为 medium，以保持所有用户的 portal 账单可预测
+            # （low 太粗糙，high 要贵 4-6 倍）。
             "quality": "medium",
             "num_images": 1,
             "output_format": "png",
@@ -243,7 +239,7 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "background", "sync_mode",
         },
         "upscale": False,
-        # Edit endpoint: high-fidelity edits preserving composition/lighting.
+        # 编辑端点：保留构图/光照的高保真编辑。
         "edit_endpoint": "fal-ai/gpt-image-1.5/edit",
         "edit_supports": {
             "prompt", "image_urls", "image_size", "quality", "num_images",
@@ -256,11 +252,9 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
         "speed": "~20s",
         "strengths": "SOTA text rendering + CJK, world-aware photorealism",
         "price": "$0.04–0.06/image",
-        # GPT Image 2 uses FAL's standard preset enum (unlike 1.5's literal
-        # dimensions). We map to the 4:3 variants — the 16:9 presets
-        # (1024x576) fall below GPT-Image-2's 655,360 min-pixel requirement
-        # and would be rejected. 4:3 keeps us above the minimum on all
-        # three aspect ratios.
+        # GPT Image 2 使用 FAL 的标准预设枚举（不像 1.5 那样用字面尺寸）。
+        # 我们映射到 4:3 变体——16:9 预设（1024x576）低于 GPT-Image-2 的
+        # 655,360 最小像素要求，会被拒绝。4:3 能让三种宽高比都高于下限。
         "size_style": "image_size_preset",
         "sizes": {
             "landscape": "landscape_4_3",   # 1024x768
@@ -268,9 +262,9 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "portrait": "portrait_4_3",       # 768x1024
         },
         "defaults": {
-            # Same quality pinning as gpt-image-1.5: medium keeps Nous
-            # Portal billing predictable. "high" is 3-4x the per-image
-            # cost at the same size; "low" is too rough for production use.
+            # 与 gpt-image-1.5 同样的画质固定：medium 让 Nous Portal
+            # 账单可预测。"high" 在同等尺寸下每张图贵 3-4 倍；
+            # "low" 对生产环境而言太粗糙。
             "quality": "medium",
             "num_images": 1,
             "output_format": "png",
@@ -278,13 +272,13 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
         "supports": {
             "prompt", "image_size", "quality", "num_images", "output_format",
             "sync_mode",
-            # openai_api_key (BYOK) intentionally omitted — all users go
-            # through the shared FAL billing path.
+            # openai_api_key（BYOK）刻意省略——所有用户都走共享的
+            # FAL 计费通道。
         },
         "upscale": False,
-        # GPT Image 2 edit endpoint lives under the OpenAI namespace on FAL
-        # (NOT fal-ai/). Takes `image_urls` (list) + optional mask. We don't
-        # send `image_size` on edit so the model auto-infers from input.
+        # GPT Image 2 的编辑端点位于 FAL 上的 OpenAI 命名空间下
+        # （不是 fal-ai/）。接收 `image_urls`（列表）+ 可选 mask。我们
+        # 在编辑时不发送 `image_size`，让模型从输入自动推断。
         "edit_endpoint": "openai/gpt-image-2/edit",
         "edit_supports": {
             "prompt", "image_urls", "quality", "num_images", "output_format",
@@ -313,7 +307,7 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "style", "seed",
         },
         "upscale": False,
-        # Ideogram V3 edit endpoint takes `image_urls` (list).
+        # Ideogram V3 的编辑端点接收 `image_urls`（列表）。
         "edit_endpoint": "fal-ai/ideogram/v3/edit",
         "edit_supports": {
             "prompt", "image_urls", "rendering_speed", "expand_prompt",
@@ -333,7 +327,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "portrait": "portrait_16_9",
         },
         "defaults": {
-            # V4 Pro dropped V3's required `style` enum — defaults handle taste now.
+            # V4 Pro 移除了 V3 必需的 `style` 枚举——现在的默认值已经
+            # 负责处理审美取向。
             "enable_safety_checker": False,
         },
         "supports": {
@@ -365,8 +360,8 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "num_images", "output_format", "acceleration", "seed", "sync_mode",
         },
         "upscale": False,
-        # Qwen edit uses the Qwen Image 2.0 Pro editing endpoint, which takes
-        # `image_urls` (list) + natural-language edit instructions.
+        # Qwen 的编辑使用 Qwen Image 2.0 Pro 的编辑端点，它接收
+        # `image_urls`（列表）+ 自然语言编辑指令。
         "edit_endpoint": "fal-ai/qwen-image-2/pro/edit",
         "edit_supports": {
             "prompt", "image_urls", "num_inference_steps", "guidance_scale",
@@ -374,20 +369,19 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
         },
         "max_reference_images": 3,
     },
-    # Krea 2 — Krea's first foundation image model, day-0 partner launch on
-    # fal (2026-05-27). Same model family as our direct ``plugins/image_gen/krea``
-    # backend, exposed here for users who prefer to bill through their
-    # existing FAL key / Nous Portal subscription rather than register
-    # directly with Krea.  Both variants share the same parameter schema —
-    # only model id, price, and recommended use case differ.
+    # Krea 2 —— Krea 的首个基础图像模型，在 fal 上作为 day-0 合作伙伴
+    # 发布（2026-05-27）。与我们的直接 ``plugins/image_gen/krea`` 后端属于
+    # 同一模型族；这里暴露出来，是为了让偏好通过既有 FAL key / Nous
+    # Portal 订阅计费的用户使用，而不必直接向 Krea 注册。两个变体的参数
+    # schema 完全相同——区别仅在模型 id、价格和推荐用途。
     "fal-ai/krea/v2/medium/text-to-image": {
         "display": "Krea 2 Medium",
         "speed": "~15-25s",
         "strengths": "Illustration, anime, painting, expressive/artistic styles",
         "price": "$0.030 (text) / $0.035 (style refs)",
         "size_style": "aspect_ratio",
-        # Krea natively accepts 1:1, 4:3, 3:2, 16:9, 2.35:1, 4:5, 2:3, 9:16 —
-        # we map our 3 abstract ratios to the closest match.
+        # Krea 原生支持 1:1、4:3、3:2、16:9、2.35:1、4:5、2:3、9:16——
+        # 我们把 3 个抽象宽高比映射到最接近的匹配值。
         "sizes": {
             "landscape": "16:9",
             "square": "1:1",
@@ -424,7 +418,7 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Default model is the fastest reasonable option. Kept cheap and sub-1s.
+# 默认模型是最快的合理选项。保持低价且耗时低于 1 秒。
 DEFAULT_MODEL = "fal-ai/flux-2/klein/9b"
 
 DEFAULT_ASPECT_RATIO = "landscape"
@@ -432,7 +426,7 @@ VALID_ASPECT_RATIOS = ("landscape", "square", "portrait")
 
 
 # ---------------------------------------------------------------------------
-# Upscaler (Clarity Upscaler — unchanged from previous implementation)
+# 放大器（Clarity Upscaler——与之前实现保持一致）
 # ---------------------------------------------------------------------------
 UPSCALER_MODEL = "fal-ai/clarity-upscaler"
 UPSCALER_FACTOR = 2
@@ -452,18 +446,18 @@ _managed_fal_client_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
-# Managed FAL gateway (Nous Subscription)
+# 托管式 FAL 网关（Nous Subscription）
 # ---------------------------------------------------------------------------
 def _resolve_managed_fal_gateway():
-    """Return managed fal-queue gateway config when the user prefers the gateway
-    or direct FAL credentials are absent."""
+    """当用户偏好走网关，或缺少直接的 FAL 凭证时，返回托管的 fal-queue
+    网关配置。"""
     if fal_key_is_configured() and not prefers_gateway("image_gen"):
         return None
     return resolve_managed_tool_gateway("fal-queue")
 
 
 def _get_managed_fal_client(managed_gateway):
-    """Reuse the managed FAL client so its internal httpx.Client is not leaked per call."""
+    """复用托管的 FAL client，避免其内部的 httpx.Client 每次调用都泄漏。"""
     global _managed_fal_client, _managed_fal_client_config
 
     client_config = (
@@ -474,8 +468,8 @@ def _get_managed_fal_client(managed_gateway):
         if _managed_fal_client is not None and _managed_fal_client_config == client_config:
             return _managed_fal_client
 
-        # Resolve fal_client on the legacy module — preserves the test
-        # pattern of monkey-patching ``image_generation_tool.fal_client``.
+        # 在旧模块上解析 fal_client——保留 monkey-patch
+        # ``image_generation_tool.fal_client`` 的测试模式。
         _load_fal_client()
         _managed_fal_client = _ManagedFalSyncClient(
             fal_client,
@@ -487,8 +481,8 @@ def _get_managed_fal_client(managed_gateway):
 
 
 def _submit_fal_request(model: str, arguments: Dict[str, Any]):
-    """Submit a FAL request using direct credentials or the managed queue gateway."""
-    # Trigger the lazy import on first call. Idempotent.
+    """使用直接凭证或托管队列网关提交一个 FAL 请求。"""
+    # 首次调用时触发惰性导入。操作幂等。
     _load_fal_client()
     request_headers = {"x-idempotency-key": str(uuid.uuid4())}
     managed_gateway = _resolve_managed_fal_gateway()
@@ -503,10 +497,9 @@ def _submit_fal_request(model: str, arguments: Dict[str, Any]):
             headers=request_headers,
         )
     except Exception as exc:
-        # 4xx from the managed gateway typically means the portal doesn't
-        # currently proxy this model (allowlist miss, billing gate, etc.)
-        # — surface a clearer message with actionable remediation instead
-        # of a raw HTTP error from httpx.
+        # 来自托管网关的 4xx 通常意味着 portal 当前并未代理该模型
+        # （白名单缺失、计费门槛等）——因此抛出一个更清晰、带可执行
+        # 修复建议的消息，而不是 httpx 的原始 HTTP 错误。
         status = _extract_http_status(exc)
         if status is not None and 400 <= status < 500:
             gateway_message = ""
@@ -530,13 +523,13 @@ def _submit_fal_request(model: str, arguments: Dict[str, Any]):
 
 
 # ---------------------------------------------------------------------------
-# Model resolution + payload construction
+# 模型解析 + payload 构造
 # ---------------------------------------------------------------------------
 def _resolve_fal_model() -> tuple:
-    """Resolve the active FAL model from config.yaml (primary) or default.
+    """从 config.yaml（主要来源）或默认值解析当前生效的 FAL 模型。
 
-    Returns (model_id, metadata_dict). Falls back to DEFAULT_MODEL if the
-    configured model is unknown (logged as a warning).
+    返回 (model_id, metadata_dict)。如果配置的模型未知，则回退到
+    DEFAULT_MODEL（并记录为一条警告）。
     """
     model_id = ""
     try:
@@ -550,7 +543,7 @@ def _resolve_fal_model() -> tuple:
     except Exception as exc:
         logger.debug("Could not load image_gen.model from config: %s", exc)
 
-    # Env var escape hatch (undocumented; backward-compat for tests/scripts).
+    # 环境变量逃生口（未公开文档；为测试/脚本保留向后兼容）。
     if not model_id:
         model_id = os.getenv("FAL_IMAGE_MODEL", "").strip()
 
@@ -574,11 +567,11 @@ def _build_fal_payload(
     seed: Optional[int] = None,
     overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build a FAL request payload for `model_id` from unified inputs.
+    """从统一输入为 `model_id` 构造一个 FAL 请求 payload。
 
-    Translates aspect_ratio into the model's native size spec (preset enum,
-    aspect-ratio enum, or GPT literal string), merges model defaults, applies
-    caller overrides, then filters to the model's ``supports`` whitelist.
+    把 aspect_ratio 翻译成模型原生的尺寸规格（预设枚举、宽高比枚举或
+    GPT 字面字符串），合并模型默认值，应用调用方覆盖值，最后按模型的
+    ``supports`` 白名单进行过滤。
     """
     meta = FAL_MODELS[model_id]
     size_style = meta["size_style"]
@@ -607,9 +600,9 @@ def _build_fal_payload(
                 payload[k] = v
 
     supports = meta["supports"]
-    # ``prompt`` is required by every FAL text-to-image endpoint; keep it even
-    # if a model's ``supports`` whitelist omits it, so a missing whitelist entry
-    # can't silently strip the prompt and send an empty request.
+    # ``prompt`` 是每个 FAL text-to-image 端点都必需的字段；即使模型的
+    # ``supports`` 白名单中遗漏了它也保留它，这样白名单里缺失条目就不会
+    # 静默剥离 prompt，进而发出一个空请求。
     return {
         k: v for k, v in payload.items()
         if k in supports or k == "prompt"
@@ -624,14 +617,13 @@ def _build_fal_edit_payload(
     seed: Optional[int] = None,
     overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build a FAL *edit* request payload (image-to-image) from unified inputs.
+    """从统一输入构造一个 FAL *编辑* 请求 payload（图生图）。
 
-    Every FAL edit endpoint takes ``image_urls`` (a list of source/reference
-    image URLs) plus the prompt. Size handling differs from text-to-image:
-    most edit endpoints auto-infer output dimensions from the input image, so
-    we only send ``image_size`` / ``aspect_ratio`` when the edit endpoint's
-    ``edit_supports`` whitelist accepts it. Keys outside ``edit_supports`` are
-    stripped before submission.
+    每个 FAL 编辑端点都接收 ``image_urls``（源/参考图像 URL 的列表）加上
+    prompt。尺寸处理与 text-to-image 不同：大多数编辑端点会从输入图像自动
+    推断输出尺寸，因此我们仅在编辑端点的 ``edit_supports`` 白名单接受该键
+    时才发送 ``image_size`` / ``aspect_ratio``。不在 ``edit_supports`` 中
+    的键在提交前都会被剥离。
     """
     meta = FAL_MODELS[model_id]
     edit_supports = meta.get("edit_supports") or set()
@@ -646,9 +638,9 @@ def _build_fal_edit_payload(
     payload["prompt"] = (prompt or "").strip()
     payload["image_urls"] = list(image_urls)
 
-    # Only express output size when the edit endpoint advertises the key.
-    # gpt-image-2 edit auto-infers size from the input, so `image_size` is
-    # intentionally absent from its edit_supports whitelist.
+    # 仅当编辑端点声明接受该键时才表达输出尺寸。
+    # gpt-image-2 的编辑会从输入自动推断尺寸，所以 `image_size` 刻意未
+    # 出现在它的 edit_supports 白名单中。
     if size_style in {"image_size_preset", "gpt_literal"} and "image_size" in edit_supports:
         payload["image_size"] = sizes[aspect]
     elif size_style == "aspect_ratio" and "aspect_ratio" in edit_supports:
@@ -662,10 +654,10 @@ def _build_fal_edit_payload(
             if v is not None:
                 payload[k] = v
 
-    # ``prompt`` and ``image_urls`` are required by every FAL edit endpoint;
-    # keep them even if a model's ``edit_supports`` whitelist omits them, so a
-    # missing whitelist entry can't silently drop the prompt or the source
-    # images and send a broken edit request.
+    # ``prompt`` 和 ``image_urls`` 是每个 FAL 编辑端点都必需的字段；
+    # 即使模型的 ``edit_supports`` 白名单中遗漏了它们也保留它们，这样白
+    # 名单里缺失条目就不会静默丢弃 prompt 或源图像，进而发出一个损坏的
+    # 编辑请求。
     _required = {"prompt", "image_urls"}
     return {
         k: v for k, v in payload.items()
@@ -674,13 +666,12 @@ def _build_fal_edit_payload(
 
 
 # ---------------------------------------------------------------------------
-# Upscaler
+# 放大器
 # ---------------------------------------------------------------------------
 def _upscale_image(image_url: str, original_prompt: str) -> Optional[Dict[str, Any]]:
-    """Upscale an image using FAL.ai's Clarity Upscaler.
+    """使用 FAL.ai 的 Clarity Upscaler 对图像进行放大。
 
-    Returns upscaled image dict, or None on failure (caller falls back to
-    the original image).
+    返回放大后的图像 dict；失败时返回 None（调用方会回退到原始图像）。
     """
     try:
         logger.info("Upscaling image with Clarity Upscaler...")
@@ -723,7 +714,7 @@ def _upscale_image(image_url: str, original_prompt: str) -> Optional[Dict[str, A
 
 
 # ---------------------------------------------------------------------------
-# Tool entry point
+# 工具入口
 # ---------------------------------------------------------------------------
 def _looks_like_absolute_file_path(value: str) -> bool:
     if not value or not isinstance(value, str):
@@ -741,17 +732,17 @@ def _active_terminal_env(task_id: str | None):
         from tools.terminal_tool import get_active_env
 
         return get_active_env(task_id or "default")
-    except Exception as exc:  # noqa: BLE001 - artifact hinting must not break generation
+    except Exception as exc:  # noqa: BLE001 - 制品标注绝不能中断生成流程
         logger.debug("Could not inspect active terminal environment: %s", exc)
         return None
 
 
 def _agent_cache_base_for_env(env: Any) -> str | None:
     if env is not None:
-        # Forward-looking optional override: an environment may expose its own
-        # agent-visible cache root via this callable. No backend defines it yet
-        # — it's an extension hook, not a typo. The getattr/callable guards make
-        # it a safe no-op until a producer exists.
+        # 面向未来的可选覆盖项：某个环境可以通过这个 callable 暴露自己
+        # 的 agent 可见缓存根目录。目前还没有后端定义它——它是一个扩展
+        # 钩子（hook），不是拼写错误。getattr/callable 的守卫让它成为
+        # 一个安全的空操作（no-op），直到有生产者出现为止。
         explicit = getattr(env, "agent_visible_cache_base", None)
         if callable(explicit):
             try:
@@ -769,10 +760,9 @@ def _agent_cache_base_for_env(env: Any) -> str | None:
         if env_name in {"DockerEnvironment", "SingularityEnvironment", "ModalEnvironment"}:
             return "/root/.hermes"
 
-    # If no environment has been created yet, only backends with deterministic
-    # Hermes cache roots can be translated without side effects. SSH can still
-    # use a shell-visible tilde path; its first environment sync will upload
-    # the cache file before the first command runs.
+    # 如果还没有创建任何环境，只有那些具有确定性 Hermes 缓存根目录的
+    # 后端才能在无副作用的情况下被翻译。SSH 仍然可以使用 shell 可见的
+    # 波浪号路径；它的首次环境同步会在第一条命令运行之前上传缓存文件。
     backend = (os.getenv("TERMINAL_ENV") or "local").strip().lower()
     if backend in {"docker", "singularity", "modal"}:
         return "/root/.hermes"
@@ -804,16 +794,16 @@ def _force_artifact_sync(env: Any) -> None:
         return
     try:
         sync_manager.sync(force=True)
-    except Exception as exc:  # noqa: BLE001 - keep generation success; log for operators
+    except Exception as exc:  # noqa: BLE001 - 保证生成成功；为运维人员记录日志
         logger.warning("Could not force-sync generated image artifact: %s", exc)
 
 
 def _postprocess_image_generate_result(raw: str, task_id: str | None = None) -> str:
-    """Annotate successful local image results with backend-visible paths.
+    """为成功的本地图像结果标注后端可见的路径。
 
-    ``image`` remains the host/gateway-deliverable path.  When the active
-    terminal backend has a different filesystem, ``agent_visible_image`` gives
-    the path the agent can use with terminal/file tools.
+    ``image`` 仍然是主机/网关可投递的路径。当当前活跃的终端后端使用不同
+    的文件系统时，``agent_visible_image`` 给出 agent 在使用 terminal/file
+    工具时可以使用的路径。
     """
     try:
         payload = json.loads(raw) if isinstance(raw, str) else raw
@@ -851,24 +841,23 @@ def image_generate_tool(
     image_url: Optional[str] = None,
     reference_image_urls: Optional[list] = None,
 ) -> str:
-    """Generate an image from a text prompt, or edit a source image, via FAL.
+    """通过 FAL 根据文本 prompt 生成图像，或对源图像进行编辑。
 
-    Routing: when ``image_url`` (or ``reference_image_urls``) is provided AND
-    the configured model declares an ``edit_endpoint``, the call routes to that
-    image-to-image / edit endpoint; otherwise it's plain text-to-image.
+    路由：当提供了 ``image_url``（或 ``reference_image_urls``）且配置的
+    模型声明了 ``edit_endpoint`` 时，本次调用会路由到对应的图生图 / 编辑
+    端点；否则就是普通的 text-to-image。
 
-    The agent-facing schema exposes ``prompt``, ``aspect_ratio``, ``image_url``
-    and ``reference_image_urls``; the remaining kwargs are overrides for direct
-    Python callers and are filtered per-model via the ``supports`` /
-    ``edit_supports`` whitelist (unsupported overrides are silently dropped so
-    legacy callers don't break when switching models).
+    面向 agent 的 schema 暴露了 ``prompt``、``aspect_ratio``、``image_url``
+    和 ``reference_image_urls``；其余 kwargs 是给直接用 Python 调用方用的
+    覆盖项，会通过 ``supports`` / ``edit_supports`` 白名单按模型过滤
+    （不支持的覆盖项会被静默丢弃，这样切换模型时旧调用方也不会出错）。
 
-    Returns a JSON string with ``{"success": bool, "image": url | None,
-    "modality": "text" | "image", "error": str, "error_type": str}``.
+    返回一个 JSON 字符串，包含 ``{"success": bool, "image": url | None,
+    "modality": "text" | "image", "error": str, "error_type": str}``。
     """
     model_id, meta = _resolve_fal_model()
 
-    # Collect any source images (primary + references) into one ordered list.
+    # 把所有源图像（主图 + 参考图）收集到一个有序列表中。
     source_images: list = []
     if isinstance(image_url, str) and image_url.strip():
         source_images.append(image_url.strip())
@@ -909,9 +898,8 @@ def image_generate_tool(
         if not (fal_key_is_configured() or _resolve_managed_fal_gateway()):
             raise ValueError(_build_no_backend_setup_message())
 
-        # If the caller supplied source images but the active model has no
-        # edit endpoint, fail with a clear, actionable message instead of
-        # silently dropping the images and producing an unrelated picture.
+        # 如果调用方提供了源图像，但当前模型没有编辑端点，则用一个清晰、
+        # 可执行的消息报错，而不是静默丢弃这些图像并生成一张无关的图片。
         if source_images and not edit_endpoint:
             raise ValueError(
                 f"Model '{meta.get('display', model_id)}' ({model_id}) is not "
@@ -939,7 +927,7 @@ def image_generate_tool(
             overrides["output_format"] = output_format
 
         if use_edit:
-            # Clamp reference count to the model's declared cap.
+            # 把参考图数量钳制到模型声明的上限。
             max_refs = int(meta.get("max_reference_images") or 1)
             clamped_sources = source_images[:max_refs] if max_refs > 0 else source_images
             arguments = _build_fal_edit_payload(
@@ -974,8 +962,8 @@ def image_generate_tool(
         if not images:
             raise ValueError("No images were generated")
 
-        # Edit endpoints already return the final composition; the Clarity
-        # upscaler is a text-to-image quality pass, so skip it for edits.
+        # 编辑端点已经返回最终合成结果；Clarity 放大器是 text-to-image 的
+        # 画质增强步骤，所以编辑场景下跳过它。
         should_upscale = bool(meta.get("upscale", False)) and not use_edit
 
         formatted_images = []
@@ -1043,18 +1031,18 @@ def image_generate_tool(
 
 
 def check_fal_api_key() -> bool:
-    """True if the FAL.ai API key (direct or managed gateway) is available."""
+    """如果 FAL.ai 的 API key（直接凭证或托管网关）可用，则返回 True。"""
     return bool(fal_key_is_configured() or _resolve_managed_fal_gateway())
 
 
 def _build_no_backend_setup_message() -> str:
-    """Build an actionable error string when no FAL backend is reachable.
+    """当没有任何 FAL 后端可达时，构造一条可执行的错误字符串。
 
-    Used by the in-tree FAL path. Mentions:
-      - FAL_KEY signup link
-      - managed-gateway status (if Nous tools are enabled)
-      - plugin alternative pointer (so users on a stale ``image_gen.provider``
-        know the registry exists and how to inspect it)
+    供树内（in-tree）FAL 路径使用。内容涉及：
+      - FAL_KEY 的注册链接
+      - 托管网关的状态（如果 Nous 工具已启用）
+      - 插件替代方案的指引（这样 ``image_gen.provider`` 处于陈旧值的用户
+        也能知道注册表的存在以及如何查看它）
     """
     lines = ["Image generation is unavailable in this environment.", ""]
     lines.append("Missing requirements:")
@@ -1089,30 +1077,29 @@ def _build_no_backend_setup_message() -> str:
 
 
 def check_image_generation_requirements() -> bool:
-    """True if any image gen backend is available.
+    """如果任一图像生成后端可用，则返回 True。
 
-    Providers are considered in this order:
+    按以下顺序考虑各 provider：
 
-    1. The in-tree FAL backend (FAL_KEY or managed gateway).
-    2. Any plugin-registered provider whose ``is_available()`` returns True.
+    1. 树内 FAL 后端（FAL_KEY 或托管网关）。
+    2. 任何已通过插件注册且 ``is_available()`` 返回 True 的 provider。
 
-    Plugins win only when the in-tree FAL path is NOT ready, which matches
-    the historical behavior: shipping hermes with a FAL key configured
-    should still expose the tool. The active selection among ready
-    providers is resolved per-call by ``image_gen.provider``.
+    只有当树内 FAL 路径未就绪时插件才会胜出，这与历史行为一致：随
+    hermes 发布但已配置了 FAL key 的环境应当仍然暴露该工具。在已就绪的
+    多个 provider 中，当前生效的那个由 ``image_gen.provider`` 在每次调用
+    时解析。
     """
     try:
         if check_fal_api_key():
-            # Trigger the lazy fal_client import here as the SDK presence
-            # check. Raises ImportError if the optional ``fal-client``
-            # package isn't installed; the caller's except ImportError
-            # below catches that and continues to plugin probing.
+            # 在这里触发 fal_client 的惰性导入，作为 SDK 是否存在的检查。
+            # 如果可选的 ``fal-client`` 包未安装，会抛出 ImportError；下面
+            # 调用方的 except ImportError 会捕获它并继续进行插件探测。
             _load_fal_client()
             return True
     except ImportError:
         pass
 
-    # Probe plugin providers. Discovery is idempotent and cheap.
+    # 探测插件 provider。发现过程是幂等的，且开销很小。
     try:
         from agent.image_gen_registry import list_providers
         from hermes_cli.plugins import _ensure_plugins_discovered
@@ -1131,7 +1118,7 @@ def check_image_generation_requirements() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Demo / CLI entry point
+# 演示 / CLI 入口
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("🎨 Image Generation Tools — FAL.ai multi-model support")
@@ -1166,17 +1153,15 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# 注册表
 # ---------------------------------------------------------------------------
 from tools.registry import registry, tool_error
 
 IMAGE_GENERATE_SCHEMA = {
     "name": "image_generate",
-    # Placeholder — the real description is rebuilt dynamically at
-    # get_tool_definitions() time so it reflects the active backend's actual
-    # capabilities (whether the selected model supports image-to-image /
-    # editing). See _build_dynamic_image_schema() below and the
-    # dynamic-tool-schemas skill.
+    # 占位符——真正的 description 会在 get_tool_definitions() 时被动态重建，
+    # 以反映当前后端的真实能力（所选模型是否支持图生图 / 编辑）。参见下方
+    # 的 _build_dynamic_image_schema() 以及 dynamic-tool-schemas 这个 skill。
     "description": (
         "Generate high-quality images from text prompts (text-to-image), or "
         "edit / transform an existing image (image-to-image) when the active "
@@ -1238,7 +1223,7 @@ IMAGE_GENERATE_SCHEMA = {
 
 
 def _read_configured_image_model():
-    """Return the value of ``image_gen.model`` from config.yaml, or None."""
+    """返回 config.yaml 中 ``image_gen.model`` 的值，没有则为 None。"""
     try:
         from hermes_cli.config import load_config
         cfg = load_config()
@@ -1253,15 +1238,14 @@ def _read_configured_image_model():
 
 
 def _read_configured_image_provider():
-    """Return the value of ``image_gen.provider`` from config.yaml, or None.
+    """返回 config.yaml 中 ``image_gen.provider`` 的值，没有则为 None。
 
-    We only consult the plugin registry when this is explicitly set — an
-    unset value keeps users on the in-tree FAL fallback even when other
-    providers happen to be registered (e.g. a user has OPENAI_API_KEY set
-    for other features but never asked for OpenAI image gen). ``"fal"``
-    explicitly routes through ``plugins/image_gen/fal/`` (which delegates
-    back into this module's pipeline via call-time indirection — see
-    issue #26241).
+    只有在这个值被显式设置时我们才会去查询插件注册表——未设置时，即使
+    恰好注册了其他 provider（例如某个用户为了别的功能设置了
+    OPENAI_API_KEY，但从未要求使用 OpenAI 图像生成），用户也仍会停留在
+    树内 FAL 这个回退路径上。``"fal"`` 会显式地经由
+    ``plugins/image_gen/fal/`` 路由（该插件通过调用时的间接引用回退到本
+    模块的管线中——参见 issue #26241）。
     """
     try:
         from hermes_cli.config import load_config
@@ -1282,31 +1266,28 @@ def _dispatch_to_plugin_provider(
     image_url: Optional[str] = None,
     reference_image_urls: Optional[list] = None,
 ):
-    """Route the call to a plugin-registered provider when one is selected.
+    """当选中了某个插件注册的 provider 时，把调用路由给它。
 
-    Returns a JSON string on dispatch, or ``None`` to fall through to the
-    in-tree FAL fallback in ``image_generate_tool``.
+    派发成功时返回一个 JSON 字符串；返回 ``None`` 则表示回退到
+    ``image_generate_tool`` 中的树内 FAL 路径。
 
-    Dispatch fires when ``image_gen.provider`` is explicitly set — including
-    ``"fal"`` itself, which now resolves to the
-    ``plugins/image_gen/fal/`` plugin (the plugin re-enters this module's
-    pipeline via ``_it`` indirection so behavior is identical to the
-    direct call, just routed through the registry).
+    当 ``image_gen.provider`` 被显式设置时触发派发——包括 ``"fal"`` 本身，
+    它现在会解析为 ``plugins/image_gen/fal/`` 插件（该插件通过 ``_it``
+    间接引用重新进入本模块的管线，所以行为与直接调用完全一致，只是经由
+    注册表路由而已）。
 
-    ``image_url`` / ``reference_image_urls`` enable image-to-image / editing:
-    they are forwarded to the provider's ``generate()`` so the backend can
-    route to its edit endpoint.
+    ``image_url`` / ``reference_image_urls`` 用于启用图生图 / 编辑功能：它们
+    会被转发给 provider 的 ``generate()``，以便后端路由到其编辑端点。
     """
     configured = _read_configured_image_provider()
     if not configured:
         return None
 
-    # Also read configured model so we can pass it to the plugin
+    # 同时读取已配置的模型，以便把它传给插件
     configured_model = _read_configured_image_model()
 
     try:
-        # Import locally so plugin discovery isn't triggered just by
-        # importing this module (tests rely on that).
+        # 在本地导入，这样仅导入本模块就不会触发插件发现（测试依赖这一行为）。
         from agent.image_gen_registry import get_provider
         from hermes_cli.plugins import _ensure_plugins_discovered
 
@@ -1318,9 +1299,9 @@ def _dispatch_to_plugin_provider(
 
     if provider is None:
         try:
-            # Long-lived sessions may have discovered plugins before a bundled
-            # backend was patched in or before config changed. Retry once with
-            # a forced refresh before surfacing a missing-provider error.
+            # 长时间运行的会话可能在某个内置后端被补丁加入之前、或配置变更
+            # 之前就已经发现了插件。在抛出 provider 缺失错误之前，先强制刷新
+            # 重试一次。
             _ensure_plugins_discovered(force=True)
             provider = get_provider(configured)
         except Exception as exc:
@@ -1353,10 +1334,9 @@ def _dispatch_to_plugin_provider(
             kwargs["reference_image_urls"] = norm_refs
         result = provider.generate(**kwargs)
     except TypeError as exc:
-        # A provider whose generate() signature predates image_url support
-        # (third-party plugin not yet updated) — retry without the new kwargs
-        # so text-to-image keeps working, but surface a clear note when the
-        # user actually asked for an edit.
+        # 某个 provider 的 generate() 签名早于 image_url 支持的引入（第三方
+        # 插件尚未更新）——去掉这些新的 kwargs 重试，以保证 text-to-image
+        # 仍然可用；但当用户确实发起的是编辑请求时，给出一条清晰的提示。
         if "image_url" in kwargs or "reference_image_urls" in kwargs:
             logger.warning(
                 "image_gen provider '%s' rejected image-to-image kwargs "
@@ -1415,8 +1395,7 @@ def _handle_image_generate(args, **kw):
     reference_image_urls = args.get("reference_image_urls")
     task_id = kw.get("task_id")
 
-    # Route to a plugin-registered provider if one is active (and it's
-    # not the in-tree FAL path).
+    # 如果当前激活了某个插件 provider（且不是树内 FAL 路径），则路由给它。
     dispatched = _dispatch_to_plugin_provider(
         prompt, aspect_ratio,
         image_url=image_url,
@@ -1435,29 +1414,28 @@ def _handle_image_generate(args, **kw):
 
 
 # ---------------------------------------------------------------------------
-# Dynamic schema — reflect the active backend's image-to-image capability
+# 动态 schema —— 反映当前后端的图生图能力
 # ---------------------------------------------------------------------------
 #
-# Why dynamic: whether the active model supports image-to-image / editing
-# depends entirely on the user's configured backend + model. Telling the
-# model up front ("the active model is text-to-image only — image_url will be
-# rejected") saves a wasted turn. Memoized by config.yaml mtime in
-# model_tools.get_tool_definitions(), so it rebuilds when the user switches
-# model/provider via `hermes tools` or `/skills`.
+# 为什么用动态：当前模型是否支持图生图 / 编辑，完全取决于用户配置的后端
+# + 模型。提前告知模型（"当前模型只支持 text-to-image——image_url 会被
+# 拒绝"）可以省下一个浪费的回合。在 model_tools.get_tool_definitions()
+# 中按 config.yaml 的 mtime 做了 memoize，所以当用户通过 `hermes tools`
+# 或 `/skills` 切换模型/provider 时它会重新构建。
 
 
 _GENERIC_IMAGE_DESCRIPTION = IMAGE_GENERATE_SCHEMA["description"]
 
 
 def _active_image_capabilities() -> Dict[str, Any]:
-    """Best-effort: return the active backend/model's image capabilities.
+    """尽力而为：返回当前后端/模型的图像能力。
 
-    Resolution order mirrors the runtime dispatch:
-    1. If ``image_gen.provider`` is set, ask that plugin provider.
-    2. Otherwise inspect the in-tree FAL model catalog for the active model.
+    解析顺序与运行时派发一致：
+    1. 如果设置了 ``image_gen.provider``，就询问该插件 provider。
+    2. 否则在树内 FAL 模型目录中查找当前模型。
 
-    Returns a dict like ``{"modalities": [...], "max_reference_images": N,
-    "model": "...", "provider": "..."}``. Never raises.
+    返回形如 ``{"modalities": [...], "max_reference_images": N,
+    "model": "...", "provider": "..."}`` 的 dict。永不抛异常。
     """
     info: Dict[str, Any] = {"modalities": ["text"], "max_reference_images": 0}
 
@@ -1485,7 +1463,7 @@ def _active_image_capabilities() -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             pass
 
-    # In-tree FAL path (provider unset or == "fal").
+    # 树内 FAL 路径（provider 未设置或 == "fal"）。
     try:
         model_id, meta = _resolve_fal_model()
         info["provider"] = "FAL.ai"

@@ -1,31 +1,28 @@
-"""CapabilityDescriptor — the relay handshake payload. EXPERIMENTAL.
+"""CapabilityDescriptor —— relay 握手载荷。EXPERIMENTAL。
 
-The connector hands a ``CapabilityDescriptor`` to the gateway's ``RelayAdapter``
-at handshake time; it tells the adapter which platform it is fronting and which
-capabilities to advertise to the ``GatewayStreamConsumer`` (char limit,
-draft-streaming, edit/threading support, markdown dialect, length unit). It is
-the linchpin of the generalization: one gateway adapter serves Discord,
-Telegram, Matrix, Signal, ... without per-platform branching.
+connector 在握手时把一个 ``CapabilityDescriptor`` 交给 gateway 的
+``RelayAdapter``；它告知 adapter 正在代理哪个平台，以及要向
+``GatewayStreamConsumer`` 声明哪些能力（字符上限、draft-streaming、edit/threading
+支持、markdown 方言、长度单位）。它是通用化的关键支点：一个 gateway adapter 即可
+服务 Discord、Telegram、Matrix、Signal 等，而无需 per-platform 的分支。
 
-EXPERIMENTAL: this schema MAY CHANGE without a deprecation cycle until at least
-two real Class-1 platforms have validated it. Evolution during the experimental
-phase is additive-only, gated by ``contract_version`` (see
-docs/relay-connector-contract.md).
+EXPERIMENTAL：在至少两个真实的 Class-1 平台验证通过之前，该 schema 可能不经
+deprecation 周期而变更。实验阶段的演进是 additive-only 的，由 ``contract_version``
+把关（见 docs/relay-connector-contract.md）。
 
-Field origins (most are a wire-serializable projection of ``PlatformEntry`` plus
-the per-instance capability methods on ``BasePlatformAdapter``):
+字段来源（多数是 ``PlatformEntry`` 的可序列化投影，加上 ``BasePlatformAdapter`` 上
+的 per-instance 能力方法）：
 
-- ``max_message_length`` -> ``PlatformEntry.max_message_length`` / adapter
-  ``MAX_MESSAGE_LENGTH`` attribute (read by stream_consumer).
-- ``len_unit``           -> selects which ``message_len_fn`` the adapter installs
-  ("chars" = builtin len; "utf16" = Telegram-style UTF-16 code-unit counting).
-- ``supports_draft_streaming`` -> adapter ``supports_draft_streaming()`` probe.
-- ``supports_edit``      -> whether edit-based streaming is possible (Discord/
-  Telegram yes; Signal/SMS no -> consumer degrades to one-message-per-segment).
-- ``supports_threads``   -> ``create_handoff_thread`` capability flag.
-- ``markdown_dialect``   -> presentation hint (e.g. "markdown_v2", "discord").
-- ``emoji`` / ``platform_hint`` / ``pii_safe`` -> ``PlatformEntry`` fields of the
-  same name.
+- ``max_message_length`` -> ``PlatformEntry.max_message_length`` / adapter 的
+  ``MAX_MESSAGE_LENGTH`` 属性（由 stream_consumer 读取）。
+- ``len_unit``           -> 决定 adapter 安装哪个 ``message_len_fn``
+  （"chars" = 内置 len；"utf16" = Telegram 风格的 UTF-16 code-unit 计数）。
+- ``supports_draft_streaming`` -> adapter 的 ``supports_draft_streaming()`` 探测。
+- ``supports_edit``      -> 是否可以做基于 edit 的流式（Discord/Telegram 可以；
+  Signal/SMS 不可以 -> consumer 退化为每段一条消息）。
+- ``supports_threads``   -> ``create_handoff_thread`` 能力标志。
+- ``markdown_dialect``   -> 展示提示（例如 "markdown_v2"、"discord"）。
+- ``emoji`` / ``platform_hint`` / ``pii_safe`` -> ``PlatformEntry`` 同名字段。
 """
 
 from __future__ import annotations
@@ -33,17 +30,17 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 
-# Bump additively (never reinterpret an existing field) during the experimental
-# phase; a breaking change requires updating both repos in lockstep.
+# 实验阶段以 additive 方式递增（绝不重新解释已有字段）；破坏性变更需要两个仓库同步
+# 更新。
 CONTRACT_VERSION = 1
 
 
 @dataclass(frozen=True)
 class CapabilityDescriptor:
-    """Immutable capability descriptor negotiated at relay handshake.
+    """在 relay 握手时协商出的、不可变的能力 descriptor。
 
-    Frozen so a descriptor cannot be mutated after handshake — the adapter
-    advertises a fixed capability profile for the life of the connection.
+    设为 frozen，以便 descriptor 在握手之后无法被修改——adapter 在连接的整个生命周期
+    内声明一份固定的能力画像。
     """
 
     contract_version: int
@@ -55,21 +52,20 @@ class CapabilityDescriptor:
     supports_threads: bool
     markdown_dialect: str
     len_unit: str  # "chars" | "utf16"
-    emoji: str = "\U0001f50c"  # 🔌 default (matches PlatformEntry default)
+    emoji: str = "\U0001f50c"  # 🔌 默认值（与 PlatformEntry 默认值一致）
     platform_hint: str = ""
     pii_safe: bool = False
 
     def to_json(self) -> str:
-        """Serialize to a compact, stable JSON string for the handshake frame."""
+        """序列化为紧凑、稳定的 JSON 字符串，用于握手帧。"""
         return json.dumps(asdict(self), sort_keys=True, ensure_ascii=False)
 
     @classmethod
     def from_json(cls, data: str) -> "CapabilityDescriptor":
-        """Deserialize from a handshake JSON string.
+        """从握手 JSON 字符串反序列化。
 
-        Unknown keys are ignored (forward-compat: a newer connector may send
-        fields this gateway does not know yet); missing optional keys fall back
-        to dataclass defaults.
+        未知 key 会被忽略（前向兼容：一个更新的 connector 可能发送本 gateway 尚不认识
+        的字段）；缺失的可选 key 会回退到 dataclass 默认值。
         """
         raw = json.loads(data)
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
@@ -87,19 +83,16 @@ class CapabilityDescriptor:
         supports_threads: bool = False,
         markdown_dialect: str = "plain",
     ) -> "CapabilityDescriptor":
-        """Project a ``gateway.platform_registry.PlatformEntry`` into a descriptor.
+        """把一个 ``gateway.platform_registry.PlatformEntry`` 投影为 descriptor。
 
-        Demonstrates the descriptor is a *subset/projection* of what
-        ``PlatformEntry`` already encodes, not a parallel concept: ``label``,
-        ``max_message_length``, ``emoji``, ``platform_hint``, ``pii_safe`` and
-        the platform name come straight off the entry. The runtime capability
-        bits that ``PlatformEntry`` does NOT encode (length unit, draft/edit/
-        thread/markdown behavior) are supplied by the caller — in production
-        the connector fills these from the live adapter's capability methods.
+        用以说明 descriptor 只是 ``PlatformEntry`` 已编码内容的*子集/投影*，而不是一个
+        并行的概念：``label``、``max_message_length``、``emoji``、``platform_hint``、
+        ``pii_safe`` 以及平台名都直接取自该 entry。``PlatformEntry`` 未编码的运行时
+        能力位（长度单位、draft/edit/thread/markdown 行为）由调用方提供——在生产环境中
+        connector 从活跃 adapter 的能力方法中填充这些字段。
 
-        ``max_message_length`` of 0 on a ``PlatformEntry`` means "no limit";
-        we map that to the stream_consumer default of 4096 so the descriptor
-        always carries a concrete chunking bound.
+        ``PlatformEntry`` 上为 0 的 ``max_message_length`` 表示“无限制”；我们把它映射
+        为 stream_consumer 的默认值 4096，以便 descriptor 始终携带一个具体的分块上限。
         """
         max_len = getattr(entry, "max_message_length", 0) or 4096
         return cls(

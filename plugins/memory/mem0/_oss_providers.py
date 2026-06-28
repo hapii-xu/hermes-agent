@@ -1,4 +1,4 @@
-"""OSS provider definitions for LLM, embedder, and vector store."""
+"""OSS 提供者定义，包括 LLM、嵌入模型和向量存储。"""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ KNOWN_DIMS: dict[str, int] = {
 
 
 def validate_oss_config(oss_config: dict) -> list[str]:
-    """Validate an OSS config dict. Returns list of error strings (empty = valid)."""
+    """验证 OSS 配置字典。返回错误信息列表（空列表表示配置有效）。"""
     errors: list[str] = []
 
     for section, registry in [("llm", LLM_PROVIDERS), ("embedder", EMBEDDER_PROVIDERS),

@@ -1,20 +1,20 @@
-"""Best-effort WebSocket publisher transport for the PTY-side gateway.
+"""PTY 侧网关的尽力而为 WebSocket 发布传输。
 
-The dashboard's `/api/pty` spawns `hermes --tui` as a child process, which
-spawns its own ``tui_gateway.entry``.  Tool/reasoning/status events fire on
-*that* gateway's transport — three processes removed from the dashboard
-server itself.  To surface them in the dashboard sidebar (`/api/events`),
-the PTY-side gateway opens a back-WS to the dashboard at startup and
-mirrors every emit through this transport.
+仪表板的 `/api/pty` 会生成 `hermes --tui` 作为子进程，该子进程
+又会生成自己的 ``tui_gateway.entry``。工具/推理/状态事件在
+*那个* 网关的传输层上触发 — 距离仪表板
+服务器本身有三层进程之遥。为了在仪表板侧边栏（`/api/events`）中
+展示这些事件，PTY 侧网关在启动时向仪表板打开一个反向 WS 连接，
+并通过此传输镜像每一次发送。
 
-Wire protocol: newline-framed JSON dicts (the same shape the dispatcher
-already passes to ``write``).  No JSON-RPC envelope here — the dashboard's
-``/api/pub`` endpoint just rebroadcasts the bytes verbatim to subscribers.
+线路协议：以换行符分隔的 JSON 字典（与调度器
+已经传递给 ``write`` 的格式相同）。此处没有 JSON-RPC 信封 — 仪表板的
+``/api/pub`` 端点只是将字节原样重播给订阅者。
 
-Failure mode: silent.  The agent loop must never block waiting for the
-sidecar to drain.  A dead WS short-circuits all subsequent writes.
-Actual ``send`` calls run on a daemon thread so the TeeTransport's
-``write`` returns after enqueueing (best-effort; drop when the queue is full).
+失败模式：静默。代理循环绝不能阻塞等待
+sidecar 排空。断开的 WS 会使所有后续写入短路。
+实际的 ``send`` 调用在守护线程上运行，因此 TeeTransport 的
+``write`` 在入队后即返回（尽力而为；队列满时丢弃）。
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from typing import Optional
 
 try:
     from websockets.sync.client import connect as ws_connect
-except ImportError:  # pragma: no cover - websockets is a required install path
+except ImportError:  # pragma: no cover - websockets 是必需的安装路径
     ws_connect = None  # type: ignore[assignment]
 
 _log = logging.getLogger(__name__)
@@ -107,8 +107,8 @@ class WsPublisherTransport:
             try:
                 self._q.put_nowait(_DRAIN_STOP)
             except queue.Full:
-                # Best-effort: if the queue is wedged, the daemon thread
-                # will be torn down with the process.
+                # 尽力而为：如果队列卡住，守护线程
+                # 会随进程一起被销毁。
                 pass
             w.join(timeout=3.0)
         self._worker = None

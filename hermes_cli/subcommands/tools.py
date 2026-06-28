@@ -1,7 +1,7 @@
-"""``hermes tools`` subcommand parser.
+"""``hermes tools`` 子命令解析器。
 
-Extracted from ``hermes_cli/main.py:main()`` (god-file Phase 2 follow-up).
-Handler injected to avoid importing ``main``.
+从 ``hermes_cli/main.py:main()`` 中提取（god-file 阶段 2 后续）。
+通过注入处理器避免导入 ``main``。
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from typing import Callable
 
 
 def build_tools_parser(subparsers, *, cmd_tools: Callable) -> None:
-    """Attach the ``tools`` subcommand to ``subparsers``."""
+    """将 ``tools`` 子命令附加到 ``subparsers``。"""
     tools_parser = subparsers.add_parser(
         "tools",
         help="Configure which tools are enabled per platform",

@@ -45,8 +45,8 @@ describe('hasLeadGap', () => {
   })
 
   it('suppresses the gap after blocks that already paint a trailing line', () => {
-    // user and diff carry their own marginBottom — the following block must
-    // not add a second blank line on top of it.
+    // user 和 diff 自带 marginBottom —— 后续 block 不能
+    // 在其上再添加第二行空行。
     expect(hasLeadGap(user, trail)).toBe(false)
     expect(hasLeadGap(user, model)).toBe(false)
     expect(hasLeadGap(diff, model)).toBe(false)
@@ -76,7 +76,7 @@ describe('blockRenders', () => {
   it('renders a content-bearing trail unless every section is hidden', () => {
     expect(blockRenders(trail, { detailsMode: 'collapsed' })).toBe(true)
     expect(blockRenders(trail, { detailsMode: 'expanded' })).toBe(true)
-    // /details hidden routes through commandOverride, which hides every section.
+    // /details hidden 通过 commandOverride 路由，隐藏所有 section。
     expect(blockRenders(trail, { detailsMode: 'hidden', commandOverride: true })).toBe(false)
   })
 
@@ -110,8 +110,8 @@ describe('prevRenderedMsg', () => {
   })
 
   it('skips hidden trails so grouping sees the nearest visible block', () => {
-    // With trails hidden, the prose at index 2 groups against the user (not the
-    // invisible trail) and the prose at index 4 groups against the prose at 2.
+    // 当 trails 隐藏时，index 2 处的散文与 user 分组（而非
+    // 不可见的 trail），index 4 处的散文与 index 2 处的散文分组。
     expect(prevRenderedMsg(at, 2, hiddenCtx)).toBe(rows[0])
     expect(prevRenderedMsg(at, 4, hiddenCtx)).toBe(rows[2])
   })

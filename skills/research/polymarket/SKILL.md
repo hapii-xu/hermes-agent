@@ -1,77 +1,77 @@
 ---
 name: polymarket
-description: "Query Polymarket: markets, prices, orderbooks, history."
+description: "查询 Polymarket：市场、价格、订单簿、历史数据。"
 version: 1.0.0
 author: Hermes Agent + Teknium
 tags: [polymarket, prediction-markets, market-data, trading]
 platforms: [linux, macos, windows]
 ---
 
-# Polymarket — Prediction Market Data
+# Polymarket —— 预测市场数据
 
-Query prediction market data from Polymarket using their public REST APIs.
-All endpoints are read-only and require zero authentication.
+使用 Polymarket 的公开 REST API 查询预测市场数据。
+所有端点均为只读，且无需任何认证。
 
-See `references/api-endpoints.md` for the full endpoint reference with curl examples.
+完整的端点参考（含 curl 示例）见 `references/api-endpoints.md`。
 
-## When to Use
+## 何时使用
 
-- User asks about prediction markets, betting odds, or event probabilities
-- User wants to know "what are the odds of X happening?"
-- User asks about Polymarket specifically
-- User wants market prices, orderbook data, or price history
-- User asks to monitor or track prediction market movements
+- 用户询问预测市场、投注赔率或事件概率
+- 用户想知道"X 发生的概率是多少？"
+- 用户专门询问 Polymarket
+- 用户想要市场价格、订单簿数据或价格历史
+- 用户要求监控或追踪预测市场走势
 
-## Key Concepts
+## 关键概念
 
-- **Events** contain one or more **Markets** (1:many relationship)
-- **Markets** are binary outcomes with Yes/No prices between 0.00 and 1.00
-- Prices ARE probabilities: price 0.65 means the market thinks 65% likely
-- `outcomePrices` field: JSON-encoded array like `["0.80", "0.20"]`
-- `clobTokenIds` field: JSON-encoded array of two token IDs [Yes, No] for price/book queries
-- `conditionId` field: hex string used for price history queries
-- Volume is in USDC (US dollars)
+- **事件（Events）** 包含一个或多个 **市场（Markets）**（1:多关系）
+- **市场** 是二元结果，有介于 0.00 和 1.00 之间的 Yes/No 价格
+- 价格即概率：价格 0.65 表示市场认为可能性为 65%
+- `outcomePrices` 字段：JSON 编码的数组，例如 `["0.80", "0.20"]`
+- `clobTokenIds` 字段：JSON 编码的两个 token ID 数组 [Yes, No]，用于价格/订单簿查询
+- `conditionId` 字段：十六进制字符串，用于价格历史查询
+- 成交量以 USDC（美元）计价
 
-## Three Public APIs
+## 三大公开 API
 
-1. **Gamma API** at `gamma-api.polymarket.com` — Discovery, search, browsing
-2. **CLOB API** at `clob.polymarket.com` — Real-time prices, orderbooks, history
-3. **Data API** at `data-api.polymarket.com` — Trades, open interest
+1. **Gamma API**，地址 `gamma-api.polymarket.com` —— 发现、搜索、浏览
+2. **CLOB API**，地址 `clob.polymarket.com` —— 实时价格、订单簿、历史
+3. **Data API**，地址 `data-api.polymarket.com` —— 成交、未平仓量
 
-## Typical Workflow
+## 典型工作流
 
-When a user asks about prediction market odds:
+当用户询问预测市场赔率时：
 
-1. **Search** using the Gamma API public-search endpoint with their query
-2. **Parse** the response — extract events and their nested markets
-3. **Present** market question, current prices as percentages, and volume
-4. **Deep dive** if asked — use clobTokenIds for orderbook, conditionId for history
+1. 使用 Gamma API 的 public-search 端点，按其查询**搜索**
+2. **解析**响应 —— 提取事件及其嵌套的市场
+3. **呈现**市场问题、以百分比表示的当前价格，以及成交量
+4. 如被要求**深入分析** —— 用 clobTokenIds 查订单簿，用 conditionId 查历史
 
-## Presenting Results
+## 呈现结果
 
-Format prices as percentages for readability:
-- outcomePrices `["0.652", "0.348"]` becomes "Yes: 65.2%, No: 34.8%"
-- Always show the market question and probability
-- Include volume when available
+为可读性起见，将价格格式化为百分比：
+- outcomePrices `["0.652", "0.348"]` 应呈现为 "Yes: 65.2%, No: 34.8%"
+- 始终展示市场问题和概率
+- 在可用时附上成交量
 
-Example: `"Will X happen?" — 65.2% Yes ($1.2M volume)`
+示例：`"Will X happen?" — 65.2% Yes ($1.2M volume)`
 
-## Parsing Double-Encoded Fields
+## 解析双重编码字段
 
-The Gamma API returns `outcomePrices`, `outcomes`, and `clobTokenIds` as JSON strings
-inside JSON responses (double-encoded). When processing with Python, parse them with
-`json.loads(market['outcomePrices'])` to get the actual array.
+Gamma API 在 JSON 响应中以 JSON 字符串形式返回 `outcomePrices`、`outcomes` 和 `clobTokenIds`
+（即双重编码）。用 Python 处理时，使用
+`json.loads(market['outcomePrices'])` 解析以获得真正的数组。
 
-## Rate Limits
+## 速率限制
 
-Generous — unlikely to hit for normal usage:
-- Gamma: 4,000 requests per 10 seconds (general)
-- CLOB: 9,000 requests per 10 seconds (general)
-- Data: 1,000 requests per 10 seconds (general)
+相当宽松 —— 正常使用基本不会触及：
+- Gamma：每 10 秒 4,000 次请求（通用）
+- CLOB：每 10 秒 9,000 次请求（通用）
+- Data：每 10 秒 1,000 次请求（通用）
 
-## Limitations
+## 限制
 
-- This skill is read-only — it does not support placing trades
-- Trading requires wallet-based crypto authentication (EIP-712 signatures)
-- Some new markets may have empty price history
-- Geographic restrictions apply to trading but read-only data is globally accessible
+- 本技能是只读的 —— 不支持下单交易
+- 交易需要基于钱包的加密认证（EIP-712 签名）
+- 某些新市场可能没有价格历史
+- 交易受地理限制，但只读数据在全球范围可访问

@@ -1,6 +1,6 @@
-"""CLI commands for Honcho integration management.
+"""Honcho 集成管理的 CLI 命令。
 
-Handles: hermes honcho setup | status | sessions | map | peer
+处理: hermes honcho setup | status | sessions | map | peer
 """
 
 from __future__ import annotations
@@ -16,13 +16,13 @@ from hermes_cli.config import cfg_get
 
 
 def clone_honcho_for_profile(profile_name: str) -> bool:
-    """Auto-clone Honcho config for a new profile from the default host block.
+    """自动从默认 host 块克隆 Honcho 配置到新 profile。
 
-    Called during profile creation. If Honcho is configured on the default
-    host, creates a new host block for the profile with inherited settings
-    and auto-derived workspace/aiPeer.
+    在 profile 创建期间调用。如果默认 host 上已配置 Honcho，
+    则为该 profile 创建一个新的 host 块，继承设置并自动派生
+    workspace/aiPeer。
 
-    Returns True if a host block was created, False if Honcho isn't configured.
+    如果创建了 host 块返回 True，如果 Honcho 未配置则返回 False。
     """
     cfg = _read_config()
     if not cfg:
@@ -31,18 +31,18 @@ def clone_honcho_for_profile(profile_name: str) -> bool:
     hosts = cfg.get("hosts", {})
     default_block = hosts.get(HOST, {})
 
-    # No default host block and no root-level API key = Honcho not configured
+    # 没有默认 host 块且没有根级 API key = Honcho 未配置
     has_key = bool(cfg.get("apiKey") or os.environ.get("HONCHO_API_KEY"))
     if not default_block and not has_key:
         return False
 
     new_host = profile_host_key(profile_name)
     if new_host in hosts:
-        return False  # already exists
+        return False  # 已存在
 
-    # Clone settings from default block, override identity fields.
-    # Identity-mapping keys (pinUserPeer, userPeerAliases, runtimePeerPrefix)
-    # carry the operator's runtime-to-peer routing intent from #27371.
+    # 从默认块克隆设置，覆盖身份字段。
+    # 身份映射键（pinUserPeer、userPeerAliases、runtimePeerPrefix）
+    # 携带操作者的运行时到 peer 路由意图，来自 #27371。
     new_block = {}
     for key in ("recallMode", "writeFrequency", "sessionStrategy",
                 "sessionPeerPrefix", "contextTokens", "dialecticReasoningLevel",
@@ -52,19 +52,19 @@ def clone_honcho_for_profile(profile_name: str) -> bool:
         val = default_block.get(key)
         if val is not None:
             new_block[key] = val
-    # Carry a legacy default-block pinPeerName forward under the canonical key.
+    # 将旧版默认块的 pinPeerName 迁移到规范键。
     if "pinUserPeer" not in new_block and default_block.get("pinPeerName") is not None:
         new_block["pinUserPeer"] = default_block["pinPeerName"]
 
-    # Inherit peer name from default
+    # 从默认块继承 peer 名称
     peer_name = default_block.get("peerName") or cfg.get("peerName")
     if peer_name:
         new_block["peerName"] = peer_name
 
-    # AI peer is profile-specific; workspace is shared so all profiles
-    # see the same user context, sessions, and project history.
-    # Use the bare profile name as the peer identity (not the host key)
-    # because Honcho's peer ID pattern is ^[a-zA-Z0-9_-]+$ (no dots).
+    # AI peer 是 profile 特有的；workspace 是共享的，这样所有 profile
+    # 都能看到相同的用户上下文、session 和项目历史。
+    # 使用裸 profile 名称作为 peer 身份（而不是 host key），
+    # 因为 Honcho 的 peer ID 模式是 ^[a-zA-Z0-9_-]+$（不支持点）。
     new_block["aiPeer"] = profile_name
     new_block["workspace"] = default_block.get("workspace") or cfg.get("workspace") or HOST
     new_block["enabled"] = default_block.get("enabled", True)

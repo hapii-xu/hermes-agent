@@ -1,29 +1,29 @@
 # kawaii
 
-Japanese cute style with big eyes and pastel colors
+日系可爱风格，大眼睛和粉彩色调
 
-## Color Palette
+## 配色
 
-- Primary: Soft pastels - pink (#FFB6C1), mint (#98D8C8), lavender (#E6E6FA)
-- Background: Light pink or cream, sparkle overlays
-- Accents: Bright pops, star and heart shapes
+- 主色：柔和粉彩——粉红 (#FFB6C1)、薄荷 (#98D8C8)、薰衣草 (#E6E6FA)
+- 背景：浅粉或奶油色，闪光叠加
+- 点缀：亮色点缀，星形和心形
 
-## Visual Elements
+## 视觉元素
 
-- Big sparkly eyes on characters
-- Rounded, soft shapes
-- Blushing cheeks
-- Sparkles and stars scattered
-- Cute animal characters
-- Chibi proportions
+- 角色的大而闪亮的眼睛
+- 圆润、柔软的形状
+- 泛红的脸颊
+- 散布的闪光和星星
+- 可爱的动物角色
+- Q 版比例
 
-## Typography
+## 字体排印
 
-- Rounded, bubbly fonts
-- Cute decorations on letters
-- Hearts and stars in text
-- Soft, friendly appearance
+- 圆润、气泡感字体
+- 字母上的可爱装饰
+- 文字中的爱心和星星
+- 柔软、友好的外观
 
-## Best For
+## 最适用于
 
-Cute tutorials, children's education, lifestyle content, character-driven explanations
+可爱教程、儿童教育、生活方式内容、角色驱动的讲解

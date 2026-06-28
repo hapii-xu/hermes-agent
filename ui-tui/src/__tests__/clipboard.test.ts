@@ -114,7 +114,7 @@ describe('writeClipboardText', () => {
 
     const start = vi.fn().mockReturnValue(child)
 
-    // Linux with no WAYLAND_DISPLAY / no WSL_INTEROP — falls through xclip then xsel, both fail
+    // Linux 没有 WAYLAND_DISPLAY / 没有 WSL_INTEROP — 依次尝试 xclip 和 xsel，均失败
     await expect(writeClipboardText('hello', 'linux', start, {})).resolves.toBe(false)
   })
 
@@ -195,7 +195,7 @@ describe('writeClipboardText', () => {
       once: vi.fn((event: string, cb: (code?: number) => void) => {
         if (event === 'close') {
           callCount++
-          // wl-copy fails, xclip succeeds
+          // wl-copy 失败，xclip 成功
           cb(callCount === 1 ? 1 : 0)
         }
 
@@ -231,7 +231,7 @@ describe('writeClipboardText', () => {
       once: vi.fn((event: string, cb: (code?: number) => void) => {
         if (event === 'close') {
           callCount++
-          cb(callCount < 3 ? 1 : 0) // first two fail, third (xsel) succeeds
+          cb(callCount < 3 ? 1 : 0) // 前两次失败，第三次（xsel）成功
         }
 
         return child
@@ -269,7 +269,7 @@ describe('writeClipboardText', () => {
       expect.arrayContaining(['-NoProfile', '-NonInteractive']),
       expect.anything()
     )
-    // PowerShell uses base64-encoded UTF-8 via command argument, not stdin
+    // PowerShell 通过 command 参数传递 base64 编码的 UTF-8，而非 stdin
     expect(stdin.end).not.toHaveBeenCalled()
     const calledArgs = start.mock.calls[0][1] as string[]
     const commandIdx = calledArgs.indexOf('-Command')
@@ -307,7 +307,7 @@ describe('writeClipboardText', () => {
       expect.arrayContaining(['-NoProfile', '-NonInteractive']),
       expect.anything()
     )
-    // PowerShell uses base64-encoded UTF-8 via command argument, not stdin
+    // PowerShell 通过 command 参数传递 base64 编码的 UTF-8，而非 stdin
     expect(stdin.end).not.toHaveBeenCalled()
     const calledArgs = start.mock.calls[0][1] as string[]
     const commandIdx = calledArgs.indexOf('-Command')
@@ -338,7 +338,7 @@ describe('writeClipboardText', () => {
       expect.arrayContaining(['-NoProfile', '-NonInteractive']),
       expect.anything()
     )
-    // PowerShell uses base64-encoded UTF-8 via command argument, not stdin
+    // PowerShell 通过 command 参数传递 base64 编码的 UTF-8，而非 stdin
     expect(stdin.end).not.toHaveBeenCalled()
   })
 

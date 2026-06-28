@@ -1,4 +1,4 @@
-"""Credential-pool auth subcommands."""
+"""凭证池认证子命令。"""
 
 from __future__ import annotations
 
@@ -33,12 +33,12 @@ from hermes_constants import OPENROUTER_BASE_URL
 from hermes_cli.secret_prompt import masked_secret_prompt
 
 
-# Providers that support OAuth login in addition to API keys.
+# 除 API key 外，还支持 OAuth 登录的提供商。
 _OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth"}
 
 
 def _get_custom_provider_names() -> list:
-    """Return list of (display_name, pool_key, provider_key) tuples."""
+    """返回 (display_name, pool_key, provider_key) 元组列表。"""
     try:
         from hermes_cli.config import get_compatible_custom_providers, load_config
 
@@ -59,11 +59,11 @@ def _get_custom_provider_names() -> list:
 
 
 def _resolve_custom_provider_input(raw: str) -> str | None:
-    """If raw input matches a custom_providers entry name (case-insensitive), return its pool key."""
+    """若原始输入（不区分大小写）匹配某个 custom_providers 条目名称，则返回其 pool key。"""
     normalized = (raw or "").strip().lower().replace(" ", "-")
     if not normalized:
         return None
-    # Direct match on 'custom:name' format
+    # 直接匹配 'custom:name' 格式
     if normalized.startswith(CUSTOM_POOL_PREFIX):
         return normalized
     for display_name, pool_key, provider_key in _get_custom_provider_names():

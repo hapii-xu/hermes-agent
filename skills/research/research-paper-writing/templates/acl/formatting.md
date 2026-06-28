@@ -1,326 +1,324 @@
-# Instructions for *ACL Proceedings
+# *ACL 论文集指南
 
-The following instructions are for authors of papers submitted for review to ACL conferences (hereafter, "review version") or paper accepted for publication in its proceedings (hereafter, "final version").
-All authors are required to adhere to these specifications.
+以下指南面向将论文提交至 ACL 系列会议评审（以下简称「评审版」）或被接收发表至其论文集（以下简称「最终版」）的作者。
+所有作者都必须遵守这些规范。
 
-## Style Files
+## 样式文件
 
-*ACL provides style files for LaTeX and Microsoft Word that meet these requirements. They can be found at:
+*ACL 提供满足这些要求的 LaTeX 和 Microsoft Word 样式文件。可在以下地址找到：
 
 > https://acl-org.github.io/ACLPUB/
 
-We strongly recommend the use of these style files, which have been appropriately tailored for the *ACL proceedings.
+我们强烈推荐使用这些样式文件，它们已经针对 *ACL 论文集做了恰当调整。
 
-## Paper Length
+## 论文长度
 
-The conference accepts submissions of long papers and short papers.
-Review versions of long papers may have up to eight (8) pages of content plus unlimited pages for references.
-Upon acceptance, final versions of long papers will be given one additional page -- up to nine (9) pages of content plus unlimited pages for acknowledgements and references -- so that reviewers' comments can be taken into account.
-Review versions of short papers may have up to four (4) pages of content, plus unlimited pages for references.
-Final versions of short papers may have up to five (5) pages, plus unlimited pages for acknowledgements and references.
-For both long and short papers, all figures and tables that are part of the main text must fit within these page limits.
+会议接收长文和短文投稿。
+长文评审版最多可有八（8）页正文，外加不限页数的参考文献。
+一经接收，长文最终版会获得额外一页——最多九（9）页正文，外加不限页数的致谢和参考文献——以便把审稿意见纳入考量。
+短文评审版最多可有四（4）页正文，外加不限页数的参考文献。
+短文最终版最多可有五（5）页，外加不限页数的致谢和参考文献。
+对于长文和短文，所有作为正文一部分的图和表都必须容纳在这些页数限制之内。
 
-The conference encourages submission of appendices and supplementary material, which are not required to fit within these page limits. However, review versions of papers must be self-contained: it is optional for reviewers to look at appendices or supplementary material. Please see [Appendices](#Appendices) and [Supplementary](#Supplementary Material) for more information.
+会议鼓励提交附录和补充材料，它们无需受这些页数限制。但评审版论文必须自成一体：审稿人可选择是否查看附录或补充材料。更多信息请见 [附录](#Appendices) 和 [补充材料](#Supplementary Material)。
 
-Review versions should not refer, for further detail, to documents, code or data resources that are not available to the reviewers.
+评审版不应为了进一步细节而引用审稿人无法获取的文档、代码或数据资源。
 
-Papers that do not conform to these requirements may be rejected without review.
+不符合这些要求的论文可能不经评审即被拒稿。
 
-Workshop chairs may have different rules for allowed length and whether appendices or supplementary materials are welcome.
-As always, the respective call for papers is the authoritative source.
+研讨会主席对允许的长度，以及是否欢迎附录或补充材料，可能有不同规则。
+一如既往，相应的征稿通知是权威来源。
 
-## Anonymity
+## 匿名性
 
-As reviewing will be double-blind, review versions must not include any identifying information about the authors (such as names, affiliations, or URLs).
-Self-references that reveal the author's identity, e.g.,
+由于评审为双盲，评审版不得包含任何关于作者的识别信息（如姓名、单位或 URL）。
+泄露作者身份的自引，例如
 
 > We previously showed (Gusfield, 1997)...
 
-must be avoided, and anonymous citations, e.g.,
+必须避免，而匿名引用，例如
 
 > We previously showed (Anonymous, 1997)...
 
-should also be avoided. Instead, use citations such as
+也应避免。请改用如下引用
 
 > Gusfield (1997) previously showed...
 
-Review versions must not include acknowledgements.
+评审版不得包含致谢。
 
-**Papers that do not conform to these requirements may be rejected without review.**
+**不符合这些要求的论文可能不经评审即被拒稿。**
 
-Any preliminary non-archival versions of submitted papers should be listed in the submission form but not in the review version of the paper.
-Reviewers are generally aware that authors may present preliminary versions of their work in other venues, but will not be provided the list of previous presentations from the submission form.
+已提交论文的任何初步非存档版本应在投稿表单中列出，但不要出现在论文的评审版中。
+审稿人通常知晓作者可能在其他场合作过初步版本的报告，但不会从投稿表单获得以往报告的列表。
 
-Once a paper has been accepted to the conference, the final version should include the author's names and affiliations, and is allowed to use self-references.
+一旦论文被会议接收，最终版应包含作者姓名和单位，并允许使用自引。
 
-## Multiple Submission
+## 多重投稿
 
-Papers that have been or will be submitted to other meetings or publications must indicate this at submission time in the START submission form, and must be withdrawn from the other venues if accepted by *ACL.
-Authors of papers accepted for presentation at *ACL must notify the program chairs by the deadline for final versions ("camera-ready deadline") whether the paper will be presented.
-We will not accept for publication or presentation any papers that overlap significantly in content or results with papers that will be (or have been) published elsewhere.
+已经或将要投稿至其他会议或出版物的论文，必须在投稿时于 START 投稿表中注明，且若被 *ACL 接收必须从其他venue撤回。
+被 *ACL 接收用于展示的论文作者，必须在最终版本截止日期（「camera-ready 截止日期」）前通知程序主席论文是否会被展示。
+我们不会接收或展示任何在内容或结果上与将（或已）在其他地方发表的论文有显著重叠的论文。
 
-Authors submitting more than one paper to *ACL must ensure that submissions do not overlap significantly (>25%) with each other in content or results.
+向 *ACL 投稿多篇论文的作者必须确保投稿之间在内容或结果上没有显著（>25%）重叠。
 
-## Formatting Instructions
+## 格式说明
 
-### File Format
+### 文件格式
 
-Papers must be in Adobe Portable Document Format (PDF).
-Please make sure that your PDF file embeds all necessary fonts (especially for tree diagrams, symbols, and Asian languages).
-When you print or create the PDF file, there is usually an option in your printer setup to include none, all or just non-standard fonts.
-Please make sure that you select the option of including *all* the fonts.
-**Before sending it, test your PDF by printing it from a computer different from the one where it was created.**
+论文必须为 Adobe 便携文档格式（PDF）。
+请确保你的 PDF 文件内嵌了所有必需字体（尤其是树状图、符号和亚洲语言）。
+在打印或创建 PDF 时，打印机设置中通常有选项可选择包含无字体、所有字体或仅非标准字体。
+请确保你选择了包含*所有*字体的选项。
+**在发送之前，通过在另一台与创建文件不同的电脑上打印来测试你的 PDF。**
 
-Some word processors may generate very large PDF files, where each page is rendered as an image.
-Such images may reproduce poorly.
-In this case, try alternative ways to obtain the PDF.
+某些文字处理软件可能生成非常大的 PDF 文件，其中每一页都被渲染为图像。
+此类图像可能复制效果很差。
+此时，请尝试用其他方式生成 PDF。
 
-All papers must use **A4 paper format** (21 cm x 29.7 cm).
-Papers must not be submitted with any other paper size.
+所有论文必须使用 **A4 纸张格式**（21 cm x 29.7 cm）。
+不得提交任何其他纸张尺寸的论文。
 
-If you cannot meet the above requirements, please contact the publication chairs as soon as possible.
+若你无法满足上述要求，请尽快联系出版主席。
 
-### Layout
+### 版式
 
-All text except for page numbers must fit within the margins.
+除页码外，所有文本都必须位于页边距之内。
 
-Review versions should have page numbers, centered in the bottom margin, but **pages should not be numbered in the final version.**
+评审版应有页码，居中于底部页边距，但**最终版的页面不应编号。**
 
-Manuscripts must be set in two columns.
-Exceptions to the two-column format include the title, authors' names and complete addresses, which must be centered at the top of the first page, and any full-width figures or tables.
+稿件必须设为双栏。
+双栏格式的例外包括标题、作者姓名和完整地址，这些必须居中于首页顶部，以及任何跨双栏的图或表。
 
-The exact dimensions for a page on A4 paper are:
+A4 纸张上一个页面的确切尺寸为：
 
-* Left margin: 2.5 cm
-* Right margin: 2.5 cm
-* Top margin: 2.5 cm
-* Bottom margin: 2.5 cm
-* Column width: 7.7 cm
-* Column height: 24.7 cm
-* Gap between columns: 0.6 cm
+* 左边距：2.5 cm
+* 右边距：2.5 cm
+* 上边距：2.5 cm
+* 下边距：2.5 cm
+* 栏宽：7.7 cm
+* 栏高：24.7 cm
+* 栏间距：0.6 cm
 
-In the review version, a ruler (line numbers in the left and right margins of the article) should be printed, so that reviewers may comment on particular lines in the paper.
-The ruler should not change the appearance of any other content on the page.
-The final version should not contain a ruler.
+在评审版中，应打印一把标尺（文章左右页边距处的行号），以便审稿人评论论文中的特定行。
+该标尺不应改变页面上任何其他内容的外观。
+最终版不应包含标尺。
 
-### Fonts
+### 字体
 
-All text (except non-Latin scripts and mathematical formulas) should be set in **Times Roman**.
-If Times Roman is unavailable, you may use **Times New Roman** or **Computer Modern Roman.**
+所有文本（非拉丁文字和数学公式除外）应设为 **Times Roman**。
+若 Times Roman 不可用，可使用 **Times New Roman** 或 **Computer Modern Roman。**
 
-The following table specifies what font sizes and styles must be used for each type of text in the manuscript.
+下表规定了稿件中每种文本类型必须使用的字号和样式。
 
-| Type of Text          | Font Size | Style |
+| 文本类型          | 字号 | 样式 |
 | --------------------- | --------- | ----- |
-| paper title           | 15 pt     | bold  |
-| author names          | 12 pt     | bold  |
-| author affiliation    | 12 pt     |       |
-| the word ``Abstract'' | 12 pt     | bold  |
-| section titles        | 12 pt     | bold  |
-| subsection titles     | 11 pt     | bold  |
-| document text         | 11 pt     |       |
-| captions              | 10 pt     |       |
-| abstract text         | 10 pt     |       |
-| bibliography          | 10 pt     |       |
-| footnotes             | 9 pt      |       |
+| 论文标题           | 15 pt     | 粗体  |
+| 作者姓名          | 12 pt     | 粗体  |
+| 作者单位    | 12 pt     |       |
+| 单词 ``Abstract'' | 12 pt     | 粗体  |
+| 章节标题        | 12 pt     | 粗体  |
+| 子节标题     | 11 pt     | 粗体  |
+| 正文         | 11 pt     |       |
+| 图注              | 10 pt     |       |
+| 摘要文本         | 10 pt     |       |
+| 参考文献          | 10 pt     |       |
+| 脚注             | 9 pt      |       |
 
-### Title and Authors
+### 标题与作者
 
-Center the title, author's name(s) and affiliation(s) across both columns.
+把标题、作者姓名和单位跨双栏居中。
 
-Place the title centered at the top of the first page, in 15-point bold.
-Long titles should be typed on two lines without a blank line intervening.
-Put the title 2.5 cm from the top of the page.
-Write the title in [title case](https://apastyle.apa.org/style-grammar-guidelines/capitalization/title-case); do not write the title in all capital letters, except for acronyms (e.g., "BLEU") or proper nouns ("English") that are normally uppercased or capitalized.
+标题居中放在首页顶部，15 磅粗体。
+长标题应分两行键入，中间不留空行。
+把标题放在距页面顶部 2.5 cm 处。
+以 [title case](https://apastyle.apa.org/style-grammar-guidelines/capitalization/title-case) 书写标题；不要全大写，除非是通常大写或首字母大写的首字母缩略词（如「BLEU」）或专有名词（「English」）。
 
-Place the author name(s) and affiliation(s) under the title.
-Write authors' full names; do not abbreviate given names to initials, unless they are normally written as initials ("Margaret Mitchell", not "M. Mitchell").
-Do not format surnames in all capitals ("Mitchell", not "MITCHELL").
+把作者姓名和单位放在标题下方。
+写作者全名；不要把名缩写成首字母，除非通常以首字母书写（写「Margaret Mitchell」，而非「M. Mitchell」）。
+不要把姓氏全大写（写「Mitchell」，而非「MITCHELL」）。
 
-Do not use footnotes for affiliations.
-The affiliation should contain the author's complete address, and if possible, an electronic mail address.
+不要用脚注标注单位。
+单位应包含作者的完整地址，如可能，附上电子邮件地址。
 
-The title, author names and addresses should be completely identical to those entered to the paper submission website in order to maintain the consistency of author information among all publications of the conference.
-If they are different, the publication chairs may resolve the difference without consulting with you; so it is in your own interest to double-check that the information is consistent.
+标题、作者姓名和地址应与在论文投稿网站录入的完全一致，以保持会议所有出版物之间作者信息的一致性。
+若不同，出版主席可能在不咨询你的情况下解决差异；因此反复核对信息一致对你自己有利。
 
-Start the body of the first page 7.5 cm from the top of the page.
-**Even in the review version of the paper, you should maintain space for names and addresses so that they will fit in the final version.**
+首页正文从距页面顶部 7.5 cm 处开始。
+**即便在论文的评审版中，你也应保留姓名和地址的空间，以便它们在最终版中能放下。**
 
-### Abstract
+### 摘要
 
-Type the abstract at the beginning of the first column.
-Center the word **Abstract** in 12 point bold above the body of the abstract.
-The width of the abstract should be smaller than the
-normal column width by 0.6 cm on each side.
-The abstract text should be 10 point roman, single-spaced.
+把摘要键入在第一栏开头。
+在摘要正文上方居中放置 **Abstract** 一词，12 磅粗体。
+摘要的宽度应比正常栏宽在每侧窄 0.6 cm。
+摘要文本应为 10 磅 roman，单倍行距。
 
-The abstract should be a concise summary of the general thesis and conclusions of the paper.
-It should be no longer than 200 words.
+摘要应是对论文总体论点和结论的简明总结。
+不应超过 200 词。
 
-### Text
+### 正文
 
-Begin typing the main body of the text immediately after the abstract, continuing in two columns.
-The text should be 11 point roman, single-spaced.
+紧接摘要之后开始键入正文主体，继续双栏。
+文本应为 11 磅 roman，单倍行距。
 
-Indent 0.4 cm when starting a new paragraph, except for the first paragraph in a section.
+新段落起始时缩进 0.4 cm，但一节的首段除外。
 
-### Sections
+### 章节
 
-Use numbered sections (Arabic numerals) to facilitate cross references.
-Number subsections with the section number and the subsection number separated by a dot, in Arabic numerals, e.g.,
+使用编号章节（阿拉伯数字）以便交叉引用。
+子节用章节号加子节号、以点分隔的阿拉伯数字编号，例如
 
 > 1 Introduction
 
-or
+或
 
 > 6.1 File Format
 
-### Footnotes
-Put footnotes at the bottom of the page and use 9 point font.
-They may be numbered or referred to by asterisks or other symbols.
-Footnotes should be separated from the text by a line.
+### 脚注
+脚注放在页面底部，使用 9 磅字体。
+可编号或以星号或其他符号引用。
+脚注应通过一条线与正文分隔。
 
-### Figures and tables
+### 图与表
+如有可能，把图和表放在论文中首次讨论它们的附近，而非末尾。
+宽图/表可跨双栏。
 
-Place figures and tables in the paper near where they are first discussed, rather than at the end, if possible.
-Wide figures/tables may run across both columns.
+为照顾色盲人群（以及使用黑白打印机的人），强烈鼓励灰度可读性。
+不禁止使用颜色，但作者应确保表和图不单纯依赖颜色来传达关键区分。
 
-To accommodate people who are color-blind (as well as those printing with black-and-white printers), grayscale readability is strongly encouraged.
-Color is not forbidden, but authors should ensure that tables and figures do not rely solely on color to convey critical distinctions.
-
-**Captions:**
-Provide a caption for every figure/table; number each one sequentially in the form:
+**图注：**
+为每个图/表提供图注；按以下形式逐一顺序编号：
 
 > Figure 1: Caption of the Figure.
 
-and
+以及
 
 > Table 1: Caption of the Table.
 
-Captions should be placed below figures/tables, in 10 point roman type.
-Captions that are one line are centered.
-Captions longer than one line are left-aligned.
+图注应放在图/表下方，10 磅 roman 字体。
+单行图注居中。
+超过一行的图注左对齐。
 
-### Hyperlinks
+### 超链接
 
-Within-document and external hyperlinks should be dark blue (hex #000099), not underlined or boxed.
+文档内和外部超链接应为深蓝色（十六进制 #000099），不带下划线或边框。
 
-### Non-English Text
+### 非英文文本
 
-Text in languages other than English should be accompanied by translations into English, and text in scripts other than Latin should \emph{also} be accompanied by transliterations into Latin script, since not all readers can recognize non-Latin characters easily.
+非英文文本应附英文翻译，非拉丁文字的文字还应附拉丁字母转写，因为并非所有读者都能轻易识别非拉丁字符。
 
-For example, παράδειγμα *paradeigma* ‘example’ is a Greek word, and this is a Greek sentence:
+例如，παράδειγμα *paradeigma*「example」是一个希腊词，下面是一个希腊语句：
 
-> Αυτό είναι ένα παράδειγμα.  
-> auto einai ena paradeigma.  
-> ‘This is an example.’
+> Αυτό είναι ένα παράδειγμα.
+> auto einai ena paradeigma.
+> 「这是一个示例。」
 
-### Citations
+### 引用
 
-Citations within the text appear in parentheses (Gusfield, 1997), or, if the author's name appears in the text itself: Gusfield (1997).
-Append lowercase letters to the year in cases of ambiguities.
-Cite papers with two authors using both authors' names (Aho and Ullman, 1972), but cite papers with more than two authors by the first author's name and ``et al.'' (Chandra et al., 1981).
-Collapse multiple citations into a single pair of parentheses (Gusfield, 1997; Aho and Ullman, 1972).
+正文中的引用出现在括号里（Gusfield, 1997），或当作者姓名出现在正文中时为：Gusfield (1997)。
+在歧义情况下，在年份后加小写字母。
+两位作者的论文用两位作者姓名引用（Aho and Ullman, 1972），但两位以上作者的论文用第一作者姓名加「et al.」引用（Chandra et al., 1981）。
+把多个引用合并到一对括号中（Gusfield, 1997; Aho and Ullman, 1972）。
 
-Refrain from using full citations as sentence constituents.
-Instead of
+避免把完整引用当作句子成分。
+不要写
 
-> (Gusfield, 1997) showed that ...  
-> In (Gusfield, 1997), ...''
+> (Gusfield, 1997) showed that ...
+> In (Gusfield, 1997), ...
 
-write
+应写
 
-> Gusfield (1997) showed that ...  
+> Gusfield (1997) showed that ...
 > In Gusfield (1997), ...
 
-Submissions should accurately reference prior and related work, including code and data.
-If a piece of prior work appeared in multiple venues, the version that appeared in a refereed, archival venue should be referenced.
-If multiple versions of a piece of prior work exist, the one used by the authors should be referenced.
+投稿应准确引用先前和相关工作，包括代码和数据。
+若一项先前工作出现在多个 venue，应引用出现在经过评审的存档 venue 上的版本。
+若一项先前工作存在多个版本，应引用作者使用的版本。
 
-### Acknowledgments
+### 致谢
 
-The acknowledgments should go immediately before the references.
-Do not number the acknowledgments section.
-Do not include this section in the review version.
+致谢应直接放在参考文献之前。
+不要给致谢章节编号。
+不要在评审版中包含此章节。
 
-### References
+### 参考文献
 
-Gather the full set of references together under the unnumbered section heading **References**.
-Place the References section before any Appendices.
-Arrange the references alphabetically by first author, rather than by order of occurrence in the text.
+把完整的参考文献集合放在未编号的章节标题 **References** 之下。
+把参考文献章节放在任何附录之前。
+按第一作者字母顺序排列参考文献，而非按正文中出现的顺序。
 
-Provide as complete a citation as possible, using a consistent format, such as the [one for Computational Linguistics](http://cljournal.org/style_guide_refs.html) or the one in the [Publication Manual of the American Psychological Association](https://apastyle.apa.org/products/publication-manual-7th-edition).
-Use full names for authors, not just initials.
-Authors should not rely on automated citation indices to provide accurate references for prior and related work.
+尽可能提供完整的引用，使用一致的格式，例如 [Computational Linguistics 的格式](http://cljournal.org/style_guide_refs.html) 或 [美国心理学会出版手册](https://apastyle.apa.org/products/publication-manual-7th-edition) 中的格式。
+作者用全名，而非仅首字母。
+作者不应依赖自动引用索引为先前和相关工作提供准确的参考文献。
 
-As part of our work to make ACL materials more widely used and cited outside of our discipline, ACL has registered as a CrossRef member, as a registrant of Digital Object Identifiers (DOIs), the standard for registering permanent URNs for referencing scholarly materials.
+作为使 ACL 材料在学科之外被更广泛使用和引用的工作的一部分，ACL 已注册为 CrossRef 成员、数字对象标识符（DOI）的注册者——DOI 是为学术材料注册永久 URN 的标准。
 
-All references are required to contain DOIs of all cited works when possible, or, as a second resort, links to ACL Anthology pages.
-Appropriate records should be found for most materials in the current [ACL Anthology](https://aclweb.org/anthology/).
+所有参考文献在被可能时都要求包含所有被引作品的 DOI，或退而求其次，链接到 ACL Anthology 页面。
+应能在当前的 [ACL Anthology](https://aclweb.org/anthology/) 中找到大多数材料的相应记录。
 
-Example article in a journal:
+期刊文章示例：
 
 > Rie Kubota Ando and Tong Zhang. 2005. [A framework for learning predictive structures from multiple tasks and unlabeled data](https://www.jmlr.org/papers/v6/ando05a.html). *Journal of Machine Learning Research*, 6:1817–1853.
 
-Example paper in non-ACL proceedings, with DOI:
+非 ACL 论文集论文示例（带 DOI）：
 
 > Galen Andrew and Jianfeng Gao. 2007. [Scalable training of L1-regularized log-linear models](https://doi.org/10.1145/1273496.1273501). In *Proceedings of the 24th International Conference on Machine Learning*, pages 33–40.
 
-Example ACL Anthology paper with DOI:
+带 DOI 的 ACL Anthology 论文示例：
 
 > James Goodman, Andreas Vlachos, and Jason Naradowsky. 2016. [Noise reduction and targeted exploration in imitation learning for Abstract Meaning Representation parsing](http://dx.doi.org/10.18653/v1/P16-1001). In *Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)*, pages 1–45711, Berlin, Germany. Association for Computational Linguistics.
 
-Example ACL Anthology paper without DOI:
+不带 DOI 的 ACL Anthology 论文示例：
 
 > Benjamin Börschinger and Mark Johnson. 2011. [A particle filter algorithm for Bayesian word segmentation](https://www.aclweb.org/anthology/U11-1004/). In *Proceedings of the Australasian Language Technology Association Workshop 2011*, pages 10–44718, Canberra, Australia.
 
-Example arXiv paper:
+arXiv 论文示例：
 
 > Mohammad Sadegh Rasooli and Joel R. Tetreault. 2015. [Yara parser: A fast and accurate dependency parser](http://arxiv.org/abs/1503.06733). *Computing Research Repository*, arXiv:1503.06733. Version 2.
 
-## Appendices
+## 附录
 
-Appendices are material that can be read, and include lemmas, formulas, proofs, and tables that are not critical to the reading and understanding of the paper.
-Letter them in sequence and provide an informative title:
+附录是可以阅读的材料，包括对阅读和理解论文非关键性的引理、公式、证明和表。
+按顺序给它们编号并提供信息性标题：
 
 > Appendix A. Title of Appendix
 
-The appendices come after the references.
+附录放在参考文献之后。
 
-Review versions of appendices must follow the same anonymity guidelines as the main paper.
+附录的评审版必须遵循与正文相同的匿名指南。
 
-## Supplementary Material
+## 补充材料
 
-Submissions may include non-readable supplementary material used in the work and described in the paper.
-Any accompanying software and/or data should include licenses and documentation of research review as appropriate.
-Supplementary material may report preprocessing decisions, model parameters, and other details necessary for the replication of the experiments reported in the paper.
-Seemingly small preprocessing decisions can sometimes make a large difference in performance, so it is crucial to record such decisions to precisely characterize state-of-the-art methods.
+投稿可包含工作中使用并在论文中描述的、不可读的补充材料。
+任何附带的软件和/或数据应包含许可证和适当的研究评审文档。
+补充材料可报告预处理决策、模型参数，以及复现论文所报告实验所需的其他细节。
+看似微小的预处理决策有时会对性能产生巨大差异，因此记录此类决策对于精确刻画最先进方法至关重要。
 
-Nonetheless, supplementary material should be supplementary (rather than central) to the paper.
-**Submissions that misuse the supplementary material may be rejected without review.**
-Supplementary material may include explanations or details of proofs or derivations that do not fit into the paper, lists of features or feature templates, sample inputs and outputs for a system, pseudo-code or source code, and data.
-(Source code and data should be separate uploads, rather than part of the paper).
+尽管如此，补充材料应是论文的补充（而非核心）。
+**滥用补充材料的投稿可能不经评审即被拒稿。**
+补充材料可包括放不进论文的解释或证明/推导细节、特征或特征模板列表、系统的样例输入输出、伪代码或源代码，以及数据。
+（源代码和数据应作为单独上传，而非论文的一部分。）
 
-The paper should not rely on the supplementary material: while the paper may refer to and cite the supplementary material and the supplementary material will be available to the reviewers, they will not be asked to review the supplementary material.
+论文不应依赖补充材料：虽然论文可引用并援引补充材料，且补充材料会对审稿人可用，但不会要求审稿人评审补充材料。
 
-Review versions of supplementary material must follow the same anonymity guidelines as the main paper.
+补充材料的评审版必须遵循与正文相同的匿名指南。
 
-## Credits
+## 鸣谢
 
-This document has been adapted from the instructions for earlier ACL and NAACL proceedings, including those for
-ACL 2020 by Steven Bethard, Ryan Cotterell and Rui Yan,
-ACL 2019 by Douwe Kiela and Ivan Ivan Vulić,
-NAACL 2019 by Stephanie Lukin and Alla Roskovskaya,
-ACL 2018 by Shay Cohen, Kevin Gimpel, and Wei Lu,
-NAACL 2018 by Margaret Mitchell and Stephanie Lukin,
-BibTeX suggestions for (NA)ACL 2017/2018 from Jason Eisner,
-ACL 2017 by Dan Gildea and Min-Yen Kan,
-NAACL 2017 by Margaret Mitchell,
-ACL 2012 by Maggie Li and Michael White,
-ACL 2010 by Jing-Shin Chang and Philipp Koehn,
-ACL 2008 by Johanna D. Moore, Simone Teufel, James Allan, and Sadaoki Furui,
-ACL 2005 by Hwee Tou Ng and Kemal Oflazer,
-ACL 2002 by Eugene Charniak and Dekang Lin,
-and earlier ACL and EACL formats written by several people, including
-John Chen, Henry S. Thompson and Donald Walker.
-Additional elements were taken from the formatting instructions of the *International Joint Conference on Artificial Intelligence* and the *Conference on Computer Vision and Pattern Recognition*.
+本文档改编自早期 ACL 和 NAACL 论文集的指南，包括
+Steven Bethard、Ryan Cotterell 和 Rui Yan 的 ACL 2020，
+Douwe Kiela 和 Ivan Ivan Vulić 的 ACL 2019，
+Stephanie Lukin 和 Alla Roskovskaya 的 NAACL 2019，
+Shay Cohen、Kevin Gimpel 和 Wei Lu 的 ACL 2018，
+Margaret Mitchell 和 Stephanie Lukin 的 NAACL 2018，
+Jason Eisner 的 (NA)ACL 2017/2018 BibTeX 建议，
+Dan Gildea 和 Min-Yen Kan 的 ACL 2017，
+Margaret Mitchell 的 NAACL 2017，
+Maggie Li 和 Michael White 的 ACL 2012，
+Jing-Shin Chang 和 Philipp Koehn 的 ACL 2010，
+Johanna D. Moore、Simone Teufel、James Allan 和 Sadaoki Furui 的 ACL 2008，
+Hwee Tou Ng 和 Kemal Oflazer 的 ACL 2005，
+Eugene Charniak 和 Dekang Lin 的 ACL 2002，
+以及由若干人撰写的更早的 ACL 和 EACL 格式，包括
+John Chen、Henry S. Thompson 和 Donald Walker。
+额外要素取自*国际人工智能联合会议*和*计算机视觉与模式识别会议*的格式指南。

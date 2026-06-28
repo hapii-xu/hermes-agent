@@ -1,7 +1,7 @@
-"""CLI handlers for ``hermes migrate ...``.
+"""``hermes migrate ...`` 的 CLI 处理器。
 
-Currently exposes only ``hermes migrate xai`` — diagnoses and (with --apply)
-rewrites references to xAI models retired on May 15, 2026.
+当前仅暴露 ``hermes migrate xai``——诊断并（使用 --apply）
+重写对 2026 年 5 月 15 日退役的 xAI 模型的引用。
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from hermes_cli.config import load_config
 
 
 def cmd_migrate(args: Any) -> int:
-    """Dispatcher for ``hermes migrate <subtype>``."""
+    """``hermes migrate <subtype>`` 的分发器。"""
     sub = getattr(args, "migrate_type", None)
     if sub == "xai":
         return cmd_migrate_xai(args)
@@ -24,7 +24,7 @@ def cmd_migrate(args: Any) -> int:
 
 
 def cmd_migrate_xai(args: Any) -> int:
-    """Run xAI May-15 model migration in dry-run or apply mode."""
+    """以 dry-run 或 apply 模式运行 xAI 5 月 15 日模型迁移。"""
     from hermes_cli.xai_retirement import (
         MIGRATION_GUIDE_URL,
         RETIREMENT_DATE,
@@ -109,7 +109,7 @@ def cmd_migrate_xai(args: Any) -> int:
 
 
 def _resolve_config_path() -> Path:
-    """Best-effort: locate the active config.yaml on disk."""
+    """尽力定位磁盘上的活动 config.yaml。"""
     from hermes_cli.config import get_hermes_home
 
     return get_hermes_home() / "config.yaml"

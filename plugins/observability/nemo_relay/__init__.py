@@ -1,4 +1,4 @@
-"""nemo_relay — optional Hermes plugin for NeMo Relay observability."""
+"""nemo_relay — 用于 NeMo Relay 可观测性的可选 Hermes 插件。"""
 
 from __future__ import annotations
 
@@ -292,12 +292,12 @@ class _Runtime:
         shape_response: Callable[[Any], Any],
         make_managed_execute: Callable[[Callable[[Any], Any]], Any],
     ) -> Any:
-        # NeMo Relay's native managed execution may wrap a failing callback as an
-        # internal runtime error, hiding the real downstream provider/tool
-        # exception. Capture the original here and re-raise it after managed
-        # execution so Hermes retry classification still sees it. The LLM and tool
-        # paths share this scaffolding; they differ only in payload normalization,
-        # response shaping, and the Relay call itself.
+        # NeMo Relay 的原生托管执行可能会将失败的回调包装为
+        # 内部运行时错误，从而隐藏真实的下游 provider/tool
+        # 异常。在此处捕获原始异常，并在托管执行完成后重新抛出，
+        # 以便 Hermes 的重试分类仍能识别它。LLM 和 tool
+        # 路径共享此脚手架；它们的区别仅在于 payload 规范化、
+        # response 塑形以及 Relay 调用本身。
         raw_response: dict[str, Any] = {"set": False, "value": None}
         callback_error: Exception | None = None
         downstream_error: BaseException | None = None
@@ -842,8 +842,8 @@ def _value(obj: Any, key: str, default: Any = None) -> Any:
 
 
 def _original_downstream_error(exc: Exception) -> BaseException:
-    # Hermes wraps downstream execution failures in a local/private exception
-    # class, so detect the wrapper by shape instead of importing it here.
+    # Hermes 将下游执行失败包装在本地/私有异常
+    # 类中，因此通过结构而非导入来检测包装器。
     original = getattr(exc, "original", None)
     if exc.__class__.__name__ == "_DownstreamExecutionError" and isinstance(original, BaseException):
         return original

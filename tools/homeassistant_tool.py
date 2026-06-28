@@ -1,13 +1,13 @@
-"""Home Assistant tool for controlling smart home devices via REST API.
+"""通过 REST API 控制智能家居设备的 Home Assistant 工具。
 
-Registers four LLM-callable tools:
-- ``ha_list_entities`` -- list/filter entities by domain or area
-- ``ha_get_state`` -- get detailed state of a single entity
-- ``ha_list_services`` -- list available services (actions) per domain
-- ``ha_call_service`` -- call a HA service (turn_on, turn_off, set_temperature, etc.)
+注册四个可被 LLM 调用的工具：
+- ``ha_list_entities`` —— 按域或区域列出/筛选实体
+- ``ha_get_state`` —— 获取单个实体的详细状态
+- ``ha_list_services`` —— 按域列出可用的服务（动作）
+- ``ha_call_service`` —— 调用一个 HA 服务（turn_on、turn_off、set_temperature 等）
 
-Authentication uses a Long-Lived Access Token via ``HASS_TOKEN`` env var.
-The HA instance URL is read from ``HASS_URL`` (default: http://homeassistant.local:8123).
+认证使用通过 ``HASS_TOKEN`` 环境变量传入的 Long-Lived Access Token。
+HA 实例的 URL 从 ``HASS_URL`` 读取（默认：http://homeassistant.local:8123）。
 """
 
 import asyncio
@@ -20,48 +20,47 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Configuration
+# 配置
 # ---------------------------------------------------------------------------
 
-# Kept for backward compatibility (e.g. test monkeypatching); prefer _get_config().
+# 保留以兼容旧行为（例如测试中的 monkeypatch）；优先使用 _get_config()。
 _HASS_URL: str = ""
 _HASS_TOKEN: str = ""
 
 
 def _get_config():
-    """Return (hass_url, hass_token) from env vars at call time."""
+    """在调用时从环境变量返回 (hass_url, hass_token)。"""
     return (
         (_HASS_URL or os.getenv("HASS_URL", "http://homeassistant.local:8123")).rstrip("/"),
         _HASS_TOKEN or os.getenv("HASS_TOKEN", ""),
     )
 
-# Regex for valid HA entity_id format (e.g. "light.living_room", "sensor.temperature_1")
+# 合法 HA entity_id 格式的正则（例如 "light.living_room"、"sensor.temperature_1"）
 _ENTITY_ID_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z0-9_]+$")
 
-# Regex for valid HA service/domain names (e.g. "light", "turn_on", "shell_command").
-# Only lowercase ASCII letters, digits, and underscores — no slashes, dots, or
-# other characters that could allow path traversal in URL construction.
-# The domain and service are interpolated into /api/services/{domain}/{service},
-# so allowing arbitrary strings would enable SSRF via path traversal
-# (e.g. domain="../../api/config") or blocked-domain bypass
-# (e.g. domain="shell_command/../light").
+# 合法 HA 服务/域名的正则（例如 "light"、"turn_on"、"shell_command"）。
+# 只允许小写 ASCII 字母、数字和下划线——不允许斜杠、点号或其他可能在
+# URL 构造中造成路径穿越的字符。域和服务会被插入到
+# /api/services/{domain}/{service} 中，因此允许任意字符串会通过路径穿越
+# 造成 SSRF（例如 domain="../../api/config"），或绕过被屏蔽的域
+# （例如 domain="shell_command/../light"）。
 _SERVICE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
-# Service domains blocked for security -- these allow arbitrary code/command
-# execution on the HA host or enable SSRF attacks on the local network.
-# HA provides zero service-level access control; all safety must be in our layer.
+# 出于安全考虑被屏蔽的服务域——这些域允许在 HA 主机上执行任意代码/命令，
+# 或对本地网络发起 SSRF 攻击。HA 不提供任何服务级访问控制，所有安全
+# 保障都必须由我们这一层负责。
 _BLOCKED_DOMAINS = frozenset({
-    "shell_command",    # arbitrary shell commands as root in HA container
-    "command_line",     # sensors/switches that execute shell commands
-    "python_script",    # sandboxed but can escalate via hass.services.call()
-    "pyscript",         # scripting integration with broader access
-    "hassio",           # addon control, host shutdown/reboot, stdin to containers
-    "rest_command",     # HTTP requests from HA server (SSRF vector)
+    "shell_command",    # HA 容器中以 root 身份执行的任意 shell 命令
+    "command_line",     # 执行 shell 命令的传感器/开关
+    "python_script",    # 沙箱内运行，但可通过 hass.services.call() 提权
+    "pyscript",         # 访问范围更广的脚本集成
+    "hassio",           # 插件控制、主机关机/重启、向容器 stdin 输入
+    "rest_command",     # 从 HA 服务器发起的 HTTP 请求（SSRF 向量）
 })
 
 
 def _get_headers(token: str = "") -> Dict[str, str]:
-    """Return authorization headers for HA REST API."""
+    """返回 HA REST API 的鉴权头。"""
     if not token:
         _, token = _get_config()
     return {
@@ -71,7 +70,7 @@ def _get_headers(token: str = "") -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Async helpers (called from sync handlers via run_until_complete)
+# 异步辅助函数（通过 run_until_complete 从同步处理器中调用）
 # ---------------------------------------------------------------------------
 
 def _filter_and_summarize(
@@ -79,7 +78,7 @@ def _filter_and_summarize(
     domain: Optional[str] = None,
     area: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Filter raw HA states by domain/area and return a compact summary."""
+    """按域/区域筛选原始 HA 状态，并返回紧凑的摘要。"""
     if domain:
         states = [s for s in states if s.get("entity_id", "").startswith(f"{domain}.")]
 
@@ -106,7 +105,7 @@ async def _async_list_entities(
     domain: Optional[str] = None,
     area: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Fetch entity states from HA and optionally filter by domain/area."""
+    """从 HA 拉取实体状态，并可选地按域/区域筛选。"""
     import aiohttp
 
     hass_url, hass_token = _get_config()
@@ -120,7 +119,7 @@ async def _async_list_entities(
 
 
 async def _async_get_state(entity_id: str) -> Dict[str, Any]:
-    """Fetch detailed state of a single entity."""
+    """拉取单个实体的详细状态。"""
     import aiohttp
 
     hass_url, hass_token = _get_config()
@@ -143,11 +142,11 @@ def _build_service_payload(
     entity_id: Optional[str] = None,
     data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build the JSON payload for a HA service call."""
+    """构造 HA 服务调用的 JSON 负载。"""
     payload: Dict[str, Any] = {}
     if data:
         payload.update(data)
-    # entity_id parameter takes precedence over data["entity_id"]
+    # entity_id 参数优先级高于 data["entity_id"]
     if entity_id:
         payload["entity_id"] = entity_id
     return payload
@@ -158,7 +157,7 @@ def _parse_service_response(
     service: str,
     result: Any,
 ) -> Dict[str, Any]:
-    """Parse HA service call response into a structured result."""
+    """把 HA 服务调用响应解析为结构化结果。"""
     affected = []
     if isinstance(result, list):
         for s in result:
@@ -180,7 +179,7 @@ async def _async_call_service(
     entity_id: Optional[str] = None,
     data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Call a Home Assistant service."""
+    """调用一个 Home Assistant 服务。"""
     import aiohttp
 
     hass_url, hass_token = _get_config()
@@ -201,18 +200,18 @@ async def _async_call_service(
 
 
 # ---------------------------------------------------------------------------
-# Sync wrappers (handler signature: (args, **kw) -> str)
+# 同步包装器（处理器签名：(args, **kw) -> str）
 # ---------------------------------------------------------------------------
 
 def _run_async(coro):
-    """Run an async coroutine from a sync handler."""
+    """从同步处理器中运行一个异步协程。"""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
 
     if loop and loop.is_running():
-        # Already inside an event loop -- create a new thread
+        # 已在事件循环内——创建一个新线程
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(asyncio.run, coro)
@@ -222,7 +221,7 @@ def _run_async(coro):
 
 
 def _handle_list_entities(args: dict, **kw) -> str:
-    """Handler for ha_list_entities tool."""
+    """ha_list_entities 工具的处理器。"""
     domain = args.get("domain")
     area = args.get("area")
     try:
@@ -234,7 +233,7 @@ def _handle_list_entities(args: dict, **kw) -> str:
 
 
 def _handle_get_state(args: dict, **kw) -> str:
-    """Handler for ha_get_state tool."""
+    """ha_get_state 工具的处理器。"""
     entity_id = args.get("entity_id", "")
     if not entity_id:
         return tool_error("Missing required parameter: entity_id")
@@ -249,15 +248,15 @@ def _handle_get_state(args: dict, **kw) -> str:
 
 
 def _handle_call_service(args: dict, **kw) -> str:
-    """Handler for ha_call_service tool."""
+    """ha_call_service 工具的处理器。"""
     domain = args.get("domain", "")
     service = args.get("service", "")
     if not domain or not service:
         return tool_error("Missing required parameters: domain and service")
 
-    # Validate domain/service format BEFORE the blocklist check — prevents
-    # path traversal in /api/services/{domain}/{service} and blocklist bypass
-    # via payloads like "shell_command/../light".
+    # 在黑名单检查之前先校验域/服务格式——防止在
+    # /api/services/{domain}/{service} 中发生路径穿越，以及通过
+    # 形如 "shell_command/../light" 的负载绕过黑名单。
     if not _SERVICE_NAME_RE.match(domain):
         return tool_error(f"Invalid domain format: {domain!r}")
     if not _SERVICE_NAME_RE.match(service):
@@ -289,11 +288,11 @@ def _handle_call_service(args: dict, **kw) -> str:
 
 
 # ---------------------------------------------------------------------------
-# List services
+# 列出服务
 # ---------------------------------------------------------------------------
 
 async def _async_list_services(domain: Optional[str] = None) -> Dict[str, Any]:
-    """Fetch available services from HA and optionally filter by domain."""
+    """从 HA 拉取可用的服务，并可选地按域筛选。"""
     import aiohttp
 
     hass_url, hass_token = _get_config()
@@ -307,7 +306,7 @@ async def _async_list_services(domain: Optional[str] = None) -> Dict[str, Any]:
     if domain:
         services = [s for s in services if s.get("domain") == domain]
 
-    # Compact the output for context efficiency
+    # 压缩输出以提升上下文效率
     result = []
     for svc_domain in services:
         d = svc_domain.get("domain", "")
@@ -327,7 +326,7 @@ async def _async_list_services(domain: Optional[str] = None) -> Dict[str, Any]:
 
 
 def _handle_list_services(args: dict, **kw) -> str:
-    """Handler for ha_list_services tool."""
+    """ha_list_services 工具的处理器。"""
     domain = args.get("domain")
     try:
         result = _run_async(_async_list_services(domain=domain))
@@ -338,16 +337,16 @@ def _handle_list_services(args: dict, **kw) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Availability check
+# 可用性检查
 # ---------------------------------------------------------------------------
 
 def _check_ha_available() -> bool:
-    """Tool is only available when HASS_TOKEN is set."""
+    """仅当设置了 HASS_TOKEN 时该工具才可用。"""
     return bool(os.getenv("HASS_TOKEN"))
 
 
 # ---------------------------------------------------------------------------
-# Tool schemas
+# 工具 schema
 # ---------------------------------------------------------------------------
 
 HA_LIST_ENTITIES_SCHEMA = {
@@ -471,7 +470,7 @@ HA_CALL_SERVICE_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# 注册
 # ---------------------------------------------------------------------------
 
 from tools.registry import registry, tool_error

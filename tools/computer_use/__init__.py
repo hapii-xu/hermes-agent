@@ -1,40 +1,37 @@
-"""Computer use toolset — universal (any-model) macOS desktop control.
+"""Computer use 工具集——通用的（适配任意模型）macOS 桌面控制。
 
-Architecture
-------------
-This toolset drives macOS apps through cua-driver's background computer-use
-primitive (SkyLight private SPIs for focus-without-raise + pid-scoped event
-posting). Unlike #4562's pyautogui backend, it does NOT steal the user's
-cursor, keyboard focus, or Space — the agent and the user can co-work on the
-same machine.
+架构
+----
+本工具集通过 cua-driver 的后台 computer-use 原语（利用 SkyLight 私有 SPI
+实现"不前置抢焦"以及按 pid 作用域的事件投递）来驱动 macOS 应用。与 #4562
+的 pyautogui 后端不同，它不会抢占用户的光标、键盘焦点或 Space——agent 和
+用户可以在同一台机器上协同工作。
 
-Unlike #4562's Anthropic-native `computer_20251124` tool, the schema here is
-a plain OpenAI function-calling schema that every tool-capable model can
-drive. Vision models get SOM (set-of-mark) captures — a screenshot with
-numbered overlays on every interactable element plus the AX tree — so they
-click by element index instead of pixel coordinates. Non-vision models can
-drive via the AX tree alone.
+与 #4562 的 Anthropic 原生 `computer_20251124` 工具不同，这里的 schema 是
+一份普通的 OpenAI function-calling schema，任何支持工具调用的模型都能驱动。
+视觉模型会拿到 SOM（set-of-mark）抓图——即在每一个可交互元素上叠加编号的
+截图，外加 AX 树——从而通过元素索引而非像素坐标进行点击。非视觉模型则可以
+仅凭 AX 树来驱动。
 
-Wiring
-------
-* `tool.py`       — registers the `computer_use` tool via tools.registry.
-* `backend.py`    — abstract `ComputerUseBackend`; swappable implementation.
-* `cua_backend.py`— default backend; speaks MCP over stdio to `cua-driver`.
-* `schema.py`     — shared schema + docstring for the generic `computer_use`
-                    tool. Model-agnostic.
-* `capture.py`    — screenshot post-processing (PNG coercion, sizing, SOM
-                    overlay if the backend did not).
+接线
+----
+* `tool.py`       —— 通过 tools.registry 注册 `computer_use` 工具。
+* `backend.py`    —— 抽象类 `ComputerUseBackend`；可替换的实现。
+* `cua_backend.py`—— 默认后端；通过 stdio 与 `cua-driver` 进行 MCP 通信。
+* `schema.py`     —— 通用 `computer_use` 工具共享的 schema + docstring。
+                    与具体模型无关。
+* `capture.py`    —— 截图后处理（强制转 PNG、调整尺寸，以及在后端未处理时
+                    叠加 SOM）。
 
-The outer integration points (multimodal tool-result plumbing, screenshot
-eviction in the Anthropic adapter, image-aware token estimation, the
-COMPUTER_USE_GUIDANCE prompt block, approval hook, and the skill) live
-alongside this package. See agent/anthropic_adapter.py and
-agent/prompt_builder.py for the salvaged hunks from PR #4562.
+其余的外部集成点（多模态工具结果的管线、Anthropic 适配器中的截图淘汰、
+感知图像的 token 估算、COMPUTER_USE_GUIDANCE 提示块、审批钩子以及技能）
+位于本包之外。从 PR #4562 中抢救出来的代码块见 agent/anthropic_adapter.py
+和 agent/prompt_builder.py。
 """
 
 from __future__ import annotations
 
-# Re-export the public surface so `from tools.computer_use import ...` works.
+# 重新导出对外公开的接口，以便 `from tools.computer_use import ...` 能正常工作。
 from tools.computer_use.tool import (  # noqa: F401
     handle_computer_use,
     set_approval_callback,

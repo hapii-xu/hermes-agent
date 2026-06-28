@@ -1,44 +1,44 @@
-# Excalidraw Color Palette
+# Excalidraw 颜色调色板
 
-Use these colors consistently across diagrams.
+在各张图表中一致地使用这些颜色。
 
-## Primary Colors (for strokes, arrows, and accents)
+## 主色（用于描边、箭头和强调）
 
-| Name | Hex | Use |
+| 名称 | Hex | 用途 |
 |------|-----|-----|
-| Blue | `#4a9eed` | Primary actions, links, data series 1 |
-| Amber | `#f59e0b` | Warnings, highlights, data series 2 |
-| Green | `#22c55e` | Success, positive, data series 3 |
-| Red | `#ef4444` | Errors, negative, data series 4 |
-| Purple | `#8b5cf6` | Accents, special items, data series 5 |
-| Pink | `#ec4899` | Decorative, data series 6 |
-| Cyan | `#06b6d4` | Info, secondary, data series 7 |
-| Lime | `#84cc16` | Extra, data series 8 |
+| 蓝色 | `#4a9eed` | 主要操作、链接、数据系列 1 |
+| 琥珀色 | `#f59e0b` | 警告、高亮、数据系列 2 |
+| 绿色 | `#22c55e` | 成功、正向、数据系列 3 |
+| 红色 | `#ef4444` | 错误、负向、数据系列 4 |
+| 紫色 | `#8b5cf6` | 强调、特殊项、数据系列 5 |
+| 粉色 | `#ec4899` | 装饰、数据系列 6 |
+| 青色 | `#06b6d4` | 信息、次要、数据系列 7 |
+| 酸橙色 | `#84cc16` | 额外、数据系列 8 |
 
-## Pastel Fills (for shape backgrounds)
+## 柔和填充色（用于形状背景）
 
-| Color | Hex | Good For |
+| 颜色 | Hex | 适用于 |
 |-------|-----|----------|
-| Light Blue | `#a5d8ff` | Input, sources, primary nodes |
-| Light Green | `#b2f2bb` | Success, output, completed |
-| Light Orange | `#ffd8a8` | Warning, pending, external |
-| Light Purple | `#d0bfff` | Processing, middleware, special |
-| Light Red | `#ffc9c9` | Error, critical, alerts |
-| Light Yellow | `#fff3bf` | Notes, decisions, planning |
-| Light Teal | `#c3fae8` | Storage, data, memory |
-| Light Pink | `#eebefa` | Analytics, metrics |
+| 浅蓝 | `#a5d8ff` | 输入、来源、主要节点 |
+| 浅绿 | `#b2f2bb` | 成功、输出、已完成 |
+| 浅橙 | `#ffd8a8` | 警告、待处理、外部 |
+| 浅紫 | `#d0bfff` | 处理、中间件、特殊 |
+| 浅红 | `#ffc9c9` | 错误、严重、告警 |
+| 浅黄 | `#fff3bf` | 备注、决策、规划 |
+| 浅青 | `#c3fae8` | 存储、数据、内存 |
+| 浅粉 | `#eebefa` | 分析、指标 |
 
-## Background Zones (use with opacity: 30-35 for layered diagrams)
+## 背景区域（用于分层图表时配合 opacity: 30-35 使用）
 
-| Color | Hex | Good For |
+| 颜色 | Hex | 适用于 |
 |-------|-----|----------|
-| Blue zone | `#dbe4ff` | UI / frontend layer |
-| Purple zone | `#e5dbff` | Logic / agent layer |
-| Green zone | `#d3f9d8` | Data / tool layer |
+| 蓝色区域 | `#dbe4ff` | UI / 前端层 |
+| 紫色区域 | `#e5dbff` | 逻辑 / Agent 层 |
+| 绿色区域 | `#d3f9d8` | 数据 / 工具层 |
 
-## Text Contrast Rules
+## 文字对比度规则
 
-- **On white backgrounds**: minimum text color is `#757575`. Default `#1e1e1e` is best.
-- **Colored text on light fills**: use dark variants (`#15803d` not `#22c55e`, `#2563eb` not `#4a9eed`)
-- **White text**: only on dark backgrounds (`#9a5030` not `#c4795b`)
-- **Never**: light gray (`#b0b0b0`, `#999`) on white -- unreadable
+- **在白色背景上**：最小文字颜色为 `#757575`。默认的 `#1e1e1e` 最佳。
+- **浅色填充上的彩色文字**：使用深色变体（用 `#15803d` 而非 `#22c55e`，用 `#2563eb` 而非 `#4a9eed`）
+- **白色文字**：仅在深色背景上使用（用 `#9a5030` 而非 `#c4795b`）
+- **切勿**：在白色上使用浅灰色（`#b0b0b0`、`#999`）——无法阅读

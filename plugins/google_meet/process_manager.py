@@ -1,12 +1,12 @@
-"""Subprocess lifecycle manager for the google_meet bot.
+"""google_meet bot 的子进程生命周期管理器。
 
-Single active meeting at a time. Stores the running pid + out_dir in a
-session-scoped state file under ``$HERMES_HOME/workspace/meetings/.active.json``
-so tool calls across turns can find the bot, and ``on_session_end`` can clean
-it up.
+同一时间仅允许一个活跃会议。将运行中的 pid + out_dir 存储在
+会话范围的状态文件 ``$HERMES_HOME/workspace/meetings/.active.json`` 中，
+以便跨 turn 的工具调用可以找到 bot，且 ``on_session_end`` 可以
+清理它。
 
-The bot runs as a detached subprocess — we don't hold file descriptors open,
-so the parent agent loop can't block on it. We communicate via files only.
+bot 作为分离的子进程运行 — 我们不持有打开的文件描述符，
+因此父 agent 循环不会因此阻塞。我们仅通过文件进行通信。
 """
 
 from __future__ import annotations
@@ -22,15 +22,15 @@ from typing import Any, Dict, Optional
 
 from hermes_constants import get_hermes_home
 
-# File + directory layout (under $HERMES_HOME):
+# 文件 + 目录布局（在 $HERMES_HOME 下）：
 #
 #   workspace/meetings/
-#       .active.json                # pointer to current session's bot
+#       .active.json                # 指向当前会话 bot 的指针
 #       <meeting-id>/
-#           status.json             # live bot state (written by bot each tick)
-#           transcript.txt          # scraped captions
+#           status.json             # 活跃 bot 状态（由 bot 每个 tick 写入）
+#           transcript.txt          # 抓取的字幕
 #
-# .active.json holds:
+# .active.json 包含：
 #   {"pid": 12345, "meeting_id": "abc-defg-hij", "out_dir": "...",
 #    "url": "https://meet.google.com/...", "started_at": 1714159200.0,
 #    "session_id": "optional"}
@@ -70,15 +70,15 @@ def _clear_active() -> None:
 
 
 def _pid_alive(pid: int) -> bool:
-    # ``os.kill(pid, 0)`` is NOT a no-op on Windows (bpo-14484) — it
-    # routes through GenerateConsoleCtrlEvent and can kill the target.
-    # Use the cross-platform existence check.
+    # ``os.kill(pid, 0)`` 在 Windows 上并非空操作（bpo-14484）—
+    # 它通过 GenerateConsoleCtrlEvent 路由，可能会杀死目标进程。
+    # 使用跨平台的存在性检查。
     from gateway.status import _pid_exists
     return _pid_exists(pid)
 
 
 # ---------------------------------------------------------------------------
-# Public API — used by tool handlers + CLI
+# 公共 API — 供工具处理器 + CLI 使用
 # ---------------------------------------------------------------------------
 
 def start(
@@ -96,12 +96,12 @@ def start(
     realtime_instructions: Optional[str] = None,
     realtime_api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Spawn the meet_bot subprocess for *url*.
+    """为 *url* 启动 meet_bot 子进程。
 
-    If a bot is already running for this hermes install, leave it first —
-    we enforce single-active-meeting semantics.
+    如果此 hermes 安装已有 bot 在运行，则先离开 —
+    我们强制实施单活跃会议语义。
 
-    Returns a dict summarizing the started bot.
+    返回描述已启动 bot 的字典。
     """
     from plugins.google_meet.meet_bot import _is_safe_meet_url, _meeting_id_from_url
 
@@ -122,8 +122,8 @@ def start(
     out = out_dir or (_root() / meeting_id)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Wipe any stale transcript/status files from a previous run of this
-    # meeting id so polling isn't confused.
+    # 清除此会议 id 之前运行留下的任何陈旧转录/状态文件，
+    # 以免轮询混淆。
     for name in ("transcript.txt", "status.json"):
         f = out / name
         if f.exists():
@@ -142,8 +142,8 @@ def start(
         env["HERMES_MEET_AUTH_STATE"] = auth_state
     if duration:
         env["HERMES_MEET_DURATION"] = duration
-    # v2: realtime mode + passthroughs. The bot defaults to transcribe
-    # mode if HERMES_MEET_MODE isn't set, matching v1 behavior.
+    # v2：实时模式 + 透传参数。如果未设置 HERMES_MEET_MODE，
+    # bot 默认使用转录模式，与 v1 行为一致。
     if mode:
         env["HERMES_MEET_MODE"] = mode
     if realtime_model:
@@ -156,8 +156,8 @@ def start(
         env["HERMES_MEET_REALTIME_KEY"] = realtime_api_key
 
     log_path = out / "bot.log"
-    # Detach: stdin=devnull, stdout/stderr → log file, new session so parent
-    # signals don't propagate.
+    # 分离：stdin=devnull，stdout/stderr → 日志文件，新 session 使父进程
+    # 信号不会传播。
     log_fh = open(log_path, "ab", buffering=0)
     try:
         proc = subprocess.Popen(
@@ -170,7 +170,7 @@ def start(
             close_fds=True,
         )
     finally:
-        # The subprocess now owns the log fd; we can close ours.
+        # 子进程现在拥有日志 fd；我们可以关闭我们的。
         log_fh.close()
 
     record = {
@@ -188,7 +188,7 @@ def start(
 
 
 def status() -> Dict[str, Any]:
-    """Return the current meeting state, or ``{"ok": False, "reason": ...}``."""
+    """返回当前会议状态，或 ``{"ok": False, "reason": ...}``。"""
     active = _read_active()
     if not active:
         return {"ok": False, "reason": "no active meeting"}
@@ -217,7 +217,7 @@ def status() -> Dict[str, Any]:
 
 
 def transcript(last: Optional[int] = None) -> Dict[str, Any]:
-    """Read the current transcript file. Returns ok=False if none exists."""
+    """读取当前转录文件。如果不存在则返回 ok=False。"""
     active = _read_active()
     if not active:
         return {"ok": False, "reason": "no active meeting"}
@@ -244,12 +244,11 @@ def transcript(last: Optional[int] = None) -> Dict[str, Any]:
 
 
 def enqueue_say(text: str) -> Dict[str, Any]:
-    """Append a ``say`` request to the active bot's JSONL queue.
+    """将 ``say`` 请求追加到活跃 bot 的 JSONL 队列。
 
-    Returns ``{"ok": False, "reason": ...}`` when no meeting is active or
-    the active bot is in transcribe-only mode. Otherwise writes a line to
-    ``<out_dir>/say_queue.jsonl`` that the bot's realtime speaker thread
-    will consume.
+    当没有活跃会议或活跃 bot 处于仅转录模式时，
+    返回 ``{"ok": False, "reason": ...}``。否则向 bot 的实时 speaker 线程
+    将消费的 ``<out_dir>/say_queue.jsonl`` 写入一行。
     """
     import uuid
 
@@ -286,10 +285,10 @@ def enqueue_say(text: str) -> Dict[str, Any]:
 
 
 def stop(*, reason: str = "requested") -> Dict[str, Any]:
-    """Signal the active bot to leave cleanly, then clear the active pointer.
+    """通知活跃 bot 干净离开，然后清除活跃指针。
 
-    Sends SIGTERM and waits up to 10s for the bot to exit. Falls back to
-    SIGKILL if the bot doesn't respond.
+    发送 SIGTERM 并等待最多 10 秒让 bot 退出。如果 bot 无响应，
+    则回退到 SIGKILL。
     """
     active = _read_active()
     if not active:

@@ -1,4 +1,4 @@
-"""Arcee AI provider profile."""
+"""Arcee AI provider 配置文件。"""
 
 from providers import register_provider
 from providers.base import ProviderProfile

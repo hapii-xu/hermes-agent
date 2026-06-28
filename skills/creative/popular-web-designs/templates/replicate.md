@@ -1,274 +1,274 @@
-# Design System: Replicate
+# 设计系统：Replicate
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `JetBrains Mono`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代方案：
+> - **主字体：** `Inter` | **等宽字体：** `JetBrains Mono`
+> - **字体栈 (CSS)：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Replicate's interface is a developer playground crackling with creative energy — a bold, high-contrast design that feels more like a music festival poster than a typical API platform. The hero section explodes with a vibrant orange-red-magenta gradient that immediately signals "this is where AI models come alive," while the body of the page grounds itself in a clean white canvas where code snippets and model galleries take center stage.
+Replicate 的界面是一个充满创造能量的开发者游乐场——一种大胆、高对比的设计，感觉更像一张音乐节海报，而非典型的 API 平台。英雄区迸发出鲜艳的橙-红-品红渐变，立刻宣告"这里是 AI 模型活过来的地方"，而页面主体则扎根于干净的白色画布，代码片段和模型画廊占据中心舞台。
 
-The design personality is defined by two extreme choices: **massive display typography** (up to 128px) using the custom rb-freigeist-neue face, and **exclusively pill-shaped geometry** (9999px radius on everything). The display font is thick, bold, and confident — its heavy weight at enormous sizes creates text that feels like it's shouting with joy rather than whispering authority. Combined with basier-square for body text (a clean geometric sans) and JetBrains Mono for code, the system serves developers who want power and playfulness in equal measure.
+设计个性由两个极端选择定义：**巨大的展示排版**（最高 128px）使用自定义 rb-freigeist-neue 字体，以及**独家的胶囊形几何**（所有元素 9999px 圆角）。展示字体厚重、大胆、自信——其巨大尺寸下的重字重创造出的文字感觉像在快乐地呐喊，而非低语权威。结合用于正文的 basier-square（一种干净的几何无衬线）和用于代码的 JetBrains Mono，该系统服务于渴望力量与俏皮兼得的开发者。
 
-What makes Replicate distinctive is its community-powered energy. The model gallery with AI-generated images, the dotted-underline links, the green status badges, and the "Imagine what you can build" closing manifesto all create a space that feels alive and participatory — not a corporate product page but a launchpad for creative developers.
+Replicate 的独特之处在于其社区驱动的能量。带 AI 生成图片的模型画廊、虚线下划线链接、绿色状态徽章，以及"Imagine what you can build"结语宣言，都创造了一个感觉鲜活、参与性强的空间——不是企业产品页面，而是创意开发者的发射台。
 
-**Key Characteristics:**
-- Explosive orange-red-magenta gradient hero (#ea2804 brand anchor)
-- Massive display typography (128px) in heavy rb-freigeist-neue
-- Exclusively pill-shaped geometry: 9999px radius on EVERYTHING
-- High-contrast black (#202020) and white palette with red brand accent
-- Developer-community energy: model galleries, code examples, dotted-underline links
-- Green status badges (#2b9a66) for live/operational indicators
-- Bold/heavy font weights (600-700) creating maximum typographic impact
-- Playful closing manifesto: "Imagine what you can build."
+**关键特征：**
+- 迸发的橙-红-品红渐变英雄（#ea2804 品牌锚点）
+- 巨大的展示排版（128px），厚重的 rb-freigeist-neue
+- 独家的胶囊形几何：所有元素 9999px 圆角
+- 高对比黑（#202020）与白调色板，配红色品牌强调
+- 开发者社区能量：模型画廊、代码示例、虚线下划线链接
+- 绿色状态徽章（#2b9a66）用于在线/运行中指示器
+- 粗/重字重（600-700）创造最大排版冲击
+- 俏皮的结语宣言："Imagine what you can build."
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary
-- **Replicate Dark** (`#202020`): The primary text color and dark surface — a near-black that's the anchor of all text and borders. Slightly warmer than pure #000.
-- **Replicate Red** (`#ea2804`): The core brand color — a vivid, saturated orange-red used in the hero gradient, accent borders, and high-signal moments.
-- **Secondary Red** (`#dd4425`): A slightly warmer variant for button borders and link hover states.
+### 主色
+- **Replicate 深色**（`#202020`）：主文字颜色和深色表面——一种近黑，是所有文字和边框的锚点。比纯 #000 略暖。
+- **Replicate 红**（`#ea2804`）：核心品牌色——一种鲜艳、饱和的橙红，用于英雄渐变、强调边框和高信号时刻。
+- **次要红**（`#dd4425`）：一种略暖的变体，用于按钮边框和链接悬停状态。
 
-### Secondary & Accent
-- **Status Green** (`#2b9a66`): Badge/pill background for "running" or operational status indicators.
-- **GitHub Dark** (`#24292e`): A blue-tinted dark used for code block backgrounds and developer contexts.
+### 次要与强调色
+- **状态绿**（`#2b9a66`）：徽章/胶囊背景，用于"running"或运行状态指示器。
+- **GitHub 深色**（`#24292e`）：一种带蓝调的深色，用于代码块背景和开发者上下文。
 
-### Surface & Background
-- **Pure White** (`#ffffff`): The primary page body background.
-- **Near White** (`#fcfcfc`): Button text on dark surfaces and the lightest content.
-- **Hero Gradient**: A dramatic orange → red → magenta → pink gradient for the hero section. Transitions from warm (#ea2804 family) through hot pink.
+### 表面与背景
+- **纯白**（`#ffffff`）：主页面主体背景。
+- **近白**（`#fcfcfc`）：深色表面上的按钮文字和最浅的内容。
+- **英雄渐变**：英雄区使用戏剧性的橙 → 红 → 品红 → 粉渐变。从暖（#ea2804 系列）过渡到热粉。
 
-### Neutrals & Text
-- **Medium Gray** (`#646464`): Secondary body text and de-emphasized content.
-- **Warm Gray** (`#4e4e4e`): Emphasized secondary text.
-- **Mid Silver** (`#8d8d8d`): Tertiary text, footnotes.
-- **Light Silver** (`#bbbbbb`): Dotted-underline link decoration color, muted metadata.
-- **Pure Black** (`#000000`): Maximum-emphasis borders and occasional text.
+### 中性色与文字
+- **中灰**（`#646464`）：次要正文和弱化内容。
+- **暖灰**（`#4e4e4e`）：强调的次要文字。
+- **中银**（`#8d8d8d`）：三级文字、脚注。
+- **浅银**（`#bbbbbb`）：虚线下划线链接装饰色、弱化元数据。
+- **纯黑**（`#000000`）：最大强调的边框和偶尔的文字。
 
-### Gradient System
-- **Hero Blaze**: A dramatic multi-stop gradient flowing through orange (`#ea2804`) → red → magenta → hot pink. This gradient occupies the full hero section and is the most visually dominant element on the page.
-- **Dark Sections**: Deep dark (#202020) sections with white/near-white text provide contrast against the white body.
+### 渐变系统
+- **英雄烈焰**：一种戏剧性的多停靠点渐变，流经橙（`#ea2804`）→ 红 → 品红 → 热粉。该渐变占据整个英雄区，是页面上视觉上最具支配力的元素。
+- **深色区块**：深色（#202020）区块配白色/近白文字，与白色主体形成对比。
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Family
-- **Display**: `rb-freigeist-neue`, with fallbacks: `ui-sans-serif, system-ui`
-- **Body / UI**: `basier-square`, with fallbacks: `ui-sans-serif, system-ui`
-- **Code**: `jetbrains-mono`, with fallbacks: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New`
+### 字体族
+- **展示**：`rb-freigeist-neue`，回退：`ui-sans-serif, system-ui`
+- **正文 / UI**：`basier-square`，回退：`ui-sans-serif, system-ui`
+- **代码**：`jetbrains-mono`，回退：`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 说明 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Mega | rb-freigeist-neue | 128px (8rem) | 700 | 1.00 (tight) | normal | The maximum: closing manifesto |
-| Display / Hero | rb-freigeist-neue | 72px (4.5rem) | 700 | 1.00 (tight) | -1.8px | Hero section headline |
-| Section Heading | rb-freigeist-neue | 48px (3rem) | 400–700 | 1.00 (tight) | normal | Feature section titles |
-| Sub-heading | rb-freigeist-neue | 30px (1.88rem) | 600 | 1.20 (tight) | normal | Card headings |
-| Sub-heading Sans | basier-square | 38.4px (2.4rem) | 400 | 0.83 (ultra-tight) | normal | Large body headings |
-| Feature Title | basier-square / rb-freigeist-neue | 18px (1.13rem) | 600 | 1.56 | normal | Small section titles, labels |
-| Body Large | basier-square | 20px (1.25rem) | 400 | 1.40 | normal | Intro paragraphs |
-| Body / Button | basier-square | 16–18px (1–1.13rem) | 400–600 | 1.50–1.56 | normal | Standard text, buttons |
-| Caption | basier-square | 14px (0.88rem) | 400–600 | 1.43 | -0.35px to normal | Metadata, descriptions |
-| Small / Tag | basier-square | 12px (0.75rem) | 400 | 1.33 | normal | Tags (lowercase transform) |
-| Code | jetbrains-mono | 14px (0.88rem) | 400 | 1.43 | normal | Code snippets, API examples |
-| Code Small | jetbrains-mono | 11px (0.69rem) | 400 | 1.50 | normal | Tiny code references |
+| 展示超大 | rb-freigeist-neue | 128px (8rem) | 700 | 1.00 (紧凑) | normal | 最大值：结语宣言 |
+| 展示 / 英雄 | rb-freigeist-neue | 72px (4.5rem) | 700 | 1.00 (紧凑) | -1.8px | 英雄区标题 |
+| 章节标题 | rb-freigeist-neue | 48px (3rem) | 400–700 | 1.00 (紧凑) | normal | 功能章节标题 |
+| 副标题 | rb-freigeist-neue | 30px (1.88rem) | 600 | 1.20 (紧凑) | normal | 卡片标题 |
+| 副标题无衬 | basier-square | 38.4px (2.4rem) | 400 | 0.83 (超紧) | normal | 大正文标题 |
+| 功能标题 | basier-square / rb-freigeist-neue | 18px (1.13rem) | 600 | 1.56 | normal | 小章节标题、标签 |
+| 正文大 | basier-square | 20px (1.25rem) | 400 | 1.40 | normal | 导语段落 |
+| 正文 / 按钮 | basier-square | 16–18px (1–1.13rem) | 400–600 | 1.50–1.56 | normal | 标准文字、按钮 |
+| 说明 | basier-square | 14px (0.88rem) | 400–600 | 1.43 | -0.35px 到 normal | 元数据、描述 |
+| 小字 / 标签 | basier-square | 12px (0.75rem) | 400 | 1.33 | normal | 标签（小写转换） |
+| 代码 | jetbrains-mono | 14px (0.88rem) | 400 | 1.43 | normal | 代码片段、API 示例 |
+| 代码小字 | jetbrains-mono | 11px (0.69rem) | 400 | 1.50 | normal | 微小代码引用 |
 
-### Principles
-- **Heavy display, light body**: rb-freigeist-neue at 700 weight creates thundering headlines, while basier-square at 400 handles body text with quiet efficiency. The contrast is extreme and intentional.
-- **128px is a real size**: The closing manifesto "Imagine what you can build." uses 128px — bigger than most mobile screens. This is the design equivalent of shouting from a rooftop.
-- **Negative tracking on hero**: -1.8px letter-spacing at 72px creates dense, impactful hero text.
-- **Lowercase tags**: 12px basier-square uses `text-transform: lowercase` — an unusual choice that creates a casual, developer-friendly vibe.
-- **Weight 600 as emphasis**: When basier-square needs emphasis, it uses 600 (semibold) — never bold (700), which is reserved for rb-freigeist-neue display text.
+### 原则
+- **重展示，轻正文**：rb-freigeist-neue 字重 700 创造雷鸣般的标题，而 basier-square 字重 400 以安静的效率处理正文。对比是极端且刻意的。
+- **128px 是真实尺寸**：结语宣言"Imagine what you can build."使用 128px——比大多数手机屏幕还大。这是设计上的屋顶呐喊。
+- **英雄区负字距**：72px 下 -1.8px 字间距创造密集、有冲击力的英雄文字。
+- **小写标签**：12px basier-square 使用 `text-transform: lowercase`——一种不寻常的选择，营造休闲的、开发者友好的氛围。
+- **字重 600 作强调**：当 basier-square 需要强调时，使用 600（semibold）——从不使用粗体（700），后者保留给 rb-freigeist-neue 展示文字。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Dark Solid**
-- Background: Replicate Dark (`#202020`)
-- Text: Near White (`#fcfcfc`)
-- Padding: 0px 4px (extremely compact)
-- Outline: Replicate Dark 4px solid
-- Radius: pill-shaped (implied by system)
-- Maximum emphasis — dark pill on light surface
+**深色实心**
+- 背景：Replicate 深色（`#202020`）
+- 文字：近白（`#fcfcfc`）
+- 内边距：0px 4px（极其紧凑）
+- 轮廓：Replicate 深色 4px solid
+- 圆角：胶囊形（由系统暗示）
+- 最大强调——浅色表面上的深色胶囊
 
-**White Outlined**
-- Background: Pure White (`#ffffff`)
-- Text: Replicate Dark (`#202020`)
-- Border: `1px solid #202020`
-- Radius: pill-shaped
-- Clean outlined pill for secondary actions
+**白色描边**
+- 背景：纯白（`#ffffff`）
+- 文字：Replicate 深色（`#202020`）
+- 边框：`1px solid #202020`
+- 圆角：胶囊形
+- 干净的描边胶囊，用于次要操作
 
-**Transparent Glass**
-- Background: `rgba(255, 255, 255, 0.1)` (frosted glass)
-- Text: Replicate Dark (`#202020`)
-- Padding: 6px 56px 6px 28px (asymmetric — icon/search layout)
-- Border: transparent
-- Outline: Light Silver (`#bbbbbb`) 1px solid
-- Used for search/input-like buttons
+**透明玻璃**
+- 背景：`rgba(255, 255, 255, 0.1)`（磨砂玻璃）
+- 文字：Replicate 深色（`#202020`）
+- 内边距：6px 56px 6px 28px（不对称——图标/搜索布局）
+- 边框：透明
+- 轮廓：浅银（`#bbbbbb`）1px solid
+- 用于搜索/输入式按钮
 
-### Cards & Containers
-- Background: Pure White or subtle gray
-- Border: `1px solid #202020` for prominent containment
-- Radius: pill-shaped (9999px) for badges, labels, images
-- Shadow: minimal standard shadows
-- Model gallery: grid of AI-generated image thumbnails
-- Accent border: `1px solid #ea2804` for highlighted/featured items
+### 卡片与容器
+- 背景：纯白或微妙灰
+- 边框：`1px solid #202020` 用于突出的围合
+- 圆角：胶囊形（9999px）用于徽章、标签、图片
+- 阴影：极简标准阴影
+- 模型画廊：AI 生成图片缩略图网格
+- 强调边框：`1px solid #ea2804` 用于高亮/精选项
 
-### Inputs & Forms
-- Background: `rgba(255, 255, 255, 0.1)` (frosted glass)
-- Text: Replicate Dark (`#202020`)
-- Border: transparent with outline
-- Padding: 6px 56px 6px 28px (search-bar style)
+### 输入与表单
+- 背景：`rgba(255, 255, 255, 0.1)`（磨砂玻璃）
+- 文字：Replicate 深色（`#202020`）
+- 边框：透明带轮廓
+- 内边距：6px 56px 6px 28px（搜索栏样式）
 
-### Navigation
-- Clean horizontal nav on white
-- Logo: Replicate wordmark in dark
-- Links: dark text with dotted underline on hover
-- CTA: Dark pill button
-- GitHub link and sign-in
+### 导航
+- 白色背景上的干净横向导航
+- Logo：Replicate 文字商标，深色
+- 链接：深色文字，悬停时虚线下划线
+- CTA：深色胶囊按钮
+- GitHub 链接和登录
 
-### Image Treatment
-- AI-generated model output images in a gallery grid
-- Pill-shaped image containers (9999px)
-- Full-width gradient hero section
-- Product screenshots with dark backgrounds
+### 图片处理
+- 画廊网格中的 AI 生成模型输出图片
+- 胶囊形图片容器（9999px）
+- 全宽渐变英雄区
+- 深色背景的产品截图
 
-### Distinctive Components
+### 独特组件
 
-**Model Gallery Grid**
-- Horizontal scrolling or grid of AI-generated images
-- Each image in a pill-shaped container
-- Model names and run counts displayed
-- The visual heart of the community platform
+**模型画廊网格**
+- 横向滚动或 AI 生成图片网格
+- 每张图片在胶囊形容器中
+- 显示模型名称和运行次数
+- 社区平台的视觉核心
 
-**Dotted Underline Links**
-- Links use `text-decoration: underline dotted #bbbbbb`
-- A distinctive, developer-notebook aesthetic
-- Lighter and more casual than solid underlines
+**虚线下划线链接**
+- 链接使用 `text-decoration: underline dotted #bbbbbb`
+- 一种独特的、开发者笔记本般的美学
+- 比实线下划线更轻、更休闲
 
-**Status Badges**
-- Status Green (`#2b9a66`) background with white text
-- Pill-shaped (9999px)
-- 14px font size
-- Indicates model availability/operational status
+**状态徽章**
+- 状态绿（`#2b9a66`）背景配白色文字
+- 胶囊形（9999px）
+- 14px 字号
+- 指示模型可用性/运行状态
 
-**Manifesto Section**
-- "Imagine what you can build." at 128px
-- Dark background with white text
-- Images embedded between words
-- The emotional climax of the page
+**宣言区**
+- "Imagine what you can build." 128px
+- 深色背景配白色文字
+- 图片嵌入文字之间
+- 页面的情感高潮
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 2px, 4px, 6px, 8px, 10px, 12px, 16px, 24px, 32px, 48px, 64px, 96px, 160px, 192px
-- Button padding: varies widely (0px 4px to 6px 56px)
-- Section vertical spacing: very generous (96–192px)
+### 间距系统
+- 基础单位：8px
+- 阶梯：1px, 2px, 4px, 6px, 8px, 10px, 12px, 16px, 24px, 32px, 48px, 64px, 96px, 160px, 192px
+- 按钮内边距：变化很大（0px 4px 到 6px 56px）
+- 区块垂直间距：非常慷慨（96–192px）
 
-### Grid & Container
-- Fluid width with responsive constraints
-- Hero: full-width gradient with centered content
-- Model gallery: multi-column responsive grid
-- Feature sections: mixed layouts
-- Code examples: contained dark blocks
+### 网格与容器
+- 流体宽度配响应式约束
+- 英雄：全宽渐变，内容居中
+- 模型画廊：多列响应式网格
+- 功能区块：混合布局
+- 代码示例：受限的深色块
 
-### Whitespace Philosophy
-- **Bold and generous**: Massive spacing between sections (up to 192px) creates distinct zones.
-- **Dense within galleries**: Model images are tightly packed in the grid for browsable density.
-- **The gradient IS the whitespace**: The hero gradient section occupies significant vertical space as a colored void.
+### 留白哲学
+- **大胆而慷慨**：区块之间巨大的间距（最高 192px）创造截然不同的区域。
+- **画廊内密集**：模型图片在网格中紧密排列，便于浏览密度。
+- **渐变即是留白**：英雄渐变区块作为彩色虚空占据显著的垂直空间。
 
-### Border Radius Scale
-- **Pill (9999px)**: The ONLY radius in the system. Everything interactive, every image, every badge, every label, every container uses 9999px. This is the most extreme pill-radius commitment in any major tech brand.
+### 圆角阶梯
+- **胶囊（9999px）**：系统中唯一的圆角。所有交互元素、每张图片、每个徽章、每个标签、每个容器都使用 9999px。这是任何主要科技品牌中最极端的胶囊圆角承诺。
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-| Level | Treatment | Use |
+| 级别 | 处理 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | White body, text blocks |
-| Bordered (Level 1) | `1px solid #202020` | Cards, buttons, containers |
-| Accent Border (Level 2) | `1px solid #ea2804` | Featured/highlighted items |
-| Gradient Hero (Level 3) | Full-width blaze gradient | Hero section, maximum visual impact |
-| Dark Section (Level 4) | Dark bg (#202020) with light text | Manifesto, footer, feature sections |
+| 扁平（级别 0） | 无阴影 | 白色主体、文字块 |
+| 描边（级别 1） | `1px solid #202020` | 卡片、按钮、容器 |
+| 强调边框（级别 2） | `1px solid #ea2804` | 精选/高亮项 |
+| 渐变英雄（级别 3） | 全宽烈焰渐变 | 英雄区，最大视觉冲击 |
+| 深色区块（级别 4） | 深色背景（#202020）配浅文字 | 宣言、页脚、功能区 |
 
-**Shadow Philosophy**: Replicate relies on **borders and background color** for depth rather than shadows. The `1px solid #202020` border is the primary containment mechanism. The dramatic gradient hero and dark/light section alternation provide all the depth the design needs.
+**阴影哲学**：Replicate 依赖 **边框和背景色** 而非阴影来创造深度。`1px solid #202020` 边框是主要的围合机制。戏剧性的渐变英雄和深/浅区块交替提供了设计所需的全部深度。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use pill-shaped (9999px) radius on EVERYTHING — buttons, images, badges, containers
-- Use rb-freigeist-neue at weight 700 for display text — go big (72px+) or go home
-- Use the orange-red brand gradient for hero sections
-- Use Replicate Dark (#202020) as the primary dark — not pure black
-- Apply dotted underline decoration on text links (#bbbbbb)
-- Use Status Green (#2b9a66) for operational/success badges
-- Keep body text in basier-square at 400–600 weight
-- Use JetBrains Mono for all code content
-- Create a "manifesto" section with 128px type for emotional impact
+### 宜
+- 在所有元素上使用胶囊形（9999px）圆角——按钮、图片、徽章、容器
+- 使用 rb-freigeist-neue 字重 700 用于展示文字——要么大（72px+），要么回家
+- 使用橙红品牌渐变作为英雄区
+- 使用 Replicate 深色（#202020）作为主深色——而非纯黑
+- 在文字链接上应用虚线下划线装饰（#bbbbbb）
+- 使用状态绿（#2b9a66）作运行/成功徽章
+- 保持正文 basier-square 字重 400–600
+- 所有代码内容使用 JetBrains Mono
+- 用 128px 字号创建"宣言"区块以获得情感冲击
 
-### Don't
-- Don't use any border-radius other than 9999px — the pill system is absolute
-- Don't use the brand red (#ea2804) as a surface/background color — it's for gradients and accent borders
-- Don't reduce display text below 48px on desktop — the heavy display font needs size to breathe
-- Don't use light/thin font weights on rb-freigeist-neue — 600–700 is the range
-- Don't use solid underlines on links — dotted is the signature
-- Don't add drop shadows — depth comes from borders and background color
-- Don't use warm neutrals — the gray scale is purely neutral (#202020 → #bbbbbb)
-- Don't skip the code examples — they're primary content, not decoration
-- Don't make the hero gradient subtle — it should be BOLD and vibrant
+### 忌
+- 不要使用 9999px 以外的任何圆角——胶囊系统是绝对的
+- 不要把品牌红（#ea2804）作表面/背景色——它用于渐变和强调边框
+- 不要把展示文字在桌面端缩小到 48px 以下——重展示字体需要尺寸来呼吸
+- 不要在 rb-freigeist-neue 上使用轻/细字重——600–700 是范围
+- 不要在链接上使用实线下划线——虚线是签名
+- 不要添加投影——深度来自边框和背景色
+- 不要使用暖中性色——灰阶是纯粹中性的（#202020 → #bbbbbb）
+- 不要跳过代码示例——它们是主要内容，不是装饰
+- 不要让英雄渐变微妙——它应当大胆且鲜艳
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-*No explicit breakpoints detected — likely using fluid/container-query responsive system.*
+### 断点
+*未检测到明确断点——可能使用流体/容器查询响应式系统。*
 
-### Touch Targets
-- Pill buttons with generous padding
-- Gallery images as large touch targets
-- Navigation adequately spaced
+### 触控目标
+- 胶囊按钮配慷慨内边距
+- 画廊图片作为大触控目标
+- 导航充分间隔
 
-### Collapsing Strategy
-- **Hero text**: 128px → 72px → 48px progressive scaling
-- **Model gallery**: Grid reduces columns
-- **Navigation**: Collapses to hamburger
-- **Manifesto**: Scales down but maintains impact
+### 折叠策略
+- **英雄文字**：128px → 72px → 48px 渐进缩放
+- **模型画廊**：网格减少列数
+- **导航**：折叠为汉堡菜单
+- **宣言**：缩小但保持冲击力
 
-### Image Behavior
-- AI-generated images scale within pill containers
-- Gallery reflows to fewer columns on narrow screens
-- Hero gradient maintained at all sizes
+### 图片行为
+- AI 生成图片在胶囊容器内缩放
+- 画廊在窄屏上回流到更少列
+- 英雄渐变在所有尺寸下保持
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Primary Text: "Replicate Dark (#202020)"
-- Page Background: "Pure White (#ffffff)"
-- Brand Accent: "Replicate Red (#ea2804)"
-- Secondary Text: "Medium Gray (#646464)"
-- Muted/Decoration: "Light Silver (#bbbbbb)"
-- Status: "Status Green (#2b9a66)"
-- Dark Surface: "Replicate Dark (#202020)"
+### 快速颜色参考
+- 主文字："Replicate 深色 (#202020)"
+- 页面背景："纯白 (#ffffff)"
+- 品牌强调："Replicate 红 (#ea2804)"
+- 次要文字："中灰 (#646464)"
+- 弱化/装饰："浅银 (#bbbbbb)"
+- 状态："状态绿 (#2b9a66)"
+- 深色表面："Replicate 深色 (#202020)"
 
-### Example Component Prompts
-- "Create a hero section with a vibrant orange-red-magenta gradient background. Headline at 72px rb-freigeist-neue weight 700, white text, -1.8px letter-spacing. Include a dark pill CTA button and a white outlined pill button."
-- "Design a model card with pill-shaped (9999px) image container, model name at 16px basier-square weight 600, run count at 14px in Medium Gray. Border: 1px solid #202020."
-- "Build a status badge: pill-shaped (9999px), Status Green (#2b9a66) background, white text at 14px basier-square."
-- "Create a manifesto section on Replicate Dark (#202020) with 'Imagine what you can build.' at 128px rb-freigeist-neue weight 700, white text. Embed small AI-generated images between the words."
-- "Design a code block: dark background (#24292e), JetBrains Mono at 14px, white text. Pill-shaped container."
+### 示例组件提示
+- "创建英雄区，配鲜艳的橙-红-品红渐变背景。标题 72px rb-freigeist-neue 字重 700，白色文字，-1.8px 字间距。包含一个深色胶囊 CTA 按钮和一个白色描边胶囊按钮。"
+- "设计模型卡片，配胶囊形（9999px）图片容器，模型名 16px basier-square 字重 600，运行次数 14px 中灰。边框：1px solid #202020。"
+- "构建状态徽章：胶囊形（9999px），状态绿（#2b9a66）背景，白色文字 14px basier-square。"
+- "在 Replicate 深色（#202020）上创建宣言区，'Imagine what you can build.' 128px rb-freigeist-neue 字重 700，白色文字。在文字之间嵌入小型 AI 生成图片。"
+- "设计代码块：深色背景（#24292e），JetBrains Mono 14px，白色文字。胶囊形容器。"
 
-### Iteration Guide
-1. Everything is pill-shaped — never specify any other border-radius
-2. Display text is HEAVY — weight 700, sizes 48px+
-3. Links use dotted underline (#bbbbbb) — never solid
-4. The gradient hero is the visual anchor — make it bold
-5. Use basier-square for body, rb-freigeist-neue for display, JetBrains Mono for code
+### 迭代指南
+1. 一切都是胶囊形——绝不指定其他圆角
+2. 展示文字是厚重的——字重 700，字号 48px+
+3. 链接使用虚线下划线（#bbbbbb）——绝非实线
+4. 渐变英雄是视觉锚点——让它大胆
+5. 正文用 basier-square，展示用 rb-freigeist-neue，代码用 JetBrains Mono

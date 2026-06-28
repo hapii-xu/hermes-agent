@@ -1,35 +1,35 @@
-## Bug Description
+## Bug 描述
 
-<!-- What was happening? -->
+<!-- 当时出现了什么问题？ -->
 
 Fixes #
 
-## Root Cause
+## 根本原因
 
-<!-- What was causing the bug? -->
+<!-- 是什么导致了这个 bug？ -->
 
-## Fix
+## 修复
 
-<!-- What does this PR change to fix it? -->
+<!-- 本 PR 做了什么改动来修复它？ -->
 
 -
 
-## How to Verify
+## 如何验证
 
-<!-- Steps a reviewer can follow to confirm the fix -->
+<!-- 审查者可以按这些步骤确认修复生效 -->
 
 1.
 2.
 3.
 
-## Test Plan
+## 测试计划
 
-- [ ] Added regression test for this bug
-- [ ] Existing tests still pass
-- [ ] Manual verification of the fix
+- [ ] 为该 bug 添加了回归测试
+- [ ] 现有测试仍然通过
+- [ ] 手动验证过该修复
 
-## Risk Assessment
+## 风险评估
 
-<!-- Could this fix break anything else? What's the blast radius? -->
+<!-- 这个修复会不会破坏其他东西？影响范围有多大？ -->
 
-Low / Medium / High — <!-- explanation -->
+Low / Medium / High —— <!-- 说明 -->

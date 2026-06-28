@@ -1,22 +1,22 @@
-# Custom Tasks
+# 自定义任务
 
-Complete guide to creating domain-specific evaluation tasks in lm-evaluation-harness.
+在 lm-evaluation-harness 中创建领域专用评估任务的完整指南。
 
-## Overview
+## 概览
 
-Custom tasks allow you to evaluate models on your own datasets and metrics. Tasks are defined using YAML configuration files with optional Python utilities for complex logic.
+自定义任务允许你在自己的数据集和指标上评估模型。任务用 YAML 配置文件定义，复杂逻辑可搭配可选的 Python 工具函数。
 
-**Why create custom tasks**:
-- Evaluate on proprietary/domain-specific data
-- Test specific capabilities not covered by existing benchmarks
-- Create evaluation pipelines for internal models
-- Reproduce research experiments
+**为什么要创建自定义任务**：
+- 在专有/领域专用数据上评估
+- 测试现有基准未覆盖的特定能力
+- 为内部模型创建评估流水线
+- 复现研究实验
 
-## Quick Start
+## 快速开始
 
-### Minimal Custom Task
+### 最小自定义任务
 
-Create `my_tasks/simple_qa.yaml`:
+创建 `my_tasks/simple_qa.yaml`：
 
 ```yaml
 task: simple_qa
@@ -30,7 +30,7 @@ metric_list:
     higher_is_better: true
 ```
 
-**Run it**:
+**运行它**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -38,48 +38,48 @@ lm_eval --model hf \
   --include_path my_tasks/
 ```
 
-## Task Configuration Reference
+## 任务配置参考
 
-### Essential Fields
+### 必填字段
 
 ```yaml
-# Task identification
-task: my_custom_task           # Unique task name (required)
-task_alias: "My Task"          # Display name
-tag:                           # Tags for grouping
+# 任务标识
+task: my_custom_task           # 唯一任务名（必填）
+task_alias: "My Task"          # 显示名
+tag:                           # 用于分组的标签
   - custom
   - domain_specific
 
-# Dataset configuration
-dataset_path: data/my_data.jsonl  # HuggingFace dataset or local path
-dataset_name: default             # Subset name (if applicable)
+# 数据集配置
+dataset_path: data/my_data.jsonl  # HuggingFace 数据集或本地路径
+dataset_name: default             # 子集名（如适用）
 training_split: train
 validation_split: validation
 test_split: test
 
-# Evaluation configuration
-output_type: generate_until    # or loglikelihood, multiple_choice
-num_fewshot: 5                 # Number of few-shot examples
-batch_size: auto               # Batch size
+# 评估配置
+output_type: generate_until    # 或 loglikelihood、multiple_choice
+num_fewshot: 5                 # few-shot 示例数
+batch_size: auto               # batch size
 
-# Prompt templates (Jinja2)
+# 提示词模板（Jinja2）
 doc_to_text: "Question: {{question}}"
 doc_to_target: "{{answer}}"
 
-# Metrics
+# 指标
 metric_list:
   - metric: exact_match
     aggregation: mean
     higher_is_better: true
 
-# Metadata
+# 元数据
 metadata:
   version: 1.0
 ```
 
-### Output Types
+### 输出类型
 
-**`generate_until`**: Free-form generation
+**`generate_until`**：自由生成
 ```yaml
 output_type: generate_until
 generation_kwargs:
@@ -90,29 +90,29 @@ generation_kwargs:
   temperature: 0.0
 ```
 
-**`loglikelihood`**: Compute log probability of targets
+**`loglikelihood`**：计算目标的对数概率
 ```yaml
 output_type: loglikelihood
-# Used for perplexity, classification
+# 用于困惑度、分类
 ```
 
-**`multiple_choice`**: Choose from options
+**`multiple_choice`**：从选项中选择
 ```yaml
 output_type: multiple_choice
-doc_to_choice: "{{choices}}"  # List of choices
+doc_to_choice: "{{choices}}"  # 选项列表
 ```
 
-## Data Formats
+## 数据格式
 
-### Local JSONL File
+### 本地 JSONL 文件
 
-`data/my_data.jsonl`:
+`data/my_data.jsonl`：
 ```json
 {"question": "What is 2+2?", "answer": "4"}
 {"question": "Capital of France?", "answer": "Paris"}
 ```
 
-**Task config**:
+**任务配置**：
 ```yaml
 dataset_path: data/my_data.jsonl
 dataset_kwargs:
@@ -120,7 +120,7 @@ dataset_kwargs:
     test: data/my_data.jsonl
 ```
 
-### HuggingFace Dataset
+### HuggingFace 数据集
 
 ```yaml
 dataset_path: squad
@@ -128,16 +128,16 @@ dataset_name: plain_text
 test_split: validation
 ```
 
-### CSV File
+### CSV 文件
 
-`data/my_data.csv`:
+`data/my_data.csv`：
 ```csv
 question,answer,category
 What is 2+2?,4,math
 Capital of France?,Paris,geography
 ```
 
-**Task config**:
+**任务配置**：
 ```yaml
 dataset_path: data/my_data.csv
 dataset_kwargs:
@@ -145,16 +145,16 @@ dataset_kwargs:
     test: data/my_data.csv
 ```
 
-## Prompt Engineering
+## 提示词工程
 
-### Simple Template
+### 简单模板
 
 ```yaml
 doc_to_text: "Question: {{question}}\nAnswer:"
 doc_to_target: "{{answer}}"
 ```
 
-### Conditional Logic
+### 条件逻辑
 
 ```yaml
 doc_to_text: |
@@ -165,7 +165,7 @@ doc_to_text: |
   Answer:
 ```
 
-### Multiple Choice
+### 多选题
 
 ```yaml
 doc_to_text: |
@@ -180,33 +180,33 @@ doc_to_target: "{{ 'ABCD'[answer_idx] }}"
 doc_to_choice: ["A", "B", "C", "D"]
 ```
 
-### Few-Shot Formatting
+### Few-shot 格式化
 
 ```yaml
-fewshot_delimiter: "\n\n"        # Between examples
-target_delimiter: " "            # Between question and answer
+fewshot_delimiter: "\n\n"        # 示例之间
+target_delimiter: " "            # 问题与答案之间
 doc_to_text: "Q: {{question}}"
 doc_to_target: "A: {{answer}}"
 ```
 
-## Custom Python Functions
+## 自定义 Python 函数
 
-For complex logic, use Python functions in `utils.py`.
+对于复杂逻辑，在 `utils.py` 中使用 Python 函数。
 
-### Create `my_tasks/utils.py`
+### 创建 `my_tasks/utils.py`
 
 ```python
 def process_docs(dataset):
-    """Preprocess documents."""
+    """预处理文档。"""
     def _process(doc):
-        # Custom preprocessing
+        # 自定义预处理
         doc["question"] = doc["question"].strip().lower()
         return doc
 
     return dataset.map(_process)
 
 def doc_to_text(doc):
-    """Custom prompt formatting."""
+    """自定义提示词格式化。"""
     context = doc.get("context", "")
     question = doc["question"]
 
@@ -215,23 +215,23 @@ def doc_to_text(doc):
     return f"Question: {question}\nAnswer:"
 
 def doc_to_target(doc):
-    """Custom target extraction."""
+    """自定义目标提取。"""
     return doc["answer"].strip().lower()
 
 def aggregate_scores(items):
-    """Custom metric aggregation."""
+    """自定义指标聚合。"""
     correct = sum(1 for item in items if item == 1.0)
     total = len(items)
     return correct / total if total > 0 else 0.0
 ```
 
-### Use in Task Config
+### 在任务配置中使用
 
 ```yaml
 task: my_custom_task
 dataset_path: data/my_data.jsonl
 
-# Use Python functions
+# 使用 Python 函数
 process_docs: !function utils.process_docs
 doc_to_text: !function utils.doc_to_text
 doc_to_target: !function utils.doc_to_target
@@ -242,13 +242,13 @@ metric_list:
     higher_is_better: true
 ```
 
-## Real-World Examples
+## 实战示例
 
-### Example 1: Domain QA Task
+### 示例 1：领域问答任务
 
-**Goal**: Evaluate medical question answering.
+**目标**：评估医学问答。
 
-`medical_qa/medical_qa.yaml`:
+`medical_qa/medical_qa.yaml`：
 ```yaml
 task: medical_qa
 dataset_path: data/medical_qa.jsonl
@@ -287,13 +287,13 @@ metadata:
   domain: medical
 ```
 
-`medical_qa/utils.py`:
+`medical_qa/utils.py`：
 ```python
 from sklearn.metrics import f1_score
 import re
 
 def medical_f1(predictions, references):
-    """Custom F1 for medical terms."""
+    """医学专用 F1。"""
     pred_terms = set(extract_medical_terms(predictions[0]))
     ref_terms = set(extract_medical_terms(references[0]))
 
@@ -312,14 +312,14 @@ def medical_f1(predictions, references):
     return 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
 def extract_medical_terms(text):
-    """Extract medical terminology."""
-    # Custom logic
+    """提取医学术语。"""
+    # 自定义逻辑
     return re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)*\b', text)
 ```
 
-### Example 2: Code Evaluation
+### 示例 2：代码评估
 
-`code_eval/python_challenges.yaml`:
+`code_eval/python_challenges.yaml`：
 ```yaml
 task: python_challenges
 dataset_path: data/python_problems.jsonl
@@ -353,18 +353,18 @@ metadata:
   version: 1.0
 ```
 
-`code_eval/utils.py`:
+`code_eval/utils.py`：
 ```python
 import subprocess
 import json
 
 def execute_code(predictions, references):
-    """Execute generated code against test cases."""
+    """针对测试用例执行生成的代码。"""
     generated_code = predictions[0]
     test_cases = json.loads(references[0])
 
     try:
-        # Execute code with test cases
+        # 用测试用例执行代码
         for test_input, expected_output in test_cases:
             result = execute_with_timeout(generated_code, test_input, timeout=5)
             if result != expected_output:
@@ -374,21 +374,21 @@ def execute_code(predictions, references):
         return 0.0
 
 def execute_with_timeout(code, input_data, timeout=5):
-    """Safely execute code with timeout."""
-    # Implementation with subprocess and timeout
+    """带超时地安全执行代码。"""
+    # 用 subprocess 和 timeout 的实现
     pass
 
 def process_code_results(doc, results):
-    """Process code execution results."""
+    """处理代码执行结果。"""
     return {
         "passed": results[0] == 1.0,
         "generated_code": results[1]
     }
 ```
 
-### Example 3: Instruction Following
+### 示例 3：指令遵循
 
-`instruction_eval/instruction_eval.yaml`:
+`instruction_eval/instruction_eval.yaml`：
 ```yaml
 task: instruction_following
 dataset_path: data/instructions.jsonl
@@ -419,14 +419,14 @@ metric_list:
 process_docs: !function utils.add_constraint_checkers
 ```
 
-`instruction_eval/utils.py`:
+`instruction_eval/utils.py`：
 ```python
 from sentence_transformers import SentenceTransformer, util
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def check_constraints(predictions, references):
-    """Check if response satisfies constraints."""
+    """检查响应是否满足约束。"""
     response = predictions[0]
     constraints = json.loads(references[0])
 
@@ -440,32 +440,32 @@ def check_constraints(predictions, references):
     return satisfied / total if total > 0 else 1.0
 
 def verify_constraint(response, constraint):
-    """Verify single constraint."""
+    """验证单个约束。"""
     if constraint["type"] == "length":
         return len(response.split()) >= constraint["min_words"]
     elif constraint["type"] == "contains":
         return constraint["keyword"] in response.lower()
-    # Add more constraint types
+    # 添加更多约束类型
     return True
 
 def semantic_similarity(predictions, references):
-    """Compute semantic similarity."""
+    """计算语义相似度。"""
     pred_embedding = model.encode(predictions[0])
     ref_embedding = model.encode(references[0])
     return float(util.cos_sim(pred_embedding, ref_embedding))
 
 def add_constraint_checkers(dataset):
-    """Parse constraints into verifiable format."""
+    """把约束解析为可验证的格式。"""
     def _parse(doc):
-        # Parse constraint string into structured format
+        # 把约束字符串解析为结构化格式
         doc["parsed_constraints"] = parse_constraints(doc.get("constraints", ""))
         return doc
     return dataset.map(_parse)
 ```
 
-## Advanced Features
+## 高级功能
 
-### Output Filtering
+### 输出过滤
 
 ```yaml
 filter_list:
@@ -478,7 +478,7 @@ filter_list:
       - function: strip_whitespace
 ```
 
-### Multiple Metrics
+### 多指标
 
 ```yaml
 metric_list:
@@ -493,9 +493,9 @@ metric_list:
     higher_is_better: true
 ```
 
-### Task Groups
+### 任务组
 
-Create `my_tasks/_default.yaml`:
+创建 `my_tasks/_default.yaml`：
 ```yaml
 group: my_eval_suite
 task:
@@ -504,7 +504,7 @@ task:
   - python_challenges
 ```
 
-**Run entire suite**:
+**运行整个套件**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -512,15 +512,15 @@ lm_eval --model hf \
   --include_path my_tasks/
 ```
 
-## Testing Your Task
+## 测试你的任务
 
-### Validate Configuration
+### 验证配置
 
 ```bash
-# Test task loading
+# 测试任务加载
 lm_eval --tasks my_custom_task --include_path my_tasks/ --limit 0
 
-# Run on 5 samples
+# 在 5 个样本上跑
 lm_eval --model hf \
   --model_args pretrained=gpt2 \
   --tasks my_custom_task \
@@ -528,7 +528,7 @@ lm_eval --model hf \
   --limit 5
 ```
 
-### Debug Mode
+### 调试模式
 
 ```bash
 lm_eval --model hf \
@@ -536,33 +536,33 @@ lm_eval --model hf \
   --tasks my_custom_task \
   --include_path my_tasks/ \
   --limit 1 \
-  --log_samples  # Save input/output samples
+  --log_samples  # 保存输入/输出样本
 ```
 
-## Best Practices
+## 最佳实践
 
-1. **Start simple**: Test with minimal config first
-2. **Version your tasks**: Use `metadata.version`
-3. **Document your metrics**: Explain custom metrics in comments
-4. **Test with multiple models**: Ensure robustness
-5. **Validate on known examples**: Include sanity checks
-6. **Use filters carefully**: Can hide errors
-7. **Handle edge cases**: Empty strings, missing fields
+1. **从简单开始**：先用最小配置测试。
+2. **为任务做版本管理**：使用 `metadata.version`。
+3. **为指标写文档**：在注释里解释自定义指标。
+4. **用多个模型测试**：确保稳健性。
+5. **在已知示例上验证**：加入健全性检查。
+6. **谨慎使用过滤器**：可能掩盖错误。
+7. **处理边界情况**：空字符串、缺失字段。
 
-## Common Patterns
+## 常见模式
 
-### Classification Task
+### 分类任务
 
 ```yaml
 output_type: loglikelihood
 doc_to_text: "Text: {{text}}\nLabel:"
-doc_to_target: " {{label}}"  # Space prefix important!
+doc_to_target: " {{label}}"  # 前导空格很重要！
 metric_list:
   - metric: acc
     aggregation: mean
 ```
 
-### Perplexity Evaluation
+### 困惑度评估
 
 ```yaml
 output_type: loglikelihood_rolling
@@ -572,7 +572,7 @@ metric_list:
     aggregation: perplexity
 ```
 
-### Ranking Task
+### 排序任务
 
 ```yaml
 output_type: loglikelihood
@@ -583,20 +583,20 @@ metric_list:
     aggregation: mean
 ```
 
-## Troubleshooting
+## 故障排查
 
-**"Task not found"**: Check `--include_path` and task name
+**「Task not found」（找不到任务）**：检查 `--include_path` 和任务名
 
-**Empty results**: Verify `doc_to_text` and `doc_to_target` templates
+**结果为空**：验证 `doc_to_text` 和 `doc_to_target` 模板
 
-**Metric errors**: Ensure metric names are correct (exact_match, not exact-match)
+**指标错误**：确保指标名正确（是 exact_match，不是 exact-match）
 
-**Filter issues**: Test filters with `--log_samples`
+**过滤器问题**：用 `--log_samples` 测试过滤器
 
-**Python function not found**: Check `!function module.function_name` syntax
+**找不到 Python 函数**：检查 `!function module.function_name` 语法
 
-## References
+## 参考
 
-- Task system: EleutherAI/lm-evaluation-harness docs
-- Example tasks: `lm_eval/tasks/` directory
-- TaskConfig: `lm_eval/api/task.py`
+- 任务系统：EleutherAI/lm-evaluation-harness 文档
+- 示例任务：`lm_eval/tasks/` 目录
+- TaskConfig：`lm_eval/api/task.py`

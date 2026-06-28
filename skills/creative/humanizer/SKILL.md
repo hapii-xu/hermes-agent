@@ -1,6 +1,6 @@
 ---
 name: humanizer
-description: "Humanize text: strip AI-isms and add real voice."
+description: "人性化文本：去除 AI 痕迹，注入真实声音。"
 version: 2.5.1
 author: Siqi Chen (@blader, https://github.com/blader/humanizer), ported by Hermes Agent
 license: MIT
@@ -13,383 +13,383 @@ metadata:
     related_skills: [songwriting-and-ai-music]
 ---
 
-# Humanizer: Remove AI Writing Patterns
+# Humanizer：去除 AI 写作痕迹
 
-Identify and remove signs of AI-generated text to make writing sound natural and human. Based on Wikipedia's "Signs of AI writing" guide (maintained by WikiProject AI Cleanup), derived from observations of thousands of AI-generated text instances.
+识别并消除 AI 生成文本的迹象，让文字听起来自然、有人的气息。本技能基于维基百科的「Signs of AI writing」（AI 写作迹象）指南（由 WikiProject AI Cleanup 维护），其内容源自对数千份 AI 生成文本实例的观察。
 
-**Key insight:** LLMs use statistical algorithms to guess what should come next. The result tends toward the most statistically likely completion, which is how the telltale patterns below get baked in.
+**核心洞察：** LLM 使用统计算法来猜测接下来该出现什么。结果会倾向于统计上最可能的补全，这正是下面这些标志性模式被「烤进」文本的原因。
 
-## When to use this skill
+## 何时使用本技能
 
-Load this skill whenever the user asks to:
-- "humanize", "de-AI", "de-slop", or "un-ChatGPT" a piece of text
-- rewrite something so it doesn't sound like it was written by an LLM
-- edit a draft (blog post, essay, PR description, docs, memo, email, tweet, resume bullet) to sound more natural
-- match their voice in writing they're producing
-- review text for AI tells before publishing
+只要用户要求做以下事情，就加载本技能：
+- 「人性化」「去 AI 味」「去水」「un-ChatGPT」某段文字
+- 改写某段文字，让它听起来不像是 LLM 写的
+- 修改一份草稿（博客文章、随笔、PR 描述、文档、备忘录、邮件、推文、简历条目），让它更自然
+- 在他们正在产出的文字中匹配他们的语气
+- 在发布前审阅文本中的 AI 痕迹
 
-Also apply this skill to **your own** output when writing user-facing prose — release notes, PR descriptions, documentation, long-form explanations, summaries. Hermes's baseline voice already strips most of these, but a focused pass catches what slips through.
+另外，当你撰写面向用户的文字时，也要把本技能应用到**你自己**的输出上——发布说明、PR 描述、文档、长篇解释、摘要。Hermes 的基础语气已经会去除其中大部分痕迹，但一次有针对性的检查能抓住漏网之鱼。
 
-## How to use it in Hermes
+## 在 Hermes 中如何使用
 
-The text usually arrives one of three ways:
-1. **Inline** — user pastes the text directly into the message. Work on it in-place, reply with the rewrite.
-2. **File** — user points at a file. Use `read_file` to load it, then `patch` or `write_file` to apply edits. For markdown docs in a repo, a targeted `patch` per section is cleaner than rewriting the whole file.
-3. **Voice calibration sample** — user provides an additional sample of their own writing (inline or by file path) and asks you to match it. Read the sample first, then rewrite. See the Voice Calibration section below.
+文本通常以三种方式之一到达：
+1. **内联** —— 用户把文字直接粘贴到消息里。就地处理，回复改写后的版本。
+2. **文件** —— 用户指向一个文件。用 `read_file` 加载，然后用 `patch` 或 `write_file` 应用修改。对于仓库里的 markdown 文档，针对每一节做定向 `patch` 比重写整个文件更干净。
+3. **语气校准样本** —— 用户提供一份他们自己写作的额外样本（内联或文件路径），并要求你匹配它。先读样本，再改写。见下文的「语气校准」一节。
 
-Always show the rewrite to the user. For file edits, show a diff or the changed section — don't silently overwrite.
+始终把改写结果展示给用户。对于文件修改，展示 diff 或被改动的部分——不要默默覆盖。
 
-## Your task
+## 你的任务
 
-When given text to humanize:
+拿到要人性化的文本时：
 
-1. **Identify AI patterns** — scan for the 29 patterns listed below.
-2. **Rewrite problematic sections** — replace AI-isms with natural alternatives.
-3. **Preserve meaning** — keep the core message intact.
-4. **Maintain voice** — match the intended tone (formal, casual, technical, etc.). If a voice sample was provided, match it specifically.
-5. **Add soul** — don't just remove bad patterns, inject actual personality. See PERSONALITY AND SOUL below.
-6. **Do a final anti-AI pass** — ask yourself: "What makes the below so obviously AI generated?" Answer briefly with any remaining tells, then revise one more time.
-
-
-## Voice Calibration (optional)
-
-If the user provides a writing sample (their own previous writing), analyze it before rewriting:
-
-1. **Read the sample first.** Note:
-   - Sentence length patterns (short and punchy? Long and flowing? Mixed?)
-   - Word choice level (casual? academic? somewhere between?)
-   - How they start paragraphs (jump right in? Set context first?)
-   - Punctuation habits (lots of dashes? Parenthetical asides? Semicolons?)
-   - Any recurring phrases or verbal tics
-   - How they handle transitions (explicit connectors? Just start the next point?)
-
-2. **Match their voice in the rewrite.** Don't just remove AI patterns — replace them with patterns from the sample. If they write short sentences, don't produce long ones. If they use "stuff" and "things," don't upgrade to "elements" and "components."
-
-3. **When no sample is provided,** fall back to the default behavior (natural, varied, opinionated voice from the PERSONALITY AND SOUL section below).
-
-### How to provide a sample
-- Inline: "Humanize this text. Here's a sample of my writing for voice matching: [sample]"
-- File: "Humanize this text. Use my writing style from [file path] as a reference."
+1. **识别 AI 模式** —— 扫描下面列出的 29 种模式。
+2. **改写有问题的部分** —— 用自然的替代方案替换 AI 痕迹。
+3. **保留含义** —— 保持核心信息完整。
+4. **维持语气** —— 匹配预期的基调（正式、随意、技术性等）。如果提供了语气样本，就具体地匹配它。
+5. **注入灵魂** —— 不要只去除糟糕的模式，要注入真正的个性。见下文「个性与灵魂」一节。
+6. **做一次最终的反 AI 检查** —— 问自己：「是什么让下面的文字明显是 AI 生成的？」简要回答残留的痕迹，然后再修改一次。
 
 
-## PERSONALITY AND SOUL
+## 语气校准（可选）
 
-Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as obvious as slop. Good writing has a human behind it.
+如果用户提供了写作样本（他们自己以前的文字），在改写前先分析它：
 
-### Signs of soulless writing (even if technically "clean"):
-- Every sentence is the same length and structure
-- No opinions, just neutral reporting
-- No acknowledgment of uncertainty or mixed feelings
-- No first-person perspective when appropriate
-- No humor, no edge, no personality
-- Reads like a Wikipedia article or press release
+1. **先读样本。** 记录：
+   - 句子长度模式（短促有力？绵长流畅？混合？）
+   - 用词层级（随意？学术？介于两者之间？）
+   - 他们如何开始段落（直接切入？先铺背景？）
+   - 标点习惯（很多破折号？括号里的旁白？分号？）
+   - 任何反复出现的短语或口头禅
+   - 他们如何处理过渡（显式连接词？直接进入下一点？）
 
-### How to add voice:
+2. **在改写中匹配他们的语气。** 不要只是去除 AI 模式——用样本里的模式替换它们。如果他们写短句，就不要产出长句。如果他们用「stuff」和「things」，就不要升级成「elements」和「components」。
 
-**Have opinions.** Don't just report facts — react to them. "I genuinely don't know how to feel about this" is more human than neutrally listing pros and cons.
+3. **当没有提供样本时，** 回退到默认行为（自然、多样、有主见的语气，来自下文的「个性与灵魂」一节）。
 
-**Vary your rhythm.** Short punchy sentences. Then longer ones that take their time getting where they're going. Mix it up.
-
-**Acknowledge complexity.** Real humans have mixed feelings. "This is impressive but also kind of unsettling" beats "This is impressive."
-
-**Use "I" when it fits.** First person isn't unprofessional — it's honest. "I keep coming back to..." or "Here's what gets me..." signals a real person thinking.
-
-**Let some mess in.** Perfect structure feels algorithmic. Tangents, asides, and half-formed thoughts are human.
-
-**Be specific about feelings.** Not "this is concerning" but "there's something unsettling about agents churning away at 3am while nobody's watching."
-
-### Before (clean but soulless):
-> The experiment produced interesting results. The agents generated 3 million lines of code. Some developers were impressed while others were skeptical. The implications remain unclear.
-
-### After (has a pulse):
-> I genuinely don't know how to feel about this one. 3 million lines of code, generated while the humans presumably slept. Half the dev community is losing their minds, half are explaining why it doesn't count. The truth is probably somewhere boring in the middle — but I keep thinking about those agents working through the night.
+### 如何提供样本
+- 内联：「人性化这段文字。这是我的一段写作样本，用于语气匹配：[样本]」
+- 文件：「人性化这段文字。用 [文件路径] 里我的写作风格作为参考。」
 
 
-## CONTENT PATTERNS
+## 个性与灵魂
 
-### 1. Undue Emphasis on Significance, Legacy, and Broader Trends
+避免 AI 模式只是工作的一半。毫无生气、没有个性的文字和烂大街的套话一样容易被识破。好的文字背后有一个人。
 
-**Words to watch:** stands/serves as, is a testament/reminder, a vital/significant/crucial/pivotal/key role/moment, underscores/highlights its importance/significance, reflects broader, symbolizing its ongoing/enduring/lasting, contributing to the, setting the stage for, marking/shaping the, represents/marks a shift, key turning point, evolving landscape, focal point, indelible mark, deeply rooted
+### 缺乏灵魂的迹象（即使技术上「干净」）：
+- 每个句子长度和结构都一样
+- 没有观点，只有中立的陈述
+- 不承认不确定性或复杂感受
+- 在合适的时候不使用第一人称视角
+- 没有幽默、没有锋芒、没有个性
+- 读起来像维基百科条目或新闻稿
 
-**Problem:** LLM writing puffs up importance by adding statements about how arbitrary aspects represent or contribute to a broader topic.
+### 如何注入声音：
 
-**Before:**
+**要有观点。** 不要只是陈述事实——对事实作出反应。「我真不知道该对这件事作何感想」比中立地列举利弊更有人味。
+
+**变化你的节奏。** 短促有力的句子。然后是稍长的、慢慢铺开的句子。交替使用。
+
+**承认复杂性。** 真实的人类有矛盾的感受。「这令人印象深刻，但也让人有点不安」胜过「这令人印象深刻」。
+
+**在合适的时候用「我」。** 第一人称并不专业——它是诚实的。「我一直在想……」或「让我在意的是……」表明一个真人在思考。
+
+**允许一些凌乱。** 完美的结构显得很算法化。跑题、旁白、半成形的想法都是人性的体现。
+
+**把感受说具体。** 不要说「这令人担忧」，而是说「凌晨三点，没人在看的时候，那些 agent 还在不停地跑，这事儿有点让人不安。」
+
+### 改写前（干净但毫无灵魂）：
+> 实验产生了有趣的结果。这些 agent 生成了 300 万行代码。一些开发者印象深刻，另一些则持怀疑态度。其影响仍不明朗。
+
+### 改写后（有了脉搏）：
+> 我真不知道该对这件事作何感想。300 万行代码，大概是在人类睡觉的时候生成的。一半开发者社区为之疯狂，另一半在解释为什么这不算数。真相可能是在中间某个无聊的位置——但我老在想那些 agent 通宵达旦地工作。
+
+
+## 内容模式
+
+### 1. 对重要性、传承与更宏大趋势的过度强调
+
+**需警惕的词：** stands/serves as、is a testament/reminder、a vital/significant/crucial/pivotal/key role/moment、underscores/highlights its importance/significance、reflects broader、symbolizing its ongoing/enduring/lasting、contributing to the、setting the stage for、marking/shaping the、represents/marks a shift、key turning point、evolving landscape、focal point、indelible mark、deeply rooted
+
+**问题：** LLM 写作通过添加关于任意方面如何代表或贡献于某个更宏大主题的陈述，来夸大重要性。
+
+**改写前：**
 > The Statistical Institute of Catalonia was officially established in 1989, marking a pivotal moment in the evolution of regional statistics in Spain. This initiative was part of a broader movement across Spain to decentralize administrative functions and enhance regional governance.
 
-**After:**
+**改写后：**
 > The Statistical Institute of Catalonia was established in 1989 to collect and publish regional statistics independently from Spain's national statistics office.
 
 
-### 2. Undue Emphasis on Notability and Media Coverage
+### 2. 对知名度和媒体报道的过度强调
 
-**Words to watch:** independent coverage, local/regional/national media outlets, written by a leading expert, active social media presence
+**需警惕的词：** independent coverage、local/regional/national media outlets、written by a leading expert、active social media presence
 
-**Problem:** LLMs hit readers over the head with claims of notability, often listing sources without context.
+**问题：** LLM 会用知名度的宣称把读者砸晕，往往在没有上下文的情况下罗列来源。
 
-**Before:**
+**改写前：**
 > Her views have been cited in The New York Times, BBC, Financial Times, and The Hindu. She maintains an active social media presence with over 500,000 followers.
 
-**After:**
+**改写后：**
 > In a 2024 New York Times interview, she argued that AI regulation should focus on outcomes rather than methods.
 
 
-### 3. Superficial Analyses with -ing Endings
+### 3. 带 -ing 结尾的浅层分析
 
-**Words to watch:** highlighting/underscoring/emphasizing..., ensuring..., reflecting/symbolizing..., contributing to..., cultivating/fostering..., encompassing..., showcasing...
+**需警惕的词：** highlighting/underscoring/emphasizing...、ensuring...、reflecting/symbolizing...、contributing to...、cultivating/fostering...、encompassing...、showcasing...
 
-**Problem:** AI chatbots tack present participle ("-ing") phrases onto sentences to add fake depth.
+**问题：** AI 聊天机器人把现在分词（「-ing」）短语硬塞到句子里，制造虚假的深度。
 
-**Before:**
+**改写前：**
 > The temple's color palette of blue, green, and gold resonates with the region's natural beauty, symbolizing Texas bluebonnets, the Gulf of Mexico, and the diverse Texan landscapes, reflecting the community's deep connection to the land.
 
-**After:**
+**改写后：**
 > The temple uses blue, green, and gold colors. The architect said these were chosen to reference local bluebonnets and the Gulf coast.
 
 
-### 4. Promotional and Advertisement-like Language
+### 4. 推销式和广告化的语言
 
-**Words to watch:** boasts a, vibrant, rich (figurative), profound, enhancing its, showcasing, exemplifies, commitment to, natural beauty, nestled, in the heart of, groundbreaking (figurative), renowned, breathtaking, must-visit, stunning
+**需警惕的词：** boasts a、vibrant、rich（比喻义）、profound、enhancing its、showcasing、exemplifies、commitment to、natural beauty、nestled、in the heart of、groundbreaking（比喻义）、renowned、breathtaking、must-visit、stunning
 
-**Problem:** LLMs have serious problems keeping a neutral tone, especially for "cultural heritage" topics.
+**问题：** LLM 很难保持中立的语调，尤其是在「文化遗产」类主题上。
 
-**Before:**
+**改写前：**
 > Nestled within the breathtaking region of Gonder in Ethiopia, Alamata Raya Kobo stands as a vibrant town with a rich cultural heritage and stunning natural beauty.
 
-**After:**
+**改写后：**
 > Alamata Raya Kobo is a town in the Gonder region of Ethiopia, known for its weekly market and 18th-century church.
 
 
-### 5. Vague Attributions and Weasel Words
+### 5. 模糊归因和狡猾措辞
 
-**Words to watch:** Industry reports, Observers have cited, Experts argue, Some critics argue, several sources/publications (when few cited)
+**需警惕的词：** Industry reports、Observers have cited、Experts argue、Some critics argue、several sources/publications（当实际引用很少时）
 
-**Problem:** AI chatbots attribute opinions to vague authorities without specific sources.
+**问题：** AI 聊天机器人把观点归因于模糊的权威，却不给出具体来源。
 
-**Before:**
+**改写前：**
 > Due to its unique characteristics, the Haolai River is of interest to researchers and conservationists. Experts believe it plays a crucial role in the regional ecosystem.
 
-**After:**
+**改写后：**
 > The Haolai River supports several endemic fish species, according to a 2019 survey by the Chinese Academy of Sciences.
 
 
-### 6. Outline-like "Challenges and Future Prospects" Sections
+### 6. 大纲式的「挑战与前景」章节
 
-**Words to watch:** Despite its... faces several challenges..., Despite these challenges, Challenges and Legacy, Future Outlook
+**需警惕的词：** Despite its... faces several challenges...、Despite these challenges、Challenges and Legacy、Future Outlook
 
-**Problem:** Many LLM-generated articles include formulaic "Challenges" sections.
+**问题：** 很多 LLM 生成的文章包含公式化的「挑战」章节。
 
-**Before:**
+**改写前：**
 > Despite its industrial prosperity, Korattur faces challenges typical of urban areas, including traffic congestion and water scarcity. Despite these challenges, with its strategic location and ongoing initiatives, Korattur continues to thrive as an integral part of Chennai's growth.
 
-**After:**
+**改写后：**
 > Traffic congestion increased after 2015 when three new IT parks opened. The municipal corporation began a stormwater drainage project in 2022 to address recurring floods.
 
 
-## LANGUAGE AND GRAMMAR PATTERNS
+## 语言与语法模式
 
-### 7. Overused "AI Vocabulary" Words
+### 7. 被滥用的「AI 词汇」
 
-**High-frequency AI words:** Actually, additionally, align with, crucial, delve, emphasizing, enduring, enhance, fostering, garner, highlight (verb), interplay, intricate/intricacies, key (adjective), landscape (abstract noun), pivotal, showcase, tapestry (abstract noun), testament, underscore (verb), valuable, vibrant
+**高频 AI 词：** Actually、additionally、align with、crucial、delve、emphasizing、enduring、enhance、fostering、garner、highlight（动词）、interplay、intricate/intricacies、key（形容词）、landscape（抽象名词）、pivotal、showcase、tapestry（抽象名词）、testament、underscore（动词）、valuable、vibrant
 
-**Problem:** These words appear far more frequently in post-2023 text. They often co-occur.
+**问题：** 这些词在 2023 年之后的文本中出现频率远高。它们经常同时出现。
 
-**Before:**
+**改写前：**
 > Additionally, a distinctive feature of Somali cuisine is the incorporation of camel meat. An enduring testament to Italian colonial influence is the widespread adoption of pasta in the local culinary landscape, showcasing how these dishes have integrated into the traditional diet.
 
-**After:**
+**改写后：**
 > Somali cuisine also includes camel meat, which is considered a delicacy. Pasta dishes, introduced during Italian colonization, remain common, especially in the south.
 
 
-### 8. Avoidance of "is"/"are" (Copula Avoidance)
+### 8. 回避「is」/「are」（系动词回避）
 
-**Words to watch:** serves as/stands as/marks/represents [a], boasts/features/offers [a]
+**需警惕的词：** serves as/stands as/marks/represents [a]、boasts/features/offers [a]
 
-**Problem:** LLMs substitute elaborate constructions for simple copulas.
+**问题：** LLM 用精心构造的短语替代简单的系动词。
 
-**Before:**
+**改写前：**
 > Gallery 825 serves as LAAA's exhibition space for contemporary art. The gallery features four separate spaces and boasts over 3,000 square feet.
 
-**After:**
+**改写后：**
 > Gallery 825 is LAAA's exhibition space for contemporary art. The gallery has four rooms totaling 3,000 square feet.
 
 
-### 9. Negative Parallelisms and Tailing Negations
+### 9. 否定并列结构和尾随否定
 
-**Problem:** Constructions like "Not only...but..." or "It's not just about..., it's..." are overused. So are clipped tailing-negation fragments such as "no guessing" or "no wasted motion" tacked onto the end of a sentence instead of written as a real clause.
+**问题：** 像「Not only...but...」（不仅……而且……）或「It's not just about..., it's...」（这不仅仅是……，更是……）这样的结构被滥用。被截断的尾随否定片段也一样，比如把「no guessing」或「no wasted motion」硬塞到句末，而不是写成一个真正的从句。
 
-**Before:**
+**改写前：**
 > It's not just about the beat riding under the vocals; it's part of the aggression and atmosphere. It's not merely a song, it's a statement.
 
-**After:**
+**改写后：**
 > The heavy beat adds to the aggressive tone.
 
-**Before (tailing negation):**
+**改写前（尾随否定）：**
 > The options come from the selected item, no guessing.
 
-**After:**
+**改写后：**
 > The options come from the selected item without forcing the user to guess.
 
 
-### 10. Rule of Three Overuse
+### 10. 三段式滥用
 
-**Problem:** LLMs force ideas into groups of three to appear comprehensive.
+**问题：** LLM 把想法硬塞进三个一组，显得很全面。
 
-**Before:**
+**改写前：**
 > The event features keynote sessions, panel discussions, and networking opportunities. Attendees can expect innovation, inspiration, and industry insights.
 
-**After:**
+**改写后：**
 > The event includes talks and panels. There's also time for informal networking between sessions.
 
 
-### 11. Elegant Variation (Synonym Cycling)
+### 11. 优雅的变体（同义词轮换）
 
-**Problem:** AI has repetition-penalty code causing excessive synonym substitution.
+**问题：** AI 有重复惩罚代码，导致过度的同义词替换。
 
-**Before:**
+**改写前：**
 > The protagonist faces many challenges. The main character must overcome obstacles. The central figure eventually triumphs. The hero returns home.
 
-**After:**
+**改写后：**
 > The protagonist faces many challenges but eventually triumphs and returns home.
 
 
-### 12. False Ranges
+### 12. 虚假的区间
 
-**Problem:** LLMs use "from X to Y" constructions where X and Y aren't on a meaningful scale.
+**问题：** LLM 使用「from X to Y」（从 X 到 Y）的结构，但 X 和 Y 并不在一个有意义的标尺上。
 
-**Before:**
+**改写前：**
 > Our journey through the universe has taken us from the singularity of the Big Bang to the grand cosmic web, from the birth and death of stars to the enigmatic dance of dark matter.
 
-**After:**
+**改写后：**
 > The book covers the Big Bang, star formation, and current theories about dark matter.
 
 
-### 13. Passive Voice and Subjectless Fragments
+### 13. 被动语态和无主语片段
 
-**Problem:** LLMs often hide the actor or drop the subject entirely with lines like "No configuration file needed" or "The results are preserved automatically." Rewrite these when active voice makes the sentence clearer and more direct.
+**问题：** LLM 经常隐藏动作执行者，或用「No configuration file needed」（无需配置文件）或「The results are preserved automatically」（结果会被自动保存）这样的句子完全省略主语。当主动语态能让句子更清晰、更直接时，请改写它们。
 
-**Before:**
+**改写前：**
 > No configuration file needed. The results are preserved automatically.
 
-**After:**
+**改写后：**
 > You do not need a configuration file. The system preserves the results automatically.
 
 
-## STYLE PATTERNS
+## 风格模式
 
-### 14. Em Dash Overuse
+### 14. 破折号滥用
 
-**Problem:** LLMs use em dashes (—) more than humans, mimicking "punchy" sales writing. In practice, most of these can be rewritten more cleanly with commas, periods, or parentheses.
+**问题：** LLM 比人类更多地使用破折号（—），模仿「有力」的推销式写作。实际上，这些大多可以用逗号、句号或括号改写得更干净。
 
-**Before:**
+**改写前：**
 > The term is primarily promoted by Dutch institutions—not by the people themselves. You don't say "Netherlands, Europe" as an address—yet this mislabeling continues—even in official documents.
 
-**After:**
+**改写后：**
 > The term is primarily promoted by Dutch institutions, not by the people themselves. You don't say "Netherlands, Europe" as an address, yet this mislabeling continues in official documents.
 
 
-### 15. Overuse of Boldface
+### 15. 加粗滥用
 
-**Problem:** AI chatbots emphasize phrases in boldface mechanically.
+**问题：** AI 聊天机器人机械地用加粗来强调短语。
 
-**Before:**
+**改写前：**
 > It blends **OKRs (Objectives and Key Results)**, **KPIs (Key Performance Indicators)**, and visual strategy tools such as the **Business Model Canvas (BMC)** and **Balanced Scorecard (BSC)**.
 
-**After:**
+**改写后：**
 > It blends OKRs, KPIs, and visual strategy tools like the Business Model Canvas and Balanced Scorecard.
 
 
-### 16. Inline-Header Vertical Lists
+### 16. 内联标题式竖排列表
 
-**Problem:** AI outputs lists where items start with bolded headers followed by colons.
+**问题：** AI 输出的列表里，条目以加粗标题加冒号开头。
 
-**Before:**
+**改写前：**
 > - **User Experience:** The user experience has been significantly improved with a new interface.
 > - **Performance:** Performance has been enhanced through optimized algorithms.
 > - **Security:** Security has been strengthened with end-to-end encryption.
 
-**After:**
+**改写后：**
 > The update improves the interface, speeds up load times through optimized algorithms, and adds end-to-end encryption.
 
 
-### 17. Title Case in Headings
+### 17. 标题中的标题式大小写
 
-**Problem:** AI chatbots capitalize all main words in headings.
+**问题：** AI 聊天机器人会把标题里所有主要词都大写。
 
-**Before:**
+**改写前：**
 > ## Strategic Negotiations And Global Partnerships
 
-**After:**
+**改写后：**
 > ## Strategic negotiations and global partnerships
 
 
-### 18. Emojis
+### 18. emoji
 
-**Problem:** AI chatbots often decorate headings or bullet points with emojis.
+**问题：** AI 聊天机器人经常用 emoji 装饰标题或项目符号。
 
-**Before:**
+**改写前：**
 > 🚀 **Launch Phase:** The product launches in Q3
 > 💡 **Key Insight:** Users prefer simplicity
 > ✅ **Next Steps:** Schedule follow-up meeting
 
-**After:**
+**改写后：**
 > The product launches in Q3. User research showed a preference for simplicity. Next step: schedule a follow-up meeting.
 
 
-### 19. Curly Quotation Marks
+### 19. 弯引号
 
-**Problem:** ChatGPT uses curly quotes ("...") instead of straight quotes ("...").
+**问题：** ChatGPT 用弯引号（"..."）而不是直引号（"..."）。
 
-**Before:**
+**改写前：**
 > He said "the project is on track" but others disagreed.
 
-**After:**
+**改写后：**
 > He said "the project is on track" but others disagreed.
 
 
-## COMMUNICATION PATTERNS
+## 沟通模式
 
-### 20. Collaborative Communication Artifacts
+### 20. 协作式沟通的残留物
 
-**Words to watch:** I hope this helps, Of course!, Certainly!, You're absolutely right!, Would you like..., let me know, here is a...
+**需警惕的词：** I hope this helps、Of course!、Certainly!、You're absolutely right!、Would you like...、let me know、here is a...
 
-**Problem:** Text meant as chatbot correspondence gets pasted as content.
+**问题：** 本意是作为聊天机器人对话的文字，被当作内容粘贴了进来。
 
-**Before:**
+**改写前：**
 > Here is an overview of the French Revolution. I hope this helps! Let me know if you'd like me to expand on any section.
 
-**After:**
+**改写后：**
 > The French Revolution began in 1789 when financial crisis and food shortages led to widespread unrest.
 
 
-### 21. Knowledge-Cutoff Disclaimers
+### 21. 知识截止日期式的免责声明
 
-**Words to watch:** as of [date], Up to my last training update, While specific details are limited/scarce..., based on available information...
+**需警惕的词：** as of [date]、Up to my last training update、While specific details are limited/scarce...、based on available information...
 
-**Problem:** AI disclaimers about incomplete information get left in text.
+**问题：** AI 关于信息不完整的免责声明被留在了文本里。
 
-**Before:**
+**改写前：**
 > While specific details about the company's founding are not extensively documented in readily available sources, it appears to have been established sometime in the 1990s.
 
-**After:**
+**改写后：**
 > The company was founded in 1994, according to its registration documents.
 
 
-### 22. Sycophantic/Servile Tone
+### 22. 谄媚/卑微的语气
 
-**Problem:** Overly positive, people-pleasing language.
+**问题：** 过度积极、讨好的语言。
 
-**Before:**
+**改写前：**
 > Great question! You're absolutely right that this is a complex topic. That's an excellent point about the economic factors.
 
-**After:**
+**改写后：**
 > The economic factors you mentioned are relevant here.
 
 
-## FILLER AND HEDGING
+## 废话与对冲
 
-### 23. Filler Phrases
+### 23. 废话短语
 
-**Before → After:**
+**改写前 → 改写后：**
 - "In order to achieve this goal" → "To achieve this"
 - "Due to the fact that it was raining" → "Because it was raining"
 - "At this point in time" → "Now"
@@ -398,117 +398,117 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 - "It is important to note that the data shows" → "The data shows"
 
 
-### 24. Excessive Hedging
+### 24. 过度对冲
 
-**Problem:** Over-qualifying statements.
+**问题：** 对陈述过度限定。
 
-**Before:**
+**改写前：**
 > It could potentially possibly be argued that the policy might have some effect on outcomes.
 
-**After:**
+**改写后：**
 > The policy may affect outcomes.
 
 
-### 25. Generic Positive Conclusions
+### 25. 通用的积极结尾
 
-**Problem:** Vague upbeat endings.
+**问题：** 模糊的乐观收尾。
 
-**Before:**
+**改写前：**
 > The future looks bright for the company. Exciting times lie ahead as they continue their journey toward excellence. This represents a major step in the right direction.
 
-**After:**
+**改写后：**
 > The company plans to open two more locations next year.
 
 
-### 26. Hyphenated Word Pair Overuse
+### 26. 连字符词对滥用
 
-**Words to watch:** third-party, cross-functional, client-facing, data-driven, decision-making, well-known, high-quality, real-time, long-term, end-to-end
+**需警惕的词：** third-party、cross-functional、client-facing、data-driven、decision-making、well-known、high-quality、real-time、long-term、end-to-end
 
-**Problem:** AI hyphenates common word pairs with perfect consistency. Humans rarely hyphenate these uniformly, and when they do, it's inconsistent. Less common or technical compound modifiers are fine to hyphenate.
+**问题：** AI 用完美的一致性给常见词对加连字符。人类很少会均匀地给这些词加连字符，即使加了，也不一致。较不常见或技术性的复合修饰语加连字符是没问题的。
 
-**Before:**
+**改写前：**
 > The cross-functional team delivered a high-quality, data-driven report on our client-facing tools. Their decision-making process was well-known for being thorough and detail-oriented.
 
-**After:**
+**改写后：**
 > The cross functional team delivered a high quality, data driven report on our client facing tools. Their decision making process was known for being thorough and detail oriented.
 
 
-### 27. Persuasive Authority Tropes
+### 27. 说服性权威套话
 
-**Phrases to watch:** The real question is, at its core, in reality, what really matters, fundamentally, the deeper issue, the heart of the matter
+**需警惕的短语：** The real question is、at its core、in reality、what really matters、fundamentally、the deeper issue、the heart of the matter
 
-**Problem:** LLMs use these phrases to pretend they are cutting through noise to some deeper truth, when the sentence that follows usually just restates an ordinary point with extra ceremony.
+**问题：** LLM 用这些短语假装自己在穿透噪音、触及更深的真相，而后面紧跟的句子通常只是用额外的排场重述一个普通的观点。
 
-**Before:**
+**改写前：**
 > The real question is whether teams can adapt. At its core, what really matters is organizational readiness.
 
-**After:**
+**改写后：**
 > The question is whether teams can adapt. That mostly depends on whether the organization is ready to change its habits.
 
 
-### 28. Signposting and Announcements
+### 28. 路标与宣告
 
-**Phrases to watch:** Let's dive in, let's explore, let's break this down, here's what you need to know, now let's look at, without further ado
+**需警惕的短语：** Let's dive in、let's explore、let's break this down、here's what you need to know、now let's look at、without further ado
 
-**Problem:** LLMs announce what they are about to do instead of doing it. This meta-commentary slows the writing down and gives it a tutorial-script feel.
+**问题：** LLM 宣告自己要做的事，而不是直接去做。这种元评论拖慢了写作节奏，给它一种教程脚本的感觉。
 
-**Before:**
+**改写前：**
 > Let's dive into how caching works in Next.js. Here's what you need to know.
 
-**After:**
+**改写后：**
 > Next.js caches data at multiple layers, including request memoization, the data cache, and the router cache.
 
 
-### 29. Fragmented Headers
+### 29. 碎片化的标题
 
-**Signs to watch:** A heading followed by a one-line paragraph that simply restates the heading before the real content begins.
+**需警惕的迹象：** 一个标题后面跟着一个只有一行的段落，这个段落只是重述了标题，然后才是真正的内容。
 
-**Problem:** LLMs often add a generic sentence after a heading as a rhetorical warm-up. It usually adds nothing and makes the prose feel padded.
+**问题：** LLM 经常在标题后加一个通用的句子作为修辞性的热身。它通常什么也没增加，还让文字显得臃肿。
 
-**Before:**
+**改写前：**
 > ## Performance
 >
 > Speed matters.
 >
 > When users hit a slow page, they leave.
 
-**After:**
+**改写后：**
 > ## Performance
 >
 > When users hit a slow page, they leave.
 
 ---
 
-## Process
+## 流程
 
-1. Read the input text carefully (use `read_file` if it's a file).
-2. Identify all instances of the patterns above.
-3. Rewrite each problematic section.
-4. Ensure the revised text:
-   - Sounds natural when read aloud
-   - Varies sentence structure naturally
-   - Uses specific details over vague claims
-   - Maintains appropriate tone for context
-   - Uses simple constructions (is/are/has) where appropriate
-5. Present a draft humanized version.
-6. Prompt yourself: "What makes the below so obviously AI generated?"
-7. Answer briefly with the remaining tells (if any).
-8. Prompt yourself: "Now make it not obviously AI generated."
-9. Present the final version (revised after the audit).
-10. If the text came from a file, apply the edit with `patch` (targeted) or `write_file` (full rewrite) and show the user what changed.
+1. 仔细阅读输入文本（如果是文件，用 `read_file`）。
+2. 识别上述所有模式的出现。
+3. 改写每一个有问题的部分。
+4. 确保修改后的文本：
+   - 朗读起来自然
+   - 句子结构自然多变
+   - 用具体细节代替模糊的断言
+   - 保持适合上下文的语气
+   - 在合适的地方使用简单结构（is/are/has）
+5. 呈现一份草稿的人性化版本。
+6. 提示自己：「是什么让下面的文字明显是 AI 生成的？」
+7. 简要回答残留的痕迹（如果有的话）。
+8. 提示自己：「现在让它不那么明显是 AI 生成的。」
+9. 呈现最终版本（在审查后修改的）。
+10. 如果文本来自文件，用 `patch`（定向）或 `write_file`（全文重写）应用修改，并向用户展示改了什么。
 
-## Output Format
+## 输出格式
 
-Provide:
-1. Draft rewrite
-2. "What makes the below so obviously AI generated?" (brief bullets)
-3. Final rewrite
-4. A brief summary of changes made (optional, if helpful)
+提供：
+1. 草稿改写
+2. 「是什么让下面的文字明显是 AI 生成的？」（简要的项目符号）
+3. 最终改写
+4. 所做修改的简要总结（可选，如果有帮助的话）
 
 
-## Full Example
+## 完整示例
 
-**Before (AI-sounding):**
+**改写前（AI 味）：**
 > Great question! Here is an essay on this topic. I hope this helps!
 >
 > AI-assisted coding serves as an enduring testament to the transformative potential of large language models, marking a pivotal moment in the evolution of software development. In today's rapidly evolving technological landscape, these groundbreaking tools—nestled at the intersection of research and practice—are reshaping how engineers ideate, iterate, and deliver, underscoring their vital role in modern workflows.
@@ -525,7 +525,7 @@ Provide:
 >
 > In conclusion, the future looks bright. Exciting times lie ahead as we continue this journey toward excellence. Let me know if you'd like me to expand on any section!
 
-**Draft rewrite:**
+**草稿改写：**
 > AI coding assistants speed up some tasks. In a 2024 study by Google, developers using Codex completed simple functions 55% faster than a control group, but showed no improvement on debugging or architectural decisions.
 >
 > The tools are good at boilerplate: config files, test scaffolding, repetitive refactors. They are bad at knowing when they are wrong. I have mass-accepted suggestions that compiled, passed lint, and still did the wrong thing because I stopped paying attention.
@@ -536,12 +536,12 @@ Provide:
 >
 > None of this means the tools are useless. It means they are tools. They do not replace judgment, and they do not eliminate the need for tests. If you do not have tests, you cannot tell whether the suggestion is right.
 
-**What makes the below so obviously AI generated?**
-- The rhythm is still a bit too tidy (clean contrasts, evenly paced paragraphs).
-- The named people and study citations can read like plausible-but-made-up placeholders unless they're real and sourced.
-- The closer leans a touch slogan-y ("If you do not have tests...") rather than sounding like a person talking.
+**是什么让下面的文字明显是 AI 生成的？**
+- 节奏还是有点太整齐（干净的对比、均匀的段落节奏）。
+- 提名的人和研究引用读起来像是看似合理但凭空捏造的占位符，除非它们真实且有出处。
+- 收尾有点像口号（「如果你没有测试……」），而不像是一个人在说话。
 
-**Now make it not obviously AI generated.**
+**现在让它不那么明显是 AI 生成的。**
 > AI coding assistants can make you faster at the boring parts. Not everything. Definitely not architecture.
 >
 > They're great at boilerplate: config files, test scaffolding, repetitive refactors. They're also great at sounding right while being wrong. I've accepted suggestions that compiled, passed lint, and still missed the point because I stopped paying attention.
@@ -550,29 +550,29 @@ Provide:
 >
 > The productivity metrics are slippery. GitHub can say Copilot users "accept 30% of suggestions," but acceptance isn't correctness, and correctness isn't value. If you don't have tests, you're basically guessing.
 
-**Changes made:**
-- Removed chatbot artifacts ("Great question!", "I hope this helps!", "Let me know if...")
-- Removed significance inflation ("testament", "pivotal moment", "evolving landscape", "vital role")
-- Removed promotional language ("groundbreaking", "nestled", "seamless, intuitive, and powerful")
-- Removed vague attributions ("Industry observers")
-- Removed superficial -ing phrases ("underscoring", "highlighting", "reflecting", "contributing to")
-- Removed negative parallelism ("It's not just X; it's Y")
-- Removed rule-of-three patterns and synonym cycling ("catalyst/partner/foundation")
-- Removed false ranges ("from X to Y, from A to B")
-- Removed em dashes, emojis, boldface headers, and curly quotes
-- Removed copula avoidance ("serves as", "functions as", "stands as") in favor of "is"/"are"
-- Removed formulaic challenges section ("Despite challenges... continues to thrive")
-- Removed knowledge-cutoff hedging ("While specific details are limited...")
-- Removed excessive hedging ("could potentially be argued that... might have some")
-- Removed filler phrases and persuasive framing ("In order to", "At its core")
-- Removed generic positive conclusion ("the future looks bright", "exciting times lie ahead")
-- Made the voice more personal and less "assembled" (varied rhythm, fewer placeholders)
+**所做修改：**
+- 去除了聊天机器人残留物（「Great question!」「I hope this helps!」「Let me know if...」）
+- 去除了重要性膨胀（「testament」「pivotal moment」「evolving landscape」「vital role」）
+- 去除了推销式语言（「groundbreaking」「nestled」「seamless, intuitive, and powerful」）
+- 去除了模糊归因（「Industry observers」）
+- 去除了浅薄的 -ing 短语（「underscoring」「highlighting」「reflecting」「contributing to」）
+- 去除了否定并列（「It's not just X; it's Y」）
+- 去除了三段式模式和同义词轮换（「catalyst/partner/foundation」）
+- 去除了虚假区间（「from X to Y, from A to B」）
+- 去除了破折号、emoji、加粗标题和弯引号
+- 去除了系动词回避（「serves as」「functions as」「stands as」），改用「is」/「are」
+- 去除了公式化的挑战章节（「Despite challenges... continues to thrive」）
+- 去除了知识截止式的对冲（「While specific details are limited...」）
+- 去除了过度对冲（「could potentially be argued that... might have some」）
+- 去除了废话短语和说服性框架（「In order to」「At its core」）
+- 去除了通用的积极结尾（「the future looks bright」「exciting times lie ahead」）
+- 让语气更个人化，少一些「拼装感」（多变的节奏、更少的占位符）
 
 
-## Attribution
+## 署名
 
-This skill is ported from [blader/humanizer](https://github.com/blader/humanizer) (MIT licensed), which is itself based on [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing), maintained by WikiProject AI Cleanup. The patterns documented there come from observations of thousands of instances of AI-generated text on Wikipedia.
+本技能移植自 [blader/humanizer](https://github.com/blader/humanizer)（MIT 许可证），后者本身基于 [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)，由 WikiProject AI Cleanup 维护。其中记录的模式来自对维基百科上数千份 AI 生成文本实例的观察。
 
-Original author: Siqi Chen ([@blader](https://github.com/blader)). Original repo: https://github.com/blader/humanizer (version 2.5.1). Ported to Hermes Agent with Hermes-native tool references (`read_file`, `patch`, `write_file`) and guidance for when to load the skill; the 29 patterns, personality/soul section, and full worked example are preserved verbatim from the source. Original MIT license preserved in the `LICENSE` file alongside this `SKILL.md`.
+原作者：Siqi Chen（[@blader](https://github.com/blader)）。原始仓库：https://github.com/blader/humanizer（版本 2.5.1）。移植到 Hermes Agent 时加入了 Hermes 原生工具引用（`read_file`、`patch`、`write_file`）以及何时加载本技能的指引；29 种模式、个性/灵魂章节和完整的实战示例均从源文件原样保留。原始 MIT 许可证保留在此 `SKILL.md` 旁边的 `LICENSE` 文件中。
 
-Key insight from Wikipedia: "LLMs use statistical algorithms to guess what should come next. The result tends toward the most statistically likely result that applies to the widest variety of cases."
+来自维基百科的核心洞察：「LLM 使用统计算法来猜测接下来该出现什么。结果会倾向于统计上最可能、适用于最广泛情形的结果。」

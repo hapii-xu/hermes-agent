@@ -1,270 +1,270 @@
-# Design System: xAI
+# 设计系统：xAI
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Geist Mono` | **Mono:** `Geist Mono`
-> - **Font stack (CSS):** `font-family: 'Geist Mono', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主字体：** `Geist Mono` | **等宽字体：** `Geist Mono`
+> - **字体栈（CSS）：** `font-family: 'Geist Mono', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，并通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-xAI's website is a masterclass in dark-first, monospace-driven brutalist minimalism -- a design system that feels like it was built by engineers who understand that restraint is the ultimate form of sophistication. The entire experience is anchored to an almost-black background (`#1f2228`) with pure white text (`#ffffff`), creating a high-contrast, terminal-inspired aesthetic that signals deep technical credibility. There are no gradients, no decorative illustrations, no color accents competing for attention. This is a site that communicates through absence.
+xAI 的网站是深色优先、等宽驱动、粗野主义极简主义的典范——一套设计系统，感觉像是那些懂得克制是终极精致形态的工程师所构建的。整个体验锚定在一个几乎全黑的背景（`#1f2228`）上，配纯白文字（`#ffffff`），创造出一种高对比度、终端启发的美学，传递出深层的技术可信度。没有渐变、没有装饰性插图、没有争抢注意力的彩色强调。这是一个通过留白来沟通的网站。
 
-The typographic system is split between two carefully chosen typefaces. `GeistMono` (Vercel's monospace font) handles display-level headlines at an extraordinary 320px with weight 300, and also serves as the button typeface in uppercase with tracked-out letter-spacing (1.4px). `universalSans` handles all body and secondary heading text with a clean, geometric sans-serif voice. The monospace-as-display-font choice is the defining aesthetic decision -- it positions xAI not as a consumer product but as infrastructure, as something built by people who live in terminals.
+字体系统在两种精心挑选的字体之间分工。`GeistMono`（Vercel 的等宽字体）处理展示级标题，达到非凡的 320px、字重 300，同时也作为按钮字体，以大写形式配拉开的字间距（1.4px）。`universalSans` 处理所有正文和次要标题文字，用一种干净的几何无衬线声音。等宽字体作为展示字体的选择是决定性的美学决策——它将 xAI 定位为不是消费产品，而是基础设施，是那些生活在终端中的人所构建的东西。
 
-The spacing system operates on an 8px base grid with values concentrated at the small end (4px, 8px, 24px, 48px), reflecting a dense, information-focused layout philosophy. Border radius is minimal -- the site barely rounds anything, maintaining sharp, architectural edges. There are no decorative shadows, no gradients, no layered elevation. Depth is communicated purely through contrast and whitespace.
+间距系统在 8px 基础网格上运作，数值集中在小端（4px、8px、24px、48px），反映出一种密集、以信息为中心的布局哲学。圆角极小——网站几乎不圆化任何东西，保持着尖锐、建筑般的边缘。没有装饰性阴影、没有渐变、没有分层的高度。深度纯粹通过对比和留白来传达。
 
-**Key Characteristics:**
-- Pure dark theme: `#1f2228` background with `#ffffff` text -- no gray middle ground
-- GeistMono at extreme display sizes (320px, weight 300) -- monospace as luxury
-- Uppercase monospace buttons with 1.4px letter-spacing -- technical, commanding
-- universalSans for body text at 16px/1.5 and headings at 30px/1.2 -- clean contrast
-- Zero decorative elements: no shadows, no gradients, no colored accents
-- 8px spacing grid with a sparse, deliberate scale
-- Heroicons SVG icon system -- minimal, functional
-- Tailwind CSS with arbitrary values -- utility-first engineering approach
+**关键特征：**
+- 纯深色主题：`#1f2228` 背景配 `#ffffff` 文字——没有灰色的中间地带
+- GeistMono 用于极端展示尺寸（320px、字重 300）——等宽字体即奢华
+- 大写等宽按钮配 1.4px 字间距——技术感、命令式
+- universalSans 用于正文 16px/1.5 和标题 30px/1.2——干净对比
+- 零装饰元素：无阴影、无渐变、无彩色强调
+- 8px 间距网格配稀疏、刻意的阶梯
+- Heroicons SVG 图标系统——极简、功能性
+- Tailwind CSS 配任意值——实用优先的工程方法
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary
-- **Pure White** (`#ffffff`): The singular text color, link color, and all foreground elements. In xAI's system, white is not a background -- it is the voice.
-- **Dark Background** (`#1f2228`): The canvas. A warm near-black with a subtle blue undertone (not pure black, not neutral gray). This specific hue prevents the harsh eye strain of `#000000` while maintaining deep darkness.
+### 主色
+- **纯白**（`#ffffff`）：唯一的文字色、链接色和所有前景元素。在 xAI 的系统中，白色不是背景——它是声音。
+- **深色背景**（`#1f2228`）：画布。一种带细微蓝色底色的温暖近黑（不是纯黑，也不是中性灰）。这种特定色调避免了 `#000000` 的刺眼眼疲劳，同时保持深邃的暗度。
 
-### Interactive
-- **White Default** (`#ffffff`): Link and interactive element color in default state.
-- **White Muted** (`rgba(255, 255, 255, 0.5)`): Hover state for links -- a deliberate dimming rather than brightening, which is unusual and distinctive.
-- **White Subtle** (`rgba(255, 255, 255, 0.2)`): Borders, dividers, and subtle surface treatments.
-- **Ring Blue** (`rgb(59, 130, 246) / 0.5`): Tailwind's default focus ring color (`--tw-ring-color`), used for keyboard accessibility focus states.
+### 交互色
+- **默认白色**（`#ffffff`）：默认状态下的链接和可交互元素颜色。
+- **柔和白色**（`rgba(255, 255, 255, 0.5)`）：链接的悬停状态——一种刻意的变暗而非变亮，这很不寻常且独特。
+- **细微白色**（`rgba(255, 255, 255, 0.2)`）：边框、分隔符和细微的表面处理。
+- **环蓝色**（`rgb(59, 130, 246) / 0.5`）：Tailwind 的默认聚焦环颜色（`--tw-ring-color`），用于键盘可访问性聚焦状态。
 
-### Surface & Borders
-- **Surface Elevated** (`rgba(255, 255, 255, 0.05)`): Subtle card backgrounds and hover surfaces -- barely visible lift.
-- **Surface Hover** (`rgba(255, 255, 255, 0.08)`): Slightly more visible hover state for interactive containers.
-- **Border Default** (`rgba(255, 255, 255, 0.1)`): Standard border for cards, dividers, and containers.
-- **Border Strong** (`rgba(255, 255, 255, 0.2)`): Emphasized borders for active states and button outlines.
+### 表面与边框
+- **提升表面**（`rgba(255, 255, 255, 0.05)`）：细微的卡片背景和悬停表面——几乎不可见的提升。
+- **悬停表面**（`rgba(255, 255, 255, 0.08)`）：可交互容器的更可见悬停状态。
+- **默认边框**（`rgba(255, 255, 255, 0.1)`）：卡片、分隔符和容器的标准边框。
+- **强边框**（`rgba(255, 255, 255, 0.2)`）：激活状态和按钮轮廓的强调边框。
 
-### Functional
-- **Text Primary** (`#ffffff`): All headings, body text, labels.
-- **Text Secondary** (`rgba(255, 255, 255, 0.7)`): Descriptions, captions, supporting text.
-- **Text Tertiary** (`rgba(255, 255, 255, 0.5)`): Muted labels, placeholder text, timestamps.
-- **Text Quaternary** (`rgba(255, 255, 255, 0.3)`): Disabled text, very subtle annotations.
+### 功能色
+- **主要文字**（`#ffffff`）：所有标题、正文、标签。
+- **次要文字**（`rgba(255, 255, 255, 0.7)`）：描述、说明、支持性文字。
+- **三级文字**（`rgba(255, 255, 255, 0.5)`）：柔和标签、占位符文字、时间戳。
+- **四级文字**（`rgba(255, 255, 255, 0.3)`）：禁用文字、非常细微的注释。
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Family
-- **Display / Buttons**: `GeistMono`, with fallback: `ui-monospace, SFMono-Regular, Roboto Mono, Menlo, Monaco, Liberation Mono, DejaVu Sans Mono, Courier New`
-- **Body / Headings**: `universalSans`, with fallback: `universalSans Fallback`
+### 字体族
+- **展示 / 按钮**：`GeistMono`，回退字体：`ui-monospace, SFMono-Regular, Roboto Mono, Menlo, Monaco, Liberation Mono, DejaVu Sans Mono, Courier New`
+- **正文 / 标题**：`universalSans`，回退字体：`universalSans Fallback`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Transform | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 变换 | 备注 |
 |------|------|------|--------|-------------|----------------|-----------|-------|
-| Display Hero | GeistMono | 320px (20rem) | 300 | 1.50 | normal | none | Extreme scale, monospace luxury |
-| Section Heading | universalSans | 30px (1.88rem) | 400 | 1.20 (tight) | normal | none | Clean sans-serif contrast |
-| Body | universalSans | 16px (1rem) | 400 | 1.50 | normal | none | Standard reading text |
-| Button | GeistMono | 14px (0.88rem) | 400 | 1.43 | 1.4px | uppercase | Tracked monospace, commanding |
-| Label / Caption | universalSans | 14px (0.88rem) | 400 | 1.50 | normal | none | Supporting text |
-| Small / Meta | universalSans | 12px (0.75rem) | 400 | 1.50 | normal | none | Timestamps, footnotes |
+| 展示级英雄标题 | GeistMono | 320px (20rem) | 300 | 1.50 | normal | none | 极端尺度、等宽奢华 |
+| 区块标题 | universalSans | 30px (1.88rem) | 400 | 1.20（紧凑） | normal | none | 干净的无衬线对比 |
+| 正文 | universalSans | 16px (1rem) | 400 | 1.50 | normal | none | 标准阅读文字 |
+| 按钮 | GeistMono | 14px (0.88rem) | 400 | 1.43 | 1.4px | uppercase | 拉开的等宽、命令式 |
+| 标签 / 说明 | universalSans | 14px (0.88rem) | 400 | 1.50 | normal | none | 支持性文字 |
+| 小号 / 元数据 | universalSans | 12px (0.75rem) | 400 | 1.50 | normal | none | 时间戳、脚注 |
 
-### Principles
-- **Monospace as display**: GeistMono at 320px is not a gimmick -- it is the brand statement. The fixed-width characters at extreme scale create a rhythmic, architectural quality that no proportional font can achieve.
-- **Light weight at scale**: Weight 300 for the 320px headline prevents the monospace from feeling heavy or brutish at extreme sizes. It reads as precise, not overwhelming.
-- **Uppercase buttons**: All button text is uppercase GeistMono with 1.4px letter-spacing. This creates a distinctly technical, almost command-line aesthetic for interactive elements.
-- **Sans-serif for reading**: universalSans at 16px/1.5 provides excellent readability for body content, creating a clean contrast against the monospace display elements.
-- **Two-font clarity**: The system uses exactly two typefaces with clear roles -- monospace for impact and interaction, sans-serif for information and reading. No overlap, no ambiguity.
+### 原则
+- **等宽作为展示字体**：320px 的 GeistMono 不是噱头——它是品牌宣言。固定宽度的字符在极端尺度下创造出一种任何比例字体都无法达到的、有节奏的、建筑般的品质。
+- **大尺度下的轻字重**：320px 标题使用字重 300 防止等宽字体在极端尺寸下显得沉重或粗野。它读起来是精确的，而非压倒性的。
+- **大写按钮**：所有按钮文字都是大写 GeistMono 配 1.4px 字间距。这为可交互元素创造出一种明显技术性的、几乎像命令行的美学。
+- **无衬线用于阅读**：16px/1.5 的 universalSans 为正文内容提供了出色的可读性，与等宽展示元素形成干净对比。
+- **双字体清晰分工**：系统恰好使用两种字体，角色清晰——等宽用于冲击和交互，无衬线用于信息和阅读。无重叠、无歧义。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary (White on Dark)**
-- Background: `#ffffff`
-- Text: `#1f2228`
-- Padding: 12px 24px
-- Radius: 0px (sharp corners)
-- Font: GeistMono 14px weight 400, uppercase, letter-spacing 1.4px
-- Hover: `rgba(255, 255, 255, 0.9)` background
-- Use: Primary CTA ("TRY GROK", "GET STARTED")
+**主按钮（深色上的白）**
+- 背景：`#ffffff`
+- 文字：`#1f2228`
+- 内边距：12px 24px
+- 圆角：0px（尖锐转角）
+- 字体：GeistMono 14px 字重 400、大写、字间距 1.4px
+- 悬停：`rgba(255, 255, 255, 0.9)` 背景
+- 用途：主要 CTA（「TRY GROK」、「GET STARTED」）
 
-**Ghost / Outlined**
-- Background: transparent
-- Text: `#ffffff`
-- Padding: 12px 24px
-- Radius: 0px
-- Border: `1px solid rgba(255, 255, 255, 0.2)`
-- Font: GeistMono 14px weight 400, uppercase, letter-spacing 1.4px
-- Hover: `rgba(255, 255, 255, 0.05)` background
-- Use: Secondary actions ("LEARN MORE", "VIEW API")
+**幽灵 / 轮廓**
+- 背景：透明
+- 文字：`#ffffff`
+- 内边距：12px 24px
+- 圆角：0px
+- 边框：`1px solid rgba(255, 255, 255, 0.2)`
+- 字体：GeistMono 14px 字重 400、大写、字间距 1.4px
+- 悬停：`rgba(255, 255, 255, 0.05)` 背景
+- 用途：次要操作（「LEARN MORE」、「VIEW API」）
 
-**Text Link**
-- Background: none
-- Text: `#ffffff`
-- Font: universalSans 16px weight 400
-- Hover: `rgba(255, 255, 255, 0.5)` -- dims on hover
-- Use: Inline links, navigation items
+**文字链接**
+- 背景：无
+- 文字：`#ffffff`
+- 字体：universalSans 16px 字重 400
+- 悬停：`rgba(255, 255, 255, 0.5)`——悬停时变暗
+- 用途：行内链接、导航项
 
-### Cards & Containers
-- Background: `rgba(255, 255, 255, 0.03)` or transparent
-- Border: `1px solid rgba(255, 255, 255, 0.1)`
-- Radius: 0px (sharp) or 4px (subtle)
-- Shadow: none -- xAI does not use box shadows
-- Hover: border shifts to `rgba(255, 255, 255, 0.2)`
+### 卡片与容器
+- 背景：`rgba(255, 255, 255, 0.03)` 或透明
+- 边框：`1px solid rgba(255, 255, 255, 0.1)`
+- 圆角：0px（尖锐）或 4px（细微）
+- 阴影：无——xAI 不使用 box 阴影
+- 悬停：边框变为 `rgba(255, 255, 255, 0.2)`
 
-### Navigation
-- Dark background matching page (`#1f2228`)
-- Brand logotype: white text, left-aligned
-- Links: universalSans 14px weight 400, `#ffffff` text
-- Hover: `rgba(255, 255, 255, 0.5)` text color
-- CTA: white primary button, right-aligned
-- Mobile: hamburger toggle
+### 导航
+- 深色背景匹配页面（`#1f2228`）
+- 品牌字标：白色文字、左对齐
+- 链接：universalSans 14px 字重 400、`#ffffff` 文字
+- 悬停：`rgba(255, 255, 255, 0.5)` 文字色
+- CTA：白色主按钮、右对齐
+- 移动端：汉堡切换
 
-### Badges / Tags
-**Monospace Tag**
-- Background: transparent
-- Text: `#ffffff`
-- Padding: 4px 8px
-- Border: `1px solid rgba(255, 255, 255, 0.2)`
-- Radius: 0px
-- Font: GeistMono 12px uppercase, letter-spacing 1px
+### 徽章 / 标签
+**等宽标签**
+- 背景：透明
+- 文字：`#ffffff`
+- 内边距：4px 8px
+- 边框：`1px solid rgba(255, 255, 255, 0.2)`
+- 圆角：0px
+- 字体：GeistMono 12px 大写、字间距 1px
 
-### Inputs & Forms
-- Background: transparent or `rgba(255, 255, 255, 0.05)`
-- Border: `1px solid rgba(255, 255, 255, 0.2)`
-- Radius: 0px
-- Focus: ring with `rgb(59, 130, 246) / 0.5`
-- Text: `#ffffff`
-- Placeholder: `rgba(255, 255, 255, 0.3)`
-- Label: `rgba(255, 255, 255, 0.7)`, universalSans 14px
+### 输入框与表单
+- 背景：透明或 `rgba(255, 255, 255, 0.05)`
+- 边框：`1px solid rgba(255, 255, 255, 0.2)`
+- 圆角：0px
+- 聚焦：带 `rgb(59, 130, 246) / 0.5` 的环
+- 文字：`#ffffff`
+- 占位符：`rgba(255, 255, 255, 0.3)`
+- 标签：`rgba(255, 255, 255, 0.7)`、universalSans 14px
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 4px, 8px, 24px, 48px
-- The scale is deliberately sparse -- xAI avoids granular spacing distinctions, preferring large jumps that create clear visual hierarchy through whitespace alone
+### 间距系统
+- 基础单位：8px
+- 阶梯：4px, 8px, 24px, 48px
+- 阶梯刻意稀疏——xAI 避免颗粒度的间距区分，偏好通过留白单独创造清晰视觉层次的大跨度跳跃
 
-### Grid & Container
-- Max content width: approximately 1200px
-- Hero: full-viewport height with massive centered monospace headline
-- Feature sections: simple vertical stacking with generous section padding (48px-96px)
-- Two-column layouts for feature descriptions at desktop
-- Full-width dark sections maintain the single dark background throughout
+### 网格与容器
+- 最大内容宽度：约 1200px
+- 英雄区：全视口高度，配居中的巨大等宽标题
+- 功能区块：简单的垂直堆叠，配宽裕的区块内边距（48px-96px）
+- 桌面端的功能描述使用双列布局
+- 全宽深色区块在整个页面保持单一的深色背景
 
-### Whitespace Philosophy
-- **Extreme generosity**: xAI uses vast amounts of whitespace. The 320px headline with 48px+ surrounding padding creates a sense of emptiness that is itself a design statement -- the content is so important it needs room to breathe.
-- **Vertical rhythm over horizontal density**: Content stacks vertically with large gaps between sections rather than packing horizontally. This creates a scroll-driven experience that feels deliberate and cinematic.
-- **No visual noise**: The absence of decorative elements, borders between sections, and color variety means whitespace is the primary structural tool.
+### 留白哲学
+- **极致宽裕**：xAI 使用大量留白。320px 标题配 48px+ 周围内边距创造出一种空旷感，这本身就是设计宣言——内容如此重要，以至于需要呼吸空间。
+- **垂直节奏优于水平密度**：内容垂直堆叠，区块之间有大间距，而非水平紧密排列。这创造出一种滚动驱动的体验，感觉刻意而电影化。
+- **无视觉噪音**：装饰元素、区块间边框和颜色多样性的缺失意味着留白是主要的结构工具。
 
-### Breakpoints
+### 断点
 - 2000px, 1536px, 1280px, 1024px, 1000px, 768px, 640px
-- Tailwind responsive modifiers drive breakpoint behavior
+- Tailwind 响应式修饰符驱动断点行为
 
-### Border Radius Scale
-- Sharp (0px): Primary treatment for buttons, cards, inputs -- the default
-- Subtle (4px): Occasional softening on secondary containers
-- The near-zero radius philosophy is core to the brand's brutalist identity
+### 圆角阶梯
+- 尖锐（0px）：按钮、卡片、输入框的主要处理方式——默认值
+- 细微（4px）：次要容器偶尔的柔化
+- 接近零的圆角哲学是品牌粗野主义身份的核心
 
-## 6. Depth & Elevation
+## 6. 深度与高度
 
-| Level | Treatment | Use |
+| 层级 | 处理方式 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow, no border | Page background, body content |
-| Surface (Level 1) | `rgba(255,255,255,0.03)` background | Subtle card surfaces |
-| Bordered (Level 2) | `1px solid rgba(255,255,255,0.1)` border | Cards, containers, dividers |
-| Active (Level 3) | `1px solid rgba(255,255,255,0.2)` border | Hover states, active elements |
-| Focus (Accessibility) | `ring` with `rgb(59,130,246)/0.5` | Keyboard focus indicator |
+| 平坦（层级 0） | 无阴影、无边框 | 页面背景、正文内容 |
+| 表面（层级 1） | `rgba(255,255,255,0.03)` 背景 | 细微的卡片表面 |
+| 带边框（层级 2） | `1px solid rgba(255,255,255,0.1)` 边框 | 卡片、容器、分隔符 |
+| 激活（层级 3） | `1px solid rgba(255,255,255,0.2)` 边框 | 悬停状态、激活元素 |
+| 聚焦（可访问性） | 带 `rgb(59,130,246)/0.5` 的环 | 键盘聚焦指示器 |
 
-**Elevation Philosophy**: xAI rejects the conventional shadow-based elevation system entirely. There are no box-shadows anywhere on the site. Instead, depth is communicated through three mechanisms: (1) opacity-based borders that brighten on interaction, creating a sense of elements "activating" rather than lifting; (2) extremely subtle background opacity shifts (`0.03` to `0.08`) that create barely-perceptible surface differentiation; and (3) the massive scale contrast between the 320px display type and 16px body text, which creates typographic depth. This is elevation through contrast and opacity, not through simulated light and shadow.
+**高度哲学**：xAI 完全拒绝传统的基于阴影的高度系统。整个网站没有任何 box 阴影。相反，深度通过三种机制传达：（1）基于不透明度的边框在交互时变亮，创造出一种元素「激活」而非「提升」的感觉；（2）极其细微的背景不透明度变化（`0.03` 到 `0.08`），创造出几乎察觉不到的表面区分；（3）320px 展示字体和 16px 正文字体之间的巨大尺度对比，创造出排版深度。这是通过对比和不透明度实现的高度，而非通过模拟的光影。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use `#1f2228` as the universal background -- never pure black `#000000`
-- Use GeistMono for all display headlines and button text -- monospace IS the brand
-- Apply uppercase + 1.4px letter-spacing to all button labels
-- Use weight 300 for the massive display headline (320px)
-- Keep borders at `rgba(255, 255, 255, 0.1)` -- barely visible, not absent
-- Dim interactive elements on hover to `rgba(255, 255, 255, 0.5)` -- the reverse of convention
-- Maintain sharp corners (0px radius) as the default -- brutalist precision
-- Use universalSans for all body and reading text at 16px/1.5
+### 宜
+- 使用 `#1f2228` 作为通用背景——绝不使用纯黑 `#000000`
+- 所有展示标题和按钮文字使用 GeistMono——等宽字体就是品牌
+- 所有按钮标签应用大写 + 1.4px 字间距
+- 巨大的展示标题（320px）使用字重 300
+- 边框保持在 `rgba(255, 255, 255, 0.1)`——几乎不可见，而非缺席
+- 可交互元素悬停时变暗到 `rgba(255, 255, 255, 0.5)`——与惯例相反
+- 默认保持尖锐转角（0px 圆角）——粗野主义精度
+- 所有正文和阅读文字使用 universalSans 16px/1.5
 
-### Don't
-- Don't use box-shadows -- xAI has zero shadow elevation
-- Don't introduce color accents beyond white and the dark background -- the monochromatic palette is sacred
-- Don't use large border-radius (8px+, pill shapes) -- the sharp edge is intentional
-- Don't use bold weights (600-700) for headlines -- weight 300-400 only
-- Don't brighten elements on hover -- xAI dims to `0.5` opacity instead
-- Don't add decorative gradients, illustrations, or color blocks
-- Don't use proportional fonts for buttons -- GeistMono uppercase is mandatory
-- Don't use colored status indicators unless absolutely necessary -- keep everything in the white/dark spectrum
+### 忌
+- 不要使用 box 阴影——xAI 没有零阴影高度
+- 不要在白色和深色背景之外引入彩色强调——单色调色板是神圣的
+- 不要使用大圆角（8px+、药丸形）——尖锐边缘是有意为之
+- 不要为标题使用粗体字重（600-700）——仅字重 300-400
+- 不要在悬停时变亮元素——xAI 反而变暗到 `0.5` 不透明度
+- 不要添加装饰性渐变、插图或色块
+- 不要为按钮使用比例字体——GeistMono 大写是强制性的
+- 不要使用彩色状态指示器，除非绝对必要——一切保持在白/深色谱中
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <640px | Single column, hero headline scales dramatically down |
-| Small Tablet | 640-768px | Slight increase in padding |
-| Tablet | 768-1024px | Two-column layouts begin, heading sizes increase |
-| Desktop | 1024-1280px | Full layout, generous whitespace |
-| Large | 1280-1536px | Wider containers, more breathing room |
-| Extra Large | 1536-2000px | Maximum content width, centered |
-| Ultra | >2000px | Content stays centered, extreme margins |
+| 移动设备 | <640px | 单列、英雄标题大幅缩小 |
+| 小型平板 | 640-768px | 内边距略微增加 |
+| 平板 | 768-1024px | 开始出现双列布局、标题字号增大 |
+| 桌面 | 1024-1280px | 完整布局、宽裕留白 |
+| 大屏 | 1280-1536px | 更宽容器、更多呼吸空间 |
+| 超大屏 | 1536-2000px | 最大内容宽度、居中 |
+| 超超宽 | >2000px | 内容保持居中、极端边距 |
 
-### Touch Targets
-- Buttons use 12px 24px padding for comfortable touch
-- Navigation links spaced with 24px gaps
-- Minimum tap target: 44px height
-- Mobile: full-width buttons for easy thumb reach
+### 触摸目标
+- 按钮使用 12px 24px 内边距以提供舒适触摸
+- 导航链接间隔 24px
+- 最小点击目标：44px 高度
+- 移动端：全宽按钮以便拇指轻松触达
 
-### Collapsing Strategy
-- Hero: 320px monospace headline scales down dramatically (to ~48px-64px on mobile)
-- Navigation: horizontal links collapse to hamburger menu
-- Feature sections: two-column to single-column stacking
-- Section padding: 96px -> 48px -> 24px across breakpoints
-- Massive display type is the first thing to resize -- it must remain impactful but not overflow
+### 折叠策略
+- 英雄区：320px 等宽标题大幅缩小（移动端至约 48px-64px）
+- 导航：水平链接折叠为汉堡菜单
+- 功能区块：双列到单列堆叠
+- 区块内边距：跨断点 96px -> 48px -> 24px
+- 巨大的展示字体是首先需要缩放的——它必须保持冲击力但不能溢出
 
-### Image Behavior
-- Minimal imagery -- the site relies on typography and whitespace
-- Any product screenshots maintain sharp corners
-- Full-width media scales proportionally with viewport
+### 图片行为
+- 极少的图像——网站依赖排版和留白
+- 任何产品截图保持尖锐转角
+- 全宽媒体随视口按比例缩放
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Background: Dark (`#1f2228`)
-- Text Primary: White (`#ffffff`)
-- Text Secondary: White 70% (`rgba(255, 255, 255, 0.7)`)
-- Text Muted: White 50% (`rgba(255, 255, 255, 0.5)`)
-- Text Disabled: White 30% (`rgba(255, 255, 255, 0.3)`)
-- Border Default: White 10% (`rgba(255, 255, 255, 0.1)`)
-- Border Strong: White 20% (`rgba(255, 255, 255, 0.2)`)
-- Surface Subtle: White 3% (`rgba(255, 255, 255, 0.03)`)
-- Surface Hover: White 8% (`rgba(255, 255, 255, 0.08)`)
-- Focus Ring: Blue (`rgb(59, 130, 246)` at 50% opacity)
-- Button Primary BG: White (`#ffffff`), text Dark (`#1f2228`)
+### 快速颜色参考
+- 背景：深色（`#1f2228`）
+- 主要文字：白色（`#ffffff`）
+- 次要文字：白色 70%（`rgba(255, 255, 255, 0.7)`）
+- 柔和文字：白色 50%（`rgba(255, 255, 255, 0.5)`）
+- 禁用文字：白色 30%（`rgba(255, 255, 255, 0.3)`）
+- 默认边框：白色 10%（`rgba(255, 255, 255, 0.1)`）
+- 强边框：白色 20%（`rgba(255, 255, 255, 0.2)`）
+- 细微表面：白色 3%（`rgba(255, 255, 255, 0.03)`）
+- 悬停表面：白色 8%（`rgba(255, 255, 255, 0.08)`）
+- 聚焦环：蓝色（50% 不透明度的 `rgb(59, 130, 246)`）
+- 主按钮背景：白色（`#ffffff`）、文字深色（`#1f2228`）
 
-### Example Component Prompts
-- "Create a hero section on #1f2228 background. Headline in GeistMono at 72px weight 300, color #ffffff, centered. Subtitle in universalSans 18px weight 400, rgba(255,255,255,0.7), max-width 600px centered. Two buttons: primary (white bg, #1f2228 text, 0px radius, GeistMono 14px uppercase, 1.4px letter-spacing, 12px 24px padding) and ghost (transparent bg, 1px solid rgba(255,255,255,0.2), white text, same font treatment)."
-- "Design a card: transparent or rgba(255,255,255,0.03) background, 1px solid rgba(255,255,255,0.1) border, 0px radius, 24px padding. No shadow. Title in universalSans 22px weight 400, #ffffff. Body in universalSans 16px weight 400, rgba(255,255,255,0.7), line-height 1.5. Hover: border changes to rgba(255,255,255,0.2)."
-- "Build navigation: #1f2228 background, full-width. Brand text left (GeistMono 14px uppercase). Links in universalSans 14px #ffffff with hover to rgba(255,255,255,0.5). White primary button right-aligned (GeistMono 14px uppercase, 1.4px letter-spacing)."
-- "Create a form: dark background #1f2228. Label in universalSans 14px rgba(255,255,255,0.7). Input with transparent bg, 1px solid rgba(255,255,255,0.2) border, 0px radius, white text 16px universalSans. Focus: blue ring rgb(59,130,246)/0.5. Placeholder: rgba(255,255,255,0.3)."
-- "Design a monospace tag/badge: transparent bg, 1px solid rgba(255,255,255,0.2), 0px radius, GeistMono 12px uppercase, 1px letter-spacing, white text, 4px 8px padding."
+### 示例组件提示
+- 「在 #1f2228 背景上创建英雄区块。标题用 GeistMono 72px 字重 300、颜色 #ffffff、居中。副标题用 universalSans 18px 字重 400、rgba(255,255,255,0.7)、最大宽度 600px 居中。两个按钮：主按钮（白色背景、#1f2228 文字、0px 圆角、GeistMono 14px 大写、1.4px 字间距、12px 24px 内边距）和幽灵按钮（透明背景、1px solid rgba(255,255,255,0.2)、白色文字、相同字体处理）。」
+- 「设计卡片：透明或 rgba(255,255,255,0.03) 背景、1px solid rgba(255,255,255,0.1) 边框、0px 圆角、24px 内边距。无阴影。标题用 universalSans 22px 字重 400、#ffffff。正文用 universalSans 16px 字重 400、rgba(255,255,255,0.7)、行高 1.5。悬停：边框变为 rgba(255,255,255,0.2)。」
+- 「构建导航：#1f2228 背景、全宽。品牌文字左对齐（GeistMono 14px 大写）。链接用 universalSans 14px #ffffff，悬停变为 rgba(255,255,255,0.5)。白色主按钮右对齐（GeistMono 14px 大写、1.4px 字间距）。」
+- 「创建表单：深色背景 #1f2228。标签用 universalSans 14px rgba(255,255,255,0.7)。输入框透明背景、1px solid rgba(255,255,255,0.2) 边框、0px 圆角、白色文字 16px universalSans。聚焦：蓝色环 rgb(59,130,246)/0.5。占位符：rgba(255,255,255,0.3)。」
+- 「设计等宽标签/徽章：透明背景、1px solid rgba(255,255,255,0.2)、0px 圆角、GeistMono 12px 大写、1px 字间距、白色文字、4px 8px 内边距。」
 
-### Iteration Guide
-1. Always start with `#1f2228` background -- never use pure black or gray backgrounds
-2. GeistMono for display and buttons, universalSans for everything else -- never mix these roles
-3. All buttons must be GeistMono uppercase with 1.4px letter-spacing -- this is non-negotiable
-4. No shadows, ever -- depth comes from border opacity and background opacity only
-5. Borders are always white with low opacity (0.1 default, 0.2 for emphasis)
-6. Hover behavior dims to 0.5 opacity rather than brightening -- the reverse of most systems
-7. Sharp corners (0px) by default -- only use 4px for specific secondary containers
-8. Body text at 16px universalSans with 1.5 line-height for comfortable reading
-9. Generous section padding (48px-96px) -- let content breathe in the darkness
-10. The monochromatic white-on-dark palette is absolute -- resist adding color unless critical for function
+### 迭代指南
+1. 始终以 `#1f2228` 背景开始——绝不使用纯黑或灰色背景
+2. GeistMono 用于展示和按钮，universalSans 用于其余一切——绝不混用这些角色
+3. 所有按钮必须是 GeistMono 大写配 1.4px 字间距——这是不可协商的
+4. 永远不要阴影——深度仅来自边框不透明度和背景不透明度
+5. 边框始终是低不透明度的白色（默认 0.1，强调 0.2）
+6. 悬停行为变暗到 0.5 不透明度而非变亮——与大多数系统相反
+7. 默认尖锐转角（0px）——仅对特定次要容器使用 4px
+8. 正文 16px universalSans 配 1.5 行高，以提供舒适阅读
+9. 宽裕的区块内边距（48px-96px）——让内容在黑暗中呼吸
+10. 单色的白压深色调色板是绝对的——除非功能关键，否则抵制添加颜色

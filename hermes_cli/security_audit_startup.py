@@ -1,24 +1,24 @@
-"""Startup security posture audit (warn-on-load, never blocks).
+"""启动时安全态势审计（加载时警告，绝不阻塞）。
 
-Surfaces dangerous host / deployment posture at process start so operators
-get an at-a-glance "you're exposed" signal. Motivated by the June 2026
-MCP-config persistence campaign, where compromised boxes ran as root with an
-exposed dashboard / API server and no firewall — and nothing ever told the
-operator. These checks are advisory: they emit ``logger.warning`` records
-and return human-readable strings; they never raise or block startup.
+在进程启动时暴露危险的主机 / 部署姿态，让运维人员一眼就能看到
+"你已暴露" 的信号。起因是 2026 年 6 月的
+MCP 配置持久化攻击活动：被入侵的机器以 root 身份运行，暴露了
+dashboard / API server，且没有防火墙——但没有任何东西通知
+运维人员。这些检查是建议性的：它们发出 ``logger.warning`` 记录
+并返回人类可读的字符串；从不抛出异常或阻塞启动。
 
-Checks (each is independent and fail-safe — any internal error is swallowed
-and simply yields no finding):
+检查项（每项独立且失败安全——任何内部错误都会被静默忽略
+且不产生发现项）：
 
-1. Running as root (POSIX uid 0).
-2. SSH daemon present with password authentication enabled.
-3. Running inside a container with no persistent volume mount over the
-   HERMES_HOME data dir (state is ephemeral — lost on container restart).
-4. A network-accessible gateway listener (dashboard / API server) with no
-   authentication configured.
+1. 以 root 身份运行（POSIX uid 0）。
+2. SSH daemon 存在且启用了密码认证。
+3. 在容器内运行，但 HERMES_HOME 数据目录上没有持久卷挂载
+   （状态是临时的——容器重启后丢失）。
+4. 网络可访问的 gateway 监听器（dashboard / API server）未
+   配置认证。
 
-Cross-platform: the root and SSH checks are POSIX-only and no-op on Windows.
-Everything is best-effort and read-only.
+跨平台：root 和 SSH 检查仅适用于 POSIX 系统，在 Windows 上为空操作。
+所有检查都是尽力而为且只读的。
 """
 from __future__ import annotations
 
@@ -30,13 +30,13 @@ from typing import Any, Optional
 
 logger = logging.getLogger("hermes.security_audit")
 
-# Sentinel so the audit only runs once per process even if both the CLI and
-# gateway startup paths call it.
+# 哨兵值，确保审计在每个进程中只运行一次，即使 CLI 和
+# gateway 启动路径都调用它。
 _AUDIT_RAN = False
 
 
 def _is_root() -> bool:
-    """True when the process runs as POSIX uid 0. Always False on Windows."""
+    """当进程以 POSIX uid 0 运行时返回 True。在 Windows 上始终返回 False。"""
     getuid = getattr(os, "geteuid", None) or getattr(os, "getuid", None)
     if getuid is None:
         return False
@@ -64,7 +64,7 @@ _SSHD_CONFIG_DIR = "/etc/ssh/sshd_config.d"
 
 
 def _iter_sshd_config_lines() -> list[str]:
-    """Yield non-comment lines from sshd_config + its drop-in directory."""
+    """从 sshd_config 及其 drop-in 目录生成非注释行。"""
     lines: list[str] = []
     paths: list[Path] = [Path(p) for p in _SSHD_CONFIG_PATHS]
     try:
@@ -85,16 +85,16 @@ def _iter_sshd_config_lines() -> list[str]:
 
 
 def _ssh_password_auth_enabled() -> Optional[str]:
-    """Warn when an SSH daemon has password authentication enabled.
+    """当 SSH daemon 启用密码认证时发出警告。
 
-    Password auth on a public SSH daemon is the classic brute-force surface
-    and pairs badly with a root-capable agent box. POSIX-only; returns None
-    when there's no sshd config to read (e.g. Windows, or SSH not installed).
+    公开 SSH daemon 上的密码认证是经典的暴力破解攻击面，
+    与具有 root 能力的 agent 机器搭配使用时非常危险。仅限 POSIX；
+    当没有可读取的 sshd 配置时返回 None（例如 Windows，或未安装 SSH）。
     """
     lines = _iter_sshd_config_lines()
     if not lines:
         return None
-    # Last directive wins in sshd_config. Default (no directive) is "yes".
+    # sshd_config 中最后一条指令生效。默认值（无指令）为 "yes"。
     verdict = "yes"
     saw_directive = False
     for line in lines:
@@ -113,7 +113,7 @@ def _ssh_password_auth_enabled() -> Optional[str]:
 
 
 def _in_container() -> bool:
-    """Best-effort container detection (Docker / Podman / generic OCI)."""
+    """尽力检测容器环境（Docker / Podman / 通用 OCI）。"""
     if os.path.exists("/.dockerenv"):
         return True
     if os.environ.get("HERMES_DESKTOP_CHILD_PID"):

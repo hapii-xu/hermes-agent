@@ -1,14 +1,14 @@
-"""Shared ANSI color utilities for Hermes CLI modules."""
+"""Hermes CLI 模块共享的 ANSI 颜色工具。"""
 
 import os
 import sys
 
 
 def should_use_color() -> bool:
-    """Return True when colored output is appropriate.
+    """当彩色输出适用时返回 True。
 
-    Respects the NO_COLOR environment variable (https://no-color.org/)
-    and TERM=dumb, in addition to the existing TTY check.
+    遵循 NO_COLOR 环境变量（https://no-color.org/）
+    和 TERM=dumb 设置，以及现有的 TTY 检测。
     """
     if os.environ.get("NO_COLOR") is not None:
         return False
@@ -32,7 +32,7 @@ class Colors:
 
 
 def color(text: str, *codes) -> str:
-    """Apply color codes to text (only when color output is appropriate)."""
+    """将颜色代码应用于文本（仅在彩色输出适用时）。"""
     if not should_use_color():
         return text
     return "".join(codes) + text + Colors.RESET

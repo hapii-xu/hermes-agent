@@ -2,32 +2,29 @@
 Web Search Provider Registry
 ============================
 
-Central map of registered web providers. Populated by plugins at import-time
-via :meth:`PluginContext.register_web_search_provider`; consumed by the
-``web_search`` and ``web_extract`` tool wrappers in :mod:`tools.web_tools` to
-dispatch each call to the active backend.
+已注册 Web 提供商的中央映射表。由插件在导入时通过
+:meth:`PluginContext.register_web_search_provider` 注册；
+被 :mod:`tools.web_tools` 中的 ``web_search`` 和 ``web_extract``
+工具包装器消费，用于将每次调用分派到当前活跃的后端。
 
 Active selection
 ----------------
-The active provider is chosen by configuration with this precedence:
+活跃提供商按以下优先级通过配置选择：
 
 1. ``web.search_backend`` / ``web.extract_backend``
-   (per-capability override).
-2. ``web.backend`` (shared fallback).
-3. If exactly one capability-eligible provider is registered AND available,
-   use it.
-4. Legacy preference order — ``firecrawl`` → ``parallel`` → ``tavily`` →
-   ``exa`` → ``searxng`` → ``brave-free`` → ``ddgs`` — filtered by
-   availability. Matches the historic ``tools.web_tools._get_backend()``
-   candidate order so installs that never set a config key keep landing
-   on the same provider they did before the plugin migration.
-5. Otherwise ``None`` — the tool surfaces a helpful error pointing at
-   ``hermes tools``.
+   （按能力的覆盖配置）。
+2. ``web.backend``（共享回退）。
+3. 如果恰好只有一个符合能力条件的提供商已注册且可用，则使用它。
+4. 旧版偏好顺序 — ``firecrawl`` → ``parallel`` → ``tavily`` →
+   ``exa`` → ``searxng`` → ``brave-free`` → ``ddgs`` — 按可用性过滤。
+   与历史 ``tools.web_tools._get_backend()`` 候选顺序一致，因此从未设置
+   配置项的安装在插件迁移后会继续命中相同的提供商。
+5. 否则返回 ``None`` — 工具会显示一条有用的错误信息，指向
+   ``hermes tools``。
 
-The capability filter (``supports_search`` / ``supports_extract``) is
-applied at every step so a search-only provider (``brave-free``)
-configured as ``web.extract_backend`` correctly falls through to an
-extract-capable backend.
+能力过滤器（``supports_search`` / ``supports_extract``）在每一步都会应用，
+因此配置为 ``web.extract_backend`` 的仅搜索提供商（``brave-free``）会正确
+回退到支持 extract 的后端。
 """
 
 from __future__ import annotations
@@ -46,11 +43,10 @@ _lock = threading.Lock()
 
 
 def register_provider(provider: WebSearchProvider) -> None:
-    """Register a web search/extract provider.
+    """注册一个 Web 搜索/提取提供商。
 
-    Re-registration (same ``name``) overwrites the previous entry and logs
-    a debug message — makes hot-reload scenarios (tests, dev loops) behave
-    predictably.
+    重复注册（相同 ``name``）会覆盖前一个条目并记录一条调试信息——
+    使热重载场景（测试、开发循环）行为可预测。
     """
     if not isinstance(provider, WebSearchProvider):
         raise TypeError(
@@ -76,14 +72,14 @@ def register_provider(provider: WebSearchProvider) -> None:
 
 
 def list_providers() -> List[WebSearchProvider]:
-    """Return all registered providers, sorted by name."""
+    """返回所有已注册的提供商，按名称排序。"""
     with _lock:
         items = list(_providers.values())
     return sorted(items, key=lambda p: p.name)
 
 
 def get_provider(name: str) -> Optional[WebSearchProvider]:
-    """Return the provider registered under *name*, or None."""
+    """返回在 *name* 下注册的提供商，不存在则返回 None。"""
     if not isinstance(name, str):
         return None
     with _lock:
@@ -91,12 +87,12 @@ def get_provider(name: str) -> Optional[WebSearchProvider]:
 
 
 # ---------------------------------------------------------------------------
-# Active-provider resolution
+# 活跃提供商解析
 # ---------------------------------------------------------------------------
 
 
 def _read_config_key(*path: str) -> Optional[str]:
-    """Resolve a dotted config key from ``config.yaml``. Returns None on miss."""
+    """从 ``config.yaml`` 解析一个点分隔的配置键。未找到则返回 None。"""
     try:
         from hermes_cli.config import load_config
 
@@ -113,12 +109,11 @@ def _read_config_key(*path: str) -> Optional[str]:
     return None
 
 
-# Legacy preference order — preserves behaviour for users who set no
-# ``web.backend`` / ``web.<capability>_backend`` config key at all. Matches
-# the historic candidate order in :func:`tools.web_tools._get_backend`
-# (paid providers first so existing paid setups don't get downgraded to
-# a free tier on upgrade). Filtered by ``is_available()`` at walk time so
-# we don't surface a provider the user has no credentials for.
+# 旧版偏好顺序 — 为未设置任何 ``web.backend`` /
+# ``web.<capability>_backend`` 配置键的用户保留原有行为。与
+# :func:`tools.web_tools._get_backend` 中的历史候选顺序一致
+# （付费提供商优先，这样已有的付费配置在升级后不会被降级到免费版）。
+# 在遍历时按 ``is_available()`` 过滤，因此不会返回用户没有凭据的提供商。
 _LEGACY_PREFERENCE = (
     "firecrawl",
     "parallel",

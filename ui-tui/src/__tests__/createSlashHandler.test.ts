@@ -6,9 +6,9 @@ import { DASHBOARD_EXIT_DISABLED_MESSAGE, DASHBOARD_UPDATE_DISABLED_MESSAGE } fr
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
 
-// DASHBOARD_TUI_MODE resolves once at module load from HERMES_TUI_DASHBOARD,
-// so toggling process.env in a test body can't move it. Mock just that one
-// export (everything else stays real) and flip the holder per test.
+// DASHBOARD_TUI_MODE 在模块加载时从 HERMES_TUI_DASHBOARD 一次性解析，
+// 因此在测试体中切换 process.env 不会生效。只 mock 这一个
+// export（其他保持真实），并在每个测试中切换 holder。
 const envState = { dashboardTuiMode: false }
 vi.mock('../config/env.js', async importActual => {
   const actual = await importActual<typeof import('../config/env.js')>()
@@ -127,7 +127,7 @@ describe('createSlashHandler', () => {
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     expect(ctx.transcript.sys).toHaveBeenCalledWith('exiting TUI to run update...')
 
-    // Advance past the 100ms setTimeout
+    // 跳过 100ms 的 setTimeout
     vi.advanceTimersByTime(150)
     expect(ctx.session.dieWithCode).toHaveBeenCalledWith(42)
 
@@ -400,11 +400,11 @@ describe('createSlashHandler', () => {
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 
-  // Regressions from Copilot review on #19835: /voice output + frontend
-  // binding state must both track the gateway's fresh ``record_key`` on
-  // every response, or a config edit shows the new shortcut in text
-  // while push-to-talk still fires the old one until the next mtime
-  // poll (~5s).
+  // #19835 Copilot 审查的回归问题：/voice 输出和前端
+  // binding state 都必须在每次响应时追踪 gateway 最新的 ``record_key``，
+  // 否则配置编辑会在文本中显示新的快捷键，
+  // 而 push-to-talk 仍然触发旧的，直到下一次 mtime
+  // 轮询（约 5 秒）。
   it('/voice status renders the gateway record_key and pushes it into frontend state', async () => {
     const rpc = vi.fn(() => Promise.resolve({ enabled: true, record_key: 'ctrl+space', tts: false }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
@@ -440,11 +440,11 @@ describe('createSlashHandler', () => {
     })
   })
 
-  // Round-2 Copilot review on #19835: a response missing ``record_key``
-  // (e.g. the old tts branch, or any future branch that forgets to
-  // include it) MUST NOT clobber the user's cached binding back to
-  // Ctrl+B. The label still renders the default for display; the
-  // frontend state keeps whatever was last authoritatively set.
+  // #19835 第二轮 Copilot 审查：缺少 ``record_key`` 的响应
+  //（例如旧的 tts 分支，或任何忘记包含它的
+  // 未来分支）绝不能将用户缓存的 binding 覆盖回
+  // Ctrl+B。标签仍然渲染默认值用于显示；
+  // frontend state 保留最后一次权威设置的值。
   it('/voice tts without record_key does not clobber cached frontend binding', async () => {
     const rpc = vi.fn(() => Promise.resolve({ enabled: true, tts: true }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
@@ -856,7 +856,7 @@ describe('createSlashHandler', () => {
   })
 
   it('/save without an active session tells the user instead of hitting the RPC', () => {
-    // sid stays null (default) but there IS visible conversation
+    // sid 保持为 null（默认值），但确实有可见的对话
     const rpc = vi.fn(() => Promise.resolve({}))
 
     const ctx = buildCtx({

@@ -1,8 +1,8 @@
-"""`hermes meet node ...` subcommand tree.
+"""`hermes meet node ...` 子命令树。
 
-Wired into the existing ``hermes meet`` parser by the plugin's top-level
-CLI. This module only defines the subparsers and their dispatch — it
-does not mutate the existing cli.py.
+由插件的顶层 CLI 接入现有的 ``hermes meet`` 解析器。
+此模块仅定义子解析器及其分发 — 它
+不会改变现有的 cli.py。
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from plugins.google_meet.node.server import NodeServer
 
 
 def register_cli(subparser: argparse.ArgumentParser) -> None:
-    """Add ``run / list / approve / remove / status / ping`` subparsers.
+    """添加 ``run / list / approve / remove / status / ping`` 子解析器。
 
-    *subparser* is the ``hermes meet node`` argparse object — typically
-    the result of ``meet_parser.add_parser('node', ...)``.
+    *subparser* 是 ``hermes meet node`` argparse 对象 — 通常是
+    ``meet_parser.add_parser('node', ...)`` 的结果。
     """
     sp = subparser.add_subparsers(dest="node_cmd", required=True)
 
@@ -55,9 +55,9 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
 
 
 def node_command(args: argparse.Namespace) -> int:
-    """Dispatch for ``hermes meet node ...``.
+    """``hermes meet node ...`` 的分发。
 
-    Returns a process exit code. Side-effects print to stdout/stderr.
+    返回进程退出码。副作用打印到 stdout/stderr。
     """
     cmd = getattr(args, "node_cmd", None)
 

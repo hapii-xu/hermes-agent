@@ -1,10 +1,10 @@
 """
-Feishu document comment access-control rules.
+飞书文档评论访问控制规则。
 
-3-tier rule resolution: exact doc > wildcard "*" > top-level > code defaults.
-Each field (enabled/policy/allow_from) falls back independently.
-Config: ~/.hermes/feishu_comment_rules.json (mtime-cached, hot-reload).
-Pairing store: ~/.hermes/feishu_comment_pairing.json.
+3 层规则解析：精确文档 > 通配符 "*" > 顶层 > 代码默认值。
+每个字段（enabled/policy/allow_from）独立回退。
+配置文件：~/.hermes/feishu_comment_rules.json（基于 mtime 缓存，热重载）。
+配对存储：~/.hermes/feishu_comment_pairing.json。
 """
 
 from __future__ import annotations
@@ -21,19 +21,18 @@ from hermes_constants import get_hermes_home
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Paths
+# 路径
 # ---------------------------------------------------------------------------
 #
-# Uses the canonical ``get_hermes_home()`` helper (HERMES_HOME-aware and
-# profile-safe). Resolved at import time; this module is lazy-imported by
-# the Feishu comment event handler, which runs long after profile overrides
-# have been applied, so freezing paths here is safe.
+# 使用规范的 ``get_hermes_home()`` 辅助函数（感知 HERMES_HOME 且
+# profile 安全）。在导入时解析；此模块由飞书评论事件处理器延迟导入，
+# 该处理器在 profile 覆盖应用之后才运行，因此在此处冻结路径是安全的。
 
 RULES_FILE = get_hermes_home() / "feishu_comment_rules.json"
 PAIRING_FILE = get_hermes_home() / "feishu_comment_pairing.json"
 
 # ---------------------------------------------------------------------------
-# Data models
+# 数据模型
 # ---------------------------------------------------------------------------
 
 _VALID_POLICIES = ("allowlist", "pairing")
@@ -41,7 +40,7 @@ _VALID_POLICIES = ("allowlist", "pairing")
 
 @dataclass(frozen=True)
 class CommentDocumentRule:
-    """Per-document rule.  ``None`` means 'inherit from lower tier'."""
+    """单文档规则。``None`` 表示'从下层继承'。"""
     enabled: Optional[bool] = None
     policy: Optional[str] = None
     allow_from: Optional[frozenset] = None
@@ -49,7 +48,7 @@ class CommentDocumentRule:
 
 @dataclass(frozen=True)
 class CommentsConfig:
-    """Top-level comment access config."""
+    """顶层评论访问配置。"""
     enabled: bool = True
     policy: str = "pairing"
     allow_from: frozenset = field(default_factory=frozenset)
@@ -58,19 +57,19 @@ class CommentsConfig:
 
 @dataclass(frozen=True)
 class ResolvedCommentRule:
-    """Fully resolved rule after field-by-field fallback."""
+    """字段逐一回退后完全解析的规则。"""
     enabled: bool
     policy: str
     allow_from: frozenset
-    match_source: str  # e.g. "exact:docx:xxx" | "wildcard" | "top" | "default"
+    match_source: str  # 例如 "exact:docx:xxx" | "wildcard" | "top" | "default"
 
 
 # ---------------------------------------------------------------------------
-# Mtime-cached file loading
+# 基于 mtime 缓存的文件加载
 # ---------------------------------------------------------------------------
 
 class _MtimeCache:
-    """Generic mtime-based file cache.  ``stat()`` per access, re-read only on change."""
+    """通用的基于 mtime 的文件缓存。每次访问执行 ``stat()``，仅在文件变化时重新读取。"""
 
     def __init__(self, path: Path):
         self._path = path
@@ -108,11 +107,11 @@ _pairing_cache = _MtimeCache(PAIRING_FILE)
 
 
 # ---------------------------------------------------------------------------
-# Config parsing
+# 配置解析
 # ---------------------------------------------------------------------------
 
 def _parse_frozenset(raw: Any) -> Optional[frozenset]:
-    """Parse a list of strings into a frozenset; return None if key absent."""
+    """将字符串列表解析为 frozenset；键不存在时返回 None。"""
     if raw is None:
         return None
     if isinstance(raw, (list, tuple)):
@@ -134,7 +133,7 @@ def _parse_document_rule(raw: dict) -> CommentDocumentRule:
 
 
 def load_config() -> CommentsConfig:
-    """Load comment rules from disk (mtime-cached)."""
+    """从磁盘加载评论规则（基于 mtime 缓存）。"""
     raw = _rules_cache.load()
     if not raw:
         return CommentsConfig()
@@ -159,11 +158,11 @@ def load_config() -> CommentsConfig:
 
 
 # ---------------------------------------------------------------------------
-# Rule resolution  (§8.4 field-by-field fallback)
+# 规则解析（§8.4 字段逐一回退）
 # ---------------------------------------------------------------------------
 
 def has_wiki_keys(cfg: CommentsConfig) -> bool:
-    """Check if any document rule key starts with 'wiki:'."""
+    """检查是否有任何文档规则键以 'wiki:' 开头。"""
     return any(k.startswith("wiki:") for k in cfg.documents)
 
 
@@ -173,7 +172,7 @@ def resolve_rule(
     file_token: str,
     wiki_token: str = "",
 ) -> ResolvedCommentRule:
-    """Resolve effective rule: exact doc → wiki key → wildcard → top-level → defaults."""
+    """解析生效规则：精确文档 → wiki 键 → 通配符 → 顶层 → 默认值。"""
     exact_key = f"{file_type}:{file_token}"
 
     exact = cfg.documents.get(exact_key)
@@ -202,7 +201,7 @@ def resolve_rule(
     policy, pol_src = _pick("policy")
     allow_from, _ = _pick("allow_from")
 
-    # match_source = highest-priority tier that contributed any field
+    # match_source = 贡献了任意字段的最高优先级层
     priority_order = {"exact": 0, "wildcard": 1, "top": 2}
     best_src = min(
         [en_src, pol_src],
@@ -218,11 +217,11 @@ def resolve_rule(
 
 
 # ---------------------------------------------------------------------------
-# Pairing store
+# 配对存储
 # ---------------------------------------------------------------------------
 
 def _load_pairing_approved() -> set:
-    """Return set of approved user open_ids (mtime-cached)."""
+    """返回已批准用户的 open_id 集合（基于 mtime 缓存）。"""
     data = _pairing_cache.load()
     approved = data.get("approved", {})
     if isinstance(approved, dict):
@@ -238,13 +237,13 @@ def _save_pairing(data: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     tmp.replace(PAIRING_FILE)
-    # Invalidate cache so next load picks up change
+    # 使缓存失效，以便下次加载获取变更
     _pairing_cache._mtime = 0.0
     _pairing_cache._data = None
 
 
 def pairing_add(user_open_id: str) -> bool:
-    """Add a user to the pairing-approved list. Returns True if newly added."""
+    """将用户添加到配对批准列表。新添加时返回 True。"""
     data = _pairing_cache.load()
     approved = data.get("approved", {})
     if not isinstance(approved, dict):

@@ -1,36 +1,36 @@
 # bold-graphic
 
-High-contrast comic style with bold outlines and dramatic visuals.
+高对比漫画风格，粗犷描边，视觉戏剧化。
 
-## Color Palette
+## 配色
 
-- Primary: Bold primaries - red, yellow, blue, black
-- Background: White, halftone patterns, dramatic shadows
-- Accents: Spot colors, neon highlights
+- 主色：大胆的原色——红、黄、蓝、黑
+- 背景：白色、半调网点、戏剧性阴影
+- 点缀：专色、霓虹高光
 
-## Variants
+## 变体
 
-| Variant | Focus | Visual Emphasis |
+| 变体 | 重点 | 视觉强调 |
 |---------|-------|-----------------|
-| **Graphic-novel** | Dramatic narratives | Action lines, hatching, panels |
-| **Pop-art** | High-energy impact | Halftone dots, Warhol repetition |
+| **图像小说** | 戏剧性叙事 | 动作线、排线、分格 |
+| **波普艺术** | 高能量冲击 | 半调圆点、沃霍尔式重复 |
 
-## Visual Elements
+## 视觉元素
 
-- Bold black outlines
-- High contrast compositions
-- Halftone dot patterns
-- Comic panel borders optional
-- Action lines and motion
-- Speech bubbles and sound effects
+- 粗黑描边
+- 高对比构图
+- 半调圆点图案
+- 可选的漫画面板边框
+- 动作线和运动感
+- 对话气泡和音效
 
-## Typography
+## 字体排印
 
-- Comic book lettering
-- Impact fonts for emphasis
-- POW/BANG effects for pop-art
-- Caption boxes for narrative
+- 漫画书式字体
+- 强调处用冲击感字体
+- 波普艺术用 POW/BANG 特效
+- 叙事用说明框
 
-## Best For
+## 最适用于
 
-Attention-grabbing content, dramatic narratives, pop culture, marketing, high-energy presentations
+抓眼球的内容、戏剧性叙事、流行文化、营销、高能量演讲

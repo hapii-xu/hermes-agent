@@ -1,43 +1,43 @@
-# Artifacts & Model Registry Guide
+# Artifacts 与模型注册表指南
 
-Complete guide to data versioning and model management with W&B Artifacts.
+关于使用 W&B Artifacts 进行数据版本化和模型管理的完整指南。
 
-## Table of Contents
-- What are Artifacts
-- Creating Artifacts
-- Using Artifacts
-- Model Registry
-- Versioning & Lineage
-- Best Practices
+## 目录
+- 什么是 Artifacts
+- 创建 Artifacts
+- 使用 Artifacts
+- 模型注册表
+- 版本与血缘
+- 最佳实践
 
-## What are Artifacts
+## 什么是 Artifacts
 
-Artifacts are versioned datasets, models, or files tracked with lineage.
+Artifacts 是带血缘追踪的、已版本化的数据集、模型或文件。
 
-**Key Features:**
-- Automatic versioning (v0, v1, v2...)
-- Lineage tracking (which runs produced/used artifacts)
-- Efficient storage (deduplication)
-- Collaboration (team-wide access)
-- Aliases (latest, best, production)
+**关键特性：**
+- 自动版本化（v0、v1、v2……）
+- 血缘追踪（哪些 run 生产/使用了 artifact）
+- 高效存储（去重）
+- 协作（团队级访问）
+- 别名（latest、best、production）
 
-**Common Use Cases:**
-- Dataset versioning
-- Model checkpoints
-- Preprocessed data
-- Evaluation results
-- Configuration files
+**常见用例：**
+- 数据集版本化
+- 模型检查点
+- 预处理过的数据
+- 评估结果
+- 配置文件
 
-## Creating Artifacts
+## 创建 Artifacts
 
-### Basic Dataset Artifact
+### 基础数据集 Artifact
 
 ```python
 import wandb
 
 run = wandb.init(project="my-project")
 
-# Create artifact
+# 创建 artifact
 dataset = wandb.Artifact(
     name='training-data',
     type='dataset',
@@ -49,17 +49,17 @@ dataset = wandb.Artifact(
     }
 )
 
-# Add files
-dataset.add_file('data/train.csv')        # Single file
-dataset.add_dir('data/images')            # Entire directory
-dataset.add_reference('s3://bucket/data') # Cloud reference
+# 添加文件
+dataset.add_file('data/train.csv')        # 单个文件
+dataset.add_dir('data/images')            # 整个目录
+dataset.add_reference('s3://bucket/data') # 云端引用
 
-# Log artifact
+# 记录 artifact
 run.log_artifact(dataset)
 wandb.finish()
 ```
 
-### Model Artifact
+### 模型 Artifact
 
 ```python
 import torch
@@ -67,13 +67,13 @@ import wandb
 
 run = wandb.init(project="my-project")
 
-# Train model
+# 训练模型
 model = train_model()
 
-# Save model
+# 保存模型
 torch.save(model.state_dict(), 'model.pth')
 
-# Create model artifact
+# 创建模型 artifact
 model_artifact = wandb.Artifact(
     name='resnet50-classifier',
     type='model',
@@ -87,19 +87,19 @@ model_artifact = wandb.Artifact(
     }
 )
 
-# Add model file
+# 添加模型文件
 model_artifact.add_file('model.pth')
 
-# Add config
+# 添加配置
 model_artifact.add_file('config.yaml')
 
-# Log with aliases
+# 带别名记录
 run.log_artifact(model_artifact, aliases=['latest', 'best'])
 
 wandb.finish()
 ```
 
-### Preprocessed Data Artifact
+### 预处理数据 Artifact
 
 ```python
 import pandas as pd
@@ -107,12 +107,12 @@ import wandb
 
 run = wandb.init(project="nlp-project")
 
-# Preprocess data
+# 预处理数据
 df = pd.read_csv('raw_data.csv')
 df_processed = preprocess(df)
 df_processed.to_csv('processed_data.csv', index=False)
 
-# Create artifact
+# 创建 artifact
 processed_data = wandb.Artifact(
     name='processed-text-data',
     type='dataset',
@@ -125,81 +125,81 @@ processed_data = wandb.Artifact(
 
 processed_data.add_file('processed_data.csv')
 
-# Log artifact
+# 记录 artifact
 run.log_artifact(processed_data)
 ```
 
-## Using Artifacts
+## 使用 Artifacts
 
-### Download and Use
+### 下载并使用
 
 ```python
 import wandb
 
 run = wandb.init(project="my-project")
 
-# Download artifact
+# 下载 artifact
 artifact = run.use_artifact('training-data:latest')
 artifact_dir = artifact.download()
 
-# Use files
+# 使用文件
 import pandas as pd
 df = pd.read_csv(f'{artifact_dir}/train.csv')
 
-# Train with artifact data
+# 用 artifact 数据训练
 model = train_model(df)
 ```
 
-### Use Specific Version
+### 使用特定版本
 
 ```python
-# Use specific version
+# 使用特定版本
 artifact_v2 = run.use_artifact('training-data:v2')
 
-# Use alias
+# 使用别名
 artifact_best = run.use_artifact('model:best')
 artifact_prod = run.use_artifact('model:production')
 
-# Use from another project
+# 从其他项目使用
 artifact = run.use_artifact('team/other-project/model:latest')
 ```
 
-### Check Artifact Metadata
+### 查看 Artifact 元数据
 
 ```python
 artifact = run.use_artifact('training-data:latest')
 
-# Access metadata
+# 访问元数据
 print(artifact.metadata)
 print(f"Size: {artifact.metadata['size']}")
 
-# Access version info
+# 访问版本信息
 print(f"Version: {artifact.version}")
 print(f"Created at: {artifact.created_at}")
 print(f"Digest: {artifact.digest}")
 ```
 
-## Model Registry
+## 模型注册表
 
-Link models to a central registry for governance and deployment.
+把模型链接到中心注册表，以便治理和部署。
 
-### Create Model Registry
+### 创建模型注册表
 
 ```python
-# In W&B UI:
-# 1. Go to "Registry" tab
-# 2. Create new registry: "production-models"
-# 3. Define stages: development, staging, production
+# 在 W&B UI 中：
+# 1. 进入 "Registry" 标签
+# 2. 创建新注册表："production-models"
+# 3. 定义阶段：development、staging、production
 ```
 
-### Link Model to Registry
+### 把模型链接到注册表
 
 ```python
 import wandb
 
 run = wandb.init(project="training")
 
-# Create model artifact
+# 创建模型 artifact
 model_artifact = wandb.Artifact(
     name='sentiment-classifier',
     type='model',
@@ -208,126 +208,126 @@ model_artifact = wandb.Artifact(
 
 model_artifact.add_file('model.pth')
 
-# Log artifact
+# 记录 artifact
 run.log_artifact(model_artifact)
 
-# Link to registry
+# 链接到注册表
 run.link_artifact(
     model_artifact,
     'model-registry/production-models',
-    aliases=['staging']  # Deploy to staging
+    aliases=['staging']  # 部署到 staging
 )
 
 wandb.finish()
 ```
 
-### Promote Model in Registry
+### 在注册表中提升模型
 
 ```python
-# Retrieve model from registry
+# 从注册表获取模型
 api = wandb.Api()
 artifact = api.artifact('model-registry/production-models/sentiment-classifier:staging')
 
-# Promote to production
+# 提升到 production
 artifact.link('model-registry/production-models', aliases=['production'])
 
-# Demote from production
+# 从 production 降级
 artifact.aliases = ['archived']
 artifact.save()
 ```
 
-### Use Model from Registry
+### 从注册表使用模型
 
 ```python
 import wandb
 
 run = wandb.init()
 
-# Download production model
+# 下载 production 模型
 model_artifact = run.use_artifact(
     'model-registry/production-models/sentiment-classifier:production'
 )
 
 model_dir = model_artifact.download()
 
-# Load and use
+# 加载并使用
 import torch
 model = torch.load(f'{model_dir}/model.pth')
 model.eval()
 ```
 
-## Versioning & Lineage
+## 版本与血缘
 
-### Automatic Versioning
+### 自动版本化
 
 ```python
-# First log: creates v0
+# 第一次记录：创建 v0
 run1 = wandb.init(project="my-project")
 dataset_v0 = wandb.Artifact('my-dataset', type='dataset')
 dataset_v0.add_file('data_v1.csv')
 run1.log_artifact(dataset_v0)
 
-# Second log with same name: creates v1
+# 第二次以同名记录：创建 v1
 run2 = wandb.init(project="my-project")
 dataset_v1 = wandb.Artifact('my-dataset', type='dataset')
-dataset_v1.add_file('data_v2.csv')  # Different content
+dataset_v1.add_file('data_v2.csv')  # 不同内容
 run2.log_artifact(dataset_v1)
 
-# Third log with SAME content as v1: references v1 (no new version)
+# 第三次以与 v1 相同内容记录：引用 v1（不会创建新版本）
 run3 = wandb.init(project="my-project")
 dataset_v1_again = wandb.Artifact('my-dataset', type='dataset')
-dataset_v1_again.add_file('data_v2.csv')  # Same content as v1
-run3.log_artifact(dataset_v1_again)  # Still v1, no v2 created
+dataset_v1_again.add_file('data_v2.csv')  # 与 v1 内容相同
+run3.log_artifact(dataset_v1_again)  # 仍是 v1，不会创建 v2
 ```
 
-### Track Lineage
+### 追踪血缘
 
 ```python
-# Training run
+# 训练 run
 run = wandb.init(project="my-project")
 
-# Use dataset (input)
+# 使用数据集（输入）
 dataset = run.use_artifact('training-data:v3')
 data = load_data(dataset.download())
 
-# Train model
+# 训练模型
 model = train(data)
 
-# Save model (output)
+# 保存模型（输出）
 model_artifact = wandb.Artifact('trained-model', type='model')
 torch.save(model.state_dict(), 'model.pth')
 model_artifact.add_file('model.pth')
 run.log_artifact(model_artifact)
 
-# Lineage automatically tracked:
+# 血缘会被自动追踪：
 # training-data:v3 --> [run] --> trained-model:v0
 ```
 
-### View Lineage Graph
+### 查看血缘图
 
 ```python
-# In W&B UI:
-# Artifacts → Select artifact → Lineage tab
-# Shows:
-# - Which runs produced this artifact
-# - Which runs used this artifact
-# - Parent/child artifacts
+# 在 W&B UI 中：
+# Artifacts → 选择 artifact → Lineage 标签
+# 会显示：
+# - 哪些 run 生产了这个 artifact
+# - 哪些 run 使用了这个 artifact
+# - 父/子 artifact
 ```
 
-## Artifact Types
+## Artifact 类型
 
-### Dataset Artifacts
+### 数据集 Artifact
 
 ```python
-# Raw data
+# 原始数据
 raw_data = wandb.Artifact('raw-data', type='dataset')
 raw_data.add_dir('raw/')
 
-# Processed data
+# 处理过的数据
 processed_data = wandb.Artifact('processed-data', type='dataset')
 processed_data.add_dir('processed/')
 
-# Train/val/test splits
+# 训练/验证/测试划分
 train_split = wandb.Artifact('train-split', type='dataset')
 train_split.add_file('train.csv')
 
@@ -335,72 +335,72 @@ val_split = wandb.Artifact('val-split', type='dataset')
 val_split.add_file('val.csv')
 ```
 
-### Model Artifacts
+### 模型 Artifact
 
 ```python
-# Checkpoint during training
+# 训练中的检查点
 checkpoint = wandb.Artifact('checkpoint-epoch-10', type='model')
 checkpoint.add_file('checkpoint_epoch_10.pth')
 
-# Final model
+# 最终模型
 final_model = wandb.Artifact('final-model', type='model')
 final_model.add_file('model.pth')
 final_model.add_file('tokenizer.json')
 
-# Quantized model
+# 量化模型
 quantized = wandb.Artifact('quantized-model', type='model')
 quantized.add_file('model_int8.onnx')
 ```
 
-### Result Artifacts
+### 结果 Artifact
 
 ```python
-# Predictions
+# 预测
 predictions = wandb.Artifact('test-predictions', type='predictions')
 predictions.add_file('predictions.csv')
 
-# Evaluation metrics
+# 评估指标
 eval_results = wandb.Artifact('evaluation', type='evaluation')
 eval_results.add_file('metrics.json')
 eval_results.add_file('confusion_matrix.png')
 ```
 
-## Advanced Patterns
+## 进阶模式
 
-### Incremental Artifacts
+### 增量 Artifact
 
-Add files incrementally without re-uploading.
+增量添加文件而无需重新上传。
 
 ```python
 run = wandb.init(project="my-project")
 
-# Create artifact
+# 创建 artifact
 dataset = wandb.Artifact('incremental-dataset', type='dataset')
 
-# Add files incrementally
+# 增量添加文件
 for i in range(100):
     filename = f'batch_{i}.csv'
     process_batch(i, filename)
     dataset.add_file(filename)
 
-    # Log progress
+    # 记录进度
     if (i + 1) % 10 == 0:
         print(f"Added {i + 1}/100 batches")
 
-# Log complete artifact
+# 记录完整 artifact
 run.log_artifact(dataset)
 ```
 
-### Artifact Tables
+### Artifact 表格
 
-Track structured data with W&B Tables.
+用 W&B Tables 追踪结构化数据。
 
 ```python
 import wandb
 
 run = wandb.init(project="my-project")
 
-# Create table
+# 创建表格
 table = wandb.Table(columns=["id", "image", "label", "prediction"])
 
 for idx, (img, label, pred) in enumerate(zip(images, labels, predictions)):
@@ -411,53 +411,53 @@ for idx, (img, label, pred) in enumerate(zip(images, labels, predictions)):
         pred
     )
 
-# Log as artifact
+# 作为 artifact 记录
 artifact = wandb.Artifact('predictions-table', type='predictions')
 artifact.add(table, "predictions")
 run.log_artifact(artifact)
 ```
 
-### Artifact References
+### Artifact 引用
 
-Reference external data without copying.
+引用外部数据而不复制。
 
 ```python
-# S3 reference
+# S3 引用
 dataset = wandb.Artifact('s3-dataset', type='dataset')
 dataset.add_reference('s3://my-bucket/data/', name='train')
 dataset.add_reference('s3://my-bucket/labels/', name='labels')
 
-# GCS reference
+# GCS 引用
 dataset.add_reference('gs://my-bucket/data/')
 
-# HTTP reference
+# HTTP 引用
 dataset.add_reference('https://example.com/data.zip')
 
-# Local filesystem reference (for shared storage)
+# 本地文件系统引用（用于共享存储）
 dataset.add_reference('file:///mnt/shared/data')
 ```
 
-## Collaboration Patterns
+## 协作模式
 
-### Team Dataset Sharing
+### 团队数据集共享
 
 ```python
-# Data engineer creates dataset
+# 数据工程师创建数据集
 run = wandb.init(project="data-eng", entity="my-team")
 dataset = wandb.Artifact('shared-dataset', type='dataset')
 dataset.add_dir('data/')
 run.log_artifact(dataset, aliases=['latest', 'production'])
 
-# ML engineer uses dataset
+# ML 工程师使用数据集
 run = wandb.init(project="ml-training", entity="my-team")
 dataset = run.use_artifact('my-team/data-eng/shared-dataset:production')
 data = load_data(dataset.download())
 ```
 
-### Model Handoff
+### 模型交接
 
 ```python
-# Training team
+# 训练团队
 train_run = wandb.init(project="model-training", entity="ml-team")
 model = train_model()
 model_artifact = wandb.Artifact('nlp-model', type='model')
@@ -465,31 +465,31 @@ model_artifact.add_file('model.pth')
 train_run.log_artifact(model_artifact)
 train_run.link_artifact(model_artifact, 'model-registry/nlp-models', aliases=['candidate'])
 
-# Evaluation team
+# 评估团队
 eval_run = wandb.init(project="model-eval", entity="ml-team")
 model_artifact = eval_run.use_artifact('model-registry/nlp-models/nlp-model:candidate')
 metrics = evaluate_model(model_artifact)
 
 if metrics['f1'] > 0.9:
-    # Promote to production
+    # 提升到 production
     model_artifact.link('model-registry/nlp-models', aliases=['production'])
 ```
 
-## Best Practices
+## 最佳实践
 
-### 1. Use Descriptive Names
+### 1. 使用有描述性的名称
 
 ```python
-# ✅ Good: Descriptive names
+# ✅ 好：有描述性的名称
 wandb.Artifact('imagenet-train-augmented-v2', type='dataset')
 wandb.Artifact('bert-base-sentiment-finetuned', type='model')
 
-# ❌ Bad: Generic names
+# ❌ 差：通用名称
 wandb.Artifact('dataset1', type='dataset')
 wandb.Artifact('model', type='model')
 ```
 
-### 2. Add Comprehensive Metadata
+### 2. 添加全面的元数据
 
 ```python
 model_artifact = wandb.Artifact(
@@ -497,22 +497,22 @@ model_artifact = wandb.Artifact(
     type='model',
     description='ResNet50 classifier for product categorization',
     metadata={
-        # Model info
+        # 模型信息
         'architecture': 'ResNet50',
         'framework': 'PyTorch 2.0',
         'pretrained': True,
 
-        # Performance
+        # 性能
         'accuracy': 0.95,
         'f1_score': 0.93,
         'inference_time_ms': 15,
 
-        # Training
+        # 训练
         'epochs': 50,
         'dataset': 'imagenet',
         'num_samples': 1200000,
 
-        # Business context
+        # 业务上下文
         'use_case': 'e-commerce product classification',
         'owner': 'ml-team@company.com',
         'approved_by': 'data-science-lead'
@@ -520,65 +520,65 @@ model_artifact = wandb.Artifact(
 )
 ```
 
-### 3. Use Aliases for Deployment Stages
+### 3. 用别名表示部署阶段
 
 ```python
-# Development
+# 开发
 run.log_artifact(model, aliases=['dev', 'latest'])
 
-# Staging
+# 预发布
 run.log_artifact(model, aliases=['staging'])
 
-# Production
+# 生产
 run.log_artifact(model, aliases=['production', 'v1.2.0'])
 
-# Archive old versions
+# 归档旧版本
 old_artifact = api.artifact('model:production')
 old_artifact.aliases = ['archived-v1.1.0']
 old_artifact.save()
 ```
 
-### 4. Track Data Lineage
+### 4. 追踪数据血缘
 
 ```python
 def create_training_pipeline():
     run = wandb.init(project="pipeline")
 
-    # 1. Load raw data
+    # 1. 加载原始数据
     raw_data = run.use_artifact('raw-data:latest')
 
-    # 2. Preprocess
+    # 2. 预处理
     processed = preprocess(raw_data)
     processed_artifact = wandb.Artifact('processed-data', type='dataset')
     processed_artifact.add_file('processed.csv')
     run.log_artifact(processed_artifact)
 
-    # 3. Train model
+    # 3. 训练模型
     model = train(processed)
     model_artifact = wandb.Artifact('trained-model', type='model')
     model_artifact.add_file('model.pth')
     run.log_artifact(model_artifact)
 
-    # Lineage: raw-data → processed-data → trained-model
+    # 血缘：raw-data → processed-data → trained-model
 ```
 
-### 5. Efficient Storage
+### 5. 高效存储
 
 ```python
-# ✅ Good: Reference large files
+# ✅ 好：引用大文件
 large_dataset = wandb.Artifact('large-dataset', type='dataset')
 large_dataset.add_reference('s3://bucket/huge-file.tar.gz')
 
-# ❌ Bad: Upload giant files
-# large_dataset.add_file('huge-file.tar.gz')  # Don't do this
+# ❌ 差：上传巨型文件
+# large_dataset.add_file('huge-file.tar.gz')  # 不要这样做
 
-# ✅ Good: Upload only metadata
+# ✅ 好：只上传元数据
 metadata_artifact = wandb.Artifact('dataset-metadata', type='dataset')
-metadata_artifact.add_file('metadata.json')  # Small file
+metadata_artifact.add_file('metadata.json')  # 小文件
 ```
 
-## Resources
+## 资源
 
-- **Artifacts Documentation**: https://docs.wandb.ai/guides/artifacts
-- **Model Registry**: https://docs.wandb.ai/guides/model-registry
-- **Best Practices**: https://wandb.ai/site/articles/versioning-data-and-models-in-ml
+- **Artifacts 文档**：https://docs.wandb.ai/guides/artifacts
+- **模型注册表**：https://docs.wandb.ai/guides/model-registry
+- **最佳实践**：https://wandb.ai/site/articles/versioning-data-and-models-in-ml

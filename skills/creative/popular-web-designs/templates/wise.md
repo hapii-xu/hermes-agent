@@ -1,186 +1,186 @@
-# Design System: Wise
+# 设计系统：Wise
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主字体：** `Inter` | **等宽字体：** `system monospace stack`
+> - **字体栈（CSS）：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` 技能（cloudflared 隧道）提供服务。
+> 生成后用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Wise's website is a bold, confident fintech platform that communicates "money without borders" through massive typography and a distinctive lime-green accent. The design operates on a warm off-white canvas with near-black text (`#0e0f0c`) and a signature Wise Green (`#9fe870`) — a fresh, lime-bright color that feels alive and optimistic, unlike the corporate blues of traditional banking.
+Wise 的网站是一个大胆、自信的金融科技平台，通过巨型字体和独特的青柠绿点缀，传达出「无国界的金钱」。设计运行在温暖的灰白画布上，搭配近黑文字（`#0e0f0c`）和标志性的 Wise 绿（`#9fe870`）—— 一种清新、青柠般明亮的颜色，感觉鲜活而乐观，与传统银行的企业蓝截然不同。
 
-The typography uses Wise Sans — a proprietary font used at extreme weight 900 (black) for display headings with a remarkably tight line-height of 0.85 and OpenType `"calt"` (contextual alternates). At 126px, the text is so dense it feels like a protest sign — bold, urgent, and impossible to ignore. Inter serves as the body font with weight 600 as the default for emphasis, creating a consistently confident voice.
+字体使用 Wise Sans —— 一种专有字体，在展示标题上使用极致的字重 900（黑色），并搭配极为紧凑的 0.85 行高和 OpenType `"calt"`（上下文替换）。在 126px 时，文字密集得像一张抗议标语 —— 大胆、急切、无法忽视。Inter 作为正文字体，默认用字重 600 强调，创造出一贯自信的嗓音。
 
-What distinguishes Wise is its green-on-white-on-black material palette. Lime Green (`#9fe870`) appears on buttons with dark green text (`#163300`), creating a nature-inspired CTA that feels fresh. Hover states use `scale(1.05)` expansion rather than color changes — buttons physically grow on interaction. The border-radius system uses 9999px for buttons (pill), 30px–40px for cards, and the shadow system is minimal — just `rgba(14,15,12,0.12) 0px 0px 0px 1px` ring shadows.
+Wise 的独特之处在于其绿-白-黑的材质配色。青柠绿（`#9fe870`）出现在按钮上，搭配深绿文字（`#163300`），打造出受自然启发的 CTA，感觉清新。悬停状态使用 `scale(1.05)` 放大而非颜色变化 —— 按钮在交互时物理生长。圆角系统按钮使用 9999px（药丸形）、卡片使用 30px–40px，阴影系统极简 —— 仅有 `rgba(14,15,12,0.12) 0px 0px 0px 1px` 环形阴影。
 
-**Key Characteristics:**
-- Wise Sans at weight 900, 0.85 line-height — billboard-scale bold headlines
-- Lime Green (`#9fe870`) accent with dark green text (`#163300`) — nature-inspired fintech
-- Inter body at weight 600 as default — confident, not light
-- Near-black (`#0e0f0c`) primary with warm green undertone
-- Scale(1.05) hover animations — buttons physically grow
-- OpenType `"calt"` on all text
-- Pill buttons (9999px) and large rounded cards (30px–40px)
-- Semantic color system with comprehensive state management
+**关键特征：**
+- Wise Sans 字重 900，0.85 行高 —— 广告牌级别的粗体标题
+- 青柠绿（`#9fe870`）点缀，配深绿文字（`#163300`）—— 受自然启发的金融科技
+- Inter 正文默认字重 600 —— 自信，不轻巧
+- 近黑（`#0e0f0c`）主色，带温暖绿色底色
+- Scale(1.05) 悬停动画 —— 按钮物理生长
+- 所有文字启用 OpenType `"calt"`
+- 药丸按钮（9999px）和大圆角卡片（30px–40px）
+- 语义配色系统，带全面的状态管理
 
-## 2. Color Palette & Roles
+## 2. 配色方案与角色
 
-### Primary Brand
-- **Near Black** (`#0e0f0c`): Primary text, background for dark sections
-- **Wise Green** (`#9fe870`): Primary CTA button, brand accent
-- **Dark Green** (`#163300`): Button text on green, deep green accent
-- **Light Mint** (`#e2f6d5`): Soft green surface, badge backgrounds
-- **Pastel Green** (`#cdffad`): `--color-interactive-contrast-hover`, hover accent
+### 主品牌色
+- **Near Black**（`#0e0f0c`）：主要文字、深色区块背景
+- **Wise Green**（`#9fe870`）：主要 CTA 按钮、品牌点缀色
+- **Dark Green**（`#163300`）：绿色上的按钮文字、深绿点缀
+- **Light Mint**（`#e2f6d5`）：柔和绿色表面、徽章背景
+- **Pastel Green**（`#cdffad`）：`--color-interactive-contrast-hover`，悬停点缀
 
-### Semantic
-- **Positive Green** (`#054d28`): `--color-sentiment-positive-primary`, success
-- **Danger Red** (`#d03238`): `--color-interactive-negative-hover`, error/destructive
-- **Warning Yellow** (`#ffd11a`): `--color-sentiment-warning-hover`, warnings
-- **Background Cyan** (`rgba(56,200,255,0.10)`): `--color-background-accent`, info tint
-- **Bright Orange** (`#ffc091`): `--color-bright-orange`, warm accent
+### 语义色
+- **Positive Green**（`#054d28`）：`--color-sentiment-positive-primary`，成功
+- **Danger Red**（`#d03238`）：`--color-interactive-negative-hover`，错误/破坏性
+- **Warning Yellow**（`#ffd11a`）：`--color-sentiment-warning-hover`，警告
+- **Background Cyan**（`rgba(56,200,255,0.10)`）：`--color-background-accent`，信息色调
+- **Bright Orange**（`#ffc091`）：`--color-bright-orange`，温暖点缀
 
-### Neutral
-- **Warm Dark** (`#454745`): Secondary text, borders
-- **Gray** (`#868685`): Muted text, tertiary
-- **Light Surface** (`#e8ebe6`): Subtle green-tinted light surface
+### 中性色
+- **Warm Dark**（`#454745`）：次要文字、边框
+- **Gray**（`#868685`）：柔和文字、第三级
+- **Light Surface**（`#e8ebe6`）：带绿色调的细微浅色表面
 
-## 3. Typography Rules
+## 3. 字体规则
 
-### Font Families
-- **Display**: `Wise Sans`, fallback: `Inter` — OpenType `"calt"` on all text
-- **Body / UI**: `Inter`, fallbacks: `Helvetica, Arial`
+### 字体家族
+- **展示字体**：`Wise Sans`，回退：`Inter` —— 所有文字启用 OpenType `"calt"`
+- **正文 / UI**：`Inter`，回退：`Helvetica, Arial`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字距 | 备注 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Mega | Wise Sans | 126px (7.88rem) | 900 | 0.85 (ultra-tight) | normal | `"calt"` |
+| Display Mega | Wise Sans | 126px (7.88rem) | 900 | 0.85（超紧凑） | normal | `"calt"` |
 | Display Hero | Wise Sans | 96px (6.00rem) | 900 | 0.85 | normal | `"calt"` |
 | Section Heading | Wise Sans | 64px (4.00rem) | 900 | 0.85 | normal | `"calt"` |
 | Sub-heading | Wise Sans | 40px (2.50rem) | 900 | 0.85 | normal | `"calt"` |
-| Alt Heading | Inter | 78px (4.88rem) | 600 | 1.10 (tight) | -2.34px | `"calt"` |
-| Card Title | Inter | 26px (1.62rem) | 600 | 1.23 (tight) | -0.39px | `"calt"` |
-| Feature Title | Inter | 22px (1.38rem) | 600 | 1.25 (tight) | -0.396px | `"calt"` |
+| Alt Heading | Inter | 78px (4.88rem) | 600 | 1.10（紧凑） | -2.34px | `"calt"` |
+| Card Title | Inter | 26px (1.62rem) | 600 | 1.23（紧凑） | -0.39px | `"calt"` |
+| Feature Title | Inter | 22px (1.38rem) | 600 | 1.25（紧凑） | -0.396px | `"calt"` |
 | Body | Inter | 18px (1.13rem) | 400 | 1.44 | 0.18px | `"calt"` |
 | Body Semibold | Inter | 18px (1.13rem) | 600 | 1.44 | -0.108px | `"calt"` |
 | Button | Inter | 18px–22px | 600 | 1.00–1.44 | -0.108px | `"calt"` |
 | Caption | Inter | 14px (0.88rem) | 400–600 | 1.50–1.86 | -0.084px to -0.108px | `"calt"` |
 | Small | Inter | 12px (0.75rem) | 400–600 | 1.00–2.17 | -0.084px to -0.108px | `"calt"` |
 
-### Principles
-- **Weight 900 as identity**: Wise Sans Black (900) is used exclusively for display — the heaviest weight in any analyzed system. It creates text that feels stamped, pressed, physical.
-- **0.85 line-height**: The tightest display line-height analyzed. Letters overlap vertically, creating dense, billboard-like text blocks.
-- **"calt" everywhere**: Contextual alternates enabled on ALL text — both Wise Sans and Inter.
-- **Weight 600 as body default**: Inter Semibold is the standard reading weight — confident, not light.
+### 原则
+- **字重 900 作为标识**：Wise Sans Black（900）专用于展示 —— 所有分析过的系统里最重的字重。它创造出感觉像盖章、压印、实体般的文字。
+- **0.85 行高**：分析过的最紧凑的展示行高。字母垂直方向重叠，创造出密集、广告牌式的文字块。
+- **"calt" 处处启用**：上下文替换在所有文字上启用 —— 无论 Wise Sans 还是 Inter。
+- **字重 600 作为正文默认值**：Inter Semibold 是标准阅读字重 —— 自信，不轻巧。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Green Pill**
-- Background: `#9fe870` (Wise Green)
-- Text: `#163300` (Dark Green)
-- Padding: 5px 16px
-- Radius: 9999px
-- Hover: scale(1.05) — button physically grows
-- Active: scale(0.95) — button compresses
-- Focus: inset ring + outline
+**主绿色药丸**
+- 背景：`#9fe870`（Wise 绿）
+- 文字：`#163300`（深绿）
+- 内边距：5px 16px
+- 圆角：9999px
+- 悬停：scale(1.05) —— 按钮物理生长
+- 激活：scale(0.95) —— 按钮压缩
+- 聚焦：内嵌环 + 轮廓
 
-**Secondary Subtle Pill**
-- Background: `rgba(22, 51, 0, 0.08)` (dark green at 8% opacity)
-- Text: `#0e0f0c`
-- Padding: 8px 12px 8px 16px
-- Radius: 9999px
-- Same scale hover/active behavior
+**次要细微药丸**
+- 背景：`rgba(22, 51, 0, 0.08)`（深绿 8% 不透明度）
+- 文字：`#0e0f0c`
+- 内边距：8px 12px 8px 16px
+- 圆角：9999px
+- 相同的 scale 悬停/激活行为
 
-### Cards & Containers
-- Radius: 16px (small), 30px (medium), 40px (large cards/tables)
-- Border: `1px solid rgba(14,15,12,0.12)` or `1px solid #9fe870` (green accent)
-- Shadow: `rgba(14,15,12,0.12) 0px 0px 0px 1px` (ring shadow)
+### 卡片与容器
+- 圆角：16px（小）、30px（中）、40px（大卡片/表格）
+- 边框：`1px solid rgba(14,15,12,0.12)` 或 `1px solid #9fe870`（绿色点缀）
+- 阴影：`rgba(14,15,12,0.12) 0px 0px 0px 1px`（环形阴影）
 
-### Navigation
-- Green-tinted navigation hover: `rgba(211,242,192,0.4)`
-- Clean header with Wise wordmark
-- Pill CTAs right-aligned
+### 导航
+- 带绿色调的导航悬停：`rgba(211,242,192,0.4)`
+- 干净的页眉，带 Wise 字标
+- 药丸 CTA 右对齐
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 2px, 3px, 4px, 5px, 8px, 10px, 11px, 12px, 16px, 18px, 19px, 20px, 22px, 24px
+### 间距系统
+- 基准单位：8px
+- 比例：1px, 2px, 3px, 4px, 5px, 8px, 10px, 11px, 12px, 16px, 18px, 19px, 20px, 22px, 24px
 
-### Border Radius Scale
-- Minimal (2px): Links, inputs
-- Standard (10px): Comboboxes, inputs
-- Card (16px): Small cards, buttons, radio
-- Medium (20px): Links, medium cards
-- Large (30px): Feature cards
-- Section (40px): Tables, large cards
-- Mega (1000px): Presentation elements
-- Pill (9999px): All buttons, images
-- Circle (50%): Icons, badges
+### 边框圆角比例
+- 极小（2px）：链接、输入框
+- 标准（10px）：组合框、输入框
+- 卡片（16px）：小卡片、按钮、单选框
+- 中（20px）：链接、中等卡片
+- 大（30px）：功能卡片
+- 区块（40px）：表格、大卡片
+- 超大（1000px）：展示型元素
+- 药丸（9999px）：所有按钮、图片
+- 圆形（50%）：图标、徽章
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-| Level | Treatment | Use |
+| 级别 | 处理 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | Default |
-| Ring (Level 1) | `rgba(14,15,12,0.12) 0px 0px 0px 1px` | Card borders |
-| Inset (Level 2) | `rgb(134,134,133) 0px 0px 0px 1px inset` | Input focus |
+| 扁平（Level 0） | 无阴影 | 默认 |
+| 环形（Level 1） | `rgba(14,15,12,0.12) 0px 0px 0px 1px` | 卡片边框 |
+| 内嵌（Level 2） | `rgb(134,134,133) 0px 0px 0px 1px inset` | 输入框聚焦 |
 
-**Shadow Philosophy**: Wise uses minimal shadows — ring shadows only. Depth comes from the bold green accent against the neutral canvas.
+**阴影哲学**：Wise 使用极简阴影 —— 仅环形阴影。深度来自中性画布上的粗体绿色点缀对比。
 
-## 7. Do's and Don'ts
+## 7. 宜与不宜
 
-### Do
-- Use Wise Sans weight 900 for display — the extreme boldness IS the brand
-- Apply line-height 0.85 on Wise Sans display — ultra-tight is intentional
-- Use Lime Green (#9fe870) for primary CTAs with Dark Green (#163300) text
-- Apply scale(1.05) hover and scale(0.95) active on buttons
-- Enable "calt" on all text
-- Use Inter weight 600 as the body default
+### 宜
+- 展示使用 Wise Sans 字重 900 —— 极致的粗体就是品牌
+- Wise Sans 展示应用 0.85 行高 —— 超紧凑是有意为之
+- 主要 CTA 使用青柠绿（#9fe870）配深绿（#163300）文字
+- 按钮应用 scale(1.05) 悬停和 scale(0.95) 激活
+- 所有文字启用 "calt"
+- 正文默认使用 Inter 字重 600
 
-### Don't
-- Don't use light font weights for Wise Sans — only 900
-- Don't relax the 0.85 line-height on display — the density is the identity
-- Don't use the Wise Green as background for large surfaces — it's for buttons and accents
-- Don't skip the scale animation on buttons
-- Don't use traditional shadows — ring shadows only
+### 不宜
+- 不要对 Wise Sans 使用细字重 —— 仅限 900
+- 不要放宽展示的 0.85 行高 —— 密度就是标识
+- 不要把 Wise 绿用作大表面背景 —— 它是给按钮和点缀用的
+- 不要跳过按钮的 scale 动画
+- 不要使用传统阴影 —— 仅环形阴影
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <576px | Single column |
-| Tablet | 576–992px | 2-column |
-| Desktop | 992–1440px | Full layout |
-| Large | >1440px | Expanded |
+| Mobile | <576px | 单列 |
+| Tablet | 576–992px | 2 列 |
+| Desktop | 992–1440px | 完整布局 |
+| Large | >1440px | 扩展 |
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示词指南
 
-### Quick Color Reference
-- Text: Near Black (`#0e0f0c`)
-- Background: White (`#ffffff` / off-white)
-- Accent: Wise Green (`#9fe870`)
-- Button text: Dark Green (`#163300`)
-- Secondary: Gray (`#868685`)
+### 快速颜色参考
+- 文字：Near Black（`#0e0f0c`）
+- 背景：白色（`#ffffff` / 灰白）
+- 点缀：Wise 绿（`#9fe870`）
+- 按钮文字：深绿（`#163300`）
+- 次要色：灰色（`#868685`）
 
-### Example Component Prompts
-- "Create hero: white background. Headline at 96px Wise Sans weight 900, line-height 0.85, 'calt' enabled, #0e0f0c text. Green pill CTA (#9fe870, 9999px radius, 5px 16px padding, #163300 text). Hover: scale(1.05)."
-- "Build a card: 30px radius, 1px solid rgba(14,15,12,0.12). Title at 22px Inter weight 600, body at 18px weight 400."
+### 组件示例提示词
+- "创建 hero：白色背景。标题 96px Wise Sans 字重 900，行高 0.85，启用 'calt'，#0e0f0c 文字。绿色药丸 CTA（#9fe870，9999px 圆角，5px 16px 内边距，#163300 文字）。悬停：scale(1.05)。"
+- "构建卡片：30px 圆角，1px solid rgba(14,15,12,0.12)。标题 22px Inter 字重 600，正文 18px 字重 400。"
 
-### Iteration Guide
-1. Wise Sans 900 at 0.85 line-height — the extreme weight IS the brand
-2. Lime Green for buttons only — dark green text on green background
-3. Scale animations (1.05 hover, 0.95 active) on all interactive elements
-4. "calt" on everything — contextual alternates are mandatory
-5. Inter 600 for body — confident reading weight
+### 迭代指南
+1. Wise Sans 900 配 0.85 行高 —— 极致字重就是品牌
+2. 青柠绿仅用于按钮 —— 绿色背景上配深绿文字
+3. 所有交互元素使用 scale 动画（1.05 悬停，0.95 激活）
+4. 万物启用 "calt" —— 上下文替换是强制性的
+5. Inter 600 用于正文 —— 自信的阅读字重

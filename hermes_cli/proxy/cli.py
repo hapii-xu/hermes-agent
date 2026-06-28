@@ -1,4 +1,4 @@
-"""CLI handlers for the ``hermes proxy`` subcommand."""
+"""``hermes proxy`` 子命令的 CLI 处理函数。"""
 
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ def _print_aiohttp_missing() -> None:
 
 
 def cmd_proxy_start(args: Any) -> int:
-    """Run the proxy server in the foreground.
+    """在前台运行 proxy 服务器。
 
-    Returns process exit code (0 on clean shutdown).
+    返回进程退出码（正常关闭时为 0）。
     """
     if not AIOHTTP_AVAILABLE:
         _print_aiohttp_missing()
@@ -76,7 +76,7 @@ def cmd_proxy_start(args: Any) -> int:
 
 
 def cmd_proxy_status(args: Any) -> int:
-    """Print the status of each configured upstream adapter."""
+    """打印每个已配置的上游 adapter 的状态。"""
     print("Hermes proxy upstream adapters\n")
     for name in sorted(ADAPTERS):
         adapter = get_adapter(name)
@@ -100,7 +100,7 @@ def cmd_proxy_status(args: Any) -> int:
 
 
 def cmd_proxy_list_providers(args: Any) -> int:
-    """List available proxy upstream providers."""
+    """列出可用的 proxy 上游 provider。"""
     print("Available proxy upstream providers:")
     for name in sorted(ADAPTERS):
         adapter = get_adapter(name)
@@ -109,7 +109,7 @@ def cmd_proxy_list_providers(args: Any) -> int:
 
 
 def cmd_proxy(args: Any) -> int:
-    """Dispatch ``hermes proxy <subcommand>``."""
+    """分发 ``hermes proxy <subcommand>``。"""
     sub = getattr(args, "proxy_command", None)
     if sub == "start":
         return cmd_proxy_start(args)
@@ -117,7 +117,7 @@ def cmd_proxy(args: Any) -> int:
         return cmd_proxy_status(args)
     if sub in {"providers", "list"}:
         return cmd_proxy_list_providers(args)
-    # No subcommand → print short help.
+    # 没有子命令 → 打印简短帮助。
     print(
         "hermes proxy — local OpenAI-compatible proxy that attaches your\n"
         "OAuth-authenticated provider credentials to outbound requests.\n"

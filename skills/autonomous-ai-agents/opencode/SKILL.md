@@ -1,6 +1,6 @@
 ---
 name: opencode
-description: "Delegate coding to OpenCode CLI (features, PR review)."
+description: "将编码任务委托给 OpenCode CLI（功能开发、PR 审查）。"
 version: 1.2.0
 author: Hermes Agent
 license: MIT
@@ -13,157 +13,157 @@ metadata:
 
 # OpenCode CLI
 
-Use [OpenCode](https://opencode.ai) as an autonomous coding worker orchestrated by Hermes terminal/process tools. OpenCode is a provider-agnostic, open-source AI coding agent with a TUI and CLI.
+将 [OpenCode](https://opencode.ai) 作为自主编码工作器使用，由 Hermes 终端/进程工具编排。OpenCode 是一个与提供商无关的开源 AI 编码智能体，带有 TUI 和 CLI。
 
-## When to Use
+## 何时使用
 
-- User explicitly asks to use OpenCode
-- You want an external coding agent to implement/refactor/review code
-- You need long-running coding sessions with progress checks
-- You want parallel task execution in isolated workdirs/worktrees
+- 用户明确要求使用 OpenCode
+- 你想要一个外部编码智能体来实现/重构/审查代码
+- 你需要长时间运行的编码会话并定期检查进度
+- 你希望在相互隔离的工作目录（workdir）/工作树（worktree）中并行执行任务
 
-## Prerequisites
+## 前置条件
 
-- OpenCode installed: `npm i -g opencode-ai@latest` or `brew install anomalyco/tap/opencode`
-- Auth configured: `opencode auth login` or set provider env vars (OPENROUTER_API_KEY, etc.)
-- Verify: `opencode auth list` should show at least one provider
-- Git repository for code tasks (recommended)
-- `pty=true` for interactive TUI sessions
+- 已安装 OpenCode：`npm i -g opencode-ai@latest` 或 `brew install anomalyco/tap/opencode`
+- 已配置认证：`opencode auth login`，或设置提供商环境变量（OPENROUTER_API_KEY 等）
+- 验证：`opencode auth list` 应至少显示一个提供商
+- 用于代码任务的 Git 仓库（推荐）
+- 交互式 TUI 会话需设置 `pty=true`
 
-## Binary Resolution (Important)
+## 二进制文件解析（重要）
 
-Shell environments may resolve different OpenCode binaries. If behavior differs between your terminal and Hermes, check:
+不同 Shell 环境可能解析到不同的 OpenCode 二进制文件。如果你的终端与 Hermes 之间行为不一致，请检查：
 
 ```
 terminal(command="which -a opencode")
 terminal(command="opencode --version")
 ```
 
-If needed, pin an explicit binary path:
+如有需要，显式指定二进制路径：
 
 ```
 terminal(command="$HOME/.opencode/bin/opencode run '...'", workdir="~/project", pty=true)
 ```
 
-## One-Shot Tasks
+## 一次性任务（One-Shot Tasks）
 
-Use `opencode run` for bounded, non-interactive tasks:
+对于有边界、非交互式的任务，使用 `opencode run`：
 
 ```
 terminal(command="opencode run 'Add retry logic to API calls and update tests'", workdir="~/project")
 ```
 
-Attach context files with `-f`:
+用 `-f` 附加上下文文件：
 
 ```
 terminal(command="opencode run 'Review this config for security issues' -f config.yaml -f .env.example", workdir="~/project")
 ```
 
-Show model thinking with `--thinking`:
+用 `--thinking` 显示模型思考过程：
 
 ```
 terminal(command="opencode run 'Debug why tests fail in CI' --thinking", workdir="~/project")
 ```
 
-Force a specific model:
+强制使用指定模型：
 
 ```
 terminal(command="opencode run 'Refactor auth module' --model openrouter/anthropic/claude-sonnet-4", workdir="~/project")
 ```
 
-## Interactive Sessions (Background)
+## 交互式会话（后台）
 
-For iterative work requiring multiple exchanges, start the TUI in background:
+对于需要多次交互的迭代式工作，可在后台启动 TUI：
 
 ```
 terminal(command="opencode", workdir="~/project", background=true, pty=true)
-# Returns session_id
+# 返回 session_id
 
-# Send a prompt
+# 发送提示词
 process(action="submit", session_id="<id>", data="Implement OAuth refresh flow and add tests")
 
-# Monitor progress
+# 监控进度
 process(action="poll", session_id="<id>")
 process(action="log", session_id="<id>")
 
-# Send follow-up input
+# 发送后续输入
 process(action="submit", session_id="<id>", data="Now add error handling for token expiry")
 
-# Exit cleanly — Ctrl+C
+# 干净退出 —— Ctrl+C
 process(action="write", session_id="<id>", data="\x03")
-# Or just kill the process
+# 或者直接结束进程
 process(action="kill", session_id="<id>")
 ```
 
-**Important:** Do NOT use `/exit` — it is not a valid OpenCode command and will open an agent selector dialog instead. Use Ctrl+C (`\x03`) or `process(action="kill")` to exit.
+**重要：** 不要使用 `/exit` —— 它不是有效的 OpenCode 命令，反而会打开一个智能体选择对话框。请使用 Ctrl+C（`\x03`）或 `process(action="kill")` 来退出。
 
-### TUI Keybindings
+### TUI 快捷键
 
-| Key | Action |
+| 按键 | 动作 |
 |-----|--------|
-| `Enter` | Submit message (press twice if needed) |
-| `Tab` | Switch between agents (build/plan) |
-| `Ctrl+P` | Open command palette |
-| `Ctrl+X L` | Switch session |
-| `Ctrl+X M` | Switch model |
-| `Ctrl+X N` | New session |
-| `Ctrl+X E` | Open editor |
-| `Ctrl+C` | Exit OpenCode |
+| `Enter` | 提交消息（如有需要按两次） |
+| `Tab` | 在智能体之间切换（build/plan） |
+| `Ctrl+P` | 打开命令面板 |
+| `Ctrl+X L` | 切换会话 |
+| `Ctrl+X M` | 切换模型 |
+| `Ctrl+X N` | 新建会话 |
+| `Ctrl+X E` | 打开编辑器 |
+| `Ctrl+C` | 退出 OpenCode |
 
-### Resuming Sessions
+### 恢复会话
 
-After exiting, OpenCode prints a session ID. Resume with:
+退出后，OpenCode 会打印一个会话 ID。可按以下方式恢复：
 
 ```
-terminal(command="opencode -c", workdir="~/project", background=true, pty=true)  # Continue last session
-terminal(command="opencode -s ses_abc123", workdir="~/project", background=true, pty=true)  # Specific session
+terminal(command="opencode -c", workdir="~/project", background=true, pty=true)  # 继续上一个会话
+terminal(command="opencode -s ses_abc123", workdir="~/project", background=true, pty=true)  # 指定会话
 ```
 
-## Common Flags
+## 常用参数
 
-| Flag | Use |
+| 参数 | 用途 |
 |------|-----|
-| `run 'prompt'` | One-shot execution and exit |
-| `--continue` / `-c` | Continue the last OpenCode session |
-| `--session <id>` / `-s` | Continue a specific session |
-| `--agent <name>` | Choose OpenCode agent (build or plan) |
-| `--model provider/model` | Force specific model |
-| `--format json` | Machine-readable output/events |
-| `--file <path>` / `-f` | Attach file(s) to the message |
-| `--thinking` | Show model thinking blocks |
-| `--variant <level>` | Reasoning effort (high, max, minimal) |
-| `--title <name>` | Name the session |
-| `--attach <url>` | Connect to a running opencode server |
+| `run 'prompt'` | 一次性执行后退出 |
+| `--continue` / `-c` | 继续上一个 OpenCode 会话 |
+| `--session <id>` / `-s` | 继续指定会话 |
+| `--agent <name>` | 选择 OpenCode 智能体（build 或 plan） |
+| `--model provider/model` | 强制使用指定模型 |
+| `--format json` | 机器可读的输出/事件 |
+| `--file <path>` / `-f` | 为消息附加文件 |
+| `--thinking` | 显示模型思考块 |
+| `--variant <level>` | 推理强度（high、max、minimal） |
+| `--title <name>` | 为会话命名 |
+| `--attach <url>` | 连接到一个正在运行的 opencode 服务 |
 
-## Procedure
+## 流程
 
-1. Verify tool readiness:
+1. 验证工具就绪：
    - `terminal(command="opencode --version")`
    - `terminal(command="opencode auth list")`
-2. For bounded tasks, use `opencode run '...'` (no pty needed).
-3. For iterative tasks, start `opencode` with `background=true, pty=true`.
-4. Monitor long tasks with `process(action="poll"|"log")`.
-5. If OpenCode asks for input, respond via `process(action="submit", ...)`.
-6. Exit with `process(action="write", data="\x03")` or `process(action="kill")`.
-7. Summarize file changes, test results, and next steps back to user.
+2. 对于有边界的任务，使用 `opencode run '...'`（无需 pty）。
+3. 对于迭代式任务，使用 `background=true, pty=true` 启动 `opencode`。
+4. 使用 `process(action="poll"|"log")` 监控长任务。
+5. 如果 OpenCode 请求输入，通过 `process(action="submit", ...)` 响应。
+6. 使用 `process(action="write", data="\x03")` 或 `process(action="kill")` 退出。
+7. 向用户总结文件改动、测试结果及后续步骤。
 
-## PR Review Workflow
+## PR 审查工作流
 
-OpenCode has a built-in PR command:
+OpenCode 内置了 PR 命令：
 
 ```
 terminal(command="opencode pr 42", workdir="~/project", pty=true)
 ```
 
-Or review in a temporary clone for isolation:
+或在一个临时克隆中审查以实现隔离：
 
 ```
 terminal(command="REVIEW=$(mktemp -d) && git clone https://github.com/user/repo.git $REVIEW && cd $REVIEW && opencode run 'Review this PR vs main. Report bugs, security risks, test gaps, and style issues.' -f $(git diff origin/main --name-only | head -20 | tr '\n' ' ')", pty=true)
 ```
 
-## Parallel Work Pattern
+## 并行工作模式
 
-Use separate workdirs/worktrees to avoid collisions:
+使用相互独立的工作目录/工作树以避免冲突：
 
 ```
 terminal(command="opencode run 'Fix issue #101 and commit'", workdir="/tmp/issue-101", background=true, pty=true)
@@ -171,49 +171,49 @@ terminal(command="opencode run 'Add parser regression tests and commit'", workdi
 process(action="list")
 ```
 
-## Session & Cost Management
+## 会话与成本管理
 
-List past sessions:
+列出过往会话：
 
 ```
 terminal(command="opencode session list")
 ```
 
-Check token usage and costs:
+查看 token 用量与成本：
 
 ```
 terminal(command="opencode stats")
 terminal(command="opencode stats --days 7 --models anthropic/claude-sonnet-4")
 ```
 
-## Pitfalls
+## 常见陷阱
 
-- Interactive `opencode` (TUI) sessions require `pty=true`. The `opencode run` command does NOT need pty.
-- `/exit` is NOT a valid command — it opens an agent selector. Use Ctrl+C to exit the TUI.
-- PATH mismatch can select the wrong OpenCode binary/model config.
-- If OpenCode appears stuck, inspect logs before killing:
+- 交互式 `opencode`（TUI）会话需要 `pty=true`。`opencode run` 命令则不需要 pty。
+- `/exit` 不是有效命令 —— 它会打开智能体选择器。请使用 Ctrl+C 退出 TUI。
+- PATH 不匹配可能选错 OpenCode 二进制文件/模型配置。
+- 如果 OpenCode 看似卡住，先检查日志再结束进程：
   - `process(action="log", session_id="<id>")`
-- Avoid sharing one working directory across parallel OpenCode sessions.
-- Enter may need to be pressed twice to submit in the TUI (once to finalize text, once to send).
+- 避免在并行的多个 OpenCode 会话之间共用同一个工作目录。
+- 在 TUI 中可能需要按两次 Enter 才能提交（第一次定稿文本，第二次发送）。
 
-## Verification
+## 验证
 
-Smoke test:
+冒烟测试：
 
 ```
 terminal(command="opencode run 'Respond with exactly: OPENCODE_SMOKE_OK'")
 ```
 
-Success criteria:
-- Output includes `OPENCODE_SMOKE_OK`
-- Command exits without provider/model errors
-- For code tasks: expected files changed and tests pass
+成功标准：
+- 输出包含 `OPENCODE_SMOKE_OK`
+- 命令退出时没有提供商/模型错误
+- 对于代码任务：预期文件已改动且测试通过
 
-## Rules
+## 规则
 
-1. Prefer `opencode run` for one-shot automation — it's simpler and doesn't need pty.
-2. Use interactive background mode only when iteration is needed.
-3. Always scope OpenCode sessions to a single repo/workdir.
-4. For long tasks, provide progress updates from `process` logs.
-5. Report concrete outcomes (files changed, tests, remaining risks).
-6. Exit interactive sessions with Ctrl+C or kill, never `/exit`.
+1. 一次性自动化优先用 `opencode run` —— 更简单，且不需要 pty。
+2. 仅当需要迭代时才使用交互式后台模式。
+3. 始终将 OpenCode 会话限定在单个仓库/工作目录内。
+4. 对于长任务，根据 `process` 日志提供进度更新。
+5. 报告具体结果（改动文件、测试、剩余风险）。
+6. 用 Ctrl+C 或 kill 退出交互式会话，绝不用 `/exit`。

@@ -1,22 +1,22 @@
-# Notion Block Types
+# Notion Block 类型
 
-Reference for creating and reading all common Notion block types via the API.
+通过 API 创建和读取所有常见 Notion block 类型的参考。
 
-## Creating blocks
+## 创建 block
 
-Use `PATCH /v1/blocks/{page_id}/children` with a `children` array. Each block follows this structure:
+使用 `PATCH /v1/blocks/{page_id}/children` 并附带一个 `children` 数组。每个 block 遵循这个结构：
 
 ```json
 {"object": "block", "type": "<type>", "<type>": { ... }}
 ```
 
-### Paragraph
+### 段落
 
 ```json
 {"type": "paragraph", "paragraph": {"rich_text": [{"text": {"content": "Hello world"}}]}}
 ```
 
-### Headings
+### 标题
 
 ```json
 {"type": "heading_1", "heading_1": {"rich_text": [{"text": {"content": "Title"}}]}}
@@ -24,89 +24,89 @@ Use `PATCH /v1/blocks/{page_id}/children` with a `children` array. Each block fo
 {"type": "heading_3", "heading_3": {"rich_text": [{"text": {"content": "Subsection"}}]}}
 ```
 
-### Bulleted list
+### 无序列表
 
 ```json
 {"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [{"text": {"content": "Item"}}]}}
 ```
 
-### Numbered list
+### 有序列表
 
 ```json
 {"type": "numbered_list_item", "numbered_list_item": {"rich_text": [{"text": {"content": "Step 1"}}]}}
 ```
 
-### To-do / checkbox
+### 待办 / 复选框
 
 ```json
 {"type": "to_do", "to_do": {"rich_text": [{"text": {"content": "Task"}}], "checked": false}}
 ```
 
-### Quote
+### 引用
 
 ```json
 {"type": "quote", "quote": {"rich_text": [{"text": {"content": "Something wise"}}]}}
 ```
 
-### Callout
+### 标注（Callout）
 
 ```json
 {"type": "callout", "callout": {"rich_text": [{"text": {"content": "Important note"}}], "icon": {"emoji": "💡"}}}
 ```
 
-### Code
+### 代码
 
 ```json
 {"type": "code", "code": {"rich_text": [{"text": {"content": "print('hello')"}}], "language": "python"}}
 ```
 
-### Toggle
+### 折叠块（Toggle）
 
 ```json
 {"type": "toggle", "toggle": {"rich_text": [{"text": {"content": "Click to expand"}}]}}
 ```
 
-### Divider
+### 分隔线
 
 ```json
 {"type": "divider", "divider": {}}
 ```
 
-### Bookmark
+### 书签
 
 ```json
 {"type": "bookmark", "bookmark": {"url": "https://example.com"}}
 ```
 
-### Image (external URL)
+### 图片（外部 URL）
 
 ```json
 {"type": "image", "image": {"type": "external", "external": {"url": "https://example.com/photo.png"}}}
 ```
 
-## Reading blocks
+## 读取 block
 
-When reading blocks from `GET /v1/blocks/{page_id}/children`, each block has a `type` field. Extract readable text like this:
+从 `GET /v1/blocks/{page_id}/children` 读取 block 时，每个 block 都有一个 `type` 字段。按如下方式提取可读文本：
 
-| Type | Text location | Extra fields |
+| 类型 | 文本位置 | 额外字段 |
 |------|--------------|--------------|
 | `paragraph` | `.paragraph.rich_text` | — |
 | `heading_1/2/3` | `.heading_N.rich_text` | — |
 | `bulleted_list_item` | `.bulleted_list_item.rich_text` | — |
 | `numbered_list_item` | `.numbered_list_item.rich_text` | — |
-| `to_do` | `.to_do.rich_text` | `.to_do.checked` (bool) |
-| `toggle` | `.toggle.rich_text` | has children |
+| `to_do` | `.to_do.rich_text` | `.to_do.checked`（布尔值） |
+| `toggle` | `.toggle.rich_text` | 有子 block |
 | `code` | `.code.rich_text` | `.code.language` |
 | `quote` | `.quote.rich_text` | — |
 | `callout` | `.callout.rich_text` | `.callout.icon.emoji` |
 | `divider` | — | — |
-| `image` | `.image.caption` | `.image.file.url` or `.image.external.url` |
+| `image` | `.image.caption` | `.image.file.url` 或 `.image.external.url` |
 | `bookmark` | `.bookmark.caption` | `.bookmark.url` |
 | `child_page` | — | `.child_page.title` |
 | `child_database` | — | `.child_database.title` |
 
-Rich text arrays contain objects with `.plain_text` — concatenate them for readable output.
+rich_text 数组包含带 `.plain_text` 的对象——将它们拼接起来即可得到可读输出。
 
 ---
 
-*Contributed by [@dogiladeveloper](https://github.com/dogiladeveloper)*
+*由 [@dogiladeveloper](https://github.com/dogiladeveloper) 贡献*

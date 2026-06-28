@@ -1,8 +1,8 @@
-"""Pre-execution ACP edit approval helpers.
+"""执行前 ACP 编辑审批辅助模块。
 
-This module is intentionally isolated from the generic tool registry.  ACP binds
-an edit approval requester in a ContextVar for the duration of one ACP agent run;
-CLI, gateway, and other sessions leave it unset and therefore bypass this guard.
+本模块有意与通用工具注册中心隔离。ACP 在单次 ACP 代理运行期间通过
+ContextVar 绑定一个编辑审批请求器；CLI、gateway 和其他会话不设置它，
+因此绕过此守卫。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class EditProposal:
-    """A proposed single-file edit that can be shown to an ACP client."""
+    """一个可以展示给 ACP 客户端的单文件编辑提案。"""
 
     tool_name: str
     path: str
@@ -48,19 +48,19 @@ AUTO_APPROVE_SESSION = "session"
 
 
 def set_edit_approval_requester(requester: EditApprovalRequester | None) -> Token:
-    """Bind an ACP edit approval requester for the current context."""
+    """为当前上下文绑定一个 ACP 编辑审批请求器。"""
 
     return _EDIT_APPROVAL_REQUESTER.set(requester)
 
 
 def reset_edit_approval_requester(token: Token) -> None:
-    """Restore a previous edit approval requester binding."""
+    """恢复之前的编辑审批请求器绑定。"""
 
     _EDIT_APPROVAL_REQUESTER.reset(token)
 
 
 def clear_edit_approval_requester() -> None:
-    """Clear the current requester; primarily used by tests."""
+    """清除当前请求器；主要由测试使用。"""
 
     _EDIT_APPROVAL_REQUESTER.set(None)
 
@@ -128,7 +128,7 @@ def _proposal_for_patch_replace(arguments: dict[str, Any]) -> EditProposal:
 
 
 def build_edit_proposal(tool_name: str, arguments: dict[str, Any]) -> EditProposal | None:
-    """Return an edit proposal for supported file mutation calls."""
+    """为支持的文件修改调用返回编辑提案。"""
 
     if tool_name == "write_file":
         return _proposal_for_write_file(arguments)
@@ -146,10 +146,10 @@ def _is_sensitive_auto_approve_path(path: str) -> bool:
 
 
 def should_auto_approve_edit(proposal: EditProposal, policy: str, cwd: str | None = None) -> bool:
-    """Return whether an ACP edit proposal may bypass the prompt for this session.
+    """返回此会话中 ACP 编辑提案是否可以绕过提示。
 
-    This is intentionally session-scoped and conservative: sensitive paths still
-    ask even under autonomous policies.
+    此机制有意限定在会话范围内且采取保守策略：即使在自主策略下，
+    敏感路径仍然会询问。
     """
 
     policy = str(policy or AUTO_APPROVE_ASK).strip()
@@ -159,9 +159,9 @@ def should_auto_approve_edit(proposal: EditProposal, policy: str, cwd: str | Non
     if policy == AUTO_APPROVE_SESSION:
         return True
     if policy == AUTO_APPROVE_WORKSPACE:
-        # `/tmp` is the POSIX path but tempfile.gettempdir() is the real one on
-        # every platform: `/private/tmp` on macOS (because `/tmp` is a symlink
-        # and Path.resolve() follows it) and the per-user Temp dir on Windows.
+        # `/tmp` 是 POSIX 路径，但 tempfile.gettempdir() 返回各平台上的
+        # 真实路径：macOS 上是 `/private/tmp`（因为 `/tmp` 是符号链接，
+        # Path.resolve() 会跟随它），Windows 上是每用户的 Temp 目录。
         tmp_root = Path(tempfile.gettempdir()).resolve(strict=False)
         try:
             path.relative_to(tmp_root)
@@ -179,10 +179,10 @@ def should_auto_approve_edit(proposal: EditProposal, policy: str, cwd: str | Non
 
 
 def maybe_require_edit_approval(tool_name: str, arguments: dict[str, Any]) -> str | None:
-    """Run ACP edit approval if bound.
+    """如果已绑定则运行 ACP 编辑审批。
 
-    Returns a JSON tool-error string when the edit must be blocked, otherwise
-    ``None`` so dispatch can continue.  Requester exceptions deny by default.
+    当编辑必须被阻止时返回 JSON 工具错误字符串，否则返回 ``None``
+    以便继续调度。请求器异常时默认拒绝。
     """
 
     requester = get_edit_approval_requester()
@@ -210,7 +210,7 @@ def maybe_require_edit_approval(tool_name: str, arguments: dict[str, Any]) -> st
 
 
 def build_acp_edit_tool_call(proposal: EditProposal):
-    """Build the ToolCallUpdate payload for ACP request_permission."""
+    """为 ACP request_permission 构建 ToolCallUpdate 载荷。"""
 
     import acp
 
@@ -238,7 +238,7 @@ def make_acp_edit_approval_requester(
     timeout: float = 60.0,
     auto_approve_getter: Callable[[], tuple[str, str | None]] | None = None,
 ) -> EditApprovalRequester:
-    """Return a sync requester that bridges edit proposals to ACP permissions."""
+    """返回一个同步请求器，将编辑提案桥接到 ACP 权限系统。"""
 
     def _requester(proposal: EditProposal) -> bool:
         from acp.schema import PermissionOption

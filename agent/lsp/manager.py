@@ -1,36 +1,32 @@
-"""Service-level orchestration for LSP clients.
+"""LSP 客户端的服务级编排。
 
-The :class:`LSPService` is the bridge between the synchronous
-file_operations layer and the async :class:`agent.lsp.client.LSPClient`.
+:class:`LSPService` 是同步 file_operations 层与异步
+:class:`agent.lsp.client.LSPClient` 之间的桥梁。
 
-Design choices:
+设计选择：
 
-- A **single asyncio event loop** runs in a background thread.  All
-  client work happens on that loop.  Synchronous callers from
-  ``tools/file_operations.py`` use :meth:`get_diagnostics_sync` to
-  open + wait + drain in one blocking call.
+- **单一 asyncio 事件循环**运行在后台线程中。所有客户端工作
+  都在该循环上执行。来自 ``tools/file_operations.py`` 的同步调用者
+  使用 :meth:`get_diagnostics_sync` 在一次阻塞调用中完成
+  打开 + 等待 + 获取诊断的全流程。
 
-- One client per ``(server_id, workspace_root)`` key.  Lazy spawn:
-  the first request for a key spawns the client; subsequent requests
-  re-use it.
+- 每个 ``(server_id, workspace_root)`` 键对应一个客户端。惰性启动：
+  某个键的第一次请求会启动客户端；后续请求复用同一客户端。
 
-- A **broken-set** records ``(server_id, workspace_root)`` pairs that
-  failed to spawn or initialize.  These are never retried for the
-  life of the service.  Mirrors OpenCode's design.
+- **broken-set（损坏集合）**记录启动或初始化失败的
+  ``(server_id, workspace_root)`` 对。在服务的整个生命周期内不再重试。
+  与 OpenCode 的设计一致。
 
-- A **delta baseline** map keeps "diagnostics-as-of-the-last-snapshot"
-  per file.  ``snapshot_baseline()`` is called BEFORE a write; the
-  next ``get_diagnostics_sync()`` returns only diagnostics that
-  weren't in the baseline.  This is the lift from Claude Code's
-  ``beforeFileEdited`` / ``getNewDiagnostics`` pattern, except wired
-  to the local LSP layer instead of MCP IDE RPC.
+- **delta baseline（增量基线）**映射保存每个文件的
+  "上次快照时的诊断信息"。``snapshot_baseline()`` 在写入操作**之前**调用；
+  下一次 ``get_diagnostics_sync()`` 只返回基线中不存在的诊断信息。
+  这是对 Claude Code 的 ``beforeFileEdited`` / ``getNewDiagnostics`` 模式的移植，
+  不同之处在于连接到本地 LSP 层而非 MCP IDE RPC。
 
-The service is **off by default** — call :meth:`is_active` to check
-whether it's actually doing anything.  When LSP is disabled in
-config, when no git workspace can be detected, when all configured
-servers are missing binaries and auto-install is off, ``is_active``
-returns False and the file_operations layer falls through to the
-in-process syntax check.
+服务**默认关闭**——调用 :meth:`is_active` 可检查其是否实际运行。
+当 LSP 在配置中被禁用、无法检测到 git 工作区、所有配置的服务器都
+缺少二进制程序且自动安装已关闭时，``is_active`` 返回 False，
+file_operations 层会回退到进程内的语法检查。
 """
 from __future__ import annotations
 
@@ -58,14 +54,14 @@ from agent.lsp.workspace import (
 
 logger = logging.getLogger("agent.lsp.manager")
 
-DEFAULT_IDLE_TIMEOUT = 600  # seconds; servers idle for >10min get reaped
+DEFAULT_IDLE_TIMEOUT = 600  # 秒；空闲超过 10 分钟的服务器会被回收
 
 
 class _BackgroundLoop:
-    """A daemon thread that owns one asyncio event loop.
+    """拥有一个 asyncio 事件循环的守护线程。
 
-    Provides :meth:`run` for synchronous callers — submits a coroutine
-    to the loop and blocks until it finishes (or a timeout fires).
+    为同步调用者提供 :meth:`run` 方法——将协程提交到循环并阻塞，
+    直到其完成（或超时触发）。
     """
 
     def __init__(self) -> None:
@@ -98,9 +94,9 @@ class _BackgroundLoop:
                 pass
 
     def run(self, coro, *, timeout: Optional[float] = None) -> Any:
-        """Submit a coroutine to the loop and block until done.
+        """将协程提交到事件循环并阻塞直到完成。
 
-        Returns the coroutine's result, or raises its exception.
+        返回协程的结果，或抛出其异常。
         """
         from agent.async_utils import safe_schedule_threadsafe
         if self._loop is None:
@@ -131,16 +127,15 @@ class _BackgroundLoop:
 
 
 class LSPService:
-    """The process-wide LSP service.
+    """进程级 LSP 服务。
 
-    Created once via :meth:`create_from_config`; the
-    :func:`agent.lsp.get_service` accessor manages the singleton.
-    Most callers should use that accessor rather than constructing
-    :class:`LSPService` directly.
+    通过 :meth:`create_from_config` 创建一次；:func:`agent.lsp.get_service`
+    访问器管理单例。大多数调用者应使用该访问器，而非直接构造
+    :class:`LSPService`。
     """
 
     # ------------------------------------------------------------------
-    # construction + factory
+    # 构造 + 工厂方法
     # ------------------------------------------------------------------
 
     def __init__(
@@ -170,25 +165,24 @@ class LSPService:
         if self._enabled:
             self._loop.start()
 
-        # Per-(server_id, workspace_root) state
+        # 每个 (server_id, workspace_root) 的状态
         self._clients: Dict[Tuple[str, str], LSPClient] = {}
         self._broken: set = set()
         self._spawning: Dict[Tuple[str, str], asyncio.Future] = {}
         self._last_used: Dict[Tuple[str, str], float] = {}
         self._state_lock = threading.Lock()
 
-        # Delta baseline: file path → snapshot of diagnostics taken
-        # immediately before a write.  ``get_diagnostics_sync`` filters
-        # out anything in the baseline so the agent only sees errors
-        # introduced by the current edit.
+        # 增量基线：文件路径 → 写入操作前立即拍摄的诊断快照。
+        # ``get_diagnostics_sync`` 过滤掉基线中已有的内容，
+        # 使 agent 只看到当前编辑引入的错误。
         self._delta_baseline: Dict[str, List[Dict[str, Any]]] = {}
 
     @classmethod
     def create_from_config(cls) -> Optional["LSPService"]:
-        """Build a service from ``hermes_cli.config`` settings.
+        """从 ``hermes_cli.config`` 配置构建服务。
 
-        Returns ``None`` if the config can't be loaded.  The service
-        itself returns ``is_active()`` False when LSP is disabled.
+        如果配置无法加载，返回 ``None``。当 LSP 被禁用时，
+        服务本身的 ``is_active()`` 返回 False。
         """
         try:
             from hermes_cli.config import load_config
@@ -238,25 +232,23 @@ class LSPService:
         )
 
     # ------------------------------------------------------------------
-    # public API
+    # 公共 API
     # ------------------------------------------------------------------
 
     def is_active(self) -> bool:
-        """Return True iff this service should be consulted at all."""
+        """当此服务应被调用时返回 True。"""
         return self._enabled
 
     def enabled_for(self, file_path: str) -> bool:
-        """Return True iff LSP should run for this specific file.
+        """当 LSP 应针对此特定文件运行时返回 True。
 
-        Gates on workspace detection (file or cwd inside a git worktree),
-        on whether any registered server matches the extension, and
-        on whether the (server_id, workspace_root) pair is in the
-        broken-set from a previous spawn failure.
+        门控条件：工作区检测（文件或 cwd 在 git 工作区内）、
+        是否有注册的服务器匹配该扩展名、以及 (server_id, workspace_root)
+        对是否在之前启动失败的 broken-set 中。
 
-        Files in already-broken pairs return False so the file_operations
-        layer skips the LSP path entirely — no spawn attempts, no
-        timeout cost — until the service is restarted (``hermes lsp
-        restart``) or the process exits.
+        已损坏对中的文件返回 False，使 file_operations 层完全跳过
+        LSP 路径——无启动尝试，无超时代价——直到服务重启（``hermes lsp restart``）
+        或进程退出。
         """
         if not self._enabled:
             return False
@@ -266,10 +258,9 @@ class LSPService:
         ws_root, gated_in = resolve_workspace_for_file(file_path)
         if not (ws_root and gated_in):
             return False
-        # Broken-set short-circuit.  Use the per-server root if we can
-        # compute one cheaply; otherwise fall back to the workspace
-        # root as the broken key (which is what _get_or_spawn would
-        # have used anyway when it failed).
+        # broken-set 短路。如果可以廉价计算每个服务器的根目录则使用它；
+        # 否则回退到工作区根目录作为 broken 键（无论如何这也是
+        # _get_or_spawn 失败时使用的键）。
         try:
             per_server_root = srv.resolve_root(file_path, ws_root) or ws_root
         except Exception:  # noqa: BLE001
@@ -279,15 +270,15 @@ class LSPService:
         return True
 
     def snapshot_baseline(self, file_path: str) -> None:
-        """Snapshot current diagnostics for ``file_path`` as the delta baseline.
+        """将 ``file_path`` 当前的诊断信息快照为增量基线。
 
-        Called BEFORE a write so the next ``get_diagnostics_sync()``
-        can filter out pre-existing errors.  Best-effort — failures
-        are silently swallowed so a flaky server can't break a write.
+        在写入操作**之前**调用，使下一次 ``get_diagnostics_sync()``
+        能够过滤掉预先存在的错误。尽力而为——失败时静默吞掉，
+        防止不稳定的服务器破坏写入操作。
 
-        Outer timeouts (e.g. server hangs during initialize) mark the
-        (server_id, workspace_root) pair as broken so subsequent edits
-        skip it instantly instead of re-paying the timeout cost.
+        外部超时（如服务器在初始化期间挂起）会将
+        (server_id, workspace_root) 对标记为损坏，使后续编辑
+        能立即跳过，而无需再次承受超时代价。
         """
         if not self.enabled_for(file_path):
             return
@@ -307,35 +298,27 @@ class LSPService:
         timeout: Optional[float] = None,
         line_shift: Optional[Callable[[int], Optional[int]]] = None,
     ) -> List[Dict[str, Any]]:
-        """Synchronously open ``file_path`` in the right server, wait for
-        diagnostics, return them.
+        """同步地在合适的服务器中打开 ``file_path``，等待诊断信息并返回。
 
-        If ``delta`` is True (default), the result is filtered against
-        any baseline previously captured via :meth:`snapshot_baseline`.
-        Diagnostics present in the baseline are removed so the caller
-        only sees errors introduced by the current edit.
+        如果 ``delta`` 为 True（默认值），结果会与之前通过
+        :meth:`snapshot_baseline` 捕获的基线进行过滤。
+        基线中已存在的诊断信息会被移除，使调用者只看到当前编辑引入的错误。
 
-        When ``line_shift`` is provided, baseline diagnostics are
-        remapped through it before the set-difference.  This handles
-        the case where the edit deleted or inserted lines, causing
-        pre-existing diagnostics below the edit point to surface at
-        different line numbers in the post-edit snapshot — without
-        the shift, they'd all look "introduced by this edit".  Pass
-        a callable built by
-        :func:`agent.lsp.range_shift.build_line_shift` (pre_text,
-        post_text).  Omit when pre/post content isn't available;
-        the unshifted comparison still catches diagnostics that
-        didn't move.
+        当提供 ``line_shift`` 时，基线诊断信息在进行集合差运算前
+        会通过它进行重映射。这处理了编辑删除或插入行导致
+        编辑点以下的已有诊断在编辑后快照中出现在不同行号的情况——
+        没有行移，它们看起来都像是"此次编辑引入的"。
+        传入由 :func:`agent.lsp.range_shift.build_line_shift` (pre_text, post_text)
+        构建的可调用对象。当前置/后置内容不可用时省略；
+        未移位的比较仍能捕获未移动的诊断信息。
 
-        Returns an empty list when LSP is disabled, when no workspace
-        can be detected, when no server matches, or when the server
-        can't be spawned.  Never raises.
+        当 LSP 被禁用、无法检测到工作区、没有匹配的服务器，
+        或服务器无法启动时，返回空列表。永不抛出异常。
         """
         if not self.enabled_for(file_path):
             return []
 
-        # Resolve server_id eagerly so we can emit structured logs even
-        # when the request errors out below.
+        # 尽早解析 server_id，使即使下方请求出错时也能输出结构化日志。
         srv = find_server_for_file(file_path)
         server_id = srv.server_id if srv else "?"
 
@@ -358,18 +341,15 @@ class LSPService:
             baseline = self._delta_baseline.get(abs_path) or []
             if baseline:
                 if line_shift is not None:
-                    # Remap baseline diagnostics into post-edit
-                    # coordinates so shifted-but-otherwise-identical
-                    # entries hash equal under _diag_key.  Entries
-                    # that mapped into a deleted region drop out
-                    # silently — they no longer apply.
+                    # 将基线诊断信息重映射到编辑后坐标，使移位但内容相同的
+                    # 条目在 _diag_key 下哈希相等。映射到已删除区域的条目
+                    # 会静默丢弃——它们已不再适用。
                     from agent.lsp.range_shift import shift_baseline
                     baseline = shift_baseline(baseline, line_shift)
                 seen = {_diag_key(d) for d in baseline}
                 diags = [d for d in diags if _diag_key(d) not in seen]
-            # Roll baseline forward — next call returns deltas relative
-            # to the just-emitted state, mirroring claude-code's
-            # diagnosticTracking.
+            # 向前滚动基线——下一次调用返回相对于刚刚发出状态的增量，
+            # 与 claude-code 的 diagnosticTracking 行为一致。
             try:
                 fresh = self._loop.run(self._current_diags_async(file_path), timeout=2.0) or []
             except Exception:  # noqa: BLE001
@@ -384,21 +364,18 @@ class LSPService:
         return diags
 
     def _mark_broken_for_file(self, file_path: str, exc: BaseException) -> None:
-        """Mark the (server_id, workspace_root) pair as broken so subsequent
-        edits skip it instantly instead of re-paying timeout cost.
+        """将 (server_id, workspace_root) 对标记为损坏，使后续编辑
+        能立即跳过，而无需再次承受超时代价。
 
-        Called when the outer ``_loop.run`` timeout cancels an in-flight
-        spawn/initialize that the inner ``_get_or_spawn`` task was still
-        holding open.  Without this, every subsequent write would re-enter
-        the spawn path and re-pay the full ``snapshot_baseline``
-        timeout (8s) until the binary is fixed.
+        当外部 ``_loop.run`` 超时取消了内部 ``_get_or_spawn`` 任务
+        仍在处理的飞行中的启动/初始化时调用。没有此标记，每次后续写入
+        都会重新进入启动路径并再次承受完整的 ``snapshot_baseline``
+        超时（8 秒），直到二进制程序被修复。
 
-        Also kills any orphan client process that survived the cancelled
-        future, and emits a single eventlog WARNING so the user knows
-        which server gave up.
+        还会终止在被取消的 future 中存活的任何孤立客户端进程，
+        并输出一条 eventlog WARNING，让用户知道是哪个服务器放弃了。
 
-        ``exc`` is whatever exception the outer wrapper caught — used
-        only for logging, never re-raised.
+        ``exc`` 是外部包装器捕获的任何异常——仅用于日志记录，永不重新抛出。
         """
         srv = find_server_for_file(file_path)
         if srv is None:
@@ -414,16 +391,15 @@ class LSPService:
         already_broken = key in self._broken
         self._broken.add(key)
 
-        # Kill any client we managed to spawn before the timeout.  The
-        # cancelled future never reached the broken-set add inside
-        # ``_get_or_spawn`` so the client may still be hanging in
-        # ``_clients`` with a half-initialized state.
+        # 终止超时前我们成功启动的任何客户端。被取消的 future 从未到达
+        # ``_get_or_spawn`` 内部的 broken-set 添加操作，因此客户端可能
+        # 仍以半初始化状态挂在 ``_clients`` 中。
         with self._state_lock:
             client = self._clients.pop(key, None)
         if client is not None:
             try:
-                # Fire-and-forget shutdown — give it a second to cleanup,
-                # but don't block.  We're already on a slow path.
+                # 即发即忘的关闭——给它一秒钟清理，但不阻塞。
+                # 我们已经在慢速路径上了。
                 self._loop.run(client.shutdown(), timeout=1.0)
             except Exception:  # noqa: BLE001
                 pass
@@ -432,7 +408,7 @@ class LSPService:
             eventlog.log_spawn_failed(srv.server_id, per_server_root, exc)
 
     def shutdown(self) -> None:
-        """Tear down all clients and stop the background loop."""
+        """拆除所有客户端并停止后台循环。"""
         if not self._enabled:
             return
         try:
@@ -443,7 +419,7 @@ class LSPService:
         clear_cache()
 
     # ------------------------------------------------------------------
-    # async internals
+    # 异步内部实现
     # ------------------------------------------------------------------
 
     async def _snapshot_async(self, file_path: str) -> List[Dict[str, Any]]:
@@ -517,7 +493,7 @@ class LSPService:
             except Exception:  # noqa: BLE001
                 return None
 
-        # Begin spawn
+        # 开始启动
         loop = asyncio.get_running_loop()
         spawn_future: asyncio.Future = loop.create_future()
         with self._state_lock:
@@ -532,10 +508,9 @@ class LSPService:
             )
             spec = srv.build_spawn(per_server_root, ctx)
             if spec is None:
-                # ``build_spawn`` returns None when the binary can't be
-                # located (auto-install disabled, manual-only server,
-                # or install attempt failed).  Surface this once via
-                # the structured logger so the user can act on it.
+                # ``build_spawn`` 在无法定位二进制程序时返回 None
+                # （自动安装已禁用、仅手动安装的服务器，或安装尝试失败）。
+                # 通过结构化 logger 展示一次，使用户能够采取行动。
                 eventlog.log_server_unavailable(srv.server_id, srv.server_id)
                 self._broken.add(key)
                 spawn_future.set_result(None)
@@ -578,11 +553,11 @@ class LSPService:
         )
 
     # ------------------------------------------------------------------
-    # status / introspection (used by ``hermes lsp status``)
+    # 状态 / 内省（供 ``hermes lsp status`` 使用）
     # ------------------------------------------------------------------
 
     def get_status(self) -> Dict[str, Any]:
-        """Return a snapshot of the service for the CLI status command."""
+        """返回供 CLI 状态命令使用的服务快照。"""
         with self._state_lock:
             clients = [
                 {
@@ -606,18 +581,15 @@ class LSPService:
 
 
 def _diag_key(d: Dict[str, Any]) -> str:
-    """Content equality key used for cross-edit delta filtering.
+    """用于跨编辑增量过滤的内容相等性键。
 
-    Includes the diagnostic's position range — when used together
-    with :func:`agent.lsp.range_shift.shift_baseline`, the baseline
-    is line-shifted into post-edit coordinates BEFORE this key is
-    computed, so identical-but-shifted diagnostics hash equal.  Two
-    genuinely distinct diagnostics at different lines (e.g. the same
-    error class introduced at a second site) hash differently and
-    are surfaced as new.
+    包含诊断信息的位置范围——与 :func:`agent.lsp.range_shift.shift_baseline`
+    配合使用时，基线在计算此键**之前**被行移到编辑后坐标，
+    使内容相同但位置移位的诊断哈希相等。两个确实位于不同行的独立诊断
+    （如相同错误类在第二个位置被引入）会哈希不同，并作为新诊断展示。
 
-    Mirrors :func:`agent.lsp.client._diagnostic_key`; intentionally
-    identical so the two layers agree on diagnostic identity.
+    与 :func:`agent.lsp.client._diagnostic_key` 保持一致；
+    刻意相同，确保两层在诊断身份上达成共识。
     """
     rng = d.get("range") or {}
     start = rng.get("start") or {}

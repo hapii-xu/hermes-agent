@@ -1,33 +1,33 @@
-"""FAL.ai video generation backend.
+"""FAL.ai 视频生成后端。
 
-User-facing surface: pick a **model family** (e.g. "Pixverse v6",
-"Veo 3.1", "Seedance 2.0", "Kling v3 4K", "LTX 2.3", "Happy Horse").
-The plugin auto-routes to the family's text-to-video endpoint when
-called without ``image_url``, and to its image-to-video endpoint when
-``image_url`` is provided. The agent never sees the routing — it just
-calls ``video_generate(prompt=..., image_url=...)``.
+用户侧接口：选择一个**模型族**（例如 "Pixverse v6"、
+"Veo 3.1"、"Seedance 2.0"、"Kling v3 4K"、"LTX 2.3"、"Happy Horse"）。
+当调用时未提供 ``image_url``，插件自动路由到该族的 text-to-video 端点；
+当提供了 ``image_url`` 时，路由到其 image-to-video 端点。
+Agent 不感知路由细节——只需调用
+``video_generate(prompt=..., image_url=...)``。
 
-Model families (each with t2v + i2v endpoints):
+模型族（每个族都有 t2v + i2v 端点）：
 
-  Cheap tier:
+  廉价层：
     ltx-2.3       fal-ai/ltx-2.3-22b/text-to-video               /  fal-ai/ltx-2.3-22b/image-to-video
     pixverse-v6   fal-ai/pixverse/v6/text-to-video               /  fal-ai/pixverse/v6/image-to-video
 
-  Premium tier:
+  高级层：
     veo3.1        fal-ai/veo3.1                                  /  fal-ai/veo3.1/image-to-video
     seedance-2.0  bytedance/seedance-2.0/text-to-video           /  bytedance/seedance-2.0/image-to-video
     kling-v3-4k   fal-ai/kling-video/v3/4k/text-to-video         /  fal-ai/kling-video/v3/4k/image-to-video
     happy-horse   alibaba/happy-horse/text-to-video              /  alibaba/happy-horse/image-to-video
 
-Selection precedence for the active family:
-    1. ``model=`` arg from the tool call
-    2. ``FAL_VIDEO_MODEL`` env var
-    3. ``video_gen.fal.model`` in ``config.yaml``
-    4. ``video_gen.model`` in ``config.yaml`` (when it's one of our family IDs)
+活跃模型族的选择优先级：
+    1. 工具调用中的 ``model=`` 参数
+    2. ``FAL_VIDEO_MODEL`` 环境变量
+    3. ``config.yaml`` 中的 ``video_gen.fal.model``
+    4. ``config.yaml`` 中的 ``video_gen.model``（当它是我们的族 ID 之一时）
     5. ``DEFAULT_MODEL``
 
-Authentication via ``FAL_KEY`` or the managed Nous gateway. Output is an
-HTTPS URL from FAL's CDN; the gateway downloads and delivers it.
+通过 ``FAL_KEY`` 或 Nous 托管网关进行认证。输出为来自 FAL CDN 的
+HTTPS URL；网关负责下载并交付。
 """
 
 from __future__ import annotations

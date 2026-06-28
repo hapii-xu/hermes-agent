@@ -1,10 +1,9 @@
-"""Callback factories for bridging AIAgent events to ACP notifications.
+"""将 AIAgent 事件桥接到 ACP 通知的回调工厂。
 
-Each factory returns a callable with the signature that AIAgent expects
-for its callbacks. Internally, the callbacks push ACP session updates
-to the client via ``conn.session_update()`` using
-``asyncio.run_coroutine_threadsafe()`` (since AIAgent runs in a worker
-thread while the event loop lives on the main thread).
+每个工厂返回一个可调用对象，其签名与 AIAgent 期望的回调签名匹配。
+在内部，回调通过 ``conn.session_update()`` 使用
+``asyncio.run_coroutine_threadsafe()`` 将 ACP 会话更新推送给客户端
+（因为 AIAgent 在工作线程中运行，而事件循环在主线程上）。
 """
 
 import asyncio
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _json_loads_maybe_prefix(value: str) -> Any:
-    """Parse a JSON object even when Hermes appended a human hint after it."""
+    """解析 JSON 对象，即使 Hermes 在其后附加了人类可读的提示。"""
     text = value.strip()
     try:
         return json.loads(text)
@@ -37,12 +36,11 @@ def _json_loads_maybe_prefix(value: str) -> Any:
 
 
 def _build_plan_update_from_todo_result(result: Any) -> AgentPlanUpdate | None:
-    """Translate Hermes' todo tool result into ACP's native plan update.
+    """将 Hermes 的 todo 工具结果转换为 ACP 的原生计划更新。
 
-    Zed renders ``sessionUpdate: plan`` as its first-class task/todo panel. The
-    Hermes agent already maintains task state through the ``todo`` tool, so the
-    ACP adapter should expose that state natively instead of only as a generic
-    tool-call transcript block.
+    Zed 将 ``sessionUpdate: plan`` 渲染为其一等任务/todo 面板。
+    Hermes 代理已经通过 ``todo`` 工具维护任务状态，因此 ACP 适配器
+    应该原生暴露该状态，而不是仅作为通用工具调用记录块。
     """
     if not isinstance(result, str) or not result.strip():
         return None
@@ -63,9 +61,8 @@ def _build_plan_update_from_todo_result(result: Any) -> AgentPlanUpdate | None:
         "pending": "pending",
         "in_progress": "in_progress",
         "completed": "completed",
-        # ACP plans only support pending/in_progress/completed. Preserve
-        # cancelled tasks as terminal entries instead of dropping them and
-        # making the client's full-list replacement lose visible context.
+        # ACP 计划仅支持 pending/in_progress/completed。将已取消的任务
+        # 保留为终态条目，而不是丢弃它们导致客户端的全量替换丢失可见上下文。
         "cancelled": "completed",
     }
     entries: list[PlanEntry] = []
@@ -90,7 +87,7 @@ def _send_update(
     loop: asyncio.AbstractEventLoop,
     update: Any,
 ) -> None:
-    """Fire-and-forget an ACP session update from a worker thread."""
+    """从工作线程即发即忘式发送 ACP 会话更新。"""
     from agent.async_utils import safe_schedule_threadsafe
 
     future = safe_schedule_threadsafe(
@@ -108,7 +105,7 @@ def _send_update(
 
 
 # ------------------------------------------------------------------
-# Tool progress callback
+# 工具进度回调
 # ------------------------------------------------------------------
 
 def make_tool_progress_cb(
@@ -119,20 +116,19 @@ def make_tool_progress_cb(
     tool_call_meta: Dict[str, Dict[str, Any]],
     edit_approval_policy_getter: Callable[[], tuple[str, str | None]] | None = None,
 ) -> Callable:
-    """Create a ``tool_progress_callback`` for AIAgent.
+    """为 AIAgent 创建 ``tool_progress_callback``。
 
-    Signature expected by AIAgent::
+    AIAgent 期望的签名::
 
         tool_progress_callback(event_type: str, name: str, preview: str, args: dict, **kwargs)
 
-    Emits ``ToolCallStart`` for ``tool.started`` events and tracks IDs in a FIFO
-    queue per tool name so duplicate/parallel same-name calls still complete
-    against the correct ACP tool call.  Other event types (``tool.completed``,
-    ``reasoning.available``) are silently ignored.
+    为 ``tool.started`` 事件发出 ``ToolCallStart``，并按工具名称在 FIFO
+    队列中跟踪 ID，这样重复/并行的同名调用仍能正确对应到 ACP 工具调用。
+    其他事件类型（``tool.completed``、``reasoning.available``）会被静默忽略。
     """
 
     def _tool_progress(event_type: str, name: str = None, preview: str = None, args: Any = None, **kwargs) -> None:
-        # Only emit ACP ToolCallStart for tool.started; ignore other event types
+        # 仅为 tool.started 发出 ACP ToolCallStart；忽略其他事件类型
         if event_type != "tool.started":
             return
         if isinstance(args, str):
@@ -183,7 +179,7 @@ def make_tool_progress_cb(
 
 
 # ------------------------------------------------------------------
-# Thinking callback
+# 思考回调
 # ------------------------------------------------------------------
 
 def make_thinking_cb(
@@ -191,7 +187,7 @@ def make_thinking_cb(
     session_id: str,
     loop: asyncio.AbstractEventLoop,
 ) -> Callable:
-    """Create a ``thinking_callback`` for AIAgent."""
+    """为 AIAgent 创建 ``thinking_callback``。"""
 
     def _thinking(text: str) -> None:
         if not text:
@@ -203,7 +199,7 @@ def make_thinking_cb(
 
 
 # ------------------------------------------------------------------
-# Step callback
+# 步骤回调
 # ------------------------------------------------------------------
 
 def make_step_cb(
@@ -213,9 +209,9 @@ def make_step_cb(
     tool_call_ids: Dict[str, Deque[str]],
     tool_call_meta: Dict[str, Dict[str, Any]],
 ) -> Callable:
-    """Create a ``step_callback`` for AIAgent.
+    """为 AIAgent 创建 ``step_callback``。
 
-    Signature expected by AIAgent::
+    AIAgent 期望的签名::
 
         step_callback(api_call_count: int, prev_tools: list)
     """
@@ -260,7 +256,7 @@ def make_step_cb(
 
 
 # ------------------------------------------------------------------
-# Agent message callback
+# 代理消息回调
 # ------------------------------------------------------------------
 
 def make_message_cb(
@@ -268,7 +264,7 @@ def make_message_cb(
     session_id: str,
     loop: asyncio.AbstractEventLoop,
 ) -> Callable:
-    """Create a callback that streams agent response text to the editor."""
+    """创建一个将代理响应文本流式传输到编辑器的回调。"""
 
     def _message(text: str) -> None:
         if not text:

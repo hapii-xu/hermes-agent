@@ -1,226 +1,226 @@
-# Performance Optimization
+# 性能优化
 
-## Contents
-- PagedAttention explained
-- Continuous batching mechanics
-- Prefix caching strategies
-- Speculative decoding setup
-- Benchmark results and comparisons
-- Performance tuning guide
+## 目录
+- PagedAttention 原理详解
+- 连续批处理机制
+- 前缀缓存策略
+- 投机解码设置
+- 基准测试结果与对比
+- 性能调优指南
 
-## PagedAttention explained
+## PagedAttention 原理详解
 
-**Traditional attention problem**:
-- KV cache stored in contiguous memory
-- Wastes ~50% GPU memory due to fragmentation
-- Cannot dynamically reallocate for varying sequence lengths
+**传统 attention 的问题**：
+- KV cache 存储在连续内存中
+- 因内存碎片浪费约 50% 的 GPU 显存
+- 无法为不同序列长度动态重新分配
 
-**PagedAttention solution**:
-- Divides KV cache into fixed-size blocks (like OS virtual memory)
-- Dynamic allocation from free block queue
-- Shares blocks across sequences (for prefix caching)
+**PagedAttention 的解决方案**：
+- 将 KV cache 划分为固定大小的块（类似操作系统的虚拟内存）
+- 从空闲块队列中动态分配
+- 跨序列共享块（用于前缀缓存）
 
-**Memory savings example**:
+**显存节省示例**：
 ```
-Traditional: 70B model needs 160GB KV cache → OOM on 8x A100
-PagedAttention: 70B model needs 80GB KV cache → Fits on 4x A100
+传统方式：70B 模型需要 160GB KV cache → 8x A100 上 OOM
+PagedAttention：70B 模型需要 80GB KV cache → 4x A100 即可容纳
 ```
 
-**Configuration**:
+**配置**：
 ```bash
-# Block size (default: 16 tokens)
+# 块大小（默认：16 个 token）
 vllm serve MODEL --block-size 16
 
-# Number of GPU blocks (auto-calculated)
-# Controlled by --gpu-memory-utilization
+# GPU 块数量（自动计算）
+# 由 --gpu-memory-utilization 控制
 vllm serve MODEL --gpu-memory-utilization 0.9
 ```
 
-## Continuous batching mechanics
+## 连续批处理机制
 
-**Traditional batching**:
-- Wait for all sequences in batch to finish
-- GPU idle while waiting for longest sequence
-- Low GPU utilization (~40-60%)
+**传统批处理**：
+- 等待批次中所有序列完成
+- GPU 在等待最长序列时空闲
+- GPU 利用率低（约 40-60%）
 
-**Continuous batching**:
-- Add new requests as slots become available
-- Mix prefill (new requests) and decode (ongoing) in same batch
-- High GPU utilization (>90%)
+**连续批处理**：
+- 有空位时立即加入新请求
+- 在同一批次中混合 prefill（新请求）与 decode（进行中的请求）
+- GPU 利用率高（>90%）
 
-**Throughput improvement**:
+**吞吐量提升**：
 ```
-Traditional batching: 50 req/sec @ 50% GPU util
-Continuous batching: 200 req/sec @ 90% GPU util
-= 4x throughput improvement
+传统批处理：50 req/sec @ 50% GPU 利用率
+连续批处理：200 req/sec @ 90% GPU 利用率
+= 4 倍吞吐量提升
 ```
 
-**Tuning parameters**:
+**调优参数**：
 ```bash
-# Max concurrent sequences (higher = more batching)
+# 最大并发序列数（越高 = 批处理越多）
 vllm serve MODEL --max-num-seqs 256
 
-# Prefill/decode schedule (auto-balanced by default)
-# No manual tuning needed
+# prefill/decode 调度（默认自动均衡）
+# 无需手动调优
 ```
 
-## Prefix caching strategies
+## 前缀缓存策略
 
-Reuse computed KV cache for common prompt prefixes.
+对常见的提示词前缀复用已计算的 KV cache。
 
-**Use cases**:
-- System prompts repeated across requests
-- Few-shot examples in every prompt
-- RAG contexts with overlapping chunks
+**适用场景**：
+- 跨请求重复的系统提示词
+- 每个提示词中都有的 few-shot 示例
+- 存在重叠分块的 RAG 上下文
 
-**Example savings**:
+**节省示例**：
 ```
-Prompt: [System: 500 tokens] + [User: 100 tokens]
+提示词：[System: 500 tokens] + [User: 100 tokens]
 
-Without caching: Compute 600 tokens every request
-With caching: Compute 500 tokens once, then 100 tokens/request
-= 83% faster TTFT
+无缓存：每次请求计算 600 个 token
+有缓存：一次性计算 500 个 token，之后每请求只算 100 个 token
+= TTFT 提速 83%
 ```
 
-**Enable prefix caching**:
+**启用前缀缓存**：
 ```bash
 vllm serve MODEL --enable-prefix-caching
 ```
 
-**Automatic prefix detection**:
-- vLLM detects common prefixes automatically
-- No code changes required
-- Works with OpenAI-compatible API
+**自动前缀检测**：
+- vLLM 自动检测公共前缀
+- 无需改动代码
+- 与 OpenAI 兼容 API 协同工作
 
-**Cache hit rate monitoring**:
+**缓存命中率监控**：
 ```bash
 curl http://localhost:9090/metrics | grep cache_hit
-# vllm_cache_hit_rate: 0.75  (75% hit rate)
+# vllm_cache_hit_rate: 0.75  (75% 命中率)
 ```
 
-## Speculative decoding setup
+## 投机解码设置
 
-Use smaller "draft" model to propose tokens, larger model to verify.
+用较小的「草稿（draft）」模型提出 token，再由大模型验证。
 
-**Speed improvement**:
+**速度提升**：
 ```
-Standard: Generate 1 token per forward pass
-Speculative: Generate 3-5 tokens per forward pass
-= 2-3x faster generation
+标准方式：每次前向传播生成 1 个 token
+投机解码：每次前向传播生成 3-5 个 token
+= 生成速度快 2-3 倍
 ```
 
-**How it works**:
-1. Draft model proposes K tokens (fast)
-2. Target model verifies all K tokens in parallel (one pass)
-3. Accept verified tokens, restart from first rejection
+**工作原理**：
+1. 草稿模型提出 K 个 token（快速）
+2. 目标模型并行验证全部 K 个 token（一次前向传播）
+3. 接受已验证的 token，从第一个被拒处重新开始
 
-**Setup with separate draft model**:
+**使用独立草稿模型设置**：
 ```bash
 vllm serve meta-llama/Llama-3-70B-Instruct \
   --speculative-model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
   --num-speculative-tokens 5
 ```
 
-**Setup with n-gram draft** (no separate model):
+**使用 n-gram 草稿的设置**（无需独立模型）：
 ```bash
 vllm serve MODEL \
   --speculative-method ngram \
   --num-speculative-tokens 3
 ```
 
-**When to use**:
-- Output length > 100 tokens
-- Draft model 5-10x smaller than target
-- Acceptable 2-3% accuracy trade-off
+**何时使用**：
+- 输出长度 > 100 个 token
+- 草稿模型比目标模型小 5-10 倍
+- 可接受 2-3% 的精度折损
 
-## Benchmark results
+## 基准测试结果
 
-**vLLM vs HuggingFace Transformers** (Llama 3 8B, A100):
+**vLLM vs HuggingFace Transformers**（Llama 3 8B，A100）：
 ```
-Metric                  | HF Transformers | vLLM   | Improvement
+指标                    | HF Transformers | vLLM   | 提升
 ------------------------|-----------------|--------|------------
-Throughput (req/sec)    | 12              | 280    | 23x
-TTFT (ms)              | 850             | 120    | 7x
-Tokens/sec             | 45              | 2,100  | 47x
-GPU Memory (GB)        | 28              | 16     | 1.75x less
+吞吐量 (req/sec)        | 12              | 280    | 23 倍
+TTFT (ms)               | 850             | 120    | 7 倍
+Tokens/sec              | 45              | 2,100  | 47 倍
+GPU 显存 (GB)           | 28              | 16     | 少用 1.75 倍
 ```
 
-**vLLM vs TensorRT-LLM** (Llama 2 70B, 4x A100):
+**vLLM vs TensorRT-LLM**（Llama 2 70B，4x A100）：
 ```
-Metric                  | TensorRT-LLM | vLLM   | Notes
+指标                    | TensorRT-LLM | vLLM   | 备注
 ------------------------|--------------|--------|------------------
-Throughput (req/sec)    | 320          | 285    | TRT 12% faster
-Setup complexity        | High         | Low    | vLLM much easier
-NVIDIA-only            | Yes          | No     | vLLM multi-platform
-Quantization support    | FP8, INT8    | AWQ/GPTQ/FP8 | vLLM more options
+吞吐量 (req/sec)        | 320          | 285    | TRT 快 12%
+配置复杂度              | 高           | 低     | vLLM 更易用
+仅限 NVIDIA             | 是           | 否     | vLLM 跨平台
+量化支持                | FP8, INT8    | AWQ/GPTQ/FP8 | vLLM 选项更多
 ```
 
-## Performance tuning guide
+## 性能调优指南
 
-**Step 1: Measure baseline**
+**第 1 步：测量基线**
 
 ```bash
-# Install benchmarking tool
+# 安装基准测试工具
 pip install locust
 
-# Run baseline benchmark
+# 运行基线基准测试
 vllm bench throughput \
   --model MODEL \
   --input-tokens 128 \
   --output-tokens 256 \
   --num-prompts 1000
 
-# Record: throughput, TTFT, tokens/sec
+# 记录：吞吐量、TTFT、tokens/sec
 ```
 
-**Step 2: Tune memory utilization**
+**第 2 步：调优显存利用率**
 
 ```bash
-# Try different values: 0.7, 0.85, 0.9, 0.95
+# 尝试不同取值：0.7、0.85、0.9、0.95
 vllm serve MODEL --gpu-memory-utilization 0.9
 ```
 
-Higher = more batch capacity = higher throughput, but risk OOM.
+越高 = 批处理容量越大 = 吞吐量越高，但有 OOM 风险。
 
-**Step 3: Tune concurrency**
+**第 3 步：调优并发度**
 
 ```bash
-# Try values: 128, 256, 512, 1024
+# 尝试取值：128、256、512、1024
 vllm serve MODEL --max-num-seqs 256
 ```
 
-Higher = more batching opportunity, but may increase latency.
+越高 = 批处理机会越多，但可能增加延迟。
 
-**Step 4: Enable optimizations**
+**第 4 步：启用优化项**
 
 ```bash
 vllm serve MODEL \
-  --enable-prefix-caching \     # For repeated prompts
-  --enable-chunked-prefill \    # For long prompts
+  --enable-prefix-caching \     # 针对重复提示词
+  --enable-chunked-prefill \    # 针对长提示词
   --gpu-memory-utilization 0.9 \
   --max-num-seqs 512
 ```
 
-**Step 5: Re-benchmark and compare**
+**第 5 步：重新基准测试并对比**
 
-Target improvements:
-- Throughput: +30-100%
-- TTFT: -20-50%
-- GPU utilization: >85%
+目标改进：
+- 吞吐量：+30-100%
+- TTFT：-20-50%
+- GPU 利用率：>85%
 
-**Common performance issues**:
+**常见性能问题**：
 
-**Low throughput (<50 req/sec)**:
-- Increase `--max-num-seqs`
-- Enable `--enable-prefix-caching`
-- Check GPU utilization (should be >80%)
+**吞吐量低（<50 req/sec）**：
+- 增大 `--max-num-seqs`
+- 启用 `--enable-prefix-caching`
+- 检查 GPU 利用率（应 >80%）
 
-**High TTFT (>1 second)**:
-- Enable `--enable-chunked-prefill`
-- Reduce `--max-model-len` if possible
-- Check if model is too large for GPU
+**TTFT 高（>1 秒）**：
+- 启用 `--enable-chunked-prefill`
+- 尽可能减小 `--max-model-len`
+- 检查模型是否对 GPU 而言过大
 
-**OOM errors**:
-- Reduce `--gpu-memory-utilization` to 0.7
-- Reduce `--max-model-len`
-- Use quantization (`--quantization awq`)
+**OOM 错误**：
+- 将 `--gpu-memory-utilization` 降到 0.7
+- 减小 `--max-model-len`
+- 使用量化（`--quantization awq`）

@@ -1,26 +1,23 @@
-"""Gateway runtime-metadata footer.
+"""gateway 运行时元数据页脚（footer）。
 
-Renders a compact footer showing runtime state (model, context %, cwd) and
-appends it to the FINAL message of an agent turn when enabled.  Off by default
-to keep replies minimal.
+渲染一个紧凑的页脚，展示运行时状态（model、context %、cwd），并在启用时
+追加到 agent 某个 turn 的 FINAL（最终）消息上。默认关闭，以保持回复简洁。
 
-Config (``~/.hermes/config.yaml``)::
+配置（``~/.hermes/config.yaml``）::
 
     display:
       runtime_footer:
-        enabled: true                       # off by default
-        fields: [model, context_pct, cwd]   # order shown; drop any to hide
+        enabled: true                       # 默认关闭
+        fields: [model, context_pct, cwd]   # 展示顺序；去掉任意一项即可隐藏
 
-Per-platform overrides live under ``display.platforms.<platform>.runtime_footer``.
-Users can toggle the global setting with ``/footer on|off`` from both the CLI
-and any gateway platform.
+按平台覆盖配置位于 ``display.platforms.<platform>.runtime_footer``。
+用户可以从 CLI 和任意 gateway 平台使用 ``/footer on|off`` 来切换全局设置。
 
-The footer is appended to the final response text in ``gateway/run.py`` right
-before returning the response to the adapter send path — so it only lands on
-the final message a user sees, not on tool-progress updates or streaming
-partials.  When streaming is on and the final text has already been delivered
-piecemeal, the footer is sent as a separate trailing message via
-``send_trailing_footer()``.
+该页脚会在 ``gateway/run.py`` 中、即将把响应返回给 adapter 的发送路径之前，
+追加到最终响应文本的末尾——因此它只会出现在用户看到的最终消息上，而不会
+出现在 tool 进度更新或流式分片上。当启用了流式输出且最终文本已经被分片
+投递完毕时，页脚会通过 ``send_trailing_footer()`` 作为一条独立的尾随消息
+发送。
 """
 
 from __future__ import annotations
@@ -33,7 +30,7 @@ _SEP = " · "
 
 
 def _home_relative_cwd(cwd: str) -> str:
-    """Return *cwd* with ``$HOME`` collapsed to ``~``.  Empty string if unset."""
+    """返回把 ``$HOME`` 折叠为 ``~`` 后的 *cwd*。未设置时返回空字符串。"""
     if not cwd:
         return ""
     try:
@@ -47,7 +44,7 @@ def _home_relative_cwd(cwd: str) -> str:
 
 
 def _model_short(model: Optional[str]) -> str:
-    """Drop ``vendor/`` prefix for readability (``openai/gpt-5.4`` → ``gpt-5.4``)."""
+    """为可读性去掉 ``vendor/`` 前缀（``openai/gpt-5.4`` → ``gpt-5.4``）。"""
     if not model:
         return ""
     return model.rsplit("/", 1)[-1]
@@ -57,10 +54,10 @@ def resolve_footer_config(
     user_config: dict[str, Any] | None,
     platform_key: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve effective runtime-footer config for *platform_key*.
+    """解析 *platform_key* 对应的实际生效的运行时页脚配置。
 
-    Merge order (later wins):
-        1. Built-in defaults (enabled=False)
+    合并顺序（后者覆盖前者）：
+        1. 内置默认值（enabled=False）
         2. ``display.runtime_footer``
         3. ``display.platforms.<platform_key>.runtime_footer``
     """
@@ -96,10 +93,10 @@ def format_runtime_footer(
     cwd: Optional[str] = None,
     fields: Iterable[str] = _DEFAULT_FIELDS,
 ) -> str:
-    """Render the footer line, or return "" if no fields have data.
+    """渲染页脚行；如果所有字段都没有数据则返回 ""。
 
-    Fields are skipped silently when their underlying data is missing — a
-    partially-populated footer is better than a line with ``?%`` or empty slots.
+    当字段对应的底层数据缺失时会静默跳过——一个部分填充的页脚，要好过
+    一行带有 ``?%`` 或空槽的内容。
     """
     parts: list[str] = []
     for field in fields:
@@ -115,7 +112,7 @@ def format_runtime_footer(
             rel = _home_relative_cwd(cwd or os.environ.get("TERMINAL_CWD", ""))
             if rel:
                 parts.append(rel)
-        # Unknown field names are silently ignored.
+        # 未知的字段名会被静默忽略。
 
     if not parts:
         return ""
@@ -131,11 +128,10 @@ def build_footer_line(
     context_length: Optional[int],
     cwd: Optional[str] = None,
 ) -> str:
-    """Top-level entry point used by gateway/run.py.
+    """gateway/run.py 使用的顶层入口。
 
-    Returns the footer text (empty string when disabled or no data).  Callers
-    append this to the final response themselves, preserving a single blank
-    line of separation.
+    返回页脚文本（禁用或无数据时返回空字符串）。调用方自行将其追加到
+    最终响应中，并保留一行空行作为分隔。
     """
     cfg = resolve_footer_config(user_config, platform_key)
     if not cfg.get("enabled"):

@@ -1,4 +1,4 @@
-"""Setup wizard for Mem0 plugin — interactive and flag-based modes."""
+"""Mem0 插件的设置向导 — 支持交互模式和命令行参数模式。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from ._oss_providers import (
 
 
 def _curses_select(title: str, items: list[tuple[str, str]], default: int = 0) -> int:
-    """Interactive single-select with arrow keys."""
+    """使用方向键进行交互式单选。"""
     from hermes_cli.curses_ui import curses_radiolist
     display_items = [
         f"{label}  {desc}" if desc else label
@@ -35,7 +35,7 @@ def _curses_select(title: str, items: list[tuple[str, str]], default: int = 0) -
 
 
 def _prompt(label: str, default: str | None = None, secret: bool = False) -> str:
-    """Prompt for a value with optional default and secret masking."""
+    """提示输入值，支持可选默认值和密钥掩码。"""
     suffix = f" [{default}]" if default else ""
     if secret:
         sys.stdout.write(f"  {label}{suffix}: ")

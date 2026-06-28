@@ -1,43 +1,43 @@
-Create a professional infographic following these specifications:
+按照以下规范创建一张专业信息图：
 
-## Image Specifications
+## 图像规范
 
-- **Type**: Infographic
-- **Layout**: {{LAYOUT}}
-- **Style**: {{STYLE}}
-- **Aspect Ratio**: {{ASPECT_RATIO}}
-- **Language**: {{LANGUAGE}}
+- **类型**：信息图
+- **布局**：{{LAYOUT}}
+- **风格**：{{STYLE}}
+- **宽高比**：{{ASPECT_RATIO}}
+- **语言**：{{LANGUAGE}}
 
-## Core Principles
+## 核心原则
 
-- Follow the layout structure precisely for information architecture
-- Apply style aesthetics consistently throughout
-- If content involves sensitive or copyrighted figures, create stylistically similar alternatives
-- Keep information concise, highlight keywords and core concepts
-- Use ample whitespace for visual clarity
-- Maintain clear visual hierarchy
+- 精确遵循布局结构来组织信息架构
+- 全程一致地应用风格美学
+- 若内容涉及敏感或有版权的人物，请创作风格相似的替代形象
+- 信息保持简洁，突出关键词和核心概念
+- 使用充足的留白以保证视觉清晰
+- 维持清晰的视觉层级
 
-## Text Requirements
+## 文字要求
 
-- All text must match the specified style treatment
-- Main titles should be prominent and readable
-- Key concepts should be visually emphasized
-- Labels should be clear and appropriately sized
-- Use the specified language for all text content
+- 所有文字必须符合指定的风格处理
+- 主标题应突出且易读
+- 核心概念应在视觉上予以强调
+- 标签应清晰且大小适中
+- 所有文字内容使用指定的语言
 
-## Layout Guidelines
+## 布局指南
 
 {{LAYOUT_GUIDELINES}}
 
-## Style Guidelines
+## 风格指南
 
 {{STYLE_GUIDELINES}}
 
 ---
 
-Generate the infographic based on the content below:
+根据以下内容生成信息图：
 
 {{CONTENT}}
 
-Text labels (in {{LANGUAGE}}):
+文字标签（用 {{LANGUAGE}}）：
 {{TEXT_LABELS}}

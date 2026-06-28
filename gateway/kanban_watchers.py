@@ -1,11 +1,10 @@
-"""Kanban board watcher methods for GatewayRunner.
+"""GatewayRunner 的 Kanban 看板监视器方法。
 
-Extracted verbatim from ``gateway/run.py`` (god-file decomposition Phase 3).
-These are the background-loop methods that subscribe to kanban boards, deliver
-notifications/artifacts, and drive the multi-agent dispatcher. They use only
-``self`` state, so they live on a mixin that ``GatewayRunner`` inherits — the
-``self._kanban_*`` call sites resolve identically via the MRO, making this a
-behavior-neutral move that lifts ~1,000 LOC out of run.py.
+逐字从 ``gateway/run.py`` 中提取（巨文件拆解第 3 阶段）。这些是后台循环
+方法，用于订阅 kanban 看板、投递通知/产物，并驱动多 agent 调度器。它们只
+使用 ``self`` 状态，因此放在 ``GatewayRunner`` 继承的一个 mixin 上 ——
+``self._kanban_*`` 调用点通过 MRO 解析的结果完全相同，使这次移动对行为
+没有影响，同时把约 1,000 行代码从 run.py 中移出。
 """
 
 from __future__ import annotations
@@ -18,27 +17,25 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-# Match the logger run.py uses (logging.getLogger(__name__) where __name__ ==
-# "gateway.run") so extracted log records keep their original logger name.
+# 匹配 run.py 使用的 logger（logging.getLogger(__name__)，其中 __name__ ==
+# "gateway.run"），使提取出的日志记录保留原始 logger 名称。
 logger = logging.getLogger("gateway.run")
 
 
 def _resolve_auto_decompose_settings(
     load_config: Callable[[], Any],
 ) -> "tuple[bool, int]":
-    """Resolve the live (enabled, per_tick) auto-decompose settings.
+    """解析实时的（enabled, per_tick）auto-decompose 设置。
 
-    Read fresh from config on every dispatcher tick (#49638) so that flipping
-    ``kanban.auto_decompose: false`` to STOP runaway fan-out takes effect on the
-    next tick instead of requiring a gateway restart. Auto-decompose is a
-    safety toggle — a user who sees it create and launch tasks they didn't
-    intend reaches for this flag to halt it, and a stale boot-captured value
-    silently ignoring that change is the bug reported in #49638.
+    在每个调度器 tick 上从 config 重新读取（#49638），这样把
+    ``kanban.auto_decompose: false`` 改成关闭失控的扇出就能在下一个 tick 生效，
+    而不需要重启 gateway。auto-decompose 是一个安全开关 —— 用户看到它创建并
+    启动了他们不想要的任务时，会用这个标志来停止它；而过时的启动时捕获值
+    静默忽略该修改正是 #49638 报告的 bug。
 
-    Fails **safe**: if the config read raises, return ``(False, 3)`` — a
-    transient read error must never re-enable a feature the user turned off,
-    nor fall back to the burst-prone default-on behaviour. ``per_tick`` is
-    clamped to ``>= 1``.
+    **故障安全**：如果读取 config 抛异常，返回 ``(False, 3)`` —— 一次瞬态
+    读取错误绝不能重新启用用户关闭的功能，也不能回退到容易爆发的默认开启
+    行为。``per_tick`` 被钳制到 ``>= 1``。
     """
     try:
         cfg = load_config()
@@ -56,29 +53,26 @@ def _resolve_auto_decompose_settings(
 
 
 def _acquire_singleton_lock(lock_path) -> "tuple[Optional[object], str]":
-    """Take an exclusive, non-blocking advisory lock for the sole dispatcher.
+    """为唯一的调度器获取一个独占的、非阻塞的劝告锁。
 
-    Only one gateway process machine-wide may run the embedded kanban
-    dispatcher: concurrent dispatchers double the reclaim frequency (each
-    runs its own ``release_stale_claims`` → promote → dispatch loop), double
-    claim-attempt events in the event log, and — with ``wal_autocheckpoint=0`` —
-    concurrent manual WAL checkpoints can corrupt index pages. The
-    ``dispatch_in_gateway`` config flag is the primary control; this lock is the
-    backstop that survives config drift and same-profile restart races.
+    全机范围内只允许一个 gateway 进程运行内嵌的 kanban 调度器：并发的调度器
+    会让回收频率翻倍（各自运行自己的 ``release_stale_claims`` → promote →
+    dispatch 循环），让事件日志中的 claim-attempt 事件翻倍，而且 —— 在
+    ``wal_autocheckpoint=0`` 时 —— 并发的手动 WAL checkpoint 会损坏索引页。
+    ``dispatch_in_gateway`` 配置标志是主控制；这把锁是能在配置漂移和同 profile
+    重启竞态下存活的兜底。
 
-    Delegates to :func:`gateway.status._try_acquire_file_lock` (``fcntl`` on
-    POSIX, ``msvcrt`` on Windows) so the guard is cross-platform.
+    委托给 :func:`gateway.status._try_acquire_file_lock`（POSIX 上用
+    ``fcntl``，Windows 上用 ``msvcrt``），使该守卫跨平台。
 
-    Returns ``(handle, "held")`` on success — the caller keeps the file handle
-    for the process lifetime and **must** release it via
-    :func:`_release_singleton_lock` when done. ``(None, "contended")`` when
-    another process holds the lock (caller must NOT dispatch). ``(None,
-    "unavailable")`` when locking cannot be performed (non-POSIX filesystem
-    without flock, or the status.py helpers are unimportable) — caller falls
-    back to config-only control.
+    成功时返回 ``(handle, "held")`` —— 调用方在进程生命周期内持有文件句柄，
+    并**必须**在完成后通过 :func:`_release_singleton_lock` 释放它。
+    当另一个进程持有锁时返回 ``(None, "contended")``（调用方绝不能调度）。
+    当无法执行锁定时（无 flock 的非 POSIX 文件系统，或 status.py 辅助函数
+    无法导入）返回 ``(None, "unavailable")`` —— 调用方回退到仅靠配置控制。
     """
     try:
-        from gateway.status import _try_acquire_file_lock  # deferred; same package
+        from gateway.status import _try_acquire_file_lock  # 延迟导入；同一包
     except ImportError:
         return None, "unavailable"
     try:
@@ -93,7 +87,7 @@ def _acquire_singleton_lock(lock_path) -> "tuple[Optional[object], str]":
 
 
 def _release_singleton_lock(handle) -> None:
-    """Release a dispatcher singleton lock acquired via :func:`_acquire_singleton_lock`."""
+    """释放通过 :func:`_acquire_singleton_lock` 获取的调度器单例锁。"""
     if handle is None:
         return
     try:
@@ -108,31 +102,29 @@ def _release_singleton_lock(handle) -> None:
 
 
 class GatewayKanbanWatchersMixin:
-    """Kanban watcher / notifier / dispatcher loops for GatewayRunner."""
+    """GatewayRunner 的 kanban 监视器 / 通知器 / 调度器循环。"""
 
     async def _kanban_notifier_watcher(self, interval: float = 5.0) -> None:
-        """Poll ``kanban_notify_subs`` and deliver terminal events to users.
+        """轮询 ``kanban_notify_subs`` 并向用户投递终态事件。
 
-        For each subscription row, fetches ``task_events`` newer than the
-        stored cursor with kind in the terminal set (``completed``,
-        ``blocked``, ``gave_up``, ``crashed``, ``timed_out``). Sends one
-        message per new event to ``(platform, chat_id, thread_id)``,
-        then advances the cursor. When a task reaches a terminal state
-        (``completed`` / ``archived``), the subscription is removed.
+        对每个订阅行，取出比存储的游标更新的、kind 属于终态集合
+        （``completed``、``blocked``、``gave_up``、``crashed``、
+        ``timed_out``）的 ``task_events``。每个新事件向
+        ``(platform, chat_id, thread_id)`` 发送一条消息，然后推进游标。
+        当任务到达终态（``completed`` / ``archived``）时，移除该订阅。
 
-        Runs in the gateway event loop; all SQLite work is pushed to a
-        thread via ``asyncio.to_thread`` so the loop never blocks on the
-        WAL lock. Failures in one tick don't stop subsequent ticks.
+        在 gateway 事件循环中运行；所有 SQLite 工作通过
+        ``asyncio.to_thread`` 推到线程中，使循环永不阻塞在 WAL 锁上。一个
+        tick 中的失败不会阻止后续 tick。
 
-        **Multi-board:** iterates every board discovered on disk per
-        tick. Subscriptions live inside each board's own DB and cannot
-        cross boards, so delivery semantics are unchanged — this is
-        purely a fan-out of the single-DB poll.
+        **多看板：** 每个 tick 遍历磁盘上发现的每个看板。订阅存在于每个看板
+        自己的 DB 内，不能跨看板，因此投递语义不变 —— 这纯粹是单 DB 轮询的
+        扇出。
         """
-        # Gate: only the dispatch-owning gateway opens kanban DBs for notifier polling.
-        # Non-dispatch gateways have no subscriptions to deliver — all kanban state lives
-        # in the dispatch owner's per-board DBs. This prevents N-gateway -shm contention.
-        # TODO: gate per-board when per-board dispatcher_owner tracking lands.
+        # 门控：只有拥有调度权的 gateway 才打开 kanban DB 进行通知器轮询。
+        # 非调度 gateway 没有要投递的订阅 —— 所有 kanban 状态都在调度所有者
+        # 的按看板 DB 中。这防止了 N 个 gateway 的 -shm 竞争。
+        # TODO: 等按看板的 dispatcher_owner 跟踪落地后再按看板门控。
         try:
             from hermes_cli.config import load_config as _load_config
         except Exception:
@@ -161,22 +153,17 @@ class GatewayKanbanWatchersMixin:
             return
 
         TERMINAL_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out")
-        # Subscriptions are removed only when the task reaches a truly final
-        # status (done / archived). We used to also unsub on any terminal
-        # event kind (gave_up / crashed / timed_out / blocked), but that
-        # silently dropped the user out of the loop whenever the dispatcher
-        # respawned the task: a worker that crashes, gets reclaimed, runs
-        # again, and crashes a second time would only notify on the first
-        # crash because the subscription was deleted after the first event.
-        # Same shape as the reblock-after-unblock cycle that PR #22941
-        # fixed for `blocked`. Keeping the subscription alive until the
-        # task is genuinely done lets the cursor (advanced atomically by
-        # claim_unseen_events_for_sub) handle dedup, and any retry-loop
-        # event reaches the user.
-        # Per-subscription send-failure counter. Adapter.send raising
-        # means the chat is dead (deleted, bot kicked, etc.) — after N
-        # consecutive send failures the sub is dropped so we don't spin
-        # against a dead chat every 5 seconds forever.
+        # 仅当任务到达真正终态（done / archived）时才移除订阅。我们过去也会
+        # 在任何终态事件 kind（gave_up / crashed / timed_out / blocked）时
+        # 取消订阅，但这会在调度器重新生成任务时悄悄把用户踢出循环：一个
+        # 崩溃、被回收、再次运行、又再次崩溃的 worker 只会在第一次崩溃时
+        # 通知，因为订阅在第一次事件后就删除了。这与 PR #22941 为 `blocked`
+        # 修复的 unblock 后再 block 的循环形态相同。让订阅一直保留到任务
+        # 真正完成，能让游标（由 claim_unseen_events_for_sub 原子推进）处理
+        # 去重，且任何重试循环事件都能到达用户。
+        # 按订阅的发送失败计数器。Adapter.send 抛异常意味着聊天已死
+        # （被删除、bot 被踢等）—— 连续 N 次发送失败后丢弃该订阅，以免
+        # 每 5 秒永远对着一个死掉的聊天空转。
         MAX_SEND_FAILURES = 3
         sub_fail_counts: dict[tuple, int] = getattr(
             self, "_kanban_sub_fail_counts", {}
@@ -187,7 +174,7 @@ class GatewayKanbanWatchersMixin:
             notifier_profile = self._active_profile_name()
             self._kanban_notifier_profile = notifier_profile
 
-        # Initial delay so the gateway can finish wiring adapters.
+        # 初始延迟，让 gateway 完成适配器的接线。
         await asyncio.sleep(5)
 
         while self._running:
@@ -202,11 +189,10 @@ class GatewayKanbanWatchersMixin:
                         logger.debug("kanban notifier: no connected adapters; skipping tick")
                         return deliveries
 
-                    # Enumerate every board on disk, but poll each resolved DB
-                    # path once. Multiple slugs can point at the same DB when
-                    # HERMES_KANBAN_DB pins the board path; without this guard
-                    # one gateway could collect the same subscription/event
-                    # more than once before advancing the cursor.
+                    # 枚举磁盘上的每个看板，但每个解析后的 DB 路径只轮询一次。
+                    # 当 HERMES_KANBAN_DB 固定看板路径时，多个 slug 可能指向
+                    # 同一个 DB；没有这个守卫，一个 gateway 在推进游标之前可能
+                    # 多次收集同一个订阅/事件。
                     try:
                         boards = _kb.list_boards(include_archived=False)
                     except Exception:
@@ -232,18 +218,15 @@ class GatewayKanbanWatchersMixin:
                             logger.debug("kanban notifier: cannot open board %s: %s", slug, exc)
                             continue
                         try:
-                            # `connect()` runs the schema + idempotent migration
-                            # on first open per process, so an explicit
-                            # `init_db()` here would be redundant. Worse:
-                            # `init_db()` deliberately busts the per-process
-                            # cache and re-runs the migration on a *second*
-                            # connection, which races the first and used to
-                            # log a benign but noisy `duplicate column name`
-                            # traceback (and intermittent "database is locked"
-                            # — issue #21378) on every gateway start against
-                            # a legacy DB. `_add_column_if_missing` now
-                            # tolerates that race, but we still skip the
-                            # redundant call to avoid the wasted work.
+                            # `connect()` 在每个进程首次打开时运行 schema +
+                            # 幂等迁移，所以这里显式调用 `init_db()` 是冗余的。
+                            # 更糟的是：`init_db()` 会故意打破进程内缓存，并在
+                            # *第二个* 连接上重新运行迁移，与第一个连接产生
+                            # 竞态，过去每次 gateway 针对遗留 DB 启动时都会
+                            # 记录一条无害但吵闹的 `duplicate column name`
+                            # 回溯（以及间歇性的 "database is locked"
+                            # —— issue #21378）。`_add_column_if_missing` 现在
+                            # 容忍该竞态，但我们仍跳过冗余调用以避免浪费工作。
                             subs = _kb.list_notify_subs(conn)
                             if not subs:
                                 logger.debug("kanban notifier: board %s has no subscriptions", slug)
@@ -298,8 +281,7 @@ class GatewayKanbanWatchersMixin:
                     try:
                         plat = _Platform(platform_str)
                     except ValueError:
-                        # Unknown platform string; skip and advance cursor so
-                        # we don't replay forever.
+                        # 未知的 platform 字符串；跳过并推进游标，以免永远重放。
                         await asyncio.to_thread(
                             self._kanban_advance, sub, d["cursor"], board_slug,
                         )
@@ -321,17 +303,14 @@ class GatewayKanbanWatchersMixin:
                     title = (task.title if task else sub["task_id"])[:120]
                     for ev in d["events"]:
                         kind = ev.kind
-                        # Identity prefix: attribute terminal pings to the
-                        # worker that did the work. Makes fleets (where one
-                        # chat subscribes to many tasks) legible at a glance.
+                        # 身份前缀：把终态提醒归因于完成工作的 worker。
+                        # 让舰队（一个聊天订阅多个任务）一目了然。
                         who = (task.assignee if task and task.assignee else None)
                         tag = f"@{who} " if who else ""
                         if kind == "completed":
-                            # Prefer the run's summary (the worker's
-                            # intentional human-facing handoff, carried
-                            # in the event payload), then fall back to
-                            # task.result for legacy rows written before
-                            # runs shipped.
+                            # 优先用 run 的 summary（worker 有意为之的、面向
+                            # 人类的交接，承载在事件载荷中），然后回退到
+                            # task.result，以兼容 run 上线之前写入的旧行。
                             handoff = ""
                             payload_summary = None
                             if ev.payload and ev.payload.get("summary"):
@@ -391,15 +370,13 @@ class GatewayKanbanWatchersMixin:
                                 "kanban notifier: delivered %s event for %s to %s/%s on board %s",
                                 kind, sub["task_id"], platform_str, sub["chat_id"], board_slug,
                             )
-                            # After delivering the text notification, surface
-                            # any artifact paths the worker referenced in
+                            # 投递文本通知后，把 worker 在
                             # ``kanban_complete(summary=..., artifacts=[...])``
-                            # (or the legacy ``result`` field) as native
-                            # uploads. ``extract_local_files`` finds bare
-                            # absolute paths in the summary;
-                            # ``send_document`` / ``send_image_file`` uploads
-                            # them. Only fires on the ``completed`` event so
-                            # we never spam attachments on retries.
+                            # 中引用（或旧版 ``result`` 字段）的任何产物路径
+                            # 作为原生上传呈现。``extract_local_files`` 在
+                            # summary 中查找裸的绝对路径；
+                            # ``send_document`` / ``send_image_file`` 上传它们。
+                            # 仅在 ``completed`` 事件时触发，以免在重试时刷附件。
                             if kind == "completed":
                                 try:
                                     await self._deliver_kanban_artifacts(
@@ -414,7 +391,7 @@ class GatewayKanbanWatchersMixin:
                                         "kanban notifier: artifact delivery for %s failed: %s",
                                         sub["task_id"], art_exc,
                                     )
-                            # Reset the failure counter on success.
+                            # 成功时重置失败计数器。
                             sub_fail_counts.pop(sub_key, None)
                         except Exception as exc:
                             fails = sub_fail_counts.get(sub_key, 0) + 1
@@ -441,24 +418,20 @@ class GatewayKanbanWatchersMixin:
                                     d.get("old_cursor", 0),
                                     board_slug,
                                 )
-                            # Rewind the pre-send claim on transient failure so
-                            # a later tick can retry. After too many failures,
-                            # dropping the subscription is the terminal action.
+                            # 瞬态失败时回退发送前的 claim，以便后续 tick 可以
+                            # 重试。失败次数过多后，丢弃订阅是终态动作。
                             break
                     else:
-                        # All events delivered; advance cursor. The cursor
-                        # is the dedup mechanism — it prevents re-delivery
-                        # of the same event on subsequent ticks.
+                        # 所有事件都已投递；推进游标。游标是去重机制 —— 它
+                        # 防止在后续 tick 上重复投递同一事件。
                         await asyncio.to_thread(
                             self._kanban_advance, sub, d["cursor"], board_slug,
                         )
-                        # Unsubscribe only when the task has reached a truly
-                        # final status (done / archived). For blocked /
-                        # gave_up / crashed / timed_out the subscription is
-                        # kept alive so the user gets notified again if the
-                        # dispatcher respawns the task and it cycles into the
-                        # same state. See the longer comment on TERMINAL_KINDS
-                        # above for the failure mode this prevents.
+                        # 仅当任务到达真正终态（done / archived）时才取消订阅。
+                        # 对于 blocked / gave_up / crashed / timed_out，保留订阅，
+                        # 以便调度器重新生成任务并循环进入相同状态时用户能再次
+                        # 收到通知。关于这所防止的失败模式，参见上面
+                        # TERMINAL_KINDS 处更长的注释。
                         task_terminal = task and task.status in {"done", "archived"}
                         if task_terminal:
                             await asyncio.to_thread(
@@ -466,7 +439,7 @@ class GatewayKanbanWatchersMixin:
                             )
             except Exception as exc:
                 logger.warning("kanban notifier tick failed: %s", exc)
-            # Sleep with cancellation checks.
+            # 带取消检查地睡眠。
             for _ in range(int(max(1, interval))):
                 if not self._running:
                     return
@@ -475,10 +448,10 @@ class GatewayKanbanWatchersMixin:
     def _kanban_advance(
         self, sub: dict, cursor: int, board: Optional[str] = None,
     ) -> None:
-        """Sync helper: advance a subscription's cursor. Runs in to_thread.
+        """同步辅助函数：推进订阅的游标。在 to_thread 中运行。
 
-        ``board`` scopes the DB connection to the board that owns this
-        subscription. Unsub cursors in one board can't touch another's.
+        ``board`` 把 DB 连接范围限定为拥有此订阅的看板。一个看板里的取消
+        订阅游标不能触及另一个看板。
         """
         from hermes_cli import kanban_db as _kb
         conn = _kb.connect(board=board)
@@ -515,7 +488,7 @@ class GatewayKanbanWatchersMixin:
         old_cursor: int,
         board: Optional[str] = None,
     ) -> None:
-        """Sync helper: undo a claimed notification cursor after send failure."""
+        """同步辅助函数：在发送失败后撤销已 claim 的通知游标。"""
         from hermes_cli import kanban_db as _kb
         conn = _kb.connect(board=board)
         try:
@@ -540,21 +513,19 @@ class GatewayKanbanWatchersMixin:
         event_payload: Optional[dict],
         task,
     ) -> None:
-        """Upload artifact files referenced by a completed kanban task.
+        """上传已完成 kanban 任务所引用的产物文件。
 
-        Workers passing ``kanban_complete(artifacts=[...])`` ship absolute
-        file paths through the completion event so downstream humans get
-        the deliverable as a native upload instead of a path printed in
-        chat.
+        传入 ``kanban_complete(artifacts=[...])`` 的 worker 通过完成事件发送
+        绝对文件路径，以便下游的人把交付物作为原生上传获取，而不是聊天里打印
+        的路径。
 
-        Sources scanned, in priority order:
-          1. ``event_payload['artifacts']`` (explicit list — preferred)
-          2. ``event_payload['summary']`` (truncated first line)
-          3. ``task.result`` (legacy fallback)
+        按优先级扫描的来源：
+          1. ``event_payload['artifacts']``（显式列表 —— 首选）
+          2. ``event_payload['summary']``（截断后的首行）
+          3. ``task.result``（旧版回退）
 
-        Files are deduplicated, missing files are silently skipped (the
-        path may have been mentioned for reference only), and delivery
-        errors are logged but do not break the notifier loop.
+        文件会去重，缺失的文件会被静默跳过（该路径可能只是被提及用于参考），
+        投递错误会被记录但不会中断通知器循环。
         """
         from pathlib import Path as _Path
 
@@ -572,7 +543,7 @@ class GatewayKanbanWatchersMixin:
             seen.add(expanded)
             candidates.append(expanded)
 
-        # 1. Explicit artifacts list in payload.
+        # 1. 载荷中显式的 artifacts 列表。
         if isinstance(event_payload, dict):
             raw = event_payload.get("artifacts")
             if isinstance(raw, (list, tuple)):
@@ -580,14 +551,14 @@ class GatewayKanbanWatchersMixin:
                     if isinstance(item, str):
                         _add(item)
 
-            # 2. Paths embedded in the payload summary.
+            # 2. 嵌入载荷 summary 中的路径。
             summary = event_payload.get("summary")
             if isinstance(summary, str) and summary:
                 paths, _ = adapter.extract_local_files(summary)
                 for p in paths:
                     _add(p)
 
-        # 3. Legacy: paths embedded in task.result.
+        # 3. 旧版：嵌入 task.result 中的路径。
         if task is not None and getattr(task, "result", None):
             result_text = str(task.result)
             paths, _ = adapter.extract_local_files(result_text)
@@ -607,8 +578,8 @@ class GatewayKanbanWatchersMixin:
 
         from urllib.parse import quote as _quote
 
-        # Partition images so they ride a single send_multiple_images call
-        # on platforms that support batch image uploads (Signal/Slack RPCs).
+        # 把图片分区，让它们在支持批量图片上传的平台（Signal/Slack RPC）上
+        # 走单次 send_multiple_images 调用。
         image_paths = [p for p in candidates if _Path(p).suffix.lower() in _IMAGE_EXTS]
         other_paths = [p for p in candidates if _Path(p).suffix.lower() not in _IMAGE_EXTS]
 
@@ -641,27 +612,25 @@ class GatewayKanbanWatchersMixin:
                 )
 
     async def _kanban_dispatcher_watcher(self) -> None:
-        """Embedded kanban dispatcher — one tick every `dispatch_interval_seconds`.
+        """内嵌的 kanban 调度器 —— 每 `dispatch_interval_seconds` 一个 tick。
 
-        Gated by `kanban.dispatch_in_gateway` in config.yaml (default True).
-        When true, the gateway hosts the single dispatcher for this profile:
-        no separate `hermes kanban daemon` process needed. When false, the
-        loop exits immediately and an external daemon is expected.
+        由 config.yaml 中的 `kanban.dispatch_in_gateway` 门控（默认 True）。
+        为 True 时，gateway 承载该 profile 的唯一调度器：不需要单独的
+        `hermes kanban daemon` 进程。为 False 时，循环立即退出，预期会有外部
+        daemon。
 
-        Each tick calls :func:`kanban_db.dispatch_once` inside
-        ``asyncio.to_thread`` so the SQLite WAL lock never blocks the
-        event loop. Failures in one tick don't stop subsequent ticks —
-        same pattern as `_kanban_notifier_watcher`.
+        每个 tick 在 ``asyncio.to_thread`` 内调用
+        :func:`kanban_db.dispatch_once`，使 SQLite WAL 锁永不阻塞事件循环。
+        一个 tick 中的失败不会阻止后续 tick —— 与 `_kanban_notifier_watcher`
+        相同的模式。
 
-        Shutdown: the loop checks ``self._running`` between ticks; gateway
-        stop() flips it to False and cancels pending tasks, and the
-        in-flight ``to_thread`` returns on its own after the current
-        ``dispatch_once`` call finishes (typically <1ms on an idle board).
+        关闭：循环在 tick 之间检查 ``self._running``；gateway 的 stop() 把它
+        翻转为 False 并取消待处理任务，而进行中的 ``to_thread`` 在当前的
+        ``dispatch_once`` 调用完成后自行返回（在空闲看板上通常 <1ms）。
         """
-        # Read config once at boot. If the user flips the flag later, they
-        # restart the gateway; same pattern as every other background
-        # watcher here. Honours HERMES_KANBAN_DISPATCH_IN_GATEWAY env var
-        # as an escape hatch (false-y value disables without editing YAML).
+        # 启动时读取一次 config。如果用户之后翻转标志，他们重启 gateway；
+        # 与此处其他后台监视器相同的模式。遵循 HERMES_KANBAN_DISPATCH_IN_GATEWAY
+        # 环境变量作为逃生舱（假值无需编辑 YAML 即可禁用）。
         try:
             from hermes_cli.config import load_config as _load_config
         except Exception:
@@ -690,13 +659,12 @@ class GatewayKanbanWatchersMixin:
             logger.warning("kanban dispatcher: kanban_db not importable; dispatcher disabled")
             return
 
-        # Single-dispatcher backstop. dispatch_in_gateway defaults to true, so a
-        # new profile gateway (or a same-profile restart race) can silently
-        # start a second dispatcher; concurrent dispatchers double reclaim
-        # frequency, double claim-attempt events, and — with
-        # wal_autocheckpoint=0 — concurrent manual WAL checkpoints can corrupt
-        # index pages. The lock lives at the machine-global kanban root
-        # (shared across profiles by design), so it serialises ALL gateways.
+        # 单调度器兜底。dispatch_in_gateway 默认为 true，所以一个新 profile 的
+        # gateway（或同 profile 的重启竞态）可能悄悄启动第二个调度器；并发调度器
+        # 会让回收频率翻倍、让 claim-attempt 事件翻倍，而且 —— 在
+        # wal_autocheckpoint=0 时 —— 并发的手动 WAL checkpoint 会损坏索引页。
+        # 该锁位于机器全局的 kanban 根目录（设计上跨 profile 共享），因此它会
+        # 串行化所有 gateway。
         self._kanban_dispatcher_lock_handle = None
         _lock_path = _kb.kanban_home() / "kanban" / ".dispatcher.lock"
         _lock_handle, _lock_state = _acquire_singleton_lock(_lock_path)
@@ -707,7 +675,7 @@ class GatewayKanbanWatchersMixin:
             )
             return
         if _lock_state == "held":
-            self._kanban_dispatcher_lock_handle = _lock_handle  # hold for process lifetime
+            self._kanban_dispatcher_lock_handle = _lock_handle  # 在进程生命周期内持有
             logger.info("kanban dispatcher: holding singleton dispatcher lock (%s)", _lock_path)
         else:
             logger.warning(
@@ -723,17 +691,16 @@ class GatewayKanbanWatchersMixin:
                 kanban_cfg.get("dispatch_interval_seconds"),
             )
             interval = 60.0
-        interval = max(interval, 1.0)  # sanity floor — tighter than this is a footgun
+        interval = max(interval, 1.0)  # 合理下限 —— 比这更紧是个自找麻烦的设置
 
-        # Read max_spawn config to limit concurrent kanban tasks
+        # 读取 max_spawn 配置以限制并发 kanban 任务
         max_spawn = kanban_cfg.get("max_spawn", None)
         if max_spawn is not None:
             logger.info(f"kanban dispatcher: max_spawn={max_spawn}")
 
-        # Cap the number of simultaneously running tasks so slow workers
-        # (local LLMs, resource-constrained hosts) don't pile up and time
-        # out. When set, the dispatcher skips spawning when the board
-        # already has this many tasks in 'running' status.
+        # 限制同时运行的任务数量，以免慢速 worker（本地 LLM、资源受限的主机）
+        # 堆积并超时。设置后，当看板已有这么多 'running' 状态的任务时，调度器
+        # 跳过生成。
         raw_max_in_progress = kanban_cfg.get("max_in_progress", None)
         max_in_progress = None
         if raw_max_in_progress is not None:
@@ -773,7 +740,7 @@ class GatewayKanbanWatchersMixin:
             )
             failure_limit = _kb.DEFAULT_FAILURE_LIMIT
 
-        # Read stale_timeout_seconds — 0 disables stale detection.
+        # 读取 stale_timeout_seconds —— 0 禁用过时检测。
         raw_stale = kanban_cfg.get("dispatch_stale_timeout_seconds", 0)
         try:
             stale_timeout_seconds = int(raw_stale or 0)
@@ -785,12 +752,10 @@ class GatewayKanbanWatchersMixin:
             )
             stale_timeout_seconds = 0
 
-        # Read kanban.default_assignee — fallback profile for tasks
-        # created without an explicit assignee (e.g. via the dashboard).
-        # When set, the dispatcher applies it to unassigned ready tasks
-        # instead of skipping them indefinitely (#27145). Empty string
-        # (the schema default) means "no fallback, keep skipping" —
-        # backward-compatible with existing installs.
+        # 读取 kanban.default_assignee —— 为没有显式 assignee 创建的任务
+        # （例如通过 dashboard 创建）提供的回退 profile。设置后，调度器把它应用
+        # 到未分配的 ready 任务上，而不是无限期跳过（#27145）。空字符串
+        # （schema 默认值）意味着"不回退，继续跳过" —— 与现有安装向后兼容。
         default_assignee = (kanban_cfg.get("default_assignee") or "").strip() or None
         if default_assignee:
             logger.info(
@@ -799,11 +764,10 @@ class GatewayKanbanWatchersMixin:
                 default_assignee,
             )
 
-        # Read kanban.max_in_progress_per_profile — per-profile concurrency
-        # cap (#21582). When set, no single profile gets more than N
-        # workers running at once, even if the global max_in_progress
-        # would allow it. Prevents one profile's local model / API quota
-        # / browser pool from being overwhelmed by a fan-out.
+        # 读取 kanban.max_in_progress_per_profile —— 按 profile 的并发上限
+        # （#21582）。设置后，即使全局 max_in_progress 允许，单个 profile 一次
+        # 运行的 worker 也不超过 N 个。防止单个 profile 的本地模型 / API 配额 /
+        # 浏览器池被扇出压垮。
         raw_per_profile = kanban_cfg.get("max_in_progress_per_profile", None)
         max_in_progress_per_profile = None
         if raw_per_profile is not None:
@@ -828,20 +792,18 @@ class GatewayKanbanWatchersMixin:
                         max_in_progress_per_profile,
                     )
 
-        # Initial delay so the gateway finishes wiring adapters before the
-        # dispatcher spawns workers (those workers may hit gateway notify
-        # subscriptions etc.). Matches the notifier watcher's delay.
+        # 初始延迟，让 gateway 在调度器生成 worker（这些 worker 可能会命中
+        # gateway 的通知订阅等）之前完成适配器接线。与通知器监视器的延迟一致。
         await asyncio.sleep(5)
 
-        # Health telemetry mirrored from `_cmd_daemon`: warn when ready
-        # queue is non-empty but spawns are 0 for N consecutive ticks —
-        # usually means broken PATH, missing venv, or credential loss.
+        # 健康遥测，镜像自 `_cmd_daemon`：当 ready 队列非空但连续 N 个 tick 的
+        # 生成数为 0 时警告 —— 通常意味着 PATH 损坏、venv 缺失或凭证丢失。
         HEALTH_WINDOW = 6
         bad_ticks = 0
         last_warn_at = 0
-        # Avoid hot-looping corrupt-looking board DBs, but do not suppress
-        # same-fingerprint retries forever: transient WAL/open races can
-        # surface as "database disk image is malformed" for one tick.
+        # 避免对看起来损坏的看板 DB 热循环，但不要永久抑制相同指纹的重试：
+        # 瞬态 WAL/打开竞态可能在一个 tick 中表现为 "database disk image
+        # is malformed"。
         CORRUPT_BOARD_RETRY_AFTER_SECONDS = 300
         disabled_corrupt_boards: dict[
             str, tuple[tuple[str, int | None, int | None], float]
@@ -872,13 +834,12 @@ class GatewayKanbanWatchersMixin:
             )
 
         def _tick_once_for_board(slug: str) -> "Optional[object]":
-            """Run one dispatch_once for a specific board.
+            """为特定看板运行一次 dispatch_once。
 
-            Runs in a worker thread via `asyncio.to_thread`. `board=slug`
-            is passed through `dispatch_once` so `resolve_workspace` and
-            `_default_spawn` see the right paths. The per-board DB is
-            opened explicitly so concurrent boards never share a
-            connection handle or accidentally claim across each other.
+            通过 `asyncio.to_thread` 在工作线程中运行。`board=slug` 透传给
+            `dispatch_once`，使 `resolve_workspace` 和 `_default_spawn` 看到
+            正确的路径。按看板的 DB 被显式打开，以便并发看板绝不共享连接句柄
+            或意外跨看板 claim。
             """
             conn = None
             fingerprint = _board_db_fingerprint(slug)
@@ -906,12 +867,10 @@ class GatewayKanbanWatchersMixin:
                 disabled_corrupt_boards.pop(slug, None)
             try:
                 conn = _kb.connect(board=slug)
-                # `connect()` runs the schema + idempotent migration on
-                # first open per process; the previous explicit
-                # `init_db()` call here busted the per-process cache and
-                # re-ran the migration on a second connection, racing
-                # the first. See the matching comment in
-                # `_kanban_notifier_watcher` and issue #21378.
+                # `connect()` 在每个进程首次打开时运行 schema + 幂等迁移；
+                # 此前这里显式调用的 `init_db()` 会打破进程内缓存，并在第二个
+                # 连接上重新运行迁移，与第一个产生竞态。参见
+                # `_kanban_notifier_watcher` 中匹配的注释和 issue #21378。
                 return _kb.dispatch_once(
                     conn,
                     board=slug,
@@ -960,11 +919,10 @@ class GatewayKanbanWatchersMixin:
                         pass
 
         def _tick_once() -> "list[tuple[str, Optional[object]]]":
-            """Run one dispatch_once per board. Returns (slug, result) pairs.
+            """对每个看板运行一次 dispatch_once。返回 (slug, result) 对。
 
-            Enumerating boards on every tick keeps the dispatcher honest
-            when users create a new board mid-run: no restart required,
-            the next tick picks it up automatically.
+            每个 tick 枚举看板能让调度器在用户运行中创建新看板时保持诚实：
+            不需要重启，下一个 tick 会自动拾取它。
             """
             try:
                 boards = _kb.list_boards(include_archived=False)
@@ -977,16 +935,15 @@ class GatewayKanbanWatchersMixin:
             return out
 
         def _ready_nonempty() -> bool:
-            """Cheap probe: is there at least one ready+assigned+unclaimed
-            task on ANY board whose assignee maps to a real Hermes profile
-            (i.e. one the dispatcher would actually spawn for)?
+            """廉价探针：任意看板上是否至少有一个 ready+assigned+unclaimed 的
+            任务，其 assignee 映射到一个真实的 Hermes profile（即调度器会真正
+            为之生成 worker 的任务）？
 
-            Tasks assigned to control-plane lanes (e.g. ``orion-cc``,
-            ``orion-research``) are pulled by terminals via
-            ``claim_task`` directly and never spawnable, so a queue full
-            of those is "correctly idle", not "stuck". Filtering them out
-            here keeps the stuck-warn fire only on real failures (broken
-            PATH, missing venv, credential loss for a real Hermes profile).
+            分配给控制面车道（例如 ``orion-cc``、``orion-research``）的任务由
+            终端通过 ``claim_task`` 直接拉取，永远不会被生成，所以满是这类
+            任务的队列是"正确地空闲"，而不是"卡住"。在这里过滤掉它们，使卡住
+            警告只在真正的失败时触发（PATH 损坏、venv 缺失、真实 Hermes
+            profile 的凭证丢失）。
             """
             try:
                 boards = _kb.list_boards(include_archived=False)
@@ -1011,29 +968,24 @@ class GatewayKanbanWatchersMixin:
                             pass
             return False
 
-        # Auto-decompose: turn fresh triage tasks into ready workgraphs
-        # before the dispatcher fans out workers. Gated by
-        # ``kanban.auto_decompose`` (default True). Capped by
-        # ``kanban.auto_decompose_per_tick`` (default 3) so a bulk-load
-        # of triage tasks doesn't burst-spend the aux LLM in one tick;
-        # remainder defers to subsequent ticks.
+        # 自动分解：在调度器扇出 worker 之前，把新的 triage 任务转成 ready 的
+        # 工作图。由 ``kanban.auto_decompose`` 门控（默认 True）。由
+        # ``kanban.auto_decompose_per_tick``（默认 3）封顶，以免大量 triage
+        # 任务在一个 tick 内突发消耗 aux LLM；剩余的延迟到后续 tick。
         #
-        # The flag is re-read from config EVERY tick (#49638) rather than
-        # captured once at boot. Auto-decompose is a safety toggle: a user who
-        # sees it fan out and run tasks they didn't intend reaches for
-        # ``kanban.auto_decompose: false`` to STOP it — and that must take
-        # effect on the next tick, not require a gateway restart. (Reported:
-        # auto-decompose created and launched destructive tasks while the user
-        # was still typing the task description, and the flag "couldn't be
-        # disabled" because the gateway had captured its boot-time value.)
+        # 该标志每个 tick 都从 config 重新读取（#49638），而不是在启动时捕获
+        # 一次。auto-decompose 是一个安全开关：用户看到它扇出并运行他们不想要
+        # 的任务时，会用 ``kanban.auto_decompose: false`` 来停止它 —— 而这必须
+        # 在下一个 tick 生效，而不是要求重启 gateway。（报告：auto-decompose
+        # 在用户仍在输入任务描述时就创建并启动了破坏性任务，而该标志"无法被
+        # 禁用"，因为 gateway 已经捕获了其启动时的值。）
         def _read_auto_decompose_settings() -> tuple[bool, int]:
-            """Re-resolve (enabled, per_tick) from current config each tick."""
+            """每个 tick 从当前 config 重新解析 (enabled, per_tick)。"""
             return _resolve_auto_decompose_settings(_load_config)
 
         def _auto_decompose_tick(auto_decompose_per_tick: int) -> int:
-            """Run the auto-decomposer for up to N triage tasks across all
-            boards. Returns the number of triage tasks that were
-            successfully decomposed or specified this tick.
+            """对所有看板最多 N 个 triage 任务运行自动分解器。返回本次 tick
+            成功分解或指定的 triage 任务数量。
             """
             try:
                 from hermes_cli import kanban_decompose as _decomp
@@ -1052,10 +1004,8 @@ class GatewayKanbanWatchersMixin:
                 slug = b.get("slug") or _kb.DEFAULT_BOARD
                 if attempted >= auto_decompose_per_tick:
                     break
-                # Pin this board for the duration of the call — same
-                # pattern as the dashboard specify endpoint. The
-                # decomposer module connects with no board kwarg and
-                # relies on the env var.
+                # 在调用期间固定此看板 —— 与 dashboard 的 specify 端点相同的
+                # 模式。分解器模块连接时不带 board kwarg，依赖环境变量。
                 prev_env = os.environ.get("HERMES_KANBAN_BOARD")
                 try:
                     os.environ["HERMES_KANBAN_BOARD"] = slug
@@ -1094,8 +1044,8 @@ class GatewayKanbanWatchersMixin:
                                     slug, tid,
                                 )
                         else:
-                            # Common no-op reasons (no aux client configured) shouldn't
-                            # spam logs every tick. Log at debug.
+                            # 常见的 no-op 原因（未配置 aux client）不应每个
+                            # tick 都刷日志。以 debug 级别记录。
                             logger.debug(
                                 "kanban auto-decompose [%s]: %s skipped: %s",
                                 slug, tid, outcome.reason,
@@ -1112,8 +1062,8 @@ class GatewayKanbanWatchersMixin:
         )
         while self._running:
             try:
-                # Reap zombie children before per-board work so a board DB
-                # failure cannot block cleanup of unrelated workers.
+                # 在按看板工作之前回收僵尸子进程，以便某个看板 DB 的失败不会
+                # 阻塞无关 worker 的清理。
                 pids = await asyncio.to_thread(_kb.reap_worker_zombies)
                 if pids:
                     logger.info(
@@ -1125,9 +1075,9 @@ class GatewayKanbanWatchersMixin:
                 logger.exception("kanban dispatcher: zombie reaper failed")
 
             try:
-                # Re-read the auto-decompose toggle live each tick so a user
-                # flipping kanban.auto_decompose=false to STOP runaway fan-out
-                # takes effect on the next tick, not on gateway restart (#49638).
+                # 每个 tick 实时重新读取 auto-decompose 开关，使用户翻转
+                # kanban.auto_decompose=false 来停止失控扇出在下一个 tick 生效，
+                # 而不是在 gateway 重启时（#49638）。
                 _ad_enabled, _ad_per_tick = _read_auto_decompose_settings()
                 if _ad_enabled:
                     await asyncio.to_thread(_auto_decompose_tick, _ad_per_tick)
@@ -1136,8 +1086,8 @@ class GatewayKanbanWatchersMixin:
                 for slug, res in (results or []):
                     if res is not None and getattr(res, "spawned", None):
                         any_spawned = True
-                        # Quiet by default — only log when something actually
-                        # happened, so an idle gateway stays silent.
+                        # 默认安静 —— 仅在确实发生事情时记录日志，使空闲的
+                        # gateway 保持安静。
                         logger.info(
                             "kanban dispatcher [%s]: spawned=%d reclaimed=%d "
                             "crashed=%d timed_out=%d promoted=%d auto_blocked=%d",
@@ -1149,7 +1099,7 @@ class GatewayKanbanWatchersMixin:
                             res.promoted,
                             len(res.auto_blocked) if hasattr(res.auto_blocked, "__len__") else 0,
                         )
-                # Health telemetry (aggregate across boards)
+                # 健康遥测（跨看板聚合）
                 ready_pending = await asyncio.to_thread(_ready_nonempty)
                 if ready_pending and not any_spawned:
                     bad_ticks += 1
@@ -1174,8 +1124,8 @@ class GatewayKanbanWatchersMixin:
             except Exception:
                 logger.exception("kanban dispatcher: unexpected watcher error")
 
-            # Sleep in 1s slices so shutdown is snappy — otherwise a stop()
-            # waits up to `interval` seconds for the current sleep to finish.
+            # 以 1s 切片睡眠，使关闭迅速 —— 否则 stop() 会等待最长
+            # `interval` 秒以完成当前睡眠。
             slept = 0.0
             while slept < interval and self._running:
                 await asyncio.sleep(min(1.0, interval - slept))

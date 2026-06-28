@@ -1,14 +1,14 @@
-"""Signal messenger platform adapter.
+"""Signal 即时通讯平台适配器。
 
-Connects to a signal-cli daemon running in HTTP mode.
-Inbound messages arrive via SSE (Server-Sent Events) streaming.
-Outbound messages and actions use JSON-RPC 2.0 over HTTP.
+连接到以 HTTP 模式运行的 signal-cli 守护进程。
+入站消息通过 SSE（Server-Sent Events）流式到达。
+出站消息和动作通过 HTTP 上的 JSON-RPC 2.0 发送。
 
-Based on PR #268 by ibhagwan, rebuilt with bug fixes.
+基于 ibhagwan 的 PR #268，并经错误修复重构。
 
-Requires:
-  - signal-cli installed and running: signal-cli daemon --http 127.0.0.1:8080
-  - SIGNAL_HTTP_URL and SIGNAL_ACCOUNT environment variables set
+要求：
+  - 已安装并运行 signal-cli：signal-cli daemon --http 127.0.0.1:8080
+  - 设置 SIGNAL_HTTP_URL 和 SIGNAL_ACCOUNT 环境变量
 """
 
 import asyncio
@@ -59,35 +59,35 @@ from gateway.platforms.signal_rate_limit import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 SIGNAL_MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024  # 100 MB
-MAX_MESSAGE_LENGTH = 8000  # Signal message size limit
-TYPING_INTERVAL = 8.0  # seconds between typing indicator refreshes
+MAX_MESSAGE_LENGTH = 8000  # Signal 消息大小上限
+TYPING_INTERVAL = 8.0  # typing 指示符刷新之间的秒数
 SSE_RETRY_DELAY_INITIAL = 2.0
 SSE_RETRY_DELAY_MAX = 60.0
-HEALTH_CHECK_INTERVAL = 30.0  # seconds between health checks
-HEALTH_CHECK_STALE_THRESHOLD = 120.0  # seconds without SSE activity before concern
+HEALTH_CHECK_INTERVAL = 30.0  # 健康检查之间的秒数
+HEALTH_CHECK_STALE_THRESHOLD = 120.0  # SSE 无活动多久后才需要关注的秒数
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _parse_comma_list(value: str) -> List[str]:
-    """Split a comma-separated string into a list, stripping whitespace."""
+    """将逗号分隔的字符串拆分为列表，去除空白。"""
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
 def _guess_extension(data: bytes) -> str:
-    """Guess file extension from magic bytes.
+    """根据 magic bytes 猜测文件扩展名。
 
-    Android Signal delivers voice notes as raw ADTS AAC frames, which share
-    the ``0xFF 0xFx`` sync word with MPEG-1/2 Layer 3 (MP3). The byte-1
-    layout disambiguates: ADTS packs ``ID layer protection_absent`` into
-    bits 3-0, where ``ID`` is 0 for MPEG-2/4 AAC and ``layer`` is always
-    0 for ADTS. A real MP3 frame has ``ID=1`` and ``layer`` in {1, 2, 3}.
+    Android Signal 以原始 ADTS AAC 帧交付语音消息，它与 MPEG-1/2 Layer 3
+    （MP3）共享 ``0xFF 0xFx`` 同步字。byte-1 的布局可用于区分：
+    ADTS 将 ``ID layer protection_absent`` 打包进第 3-0 位，其中 ``ID``
+    在 MPEG-2/4 AAC 中为 0，而 ``layer`` 在 ADTS 中恒为 0。
+    真正的 MP3 帧 ``ID=1`` 且 ``layer`` 属于 {1, 2, 3}。
     """
     if data[:4] == b"\x89PNG":
         return ".png"
@@ -104,10 +104,10 @@ def _guess_extension(data: bytes) -> str:
     if data[:4] == b"OggS":
         return ".ogg"
     if len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
-        # ``0xFF 0xFx`` is shared by MP3 and ADTS AAC. The discriminator
-        # is bits 3-1 of byte 1: ADTS has ``ID=0`` and ``layer=00`` (mask
-        # 0xF6, target 0xF0); MP3 has ``ID=1`` and ``layer`` in {01,10,11}
-        # (mask 0xF6, target in {0xF2, 0xF4, 0xF6}).
+        # ``0xFF 0xFx`` 由 MP3 和 ADTS AAC 共享。区分依据是 byte 1 的
+        # 第 3-1 位：ADTS 满足 ``ID=0`` 且 ``layer=00``
+        # （mask 0xF6，目标 0xF0）；MP3 满足 ``ID=1`` 且 ``layer``
+        # 属于 {01,10,11}（mask 0xF6，目标属于 {0xF2, 0xF4, 0xF6}）。
         if (data[1] & 0xF6) == 0xF0:
             return ".aac"
         return ".mp3"
@@ -134,25 +134,25 @@ _EXT_TO_MIME = {
 
 
 def _ext_to_mime(ext: str) -> str:
-    """Map file extension to MIME type."""
+    """将文件扩展名映射为 MIME 类型。"""
     return _EXT_TO_MIME.get(ext.lower(), "application/octet-stream")
 
 
 def _remux_aac_to_m4a(aac_data: bytes) -> Optional[Tuple[bytes, str]]:
-    """Losslessly remux raw ADTS AAC bytes into an MP4 (.m4a) container.
+    """将原始 ADTS AAC 字节无损重封装到 MP4（.m4a）容器中。
 
-    Used by the Signal attachment cache so Android voice notes land on disk
-    in a container that every major STT API (Groq, OpenAI, xAI, Mistral
-    Voxtral) will accept. ``ffmpeg -c:a copy`` is a single demux/remux —
-    no re-encode, no quality loss, sub-100ms for typical voice-note sizes.
+    由 Signal 附件缓存使用，使 Android 语音消息落盘为所有主流 STT API
+    （Groq、OpenAI、xAI、Mistral Voxtral）都能接受的容器格式。
+    ``ffmpeg -c:a copy`` 只是单次解封装/重封装 —— 无重编码、无质量损失，
+    对常见语音消息体量耗时在 100ms 以内。
 
-    Returns ``(m4a_bytes, ".m4a")`` on success, or ``None`` if ffmpeg is
-    missing, input is invalid, or remux fails for any reason. Callers
-    must treat ``None`` as "pass through unchanged" and not raise.
+    成功时返回 ``(m4a_bytes, ".m4a")``；如果 ffmpeg 缺失、输入非法，
+    或因任何原因重封装失败则返回 ``None``。调用方必须将 ``None`` 视为
+    "原样透传"，且不得抛出异常。
     """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        # Common Homebrew/local prefixes on macOS dev hosts.
+        # macOS 开发主机上常见的 Homebrew/本地路径前缀。
         for prefix in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
             if os.path.isfile(prefix) and os.access(prefix, os.X_OK):
                 ffmpeg = prefix
@@ -194,20 +194,20 @@ def _remux_aac_to_m4a(aac_data: bytes) -> Optional[Tuple[bytes, str]]:
 
 
 def _render_mentions(text: str, mentions: list) -> str:
-    """Replace Signal mention placeholders (\\uFFFC) with readable @identifiers.
+    """\u5C06 Signal mention \u5360\u4F4D\u7B26\uFF08\\uFFFC\uFF09\u66FF\u6362\u4E3A\u53EF\u8BFB\u7684 @identifiers\u3002
 
-    Signal encodes @mentions as the Unicode object replacement character
-    with out-of-band metadata containing the mentioned user's UUID/number.
+    Signal \u5C06 @mention \u7F16\u7801\u4E3A Unicode \u5BF9\u8C61\u66FF\u6362\u5B57\u7B26\uFF0C
+    \u5E76\u5728\u5E26\u5916\u5143\u6570\u636E\u4E2D\u643A\u5E26\u88AB\u63D0\u53CA\u7528\u6237\u7684 UUID/\u53F7\u7801\u3002
     """
     if not mentions or "\uFFFC" not in text:
         return text
-    # Sort mentions by start position (reverse) to replace from end to start
-    # so indices don't shift as we replace
+    # \u6309 start \u4F4D\u7F6E\uFF08\u5012\u5E8F\uFF09\u6392\u5E8F\uFF0C\u4ECE\u5C3E\u5230\u5934\u66FF\u6362\uFF0C
+    # \u8FD9\u6837\u66FF\u6362\u65F6\u7D22\u5F15\u4E0D\u4F1A\u504F\u79FB
     sorted_mentions = sorted(mentions, key=lambda m: m.get("start", 0), reverse=True)
     for mention in sorted_mentions:
         start = mention.get("start", 0)
         length = mention.get("length", 1)
-        # Use the mention's number or UUID as the replacement
+        # \u4F7F\u7528 mention \u7684 number \u6216 UUID \u4F5C\u4E3A\u66FF\u6362\u6587\u672C
         identifier = mention.get("number") or mention.get("uuid") or "user"
         replacement = f"@{identifier}"
         text = text[:start] + replacement + text[start + length:]
@@ -215,7 +215,7 @@ def _render_mentions(text: str, mentions: list) -> str:
 
 
 def _is_signal_service_id(value: str) -> bool:
-    """Return True if *value* already looks like a Signal service identifier."""
+    """\u5982\u679C *value* \u770B\u8D77\u6765\u5DF2\u7ECF\u662F Signal service identifier \u5219\u8FD4\u56DE True\u3002"""
     if not value:
         return False
     if value.startswith("PNI:") or value.startswith("u:"):
@@ -228,7 +228,7 @@ def _is_signal_service_id(value: str) -> bool:
 
 
 def _looks_like_e164_number(value: str) -> bool:
-    """Return True for a plausible E.164 phone number."""
+    """\u5BF9\u4E8E\u770B\u8D77\u6765\u5408\u7406\u7684 E.164 \u7535\u8BDD\u53F7\u7801\u8FD4\u56DE True\u3002"""
     if not value or not value.startswith("+"):
         return False
     digits = value[1:]
@@ -236,21 +236,21 @@ def _looks_like_e164_number(value: str) -> bool:
 
 
 def check_signal_requirements() -> bool:
-    """Check if Signal is configured (has URL and account)."""
+    """\u68C0\u67E5 Signal \u662F\u5426\u5DF2\u914D\u7F6E\uFF08\u5177\u6709 URL \u548C account\uFF09\u3002"""
     return bool(os.getenv("SIGNAL_HTTP_URL") and os.getenv("SIGNAL_ACCOUNT"))
 
 
 # ---------------------------------------------------------------------------
-# Signal Adapter
+# Signal \u9002\u914D\u5668
 # ---------------------------------------------------------------------------
 
 class SignalAdapter(BasePlatformAdapter):
-    """Signal messenger adapter using signal-cli HTTP daemon."""
+    """\u4F7F\u7528 signal-cli HTTP \u5B88\u62A4\u8FDB\u7A0B\u7684 Signal \u5373\u65F6\u901A\u8BAF\u9002\u914D\u5668\u3002"""
 
     platform = Platform.SIGNAL
-    # Signal has no real edit API for already-sent messages. Mark it explicitly
-    # so streaming suppresses the visible cursor instead of leaving a stale tofu
-    # square behind in chat clients when edit attempts fail.
+    # Signal \u6CA1\u6709\u9488\u5BF9\u5DF2\u53D1\u9001\u6D88\u606F\u7684\u771F\u5B9E\u7F16\u8F91 API\u3002\u663E\u5F0F\u6807\u8BB0\uFF0C
+    # \u4F7F\u6D41\u5F0F\u8F93\u51FA\u6291\u5236\u53EF\u89C1\u5149\u6807\uFF0C\u907F\u514D\u7F16\u8F91\u5931\u8D25\u65F6\u5728\u804A\u5929\u5BA2\u6237\u7AEF\u7559\u4E0B
+    # \u8FC7\u671F\u7684 tofu \u65B9\u5757\u3002
     SUPPORTS_MESSAGE_EDITING = False
 
     def __init__(self, config: PlatformConfig):
@@ -261,71 +261,69 @@ class SignalAdapter(BasePlatformAdapter):
         self.account = extra.get("account", "")
         self.ignore_stories = extra.get("ignore_stories", True)
 
-        # Parse allowlists — group policy is derived from presence of group allowlist
+        # 解析白名单 —— 群组策略由是否存在群组白名单推导而来
         group_allowed_str = os.getenv("SIGNAL_GROUP_ALLOWED_USERS", "")
         self.group_allow_from = set(_parse_comma_list(group_allowed_str))
 
-        # Mention filter — only respond in groups when the bot account is @mentioned.
-        # Read from config extra first, then SIGNAL_REQUIRE_MENTION env var.
+        # Mention 过滤 —— 仅在群组中 @mention bot 账号时才响应。
+        # 先从 config extra 读取，再回退到 SIGNAL_REQUIRE_MENTION 环境变量。
         _rm_cfg = extra.get("require_mention")
         if _rm_cfg is not None:
             self.require_mention = bool(_rm_cfg)
         else:
             self.require_mention = os.getenv("SIGNAL_REQUIRE_MENTION", "false").lower() in ("true", "1", "yes", "on")
 
-        # DM allowlist — mirrors SIGNAL_ALLOWED_USERS checked by run.py.
-        # Stored here so the reaction hooks can skip unauthorized senders
-        # (reactions fire before run.py's auth gate, so without this check
-        # every inbound DM from any contact gets a 👀 reaction).
-        # "*" means all users allowed (open mode); empty means no restriction
-        # recorded at adapter level (run.py still enforces auth separately).
+        # DM 白名单 —— 与 run.py 检查的 SIGNAL_ALLOWED_USERS 对应。
+        # 在此处保存，以便 reaction 钩子可以跳过未授权发送者
+        # （reaction 在 run.py 的鉴权门控之前触发，因此如果没有此检查，
+        # 任何联系人发来的每条入站 DM 都会得到一个 👀 reaction）。
+        # "*" 表示允许所有用户（开放模式）；为空表示适配器层不记录限制
+        # （run.py 仍会单独执行鉴权）。
         dm_allowed_str = os.getenv("SIGNAL_ALLOWED_USERS", "*")
         self.dm_allow_from = set(_parse_comma_list(dm_allowed_str))
 
-        # HTTP client
+        # HTTP 客户端
         self.client: Optional[httpx.AsyncClient] = None
 
-        # Background tasks
+        # 后台任务
         self._sse_task: Optional[asyncio.Task] = None
         self._health_monitor_task: Optional[asyncio.Task] = None
         self._typing_tasks: Dict[str, asyncio.Task] = {}
-        # Per-chat typing-indicator backoff. When signal-cli reports
-        # NETWORK_FAILURE (recipient offline / unroutable), base.py's
-        # _keep_typing refresh loop would otherwise hammer sendTyping every
-        # ~2s indefinitely, producing WARNING-level log spam and pointless
-        # RPC traffic. We track consecutive failures per chat and skip the
-        # RPC during a cooldown window instead.
+        # 按聊天维度的 typing 指示符退避。当 signal-cli 报告
+        # NETWORK_FAILURE（接收者离线 / 不可路由）时，否则 base.py 的
+        # _keep_typing 刷新循环会无限制地每约 2s 猛轰 sendTyping，
+        # 产生 WARNING 级别的日志刷屏和无意义的 RPC 流量。
+        # 我们按聊天追踪连续失败次数，并在冷却窗口内跳过 RPC。
         self._typing_failures: Dict[str, int] = {}
         self._typing_skip_until: Dict[str, float] = {}
         self._running = False
         self._last_sse_activity = 0.0
         self._sse_response: Optional[httpx.Response] = None
 
-        # Normalize account for self-message filtering
+        # 规范化 account，用于自身消息过滤
         self._account_normalized = self.account.strip()
 
-        # Track recently sent message timestamps to prevent echo-back loops
-        # in Note to Self / self-chat mode and linked-device group sync-sents.
-        # OrderedDict[timestamp_ms -> insertion_monotonic_seconds] gives us
-        # LRU eviction (popitem(last=False) drops oldest) plus a TTL so that
-        # under chatty groups a still-pending echo cannot be evicted just
-        # because >50 outbounds happened. With a 5-minute TTL the cap only
-        # matters for runaway producers, not normal traffic bursts.
+        # 跟踪最近发送的消息时间戳，以防止 Note to Self / self-chat
+        # 模式以及关联设备群组同步发送中的回声循环。
+        # OrderedDict[timestamp_ms -> insertion_monotonic_seconds] 提供
+        # LRU 淘汰（popitem(last=False) 丢弃最旧）外加 TTL，这样在活跃
+        # 群组中仍待处理的回声不会被仅因为发生了 >50 次出站而淘汰。
+        # 在 5 分钟 TTL 下，上限只对失控的生产者有意义，对正常流量突发无影响。
         self._recent_sent_timestamps: "OrderedDict[int, float]" = OrderedDict()
         self._max_recent_timestamps = 512
         self._recent_sent_ttl_seconds = 300.0
-        # Keep a separate bounded cache of outbound Signal message timestamps.
-        # Signal quote.id is the timestamp of the quoted message, so this lets
-        # inbound replies identify that the user replied to a message sent by
-        # this bot even after the self-sync echo was filtered above.
-        # OrderedDict (not set) so the cap evicts the OLDEST timestamp in FIFO
-        # order — a plain set.pop() removes an arbitrary element, which could
-        # drop a still-recent timestamp and miss a genuine reply-to-own-message.
+        # 维护一个独立的、有界的出站 Signal 消息时间戳缓存。
+        # Signal 的 quote.id 是被引用消息的时间戳，因此这使得入站回复
+        # 即便在上方过滤掉 self-sync 回声后，仍能识别出用户回复的是
+        # 本 bot 发送的消息。
+        # 使用 OrderedDict（而非 set）使上限按 FIFO 顺序淘汰最旧的时间戳 ——
+        # 普通 set.pop() 会移除任意元素，可能丢弃仍然较新的时间戳，
+        # 从而漏掉真正的回复到自身消息。
         self._sent_message_timestamps: "OrderedDict[str, None]" = OrderedDict()
         self._max_sent_message_timestamps = 500
-        # Signal increasingly exposes ACI/PNI UUIDs as stable recipient IDs.
-        # Keep a best-effort mapping so outbound sends can upgrade from a
-        # phone number to the corresponding UUID when signal-cli prefers it.
+        # Signal 越来越多地暴露 ACI/PNI UUID 作为稳定的接收者 ID。
+        # 维护一份尽力而为的映射，使出站发送可在 signal-cli 偏好时
+        # 将电话号码升级为对应的 UUID。
         self._recipient_uuid_by_number: Dict[str, str] = {}
         self._recipient_number_by_uuid: Dict[str, str] = {}
         self._recipient_cache_lock = asyncio.Lock()
@@ -335,16 +333,16 @@ class SignalAdapter(BasePlatformAdapter):
                      "enabled" if self.group_allow_from else "disabled")
 
     # ------------------------------------------------------------------
-    # Lifecycle
+    # 生命周期
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Connect to signal-cli daemon and start SSE listener."""
+        """连接到 signal-cli 守护进程并启动 SSE 监听器。"""
         if not self.http_url or not self.account:
             logger.error("Signal: SIGNAL_HTTP_URL and SIGNAL_ACCOUNT are required")
             return False
 
-        # Acquire scoped lock to prevent duplicate Signal listeners for the same phone
+        # 获取带作用域的锁，防止同一手机号出现重复的 Signal 监听器
         lock_acquired = False
         try:
             if not self._acquire_platform_lock('signal-phone', self.account, 'Signal account'):
@@ -353,11 +351,11 @@ class SignalAdapter(BasePlatformAdapter):
         except Exception as e:
             logger.warning("Signal: Could not acquire phone lock (non-fatal): %s", e)
 
-        # Tighter keepalive so idle CLOSE_WAIT drains promptly (#18451).
+        # 收紧 keepalive，使空闲的 CLOSE_WAIT 尽快排空（#18451）。
         from gateway.platforms._http_client_limits import platform_httpx_limits
         self.client = httpx.AsyncClient(timeout=30.0, limits=platform_httpx_limits())
         try:
-            # Health check — verify signal-cli daemon is reachable
+            # 健康检查 —— 验证 signal-cli 守护进程可达
             try:
                 resp = await self.client.get(f"{self.http_url}/api/v1/check", timeout=10.0)
                 if resp.status_code != 200:
@@ -383,7 +381,7 @@ class SignalAdapter(BasePlatformAdapter):
                     self._release_platform_lock()
 
     async def disconnect(self) -> None:
-        """Stop SSE listener and clean up."""
+        """停止 SSE 监听器并清理。"""
         self._running = False
 
         if self._sse_task:
@@ -400,7 +398,7 @@ class SignalAdapter(BasePlatformAdapter):
             except asyncio.CancelledError:
                 pass
 
-        # Cancel all typing tasks
+        # 取消所有 typing 任务
         for task in self._typing_tasks.values():
             task.cancel()
         self._typing_tasks.clear()
@@ -414,11 +412,11 @@ class SignalAdapter(BasePlatformAdapter):
         logger.info("Signal: disconnected")
 
     # ------------------------------------------------------------------
-    # SSE Streaming (inbound messages)
+    # SSE 流式传输（入站消息）
     # ------------------------------------------------------------------
 
     async def _sse_listener(self) -> None:
-        """Listen for SSE events from signal-cli daemon."""
+        """监听来自 signal-cli 守护进程的 SSE 事件。"""
         url = f"{self.http_url}/api/v1/events?account={quote(self.account, safe='')}"
         backoff = SSE_RETRY_DELAY_INITIAL
 
@@ -431,7 +429,7 @@ class SignalAdapter(BasePlatformAdapter):
                     timeout=None,
                 ) as response:
                     self._sse_response = response
-                    backoff = SSE_RETRY_DELAY_INITIAL  # Reset on successful connection
+                    backoff = SSE_RETRY_DELAY_INITIAL  # 成功连接后重置
                     self._last_sse_activity = time.time()
                     logger.info("Signal SSE: connected")
 
@@ -445,13 +443,12 @@ class SignalAdapter(BasePlatformAdapter):
                             line = line.strip()
                             if not line:
                                 continue
-                            # SSE keepalive comments (":") prove the connection
-                            # is alive — update activity so the health monitor
-                            # doesn't report false idle warnings.
+                            # SSE keepalive 注释（":"）证明连接仍然存活 ——
+                            # 更新活动时间，使健康监控器不会误报空闲警告。
                             if line.startswith(":"):
                                 self._last_sse_activity = time.time()
                                 continue
-                            # Parse SSE data lines
+                            # 解析 SSE data 行
                             if line.startswith("data:"):
                                 data_str = line[5:].strip()
                                 if not data_str:
@@ -475,7 +472,7 @@ class SignalAdapter(BasePlatformAdapter):
                     logger.warning("Signal SSE: error: %s (reconnecting in %.0fs)", e, backoff)
 
             if self._running:
-                # Add 20% jitter to prevent thundering herd on reconnection
+                # 添加 20% 抖动以避免重连时的惊群效应
                 jitter = backoff * 0.2 * random.random()
                 await asyncio.sleep(backoff + jitter)
                 backoff = min(backoff * 2, SSE_RETRY_DELAY_MAX)
@@ -483,11 +480,11 @@ class SignalAdapter(BasePlatformAdapter):
         self._sse_response = None
 
     # ------------------------------------------------------------------
-    # Health Monitor
+    # 健康监控
     # ------------------------------------------------------------------
 
     async def _health_monitor(self) -> None:
-        """Monitor SSE connection health and force reconnect if stale."""
+        """监控 SSE 连接健康状态，并在长时间空闲时强制重连。"""
         while self._running:
             await asyncio.sleep(HEALTH_CHECK_INTERVAL)
             if not self._running:
@@ -501,8 +498,8 @@ class SignalAdapter(BasePlatformAdapter):
                         f"{self.http_url}/api/v1/check", timeout=10.0
                     )
                     if resp.status_code == 200:
-                        # Daemon is alive but SSE is idle — update activity to
-                        # avoid repeated warnings (connection may just be quiet)
+                        # 守护进程存活但 SSE 空闲 —— 更新活动时间以避免重复
+                        # 警告（连接可能只是安静）
                         self._last_sse_activity = time.time()
                         logger.debug("Signal: daemon healthy, SSE idle")
                     else:
@@ -513,7 +510,7 @@ class SignalAdapter(BasePlatformAdapter):
                     self._force_reconnect()
 
     def _force_reconnect(self) -> None:
-        """Force SSE reconnection by closing the current response."""
+        """通过关闭当前响应来强制 SSE 重连。"""
         if self._sse_response and not self._sse_response.is_stream_consumed:
             try:
                 task = asyncio.create_task(self._sse_response.aclose())
@@ -524,16 +521,16 @@ class SignalAdapter(BasePlatformAdapter):
             self._sse_response = None
 
     # ------------------------------------------------------------------
-    # Message Handling
+    # 消息处理
     # ------------------------------------------------------------------
 
     async def _handle_envelope(self, envelope: dict) -> None:
-        """Process an incoming signal-cli envelope."""
-        # Unwrap nested envelope if present
+        """处理入站的 signal-cli envelope。"""
+        # 如果存在嵌套 envelope 则解包
         envelope_data = envelope.get("envelope", envelope)
 
-        # Handle syncMessage: extract "Note to Self" messages (sent to own account)
-        # while still filtering other sync events (read receipts, typing, etc.)
+        # 处理 syncMessage：提取 "Note to Self" 消息（发送给自身账号），
+        # 同时仍过滤其他 sync 事件（已读回执、typing 等）
         is_note_to_self = False
         if "syncMessage" in envelope_data:
             sync_msg = envelope_data.get("syncMessage")
@@ -545,16 +542,16 @@ class SignalAdapter(BasePlatformAdapter):
                     sent_msg_group_info = sent_msg.get("groupInfo") or {}
                     sent_msg_group_id = sent_msg_group_info.get("groupId") if sent_msg_group_info else None
                     if dest == self._account_normalized or sent_msg_group_id:
-                        # Check if this is an echo of our own outbound reply
+                        # 检查这是否是我们自身出站回复的回声
                         if self._consume_sent_timestamp(sent_ts):
                             return
-                        # Genuine user Note to Self — promote to dataMessage
+                        # 真正的用户 Note to Self —— 提升为 dataMessage
                         is_note_to_self = True
                         envelope_data = {**envelope_data, "dataMessage": sent_msg}
             if not is_note_to_self:
                 return
 
-        # Extract sender info
+        # 提取发送者信息
         sender = (
             envelope_data.get("sourceNumber")
             or envelope_data.get("sourceUuid")
@@ -568,16 +565,16 @@ class SignalAdapter(BasePlatformAdapter):
             logger.debug("Signal: ignoring envelope with no sender")
             return
 
-        # Self-message filtering — prevent reply loops (but allow Note to Self)
+        # 自身消息过滤 —— 防止回复循环（但允许 Note to Self）
         if self._account_normalized and sender == self._account_normalized and not is_note_to_self:
             return
 
-        # Filter stories
+        # 过滤 stories
         if self.ignore_stories and envelope_data.get("storyMessage"):
             return
 
-        # Get data message — also check editMessage (edited messages contain
-        # their updated dataMessage inside editMessage.dataMessage)
+        # 获取 data message —— 同时检查 editMessage（编辑过的消息将更新后的
+        # dataMessage 放在 editMessage.dataMessage 内）
         data_message = (
             envelope_data.get("dataMessage")
             or (envelope_data.get("editMessage") or {}).get("dataMessage")
@@ -585,16 +582,16 @@ class SignalAdapter(BasePlatformAdapter):
         if not data_message:
             return
 
-        # Check for group message
+        # 检查是否为群组消息
         group_info = data_message.get("groupInfo")
         group_id = group_info.get("groupId") if group_info else None
         is_group = bool(group_id)
 
-        # Group message filtering — derived from SIGNAL_GROUP_ALLOWED_USERS:
-        # - No env var set → groups disabled (default safe behavior)
-        # - Env var set with group IDs → only those groups allowed
-        # - Env var set with "*" → all groups allowed
-        # DM auth is fully handled by run.py (_is_user_authorized)
+        # 群组消息过滤 —— 由 SIGNAL_GROUP_ALLOWED_USERS 推导：
+        # - 未设置环境变量 → 禁用群组（默认安全行为）
+        # - 环境变量设为群组 ID → 仅允许这些群组
+        # - 环境变量设为 "*" → 允许所有群组
+        # DM 鉴权完全由 run.py 处理（_is_user_authorized）
         if is_group:
             if not self.group_allow_from:
                 logger.debug("Signal: ignoring group message (no SIGNAL_GROUP_ALLOWED_USERS)")
@@ -603,20 +600,20 @@ class SignalAdapter(BasePlatformAdapter):
                 logger.debug("Signal: group %s not in allowlist", group_id[:8] if group_id else "?")
                 return
 
-        # Build chat info
+        # 构建聊天信息
         chat_id = sender if not is_group else f"group:{group_id}"
         chat_type = "group" if is_group else "dm"
 
-        # Extract text and render mentions
+        # 提取文本并渲染 mention
         text = data_message.get("message", "")
         mentions = data_message.get("mentions", [])
         if text and mentions:
             text = _render_mentions(text, mentions)
 
-        # Mention filter: in groups, only process messages that @mention the bot account
+        # Mention 过滤：在群组中仅处理 @mention bot 账号的消息
         if is_group and self.require_mention:
             account_norm = self._account_normalized
-            # Check rendered mention tags OR raw mention metadata
+            # 检查渲染后的 mention 标签或原始 mention 元数据
             mentioned_in_text = account_norm and (
                 f"@{account_norm}" in (text or "")
             )
@@ -630,31 +627,28 @@ class SignalAdapter(BasePlatformAdapter):
                 )
                 return
 
-        # Strip the bot's own @mention from any group message so the agent
-        # doesn't misinterpret "@+155****4567 say hello" as a directive to
-        # contact that phone number. _render_mentions replaces the Signal
-        # ￼ placeholder with @<number-or-uuid>, which looks like an
-        # addressee to the LLM rather than a self-reference. Applies to every
-        # group (not just require_mention groups) so the self-mention is
-        # cleaned wherever it appears.
+        # 从任何群组消息中剥离 bot 自身的 @mention，使 agent 不会把
+        # "@+155****4567 say hello" 误解为联系该号码的指令。
+        # _render_mentions 将 Signal ￼ 占位符替换为 @<number-or-uuid>，
+        # 这在 LLM 看来像是收件人，而非自指。适用于所有群组
+        # （不仅是 require_mention 群组），使 self-mention 在任何地方都被清理。
         if is_group and text:
             account_norm = self._account_normalized
             if account_norm:
                 text = text.replace(f"@{account_norm}", "")
-                # Also strip if the mention was rendered using the bot's UUID
+                # 如果 mention 是用 bot 的 UUID 渲染的，也要剥离
                 bot_uuid = self._recipient_uuid_by_number.get(account_norm)
                 if bot_uuid:
                     text = text.replace(f"@{bot_uuid}", "")
-                # Tidy the spacing the removed mention left behind: collapse the
-                # double-space at a mid-sentence removal and trim the ends.
-                # Only touches the doubled space the removal introduced, so
-                # intentional newlines in a multi-line message are preserved.
+                # 整理 mention 移除后留下的空格：折叠句中移除产生的双空格，
+                # 并修剪两端。仅触及移除所引入的双空格，因此多行消息中的
+                # 有意换行会被保留。
                 text = text.replace("  ", " ").strip()
 
-        # Extract quote (reply-to) context from Signal dataMessage. Signal's
-        # quote.id is the timestamp of the quoted message; quote.author points
-        # at the quoted sender when available. Preserve both so the gateway can
-        # tell the agent when the user replied to a specific assistant message.
+        # 从 Signal dataMessage 提取 quote（回复到）上下文。Signal 的
+        # quote.id 是被引用消息的时间戳；quote.author（若可用）指向被引用的
+        # 发送者。保留两者，使 gateway 能告知 agent 用户回复了某条特定
+        # 的 assistant 消息。
         quote_data = data_message.get("quote") or {}
         reply_to_id = str(quote_data.get("id")) if quote_data.get("id") else None
         reply_to_text = quote_data.get("text")
@@ -662,7 +656,7 @@ class SignalAdapter(BasePlatformAdapter):
         reply_to_author_name = quote_data.get("authorName") or quote_data.get("authorProfileName")
         reply_to_is_own = self._quote_references_own_message(reply_to_id, reply_to_author)
 
-        # Process attachments
+        # 处理附件
         attachments_data = data_message.get("attachments", [])
         media_urls = []
         media_types = []
@@ -679,18 +673,18 @@ class SignalAdapter(BasePlatformAdapter):
                 try:
                     cached_path, ext = await self._fetch_attachment(att_id)
                     if cached_path:
-                        # Use contentType from Signal if available, else map from extension
+                        # 如可用则使用 Signal 的 contentType，否则按扩展名映射
                         content_type = att.get("contentType") or _ext_to_mime(ext)
                         media_urls.append(cached_path)
                         media_types.append(content_type)
                 except Exception:
                     logger.exception("Signal: failed to fetch attachment %s", att_id)
 
-        # Skip envelopes with no meaningful content (no text, no attachments).
-        # Catches profile key updates, empty messages, and other metadata-only
-        # envelopes that still carry a dataMessage wrapper but have nothing
-        # worth processing. See issue: signal-cli logs "Profile key update" +
-        # Hermes receives msg='' triggering a full agent turn for nothing.
+        # 跳过无实质内容（无文本、无附件）的 envelope。
+        # 捕获 profile key 更新、空消息以及其他仅携带元数据、仍包裹
+        # dataMessage 但没有任何值得处理内容的 envelope。参见 issue：
+        # signal-cli 记录 "Profile key update" + Hermes 收到 msg=''，
+        # 触发一次完整的 agent turn 却什么也没做。
         if (not text or not text.strip()) and not media_urls:
             logger.debug(
                 "Signal: skipping contentless envelope from %s (%d attachments)",
@@ -698,7 +692,7 @@ class SignalAdapter(BasePlatformAdapter):
             )
             return
 
-        # Build session source
+        # 构建会话 source
         source = self.build_source(
             chat_id=chat_id,
             chat_name=group_info.get("groupName") if group_info else sender_name,
@@ -709,7 +703,7 @@ class SignalAdapter(BasePlatformAdapter):
             chat_id_alt=group_id if is_group else None,
         )
 
-        # Determine message type from media
+        # 根据媒体确定消息类型
         msg_type = MessageType.TEXT
         if media_types:
             if any(mt.startswith("audio/") for mt in media_types):
@@ -719,13 +713,13 @@ class SignalAdapter(BasePlatformAdapter):
             elif any(mt.startswith("video/") for mt in media_types):
                 msg_type = MessageType.VIDEO
             else:
-                # Catch-all: application/*, text/*, and unknown MIME types are
-                # treated as documents so run.py's document-context injection
-                # surfaces the cached file path to the agent (same pattern as
-                # WhatsApp/Slack/BlueBubbles/Mattermost).
+                # 兜底：application/*、text/* 以及未知 MIME 类型一律视为
+                # document，使 run.py 的 document-context 注入能把缓存的
+                # 文件路径暴露给 agent（与 WhatsApp/Slack/BlueBubbles/
+                # Mattermost 的模式一致）。
                 msg_type = MessageType.DOCUMENT
 
-        # Parse timestamp from envelope data (milliseconds since epoch)
+        # 从 envelope 数据解析时间戳（自 epoch 起的毫秒）
         ts_ms = envelope_data.get("timestamp", 0)
         if ts_ms:
             try:
@@ -735,9 +729,9 @@ class SignalAdapter(BasePlatformAdapter):
         else:
             timestamp = datetime.now(tz=timezone.utc)
 
-        # Build and dispatch event.
-        # Store raw envelope data in raw_message so on_processing_start/complete
-        # can extract targetAuthor + targetTimestamp for sendReaction.
+        # 构建并分发事件。
+        # 将原始 envelope 数据存入 raw_message，使 on_processing_start/
+        # complete 可以为 sendReaction 提取 targetAuthor + targetTimestamp。
         event = MessageEvent(
             source=source,
             text=text or "",
@@ -763,7 +757,7 @@ class SignalAdapter(BasePlatformAdapter):
         await self.handle_message(event)
 
     def _remember_recipient_identifiers(self, number: Optional[str], service_id: Optional[str]) -> None:
-        """Cache any number↔UUID mapping observed from Signal envelopes."""
+        """缓存从 Signal envelope 观察到的任何 number↔UUID 映射。"""
         if not number or not service_id or not _is_signal_service_id(service_id):
             return
         self._recipient_uuid_by_number[number] = service_id
@@ -771,7 +765,7 @@ class SignalAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _extract_quote_author(quote_data: Any) -> Optional[str]:
-        """Return the best available Signal sender identifier from quote metadata."""
+        """从 quote 元数据返回最佳的可用 Signal 发送者标识符。"""
         if not isinstance(quote_data, dict):
             return None
         for key in (
@@ -792,7 +786,7 @@ class SignalAdapter(BasePlatformAdapter):
         reply_to_id: Optional[str],
         reply_to_author: Optional[str],
     ) -> bool:
-        """True when a Signal quote points at this adapter's outbound message."""
+        """当 Signal quote 指向本适配器的出站消息时返回 True。"""
         if reply_to_id and str(reply_to_id) in self._sent_message_timestamps:
             return True
         if not reply_to_author:
@@ -807,20 +801,20 @@ class SignalAdapter(BasePlatformAdapter):
         return bool(cached_number and cached_number == self._account_normalized)
 
     def _remember_sent_message_timestamp(self, timestamp: Any) -> None:
-        """Keep a bounded cache of outbound Signal timestamps for quote matching."""
+        """为 quote 匹配维护一个有界的出站 Signal 时间戳缓存。"""
         if timestamp is None:
             return
         key = str(timestamp)
-        # Re-insert to mark most-recently-used so eviction drops genuinely old
-        # timestamps, not a recently re-seen one.
+        # 重新插入以标记为最近使用，使淘汰丢弃真正过旧的时间戳，
+        # 而非最近再次见到的时间戳。
         self._sent_message_timestamps.pop(key, None)
         self._sent_message_timestamps[key] = None
-        # FIFO-evict the oldest entry once over the cap.
+        # 超过上限时按 FIFO 淘汰最旧的条目。
         while len(self._sent_message_timestamps) > self._max_sent_message_timestamps:
             self._sent_message_timestamps.popitem(last=False)
 
     def _extract_contact_uuid(self, contact: Any, phone_number: str) -> Optional[str]:
-        """Best-effort extraction of a Signal service ID from listContacts output."""
+        """尽力从 listContacts 输出中提取 Signal service ID。"""
         if not isinstance(contact, dict):
             return None
 
@@ -839,7 +833,7 @@ class SignalAdapter(BasePlatformAdapter):
         return None
 
     async def _resolve_recipient(self, chat_id: str) -> str:
-        """Return the preferred Signal recipient identifier for a direct chat."""
+        """返回私聊的首选 Signal 接收者标识符。"""
         if (
             not chat_id
             or chat_id.startswith("group:")
@@ -871,11 +865,11 @@ class SignalAdapter(BasePlatformAdapter):
             return self._recipient_uuid_by_number.get(chat_id, chat_id)
 
     # ------------------------------------------------------------------
-    # Attachment Handling
+    # 附件处理
     # ------------------------------------------------------------------
 
     async def _fetch_attachment(self, attachment_id: str) -> tuple:
-        """Fetch an attachment via JSON-RPC and cache it. Returns (path, ext)."""
+        """通过 JSON-RPC 获取附件并缓存。返回 (path, ext)。"""
         result = await self._rpc("getAttachment", {
             "account": self.account,
             "id": attachment_id,
@@ -884,24 +878,23 @@ class SignalAdapter(BasePlatformAdapter):
         if not result:
             return None, ""
 
-        # Handle dict response (signal-cli returns {"data": "base64..."})
+        # 处理 dict 响应（signal-cli 返回 {"data": "base64..."}）
         if isinstance(result, dict):
             result = result.get("data")
             if not result:
                 logger.warning("Signal: attachment response missing 'data' key")
                 return None, ""
 
-        # Result is base64-encoded file content
+        # result 是 base64 编码的文件内容
         raw_data = base64.b64decode(result)
         ext = _guess_extension(raw_data)
 
-        # Android Signal voice notes are raw ADTS AAC streams. Most STT
-        # providers (Groq Whisper, OpenAI Whisper) reject raw ADTS — they
-        # require AAC to be muxed into an MP4 container. Remux losslessly
-        # with ``ffmpeg -c:a copy`` so the cached file is a normal .m4a.
-        # No re-encode, sub-100ms on a Pi 5. Graceful no-op if ffmpeg is
-        # absent: the raw ADTS file is cached as-is and STT may reject it
-        # (there is no downstream sniff-and-remux fallback).
+        # Android Signal 语音消息是原始 ADTS AAC 流。大多数 STT 提供方
+        # （Groq Whisper、OpenAI Whisper）拒绝原始 ADTS —— 它们要求
+        # AAC 被封装进 MP4 容器。用 ``ffmpeg -c:a copy`` 无损重封装，
+        # 使缓存文件成为普通的 .m4a。无重编码，在 Pi 5 上耗时 <100ms。
+        # 如果 ffmpeg 缺失则优雅地不操作：原始 ADTS 文件按原样缓存，
+        # STT 可能拒绝它（下游没有嗅探后重封装的兜底）。
         if ext == ".aac":
             remuxed: Optional[Tuple[bytes, str]] = await asyncio.to_thread(_remux_aac_to_m4a, raw_data)
             if remuxed is not None:
@@ -917,7 +910,7 @@ class SignalAdapter(BasePlatformAdapter):
         return path, ext
 
     # ------------------------------------------------------------------
-    # JSON-RPC Communication
+    # JSON-RPC 通信
     # ------------------------------------------------------------------
 
     async def _rpc(
@@ -930,18 +923,17 @@ class SignalAdapter(BasePlatformAdapter):
         raise_on_rate_limit: bool = False,
         timeout: float = 30.0,
     ) -> Any:
-        """Send a JSON-RPC 2.0 request to signal-cli daemon.
+        """向 signal-cli 守护进程发送 JSON-RPC 2.0 请求。
 
-        When ``log_failures=False``, error and exception paths log at DEBUG
-        instead of WARNING — used by the typing-indicator path to silence
-        repeated NETWORK_FAILURE spam for unreachable recipients while
-        still preserving visibility for the first occurrence and for
-        unrelated RPCs.
+        当 ``log_failures=False`` 时，错误和异常路径以 DEBUG 而非
+        WARNING 记录 —— 用于 typing 指示符路径，对不可达的接收者
+        静默重复的 NETWORK_FAILURE 刷屏，同时仍为首次出现以及无关
+        的 RPC 保留可见性。
 
-        When ``raise_on_rate_limit=True``, a Signal ``[429]`` /
-        ``RateLimitException`` response raises ``SignalRateLimitError``
-        instead of being swallowed — lets callers (multi-attachment send)
-        opt into backoff-retry without changing default behaviour.
+        当 ``raise_on_rate_limit=True`` 时，Signal 的 ``[429]`` /
+        ``RateLimitException`` 响应会抛出 ``SignalRateLimitError``
+        而非被吞掉 —— 使调用方（多附件发送）可选择退避重试而不改变
+        默认行为。
         """
         if not self.client:
             logger.warning("Signal: RPC called but client not connected")
@@ -1000,27 +992,27 @@ class SignalAdapter(BasePlatformAdapter):
             return None
 
     # ------------------------------------------------------------------
-    # Formatting — markdown → Signal body ranges
+    # 格式化 —— markdown → Signal body ranges
     # ------------------------------------------------------------------
 
     @staticmethod
     def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
-        """Backward-compatible wrapper around shared Signal formatting helper."""
+        """围绕共享 Signal 格式化辅助函数的向后兼容封装。"""
         return markdown_to_signal(text)
 
     def format_message(self, content: str) -> str:
-        """Strip markdown for plain-text fallback (used by base class).
+        """为纯文本兜底剥离 markdown（由 base class 使用）。
 
-        The actual rich formatting happens in send() via _markdown_to_signal().
+        实际的富格式化发生在 send() 中，通过 _markdown_to_signal() 完成。
         """
-        # This is only called if someone uses the base-class send path.
-        # Our send() override bypasses this entirely.
+        # 仅当有人使用 base-class send 路径时才会被调用。
+        # 我们的 send() 覆盖完全绕过此方法。
         return content
 
     def _validate_send_result(self, result: Any) -> tuple[bool, Optional[str]]:
-        """Validate signal-cli send response results.
+        """校验 signal-cli send 响应结果。
 
-        Returns (success, error_message).
+        返回 (success, error_message)。
         """
         if not result or not isinstance(result, dict):
             return True, None
@@ -1041,7 +1033,7 @@ class SignalAdapter(BasePlatformAdapter):
         return True, None
 
     # ------------------------------------------------------------------
-    # Sending
+    # 发送
     # ------------------------------------------------------------------
 
     async def send(
@@ -1051,7 +1043,7 @@ class SignalAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a text message with native Signal formatting."""
+        """发送带有原生 Signal 格式的文本消息。"""
         await self._stop_typing_indicator(chat_id)
 
         plain_text, text_styles = self._markdown_to_signal(content)
@@ -1080,22 +1072,22 @@ class SignalAdapter(BasePlatformAdapter):
             if not success:
                 return SendResult(success=False, error=err_msg, raw_response=result)
             self._track_sent_timestamp(result)
-            # Signal has no editable message identifier. Returning None keeps the
-            # stream consumer on the non-edit fallback path instead of pretending
-            # future edits can remove an in-progress cursor from the chat thread.
+            # Signal 没有可编辑的消息标识符。返回 None 让流式消费方
+            # 走非编辑的兜底路径，而不是假装后续编辑能从聊天会话中
+            # 移除进行中的光标。
             return SendResult(success=True, message_id=None)
         return SendResult(success=False, error="RPC send failed")
 
     def _track_sent_timestamp(self, rpc_result) -> None:
-        """Record outbound message timestamp for echo-back filtering."""
+        """记录出站消息时间戳，用于回声过滤。"""
         ts = rpc_result.get("timestamp") if isinstance(rpc_result, dict) else None
         if ts:
             self._remember_sent_message_timestamp(ts)
             now = time.monotonic()
-            # Re-insert to mark as most-recently-used.
+            # 重新插入以标记为最近使用。
             self._recent_sent_timestamps.pop(ts, None)
             self._recent_sent_timestamps[ts] = now
-            # Drop entries older than TTL first (cheap O(k) where k=expired).
+            # 先丢弃超过 TTL 的条目（开销低，O(k)，k 为过期数量）。
             cutoff = now - self._recent_sent_ttl_seconds
             while self._recent_sent_timestamps:
                 oldest_ts, oldest_at = next(iter(self._recent_sent_timestamps.items()))
@@ -1103,34 +1095,32 @@ class SignalAdapter(BasePlatformAdapter):
                     self._recent_sent_timestamps.popitem(last=False)
                 else:
                     break
-            # Hard cap as a last-resort guard against runaway producers.
+            # 硬上限作为对失控生产者的最后兜底。
             while len(self._recent_sent_timestamps) > self._max_recent_timestamps:
                 self._recent_sent_timestamps.popitem(last=False)
 
     def _consume_sent_timestamp(self, ts) -> bool:
-        """Pop a timestamp if it matches one we sent. Returns True on echo."""
+        """若时间戳与我们发送的某条匹配则弹出。回声时返回 True。"""
         if ts and ts in self._recent_sent_timestamps:
             self._recent_sent_timestamps.pop(ts, None)
             return True
         return False
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
-        """Send a typing indicator.
+        """发送 typing 指示符。
 
-        base.py's ``_keep_typing`` refresh loop calls this every ~2s while
-        the agent is processing. If signal-cli returns NETWORK_FAILURE for
-        this recipient (offline, unroutable, group membership lost, etc.)
-        the unmitigated behaviour is: a WARNING log every 2 seconds for as
-        long as the agent keeps running. Instead we:
+        base.py 的 ``_keep_typing`` 刷新循环在 agent 处理期间每约 2s
+        调用一次。如果 signal-cli 对该接收者返回 NETWORK_FAILURE
+        （离线、不可路由、群组成员关系丢失等），未缓解的行为是：
+        只要 agent 还在运行，就每 2 秒产生一条 WARNING 日志。取而代之，
+        我们：
 
-        - silence the WARNING after the first consecutive failure (subsequent
-          attempts log at DEBUG) so transport issues are still visible once
-          but don't flood the log,
-        - skip the RPC entirely during an exponential cooldown window once
-          three consecutive failures have happened, so we stop hammering
-          signal-cli with requests it can't deliver.
+        - 在首次连续失败后静默 WARNING（后续尝试以 DEBUG 记录），
+          使传输问题仍可见一次但不会淹没日志，
+        - 在连续三次失败后，于指数退避窗口内完全跳过 RPC，
+          停止对 signal-cli 发送它无法投递的请求。
 
-        A successful sendTyping clears the counters.
+        一次成功的 sendTyping 会清零计数器。
         """
         now = time.monotonic()
         skip_until = self._typing_skip_until.get(chat_id, 0.0)
@@ -1157,9 +1147,8 @@ class SignalAdapter(BasePlatformAdapter):
         if result is None:
             fails += 1
             self._typing_failures[chat_id] = fails
-            # After 3 consecutive failures, back off exponentially (16s,
-            # 32s, 60s cap) to stop spamming signal-cli for a recipient
-            # that clearly isn't reachable right now.
+            # 连续 3 次失败后，按指数退避（16s、32s，上限 60s），
+            # 停止对当前明显不可达的接收者猛轰 signal-cli。
             if fails >= 3:
                 backoff = min(60.0, 16.0 * (2 ** (fails - 3)))
                 self._typing_skip_until[chat_id] = now + backoff
@@ -1174,13 +1163,12 @@ class SignalAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         human_delay: float = 0.0,
     ) -> None:
-        """Send a batch of images via chunked Signal RPC calls.
+        """通过分块的 Signal RPC 调用发送一批图片。
 
-        Per-image alt texts are dropped — Signal's send RPC only carries
-        one shared message body. Bad images (download failure, missing
-        file, oversize) are skipped with a warning so one bad URL
-        doesn't lose the rest of the batch. ``human_delay`` is ignored:
-        the rate-limit scheduler handles inter-batch pacing.
+        每张图片的 alt 文本会被丢弃 —— Signal 的 send RPC 只携带一个
+        共享消息正文。坏图片（下载失败、文件缺失、超大）会被跳过并
+        记录警告，使一张坏 URL 不会丢失整批其余图片。
+        ``human_delay`` 被忽略：速率限制调度器负责批次间的节奏。
         """
         if not images:
             return
@@ -1293,7 +1281,7 @@ class SignalAdapter(BasePlatformAdapter):
                                 attempt, SIGNAL_RATE_LIMIT_MAX_ATTEMPTS,
                                 _rpc_duration, err_msg,
                             )
-                            # Retry transient (non-rate-limit) failures once
+                            # 对瞬时（非速率限制）失败重试一次
                             if attempt < SIGNAL_RATE_LIMIT_MAX_ATTEMPTS:
                                 backoff = 2.0 ** attempt
                                 logger.info(
@@ -1303,7 +1291,7 @@ class SignalAdapter(BasePlatformAdapter):
                                 await asyncio.sleep(backoff)
                                 continue
                     else:
-                        # Assume the server didn't accept the batch, don't deduce tokens
+                        # 假设服务器未接受该批次，不扣除令牌
                         logger.error(
                             "Signal: RPC send failed for batch %d/%d (%d attachments, "
                             "attempt %d/%d, rpc_duration=%.1fs)",
@@ -1311,7 +1299,7 @@ class SignalAdapter(BasePlatformAdapter):
                             attempt, SIGNAL_RATE_LIMIT_MAX_ATTEMPTS,
                             _rpc_duration,
                         )
-                        # Retry transient (non-rate-limit) failures once
+                        # 对瞬时（非速率限制）失败重试一次
                         if attempt < SIGNAL_RATE_LIMIT_MAX_ATTEMPTS:
                             backoff = 2.0 ** attempt
                             logger.info(
@@ -1347,8 +1335,8 @@ class SignalAdapter(BasePlatformAdapter):
         total_batches: int,
         wait_s: float,
     ) -> None:
-        """Inform the user when an inter-batch pacing wait crosses the
-        notice threshold. Best-effort; logs and continues on failure."""
+        """当批次间节奏等待超过提示阈值时通知用户。
+        尽力而为；失败时记录日志并继续。"""
         try:
             await self.send(
                 chat_id,
@@ -1365,14 +1353,14 @@ class SignalAdapter(BasePlatformAdapter):
         caption: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send an image. Supports http(s):// and file:// URLs."""
+        """发送一张图片。支持 http(s):// 和 file:// URL。"""
         await self._stop_typing_indicator(chat_id)
 
-        # Resolve image to local path
+        # 将图片解析为本地路径
         if image_url.startswith("file://"):
             file_path = unquote(image_url[7:])
         else:
-            # Download remote image to cache
+            # 将远程图片下载到缓存
             try:
                 file_path = await cache_image_from_url(image_url)
             except Exception as e:
@@ -1382,7 +1370,7 @@ class SignalAdapter(BasePlatformAdapter):
         if not file_path or not Path(file_path).exists():
             return SendResult(success=False, error="Image file not found")
 
-        # Validate size
+        # 校验大小
         file_size = Path(file_path).stat().st_size
         if file_size > SIGNAL_MAX_ATTACHMENT_SIZE:
             return SendResult(success=False, error=f"Image too large ({file_size} bytes)")
@@ -1414,10 +1402,10 @@ class SignalAdapter(BasePlatformAdapter):
         media_label: str,
         caption: Optional[str] = None,
     ) -> SendResult:
-        """Send any file as a Signal attachment via RPC.
+        """通过 RPC 将任意文件作为 Signal 附件发送。
 
-        Shared implementation for send_document, send_image_file, send_voice,
-        and send_video — avoids duplicating the validation/routing/RPC logic.
+        send_document、send_image_file、send_voice 和 send_video 共用此
+        实现 —— 避免重复校验/路由/RPC 逻辑。
         """
         await self._stop_typing_indicator(chat_id)
 
@@ -1457,7 +1445,7 @@ class SignalAdapter(BasePlatformAdapter):
         filename: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send a document/file attachment."""
+        """发送一个文档/文件附件。"""
         return await self._send_attachment(chat_id, file_path, "File", caption)
 
     async def send_image_file(
@@ -1468,10 +1456,10 @@ class SignalAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send a local image file as a native Signal attachment.
+        """将本地图片文件作为原生 Signal 附件发送。
 
-        Called by the gateway media delivery flow when MEDIA: tags containing
-        image paths are extracted from agent responses.
+        在 gateway 的媒体投递流程从 agent 响应中提取出包含图片路径的
+        MEDIA: 标签时被调用。
         """
         return await self._send_attachment(chat_id, image_path, "Image", caption)
 
@@ -1483,10 +1471,10 @@ class SignalAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send an audio file as a Signal attachment.
+        """将音频文件作为 Signal 附件发送。
 
-        Signal does not distinguish voice messages from file attachments at
-        the API level, so this routes through the same RPC send path.
+        Signal 在 API 层面不区分语音消息和文件附件，
+        因此这里走相同的 RPC send 路径。
         """
         return await self._send_attachment(chat_id, audio_path, "Audio", caption)
 
@@ -1498,15 +1486,15 @@ class SignalAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send a video file as a Signal attachment."""
+        """将视频文件作为 Signal 附件发送。"""
         return await self._send_attachment(chat_id, video_path, "Video", caption)
 
     # ------------------------------------------------------------------
-    # Typing Indicators
+    # Typing 指示符
     # ------------------------------------------------------------------
 
     async def _stop_typing_indicator(self, chat_id: str) -> None:
-        """Stop a typing indicator loop for a chat."""
+        """停止某个聊天的 typing 指示符循环。"""
         task = self._typing_tasks.pop(chat_id, None)
         if task:
             task.cancel()
@@ -1515,10 +1503,9 @@ class SignalAdapter(BasePlatformAdapter):
             except asyncio.CancelledError:
                 pass
 
-        # Send an explicit stop-typing RPC so the recipient's device drops the
-        # indicator immediately instead of waiting for Signal's ~5s built-in
-        # timeout.  Failures are best-effort — the backoff state must still be
-        # cleared so the next agent turn starts clean.
+        # 发送显式的 stop-typing RPC，使接收者设备立即丢弃指示符，
+        # 而非等待 Signal 约 5s 的内置超时。失败时尽力而为 —— 退避状态
+        # 仍必须清除，使下一个 agent turn 干净启动。
         try:
             params: Dict[str, Any] = {"account": self.account}
             if chat_id.startswith("group:"):
@@ -1533,16 +1520,16 @@ class SignalAdapter(BasePlatformAdapter):
                 log_failures=False,
             )
         except Exception:
-            # Best-effort: any RPC failure (or recipient-resolution failure)
-            # must not prevent backoff cleanup.
+            # 尽力而为：任何 RPC 失败（或接收者解析失败）
+            # 都不得阻止退避状态的清理。
             pass
 
         self._typing_failures.pop(chat_id, None)
         self._typing_skip_until.pop(chat_id, None)
 
     async def stop_typing(self, chat_id: str) -> None:
-        """Public interface for stopping typing — called by base adapter's
-        _keep_typing finally block to clean up platform-level typing tasks."""
+        """停止 typing 的公开接口 —— 由 base adapter 的
+        _keep_typing finally 块调用，清理平台级 typing 任务。"""
         await self._stop_typing_indicator(chat_id)
 
     # ------------------------------------------------------------------
@@ -1556,13 +1543,13 @@ class SignalAdapter(BasePlatformAdapter):
         target_author: str,
         target_timestamp: int,
     ) -> bool:
-        """Send a reaction emoji to a specific message via signal-cli RPC.
+        """通过 signal-cli RPC 向特定消息发送一个 reaction emoji。
 
         Args:
-            chat_id: The chat (phone number or "group:<id>")
-            emoji: Reaction emoji string (e.g. "👀", "✅")
-            target_author: Phone number / UUID of the message author
-            target_timestamp: Signal timestamp (ms) of the message to react to
+            chat_id: 聊天（电话号码或 "group:<id>"）
+            emoji: Reaction emoji 字符串（例如 "👀"、"✅"）
+            target_author: 消息作者的 phone number / UUID
+            target_timestamp: 要对其 react 的消息的 Signal 时间戳（ms）
         """
         params: Dict[str, Any] = {
             "account": self.account,
@@ -1588,7 +1575,7 @@ class SignalAdapter(BasePlatformAdapter):
         target_author: str,
         target_timestamp: int,
     ) -> bool:
-        """Remove a reaction by sending an empty-string emoji."""
+        """通过发送空字符串 emoji 来移除一个 reaction。"""
         params: Dict[str, Any] = {
             "account": self.account,
             "emoji": "",
@@ -1606,14 +1593,14 @@ class SignalAdapter(BasePlatformAdapter):
         return result is not None
 
     # ------------------------------------------------------------------
-    # Processing Lifecycle Hooks (reactions as progress indicators)
+    # 处理生命周期钩子（reactions 作为进度指示符）
     # ------------------------------------------------------------------
 
     def _extract_reaction_target(self, event: MessageEvent) -> Optional[tuple]:
-        """Extract (target_author, target_timestamp) from a MessageEvent.
+        """从 MessageEvent 提取 (target_author, target_timestamp)。
 
-        Returns None if the event doesn't carry the raw Signal envelope data
-        needed for sendReaction.
+        如果事件未携带 sendReaction 所需的原始 Signal envelope 数据，
+        则返回 None。
         """
         raw = event.raw_message
         if not isinstance(raw, dict):
@@ -1625,14 +1612,14 @@ class SignalAdapter(BasePlatformAdapter):
         return (author, ts)
 
     def _reactions_enabled(self, event: "MessageEvent" = None) -> bool:
-        """Check if message reactions are enabled for this event.
+        """检查是否对此事件启用消息 reactions。
 
-        Two gates:
-        1. SIGNAL_REACTIONS env var — set to false/0/no to disable globally.
-        2. DM allowlist — if SIGNAL_ALLOWED_USERS is set, only react to
-           messages from senders in that list.  This prevents unauthorized
-           contacts from seeing the 👀 reaction (which fires before run.py's
-           auth gate and would otherwise reveal that a bot is listening).
+        两道门控：
+        1. SIGNAL_REACTIONS 环境变量 —— 设为 false/0/no 可全局禁用。
+        2. DM 白名单 —— 如果设置了 SIGNAL_ALLOWED_USERS，仅对来自
+           该列表发送者的消息 react。这防止未授权联系人看到 👀
+           reaction（它在 run.py 的鉴权门控之前触发，否则会暴露
+           有一个 bot 正在监听）。
         """
         if os.getenv("SIGNAL_REACTIONS", "true").lower() in {"false", "0", "no"}:
             return False
@@ -1643,7 +1630,7 @@ class SignalAdapter(BasePlatformAdapter):
         return True
 
     async def on_processing_start(self, event: MessageEvent) -> None:
-        """React with 👀 when processing begins."""
+        """在处理开始时以 👀 作 reaction。"""
         if not self._reactions_enabled(event):
             return
         target = self._extract_reaction_target(event)
@@ -1651,10 +1638,10 @@ class SignalAdapter(BasePlatformAdapter):
             await self.send_reaction(event.source.chat_id, "👀", *target)
 
     async def on_processing_complete(self, event: MessageEvent, outcome: "ProcessingOutcome") -> None:
-        """Swap the 👀 reaction for ✅ (success) or ❌ (failure).
+        """将 👀 reaction 替换为 ✅（成功）或 ❌（失败）。
 
-        On CANCELLED we leave the 👀 in place — no terminal outcome means
-        the reaction should keep reflecting "in progress" (matches Telegram).
+        对于 CANCELLED 我们保留 👀 —— 没有终态结果意味着 reaction 应
+        继续表示 "进行中"（与 Telegram 一致）。
         """
         if not self._reactions_enabled(event):
             return
@@ -1664,7 +1651,7 @@ class SignalAdapter(BasePlatformAdapter):
         if not target:
             return
         chat_id = event.source.chat_id
-        # Remove the in-progress reaction, then add the final one
+        # 先移除进行中的 reaction，再添加最终 reaction
         await self.remove_reaction(chat_id, *target)
         if outcome == ProcessingOutcome.SUCCESS:
             await self.send_reaction(chat_id, "✅", *target)
@@ -1672,11 +1659,11 @@ class SignalAdapter(BasePlatformAdapter):
             await self.send_reaction(chat_id, "❌", *target)
 
     # ------------------------------------------------------------------
-    # Chat Info
+    # 聊天信息
     # ------------------------------------------------------------------
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Get information about a chat/contact."""
+        """获取某个聊天/联系人的信息。"""
         if chat_id.startswith("group:"):
             return {
                 "name": chat_id,
@@ -1684,7 +1671,7 @@ class SignalAdapter(BasePlatformAdapter):
                 "chat_id": chat_id,
             }
 
-        # Try to resolve contact name
+        # 尝试解析联系人名称
         result = await self._rpc("getContact", {
             "account": self.account,
             "contactAddress": chat_id,

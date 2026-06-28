@@ -1,29 +1,29 @@
 # storybook-watercolor
 
-Soft hand-painted illustration with whimsical charm
+柔和的手绘插画，带奇幻魅力
 
-## Color Palette
+## 配色
 
-- Primary: Soft watercolor washes - muted blues, greens, warm earth
-- Background: Watercolor paper texture, white or cream
-- Accents: Deeper pigment pools, splatter effects
+- 主色：柔和的水彩晕染——柔和的蓝、绿、温暖大地色
+- 背景：水彩纸纹理，白色或奶油色
+- 点缀：更深的颜料汇聚、溅洒效果
 
-## Visual Elements
+## 视觉元素
 
-- Visible brushstrokes
-- Soft color bleeds and gradients
-- White space as design element
-- Delicate line work over washes
-- Natural, organic shapes
-- Dreamy, atmospheric quality
+- 可见的笔触
+- 柔和的色彩洇开和渐变
+- 留白作为设计元素
+- 晕染之上精致的白描
+- 自然、有机的形状
+- 梦幻、富有氛围的质感
 
-## Typography
+## 字体排印
 
-- Elegant hand-lettering
-- Watercolor-style text
-- Flowing, organic letterforms
-- Integrated with illustrations
+- 优雅的手写字
+- 水彩风格文字
+- 流畅、有机的字形
+- 与插画融为一体
 
-## Best For
+## 最适用于
 
-Storytelling, emotional journeys, nature topics, children's education, artistic presentations
+故事叙述、情感旅程、自然主题、儿童教育、艺术化呈现

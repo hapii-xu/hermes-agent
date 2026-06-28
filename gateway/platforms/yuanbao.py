@@ -1,18 +1,18 @@
 """
-Yuanbao platform adapter.
+元宝平台适配器。
 
-Connects to the Yuanbao WebSocket gateway, handles authentication (AUTH_BIND),
-heartbeat, reconnection, message receive (T05) and send (T06).
+连接元宝 WebSocket 网关，处理鉴权（AUTH_BIND）、
+心跳、重连、消息接收（T05）与发送（T06）。
 
-Configuration in config.yaml (or via env vars):
+在 config.yaml 中配置（或通过环境变量）：
     platforms:
       yuanbao:
         extra:
-          app_id: "..."              # or YUANBAO_APP_ID
-          app_secret: "..."          # or YUANBAO_APP_SECRET
-          bot_id: "..."              # or YUANBAO_BOT_ID  (optional, returned by sign-token)
-          ws_url: "wss://..."        # or YUANBAO_WS_URL
-          api_domain: "https://..."  # or YUANBAO_API_DOMAIN
+          app_id: "..."              # 或 YUANBAO_APP_ID
+          app_secret: "..."          # 或 YUANBAO_APP_SECRET
+          bot_id: "..."              # 或 YUANBAO_BOT_ID（可选，由 sign-token 返回）
+          ws_url: "wss://..."        # 或 YUANBAO_WS_URL
+          api_domain: "https://..."  # 或 YUANBAO_API_DOMAIN
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ from gateway.session import build_session_key
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Version / platform constants (used in AUTH_BIND and sign-token headers)
+# 版本 / 平台常量（用于 AUTH_BIND 和 sign-token 请求头）
 # ---------------------------------------------------------------------------
 try:
     from hermes_cli import __version__ as _HERMES_VERSION
@@ -109,11 +109,11 @@ except ImportError:
 
 _APP_VERSION = _HERMES_VERSION
 _BOT_VERSION = _HERMES_VERSION
-_YUANBAO_INSTANCE_ID = str(HERMES_INSTANCE_ID)  # single source: yuanbao_proto.HERMES_INSTANCE_ID
+_YUANBAO_INSTANCE_ID = str(HERMES_INSTANCE_ID)  # 唯一来源：yuanbao_proto.HERMES_INSTANCE_ID
 _OPERATION_SYSTEM = sys.platform
 
 # ---------------------------------------------------------------------------
-# Module-level constants
+# 模块级常量
 # ---------------------------------------------------------------------------
 
 DEFAULT_WS_GATEWAY_URL = "wss://bot-wss.yuanbao.tencent.com/wss/connection"
@@ -123,89 +123,87 @@ HEARTBEAT_INTERVAL_SECONDS = 30.0
 CONNECT_TIMEOUT_SECONDS = 15.0
 AUTH_TIMEOUT_SECONDS = 10.0
 MAX_RECONNECT_ATTEMPTS = 100
-DEFAULT_SEND_TIMEOUT = 30.0  # WS biz request timeout
+DEFAULT_SEND_TIMEOUT = 30.0  # WS 业务请求超时时间
 
-# Upper bound on the WS close handshake during teardown (#40383). The
-# websockets connection's own close_timeout (5s) blocks until the server
-# echoes the close frame; an idle/unresponsive server never replies, stalling
-# gateway shutdown by the full timeout. Bounding the close await here keeps
-# teardown fast — a responsive server completes the handshake in well under a
-# second, so this only caps the pathological hang. Also bounds the reconnect /
-# connect-failure cleanup paths that reuse _cleanup_ws(), where a graceful
-# close is unnecessary anyway (the socket is being discarded to redial).
+# 拆卸阶段 WS 关闭握手的超时上限（#40383）。
+# websockets 连接自身的 close_timeout（5s）会阻塞直到服务器回传 close 帧；
+# 闲置/无响应的服务器永远不回复，会让网关关闭卡住整个超时时长。
+# 在此对 close 的 await 加上限可以让拆卸保持快速 —— 有响应的服务器在远不到一秒内
+# 即可完成握手，所以这里只是限制住病态的卡死。同时也约束了复用 _cleanup_ws() 的
+# 重连 / 连接失败清理路径，这些路径本就不需要优雅关闭（socket 即将丢弃并重拨）。
 WS_CLOSE_TIMEOUT_S = 1.0
 
-# Close codes that indicate permanent errors — do NOT reconnect.
+# 表示永久性错误的关闭码 —— 不要重连。
 NO_RECONNECT_CLOSE_CODES = {4012, 4013, 4014, 4018, 4019, 4021}
 
-# Heartbeat timeout threshold — N consecutive missed pongs trigger reconnect.
+# 心跳超时阈值 —— 连续 N 次未收到 pong 触发重连。
 HEARTBEAT_TIMEOUT_THRESHOLD = 2
 
-# Auth error code classification
-AUTH_FAILED_CODES = {4001, 4002, 4003}      # permanent auth failure, re-sign token
-AUTH_RETRYABLE_CODES = {4010, 4011, 4099}   # transient, can retry with same token
+# 鉴权错误码分类
+AUTH_FAILED_CODES = {4001, 4002, 4003}      # 永久性鉴权失败，需重新签发 token
+AUTH_RETRYABLE_CODES = {4010, 4011, 4099}   # 暂时性错误，可用同一 token 重试
 
-# Reply Heartbeat configuration
-REPLY_HEARTBEAT_INTERVAL_S = 2.0   # Send RUNNING every 2 seconds
-REPLY_HEARTBEAT_TIMEOUT_S = 30.0   # Auto-stop after 30 seconds of inactivity
+# 回复心跳配置
+REPLY_HEARTBEAT_INTERVAL_S = 2.0   # 每 2 秒发送一次 RUNNING
+REPLY_HEARTBEAT_TIMEOUT_S = 30.0   # 闲置 30 秒后自动停止
 
-# Reply-to reference configuration
-REPLY_REF_TTL_S = 300.0            # Reference dedup TTL (5 minutes)
+# 回复引用配置
+REPLY_REF_TTL_S = 300.0            # 引用去重 TTL（5 分钟）
 
-# Slow-response hint: push a waiting message when agent produces no data for this duration (seconds)
+# 慢响应提示：当 agent 在此时长（秒）内未产出数据时，推送一条等待中消息
 SLOW_RESPONSE_TIMEOUT_S = 120.0
 SLOW_RESPONSE_MESSAGE = "任务有点复杂，正在努力处理中，请耐心等待..."
 
-# Regex matching Yuanbao resource reference anchors in transcript text:
+# 匹配会话记录文本中元宝资源引用锚点的正则：
 #   [image|ybres:abc123]  [file:report.pdf|ybres:xyz789]  [voice|ybres:...]
 _YB_RES_REF_RE = re.compile(
     r"\[(image|voice|video|file(?::[^|\]]*)?)\|ybres:([A-Za-z0-9_\-]+)\]"
 )
 
-# Patched local-media anchors once an inbound resource has been downloaded to the local cache. 
+# 当入站资源已被下载到本地缓存后，改写出的本地媒体锚点。
 #   [image: /opt/data/image_cache/img_xxx.bmp]
 #   [file: report.pdf → /opt/data/.../report.pdf]
-#   (and any future kind, e.g. [video: /opt/.../clip.mp4])
+#   （以及未来可能的任何类型，例如 [video: /opt/.../clip.mp4]）
 _YB_LOCAL_MEDIA_RE = re.compile(r"\[(\w+):[^\]]*?(/[^\]]+?)\s*\]")
 
-# Media kinds that can be resolved and injected into the model context
+# 可被解析并注入到模型上下文中的媒体类型
 _RESOLVABLE_MEDIA_KINDS = frozenset({"image", "file", "video"})
 
-# Strip page indicators like (1/3) appended by BasePlatformAdapter
+# 去掉 BasePlatformAdapter 追加的页码指示符，例如 (1/3)
 _INDICATOR_RE = re.compile(r'\s*\(\d+/\d+\)$')
 
-# Observed-media backfill: how many recent transcript messages to scan
+# 观察到的媒体回填：扫描最近多少条会话记录消息
 OBSERVED_MEDIA_BACKFILL_LOOKBACK = 50
-# Max number of resource references to resolve per inbound turn
+# 每个入站轮次最多解析的资源引用数量
 OBSERVED_MEDIA_BACKFILL_MAX_RESOLVE_PER_TURN = 12
 
 class MarkdownProcessor:
-    """Encapsulates all Markdown-related utilities for the Yuanbao platform.
+    """封装元宝平台所有 Markdown 相关的工具方法。
 
-    Provides static methods for:
-    - Fence detection and streaming merge
-    - Table row detection and sanitization
-    - Paragraph-boundary splitting
-    - Atomic-block extraction and chunk splitting
-    - Outer markdown fence stripping
-    - Markdown hint prompt generation
+    提供以下静态方法：
+    - 代码围栏检测与流式合并
+    - 表格行检测与清理
+    - 按段落边界切分
+    - 原子块抽取与分块
+    - 剥离外层 markdown 围栏
+    - Markdown 提示词生成
     """
 
-    # -- Fence detection ---------------------------------------------------
+    # -- 代码围栏检测 ---------------------------------------------------
 
     @staticmethod
     def has_unclosed_fence(text: str) -> bool:
         """
-        Detect whether the text has unclosed code block fences.
+        检测文本中是否存在未闭合的代码块围栏。
 
-        Scan line by line, toggling in/out state when encountering a line starting with ```.
-        An odd number of toggles indicates an unclosed fence.
+        逐行扫描，遇到以 ``` 开头的行时切换进出状态。
+        切换次数为奇数则表示存在未闭合的围栏。
 
-        Args:
-            text: Markdown text to check
+        参数：
+            text: 待检查的 Markdown 文本
 
-        Returns:
-            Returns True if the text ends with an unclosed fence, otherwise False
+        返回：
+            若文本以未闭合的围栏结尾则返回 True，否则返回 False
         """
         in_fence = False
         for line in text.split('\n'):
@@ -213,18 +211,18 @@ class MarkdownProcessor:
                 in_fence = not in_fence
         return in_fence
 
-    # -- Table detection ---------------------------------------------------
+    # -- 表格检测 ---------------------------------------------------
 
     @staticmethod
     def ends_with_table_row(text: str) -> bool:
         """
-        Detect whether the text ends with a table row (last non-empty line starts and ends with |).
+        检测文本是否以表格行结尾（最后一个非空行以 | 开头并以 | 结尾）。
 
-        Args:
-            text: Text to check
+        参数：
+            text: 待检查的文本
 
-        Returns:
-            Returns True if the last non-empty line is a table row
+        返回：
+            若最后一个非空行是表格行则返回 True
         """
         trimmed = text.rstrip()
         if not trimmed:
@@ -232,7 +230,7 @@ class MarkdownProcessor:
         last_line = trimmed.split('\n')[-1].strip()
         return last_line.startswith('|') and last_line.endswith('|')
 
-    # -- Paragraph boundary splitting --------------------------------------
+    # -- 段落边界切分 --------------------------------------
 
     @staticmethod
     def split_at_paragraph_boundary(
@@ -241,29 +239,29 @@ class MarkdownProcessor:
         len_fn: Optional[Callable[[str], int]] = None,
     ) -> tuple[str, str]:
         """
-        Find the nearest paragraph boundary split point within max_chars, return (head, tail).
+        在 max_chars 范围内查找最近的段落边界切分点，返回 (head, tail)。
 
-        Split priority:
-        1. Blank line (paragraph boundary)
-        2. Newline after period/question mark/exclamation mark (Chinese and English)
-        3. Last newline
-        4. Force split at max_chars
+        切分优先级：
+        1. 空行（段落边界）
+        2. 句号/问号/感叹号（中英文）后的换行
+        3. 最后一个换行
+        4. 在 max_chars 处强制切分
 
-        Args:
-            text: Text to split
-            max_chars: Maximum character count limit
-            len_fn: Optional custom length function (e.g. UTF-16 length); defaults to built-in len
+        参数：
+            text: 待切分的文本
+            max_chars: 最大字符数限制
+            len_fn: 可选的自定义长度函数（例如 UTF-16 长度）；默认使用内置 len
 
-        Returns:
-            (head, tail) tuple, head is the front part, tail is the back part, satisfying head + tail == text
+        返回：
+            (head, tail) 元组，head 为前半部分，tail 为后半部分，满足 head + tail == text
         """
         _len = len_fn or len
         if _len(text) <= max_chars:
             return text, ''
 
-        # Build a character-index window that fits within max_chars.
-        # When len_fn != len we cannot simply slice [:max_chars], so we
-        # binary-search for the largest prefix that fits.
+        # 构建一个字符索引窗口，使其长度不超过 max_chars。
+        # 当 len_fn != len 时，不能简单地用 [:max_chars] 切片，
+        # 因此用二分查找找出最大的、符合长度限制的前缀。
         if _len is len:
             window = text[:max_chars]
         else:
@@ -276,12 +274,12 @@ class MarkdownProcessor:
                     hi = mid - 1
             window = text[:lo]
 
-        # 1. Prefer the last blank line (\n\n) as paragraph boundary
+        # 1. 优先以最后一个空行（\n\n）作为段落边界
         pos = window.rfind('\n\n')
         if pos > 0:
             return text[:pos + 2], text[pos + 2:]
 
-        # 2. Then find the last newline after a sentence-ending punctuation
+        # 2. 然后查找句末标点之后的最后一个换行
         sentence_end_re = re.compile(r'[。！？.!?]\n')
         best_pos = -1
         for m in sentence_end_re.finditer(window):
@@ -289,44 +287,44 @@ class MarkdownProcessor:
         if best_pos > 0:
             return text[:best_pos], text[best_pos:]
 
-        # 3. Fallback: find the last newline
+        # 3. 兜底：查找最后一个换行
         pos = window.rfind('\n')
         if pos > 0:
             return text[:pos + 1], text[pos + 1:]
 
-        # 4. No valid split point found, force split at window boundary
+        # 4. 找不到合适的切分点，在窗口边界强制切分
         cut = len(window)
         return text[:cut], text[cut:]
 
-    # -- Atomic block helpers (private) ------------------------------------
+    # -- 原子块辅助方法（私有） ------------------------------------
 
     @staticmethod
     def is_fence_atom(text: str) -> bool:
-        """Determine whether an atomic block is a code block (starts with ```)."""
+        """判断原子块是否为代码块（以 ``` 开头）。"""
         return text.lstrip().startswith('```')
 
     @staticmethod
     def is_table_atom(text: str) -> bool:
-        """Determine whether an atomic block is a table (first line starts with |)."""
+        """判断原子块是否为表格（第一行以 | 开头）。"""
         first_line = text.split('\n')[0].strip()
         return first_line.startswith('|') and first_line.endswith('|')
 
     @staticmethod
     def split_into_atoms(text: str) -> list[str]:
         """
-        Split text into a list of "atomic blocks", each being an indivisible logical unit:
+        将文本切分为一组「原子块」，每个原子块是一个不可分割的逻辑单元：
 
-        - Code block (fence): from opening ``` to closing ``` (including fence lines)
-        - Table: consecutive |...| lines forming a whole segment
-        - Normal paragraph: plain text segments separated by blank lines
+        - 代码块（围栏）：从开头的 ``` 到结尾的 ```（包含围栏行本身）
+        - 表格：连续的 |...| 行构成的一个整体片段
+        - 普通段落：由空行分隔的纯文本片段
 
-        Blank lines serve as separators and are not included in any atomic block.
+        空行作为分隔符，不会出现在任何原子块中。
 
-        Args:
-            text: Markdown text to split
+        参数：
+            text: 待切分的 Markdown 文本
 
-        Returns:
-            List of atomic block strings (all non-empty)
+        返回：
+            原子块字符串列表（均非空）
         """
         lines = text.split('\n')
         atoms: list[str] = []
@@ -370,7 +368,7 @@ class MarkdownProcessor:
 
         return atoms
 
-    # -- Core: chunk splitting ---------------------------------------------
+    # -- 核心：分块切分 ---------------------------------------------
 
     @classmethod
     def chunk_markdown_text(
@@ -380,22 +378,22 @@ class MarkdownProcessor:
         len_fn: Optional[Callable[[str], int]] = None,
     ) -> list[str]:
         """
-        Split Markdown text into multiple chunks by max_chars.
+        按 max_chars 将 Markdown 文本切分成多个分块。
 
-        Guarantees:
-        - Each chunk <= max_chars characters (unless a single code block/table itself exceeds the limit)
-        - Code blocks (```...```) are not split in the middle
-        - Table rows are not split in the middle (tables output as atomic blocks)
-        - Split at paragraph boundaries (blank lines, after periods, etc.)
-        - Small trailing/leading chunks are merged with neighbours when possible
+        保证：
+        - 每个分块 <= max_chars 字符（除非单个代码块/表格本身就超出限制）
+        - 代码块（```...```）不会从中间被切开
+        - 表格行不会从中间被切开（表格作为原子块输出）
+        - 在段落边界处切分（空行、句号之后等）
+        - 尽可能将较小的尾部/首部碎片与相邻分块合并
 
-        Args:
-            text: Markdown text to split
-            max_chars: Max characters per chunk, default 4000
-            len_fn: Optional custom length function (e.g. UTF-16 length); defaults to built-in len
+        参数：
+            text: 待切分的 Markdown 文本
+            max_chars: 每个分块的最大字符数，默认 4000
+            len_fn: 可选的自定义长度函数（例如 UTF-16 长度）；默认使用内置 len
 
-        Returns:
-            List of text chunks after splitting (non-empty)
+        返回：
+            切分后的文本分块列表（均非空）
         """
         _len = len_fn or len
 
@@ -405,10 +403,10 @@ class MarkdownProcessor:
         if _len(text) <= max_chars:
             return [text]
 
-        # Phase 1: Extract atomic blocks
+        # 阶段 1：抽取原子块
         atoms = cls.split_into_atoms(text)
 
-        # Phase 2: Greedy merge
+        # 阶段 2：贪心合并
         chunks: list[str] = []
         indivisible_set: set[int] = set()
         current_parts: list[str] = []
@@ -441,7 +439,7 @@ class MarkdownProcessor:
 
         _flush_parts()
 
-        # Phase 3: Post-processing — split still-oversized chunks at paragraph boundaries
+        # 阶段 3：后处理 —— 对仍然过大的分块按段落边界再次切分
         result: list[str] = []
         for idx, chunk in enumerate(chunks):
             if _len(chunk) <= max_chars:
@@ -468,7 +466,7 @@ class MarkdownProcessor:
             if remaining:
                 result.append(remaining)
 
-        # Phase 4: Merge small trailing/leading chunks with neighbours
+        # 阶段 4：将较小的尾部/首部碎片与相邻分块合并
         if len(result) > 1:
             merged: list[str] = [result[0]]
             for chunk in result[1:]:
@@ -482,33 +480,33 @@ class MarkdownProcessor:
 
         return [c for c in result if c]
 
-    # -- Block separator inference -----------------------------------------
+    # -- 块分隔符推断 -----------------------------------------
 
     @classmethod
     def infer_block_separator(cls, prev_chunk: str, next_chunk: str) -> str:
         """
-        Infer the separator to use between two split chunks.
+        推断两个切分块之间应使用的分隔符。
 
-        Rules (aligned with TS markdown-stream.ts):
-        - Previous chunk ends with code fence or next chunk starts with fence → single newline '\\n'
-        - Previous chunk ends with table row and next chunk starts with table row → single newline '\\n' (continued table)
-        - Otherwise → double newline '\\n\\n' (paragraph separator)
+        规则（与 TS 版 markdown-stream.ts 对齐）：
+        - 前一个块以代码围栏结尾，或下一个块以围栏开头 → 单换行 '\\n'
+        - 前一个块以表格行结尾且下一个块以表格行开头 → 单换行 '\\n'（表格续行）
+        - 其他情况 → 双换行 '\\n\\n'（段落分隔符）
 
-        Args:
-            prev_chunk: Previous chunk
-            next_chunk: Next chunk
+        参数：
+            prev_chunk: 前一个块
+            next_chunk: 下一个块
 
-        Returns:
-            '\\n' or '\\n\\n'
+        返回：
+            '\\n' 或 '\\n\\n'
         """
         prev_trimmed = prev_chunk.rstrip()
         next_trimmed = next_chunk.lstrip()
 
-        # Previous chunk ends with fence or next chunk starts with fence
+        # 前一个块以围栏结尾，或下一个块以围栏开头
         if prev_trimmed.endswith('```') or next_trimmed.startswith('```'):
             return '\n'
 
-        # Table continuation
+        # 表格续行
         if cls.ends_with_table_row(prev_chunk):
             first_line = next_trimmed.split('\n')[0].strip() if next_trimmed else ''
             if first_line.startswith('|') and first_line.endswith('|'):
@@ -516,26 +514,26 @@ class MarkdownProcessor:
 
         return '\n\n'
 
-    # -- Streaming fence merge ---------------------------------------------
+    # -- 流式围栏合并 ---------------------------------------------
 
     @classmethod
     def merge_block_streaming_fences(cls, chunks: list[str]) -> list[str]:
         """
-        Stream-aware fence-conscious chunk merging.
+        面向流式输出、关注围栏完整性的分块合并。
 
-        When streaming output produces multiple chunks truncated in the middle of a fence,
-        attempt to merge adjacent chunks to complete the fence.
+        当流式输出产生多个在围栏中间被截断的分块时，
+        尝试合并相邻分块以补全围栏。
 
-        Rules:
-        - If chunk i has an unclosed fence and chunk i+1 starts with ```,
-            merge i+1 into i (until the fence is closed or no more chunks).
-        - Use infer_block_separator to infer the separator during merging.
+        规则：
+        - 若第 i 个块存在未闭合围栏，且第 i+1 个块以 ``` 开头，
+            则把 i+1 合并进 i（直到围栏闭合或没有更多块）。
+        - 合并时使用 infer_block_separator 推断分隔符。
 
-        Args:
-            chunks: Original chunk list
+        参数：
+            chunks: 原始分块列表
 
-        Returns:
-            Merged chunk list (length <= original length)
+        返回：
+            合并后的分块列表（长度 <= 原始长度）
         """
         if not chunks:
             return []
@@ -544,7 +542,7 @@ class MarkdownProcessor:
         i = 0
         while i < len(chunks):
             current = chunks[i]
-            # If current chunk has unclosed fence, try merging subsequent chunks
+            # 若当前块存在未闭合围栏，尝试合并后续分块
             while cls.has_unclosed_fence(current) and i + 1 < len(chunks):
                 sep = cls.infer_block_separator(current, chunks[i + 1])
                 current = current + sep + chunks[i + 1]
@@ -554,21 +552,21 @@ class MarkdownProcessor:
 
         return result
 
-    # -- Outer fence stripping ---------------------------------------------
+    # -- 外层围栏剥离 ---------------------------------------------
 
     @staticmethod
     def strip_outer_markdown_fence(text: str) -> str:
         """
-        Strip outer Markdown fence.
+        剥离外层 Markdown 围栏。
 
-        When AI reply is entirely wrapped in ```markdown\\n...\\n```, remove the outer fence,
-        keeping the content. Only strip when the first line is ```markdown (case-insensitive) and the last line is ```.
+        当 AI 回复整体被 ```markdown\\n...\\n``` 包裹时，去掉外层围栏、
+        保留内容。仅当第一行为 ```markdown（不区分大小写）且最后一行为 ``` 时才剥离。
 
-        Args:
-            text: Text to process
+        参数：
+            text: 待处理的文本
 
-        Returns:
-            Text with outer fence stripped (returns original if no match)
+        返回：
+            剥离外层围栏后的文本（不匹配则原样返回）
         """
         if not text:
             return text
@@ -580,35 +578,35 @@ class MarkdownProcessor:
         first_line = lines[0].strip()
         last_line = lines[-1].strip()
 
-        # First line must be ```markdown (optional language tag md/markdown)
+        # 第一行必须是 ```markdown（语言标记 md/markdown 可选）
         if not re.match(r'^```(?:markdown|md)?\s*$', first_line, re.IGNORECASE):
             return text
 
-        # Last line must be plain ```
+        # 最后一行必须是纯 ```
         if last_line != '```':
             return text
 
-        # Strip first and last lines
+        # 去掉第一行和最后一行
         inner = '\n'.join(lines[1:-1])
         return inner
 
-    # -- Table sanitization ------------------------------------------------
+    # -- 表格清理 ------------------------------------------------
 
     @staticmethod
     def sanitize_markdown_table(text: str) -> str:
         """
-        Table output sanitization.
+        表格输出清理。
 
-        Handle common formatting issues in AI-generated Markdown tables:
-        1. Remove extra whitespace before/after table rows
-        2. Ensure separator rows (|---|---|) are correctly formatted
-        3. Remove empty table rows
+        处理 AI 生成的 Markdown 表格中常见的格式问题：
+        1. 去掉表格行前后的多余空白
+        2. 确保分隔行（|---|---|）格式正确
+        3. 去掉空表格行
 
-        Args:
-            text: Markdown text containing tables
+        参数：
+            text: 含表格的 Markdown 文本
 
-        Returns:
-            Sanitized text
+        返回：
+            清理后的文本
         """
         if '|' not in text:
             return text
@@ -619,9 +617,9 @@ class MarkdownProcessor:
         for line in lines:
             stripped = line.strip()
 
-            # Table row processing
+            # 表格行处理
             if stripped.startswith('|') and stripped.endswith('|'):
-                # Separator row normalization: | --- | --- | → |---|---|
+                # 分隔行归一化：| --- | --- | → |---|---|
                 if re.match(r'^\|[\s\-:]+(\|[\s\-:]+)+\|$', stripped):
                     cells = stripped.split('|')
                     normalized = '|'.join(
@@ -630,7 +628,7 @@ class MarkdownProcessor:
                     )
                     result_lines.append(normalized)
                 elif stripped == '||' or stripped.replace('|', '').strip() == '':
-                    # Empty table row → skip
+                    # 空表格行 → 跳过
                     continue
                 else:
                     result_lines.append(stripped)
@@ -639,17 +637,17 @@ class MarkdownProcessor:
 
         return '\n'.join(result_lines)
 
-    # -- Markdown hint prompt ----------------------------------------------
+    # -- Markdown 提示词 ----------------------------------------------
 
     @staticmethod
     def markdown_hint_system_prompt() -> str:
         """
-        Markdown rendering hint (appended to system prompt).
+        Markdown 渲染提示（追加到系统提示中）。
 
-        Tell AI that Yuanbao platform supports Markdown rendering, including:
-        - Code blocks (```lang)
-        - Tables (| col | col |)
-        - Bold/italic
+        告知 AI 元宝平台支持 Markdown 渲染，包括：
+        - 代码块（```lang）
+        - 表格（| col | col |）
+        - 粗体/斜体
         """
         return (
             "The current platform supports Markdown rendering. You can use the following formats:\n"
@@ -660,14 +658,13 @@ class MarkdownProcessor:
         )
 
 class SignManager:
-    """Encapsulates all sign-token related logic for the Yuanbao platform.
+    """封装元宝平台所有 sign-token 相关逻辑。
 
-    Manages token acquisition, caching, signature computation, and
-    automatic retry.  All state (cache, locks) is kept as class-level
-    attributes so that a single shared client serves the whole process.
+    管理 token 获取、缓存、签名计算以及自动重试。所有状态（缓存、锁）
+    都以类级属性保存，这样一个共享的 client 就能服务整个进程。
     """
 
-    # -- Constants ---------------------------------------------------------
+    # -- 常量 ---------------------------------------------------------
 
     TOKEN_PATH = "/api/v5/robotLogic/sign-token"
 
@@ -675,30 +672,30 @@ class SignManager:
     MAX_RETRIES = 3
     RETRY_DELAY_S = 1.0
 
-    #: Early refresh margin (seconds), treat as expiring 60s before actual expiry
+    #: 提前刷新余量（秒），按实际过期时间提前 60 秒视为已过期
     CACHE_REFRESH_MARGIN_S = 60
 
-    #: HTTP timeout (seconds)
+    #: HTTP 超时（秒）
     HTTP_TIMEOUT_S = 10.0
 
-    # -- Class-level shared state ------------------------------------------
+    # -- 类级共享状态 ------------------------------------------
 
     # key: app_key → {"token", "bot_id", "expire_ts", ...}
     _cache: dict[str, dict[str, Any]] = {}
 
-    # Per-app_key refresh locks — prevents concurrent duplicate sign-token
-    # requests.  Created lazily inside get_refresh_lock() which is only called
-    # from async context, so the Lock is always bound to the correct loop.
-    # disconnect() clears this dict to prevent stale locks across reconnects.
+    # 每个 app_key 的刷新锁 —— 防止并发重复的 sign-token 请求。
+    # 在 get_refresh_lock() 中惰性创建，该方法只在 async 上下文中调用，
+    # 因此 Lock 总是绑定到正确的事件循环。
+    # disconnect() 会清空这个字典，以避免跨重连出现失效的锁。
     _locks: dict[str, asyncio.Lock] = {}
 
-    # -- Internal helpers --------------------------------------------------
+    # -- 内部辅助方法 --------------------------------------------------
 
     @classmethod
     def get_refresh_lock(cls, app_key: str) -> asyncio.Lock:
-        """Return (creating if needed) the per-app_key refresh lock.
+        """返回（必要时创建）该 app_key 对应的刷新锁。
 
-        Must only be called from within a running event loop (async context).
+        必须在运行中的事件循环内（async 上下文）调用。
         """
         if app_key not in cls._locks:
             cls._locks[app_key] = asyncio.Lock()
@@ -706,7 +703,7 @@ class SignManager:
 
     @staticmethod
     def compute_signature(nonce: str, timestamp: str, app_key: str, app_secret: str) -> str:
-        """Compute HMAC-SHA256 signature (aligned with TypeScript original).
+        """计算 HMAC-SHA256 签名（与 TypeScript 原版对齐）。
 
         plain     = nonce + timestamp + app_key + app_secret
         signature = HMAC-SHA256(key=app_secret, msg=plain).hexdigest()
@@ -716,30 +713,29 @@ class SignManager:
 
     @staticmethod
     def build_timestamp() -> str:
-        """Build Beijing-time ISO-8601 timestamp (no milliseconds).
+        """构造北京时间 ISO-8601 时间戳（不含毫秒）。
 
-        Format: 2006-01-02T15:04:05+08:00
+        格式：2006-01-02T15:04:05+08:00
         """
         bjtime = datetime.now(tz=timezone(timedelta(hours=8)))
         return bjtime.strftime("%Y-%m-%dT%H:%M:%S+08:00")
 
     @classmethod
     def is_cache_valid(cls, entry: dict[str, Any]) -> bool:
-        """Determine whether the cache entry is valid (not expired with margin)."""
+        """判断缓存条目是否有效（未过期且留有余量）。"""
         return entry["expire_ts"] - time.time() > cls.CACHE_REFRESH_MARGIN_S
 
     @classmethod
     def clear_locks(cls) -> None:
-        """Clear all per-app_key refresh locks (called on disconnect)."""
+        """清空所有 app_key 的刷新锁（断开连接时调用）。"""
         cls._locks.clear()
 
     @classmethod
     def purge_expired(cls) -> int:
-        """Remove all expired entries from the token cache.
+        """从 token 缓存中移除所有过期条目。
 
-        Returns the number of entries purged.  Called lazily from
-        ``get_token()`` so that stale app_key entries don't accumulate
-        indefinitely in long-running processes.
+        返回被清理的条目数量。由 ``get_token()`` 惰性调用，
+        以免长时间运行的进程中堆积失效的 app_key 条目。
         """
         now = time.time()
         expired_keys = [
@@ -750,7 +746,7 @@ class SignManager:
             cls._cache.pop(k, None)
         return len(expired_keys)
 
-    # -- Core: fetch -------------------------------------------------------
+    # -- 核心：请求 -------------------------------------------------------
 
     @classmethod
     async def fetch(
@@ -760,7 +756,7 @@ class SignManager:
         api_domain: str,
         route_env: str = "",
     ) -> dict[str, Any]:
-        """Send sign-ticket HTTP request with auto-retry (up to MAX_RETRIES times)."""
+        """发送 sign-ticket HTTP 请求，并自动重试（最多 MAX_RETRIES 次）。"""
         url = f"{api_domain.rstrip('/')}{cls.TOKEN_PATH}"
         async with httpx.AsyncClient(timeout=cls.HTTP_TIMEOUT_S) as client:
             for attempt in range(cls.MAX_RETRIES + 1):
@@ -826,7 +822,7 @@ class SignManager:
 
         raise RuntimeError("Sign token failed: max retries exceeded")
 
-    # -- Public API: get (with cache) --------------------------------------
+    # -- 公共 API：获取（带缓存） --------------------------------------
 
     @classmethod
     async def get_token(
@@ -836,12 +832,12 @@ class SignManager:
         api_domain: str,
         route_env: str = "",
     ) -> dict[str, Any]:
-        """Get WS auth token (with cache).
+        """获取 WS 鉴权 token（带缓存）。
 
-        Return directly on cache hit without re-requesting; treat as expiring
-        60 seconds before actual expiry, triggering refresh.
+        缓存命中时直接返回、不再请求；按实际过期时间提前 60 秒视为已过期，
+        以触发刷新。
         """
-        # Lazily evict stale entries from other app_keys
+        # 惰性清理其他 app_key 的过期条目
         cls.purge_expired()
 
         cached = cls._cache.get(app_key)
@@ -871,7 +867,7 @@ class SignManager:
 
         return dict(cls._cache[app_key])
 
-    # -- Public API: force refresh -----------------------------------------
+    # -- 公共 API：强制刷新 -----------------------------------------
 
     @classmethod
     async def force_refresh(
@@ -881,7 +877,7 @@ class SignManager:
         api_domain: str,
         route_env: str = "",
     ) -> dict[str, Any]:
-        """Force refresh token (clear cache and re-sign)."""
+        """强制刷新 token（清空缓存并重新签名）。"""
         logger.warning("[force-refresh] Clearing cache and re-signing token: app_key=****%s", app_key[-4:])
         async with cls.get_refresh_lock(app_key):
             cls._cache.pop(app_key, None)
@@ -906,20 +902,20 @@ from dataclasses import dataclass, field as dc_field
 
 @dataclass
 class InboundContext:
-    """Mutable context flowing through the inbound middleware pipeline.
+    """在入站中间件管道中流转的可变上下文。
 
-    Each middleware reads/writes fields on this context.  The pipeline
-    engine passes it to every middleware in registration order.
+    每个中间件读取/写入该上下文中的字段。管道引擎按注册顺序
+    将其传递给每一个中间件。
     """
 
-    adapter: Any  # YuanbaoAdapter (forward-ref avoids circular import)
-    raw_frames: list = dc_field(default_factory=list)  # Raw bytes frames (debounce-aggregated)
+    adapter: Any  # YuanbaoAdapter（前向引用以避免循环导入）
+    raw_frames: list = dc_field(default_factory=list)  # 原始 bytes 帧（防抖聚合）
 
-    # Populated by DecodeMiddleware
+    # 由 DecodeMiddleware 填充
     push: Optional[dict] = None
     decoded_via: str = ""  # "json" | "protobuf"
 
-    # Extracted from push by FieldExtractMiddleware
+    # 由 FieldExtractMiddleware 从 push 中提取
     from_account: str = ""
     group_code: str = ""
     group_name: str = ""
@@ -928,69 +924,68 @@ class InboundContext:
     msg_id: str = ""
     cloud_custom_data: str = ""
 
-    # Derived by ChatRoutingMiddleware
+    # 由 ChatRoutingMiddleware 推导
     chat_id: str = ""
     chat_type: str = ""  # "dm" | "group"
     chat_name: str = ""
 
-    # Populated by ContentExtractMiddleware
+    # 由 ContentExtractMiddleware 填充
     raw_text: str = ""
     media_refs: list = dc_field(default_factory=list)
 
-    # Populated by ExtractContentMiddleware for elem_type 1009 (WeChat forward).
-    # Contains the parsed ForwardMsgData dict (sub_type / nick_name / msg list).
+    # 由 ExtractContentMiddleware 为 elem_type 1009（微信转发）填充。
+    # 包含解析后的 ForwardMsgData dict（sub_type / nick_name / msg 列表）。
     forwarded_records: Optional[dict] = None
 
-    # Owner command detection
+    # owner 命令检测
     owner_command: Optional[str] = None
 
-    # Source built by BuildSourceMiddleware
+    # 由 BuildSourceMiddleware 构建的 source
     source: Optional[Any] = None  # SessionSource
 
-    # Populated by ClassifyMessageTypeMiddleware
+    # 由 ClassifyMessageTypeMiddleware 填充
     msg_type: Optional[Any] = None  # MessageType | YuanbaoMessageType
 
-    # Populated by QuoteContextMiddleware
+    # 由 QuoteContextMiddleware 填充
     reply_to_message_id: Optional[str] = None
     reply_to_text: Optional[str] = None
-    quote_media_refs: list = dc_field(default_factory=list)  # List of (rid, kind, filename)
+    quote_media_refs: list = dc_field(default_factory=list)  # (rid, kind, filename) 列表
 
-    # Populated by MediaResolveMiddleware. Combined list of resolved local
-    # paths from up to three sources (deduped, in this order):
-    #   1) media carried by the current message (always),
-    #   2) media from the quoted message (when reply_to_message_id is set),
-    #   3) recent group-observed media (only when chat_type == "group" and no quote is present).
+    # 由 MediaResolveMiddleware 填充。合并后的已解析本地路径列表，来源最多有三处
+    # （去重后按以下顺序）：
+    #   1) 当前消息自身携带的媒体（总是包含），
+    #   2) 被引用消息中的媒体（当 reply_to_message_id 已设置时），
+    #   3) 最近的群内观察媒体（仅当 chat_type == "group" 且不存在引用时）。
     media_urls: list = dc_field(default_factory=list)
     media_types: list = dc_field(default_factory=list)
 
-    # Populated by ExtractContentMiddleware
+    # 由 ExtractContentMiddleware 填充
     link_urls: list = dc_field(default_factory=list)
 
-    # Populated by GroupAttributionMiddleware
+    # 由 GroupAttributionMiddleware 填充
     channel_prompt: Optional[str] = None
 
 
 class InboundMiddleware(ABC):
-    """Abstract base class for all inbound pipeline middlewares.
+    """所有入站管道中间件的抽象基类。
 
-    Subclasses must:
-      - Set ``name`` as a class-level attribute (used for pipeline registration
-        and dynamic insertion/removal).
-      - Implement ``async handle(ctx, next_fn)`` containing the middleware logic.
+    子类必须：
+      - 将 ``name`` 设为类级属性（用于管道注册以及动态插入/移除）。
+      - 实现 ``async handle(ctx, next_fn)``，包含中间件逻辑。
 
-    Convention:
-      - Call ``await next_fn()`` to pass control to the next middleware.
-      - Return without calling ``next_fn`` to **stop** the pipeline.
+    约定：
+      - 调用 ``await next_fn()`` 将控制权传递给下一个中间件。
+      - 不调用 ``next_fn`` 直接返回则会**停止**管道。
     """
 
-    name: str = ""  # Override in each subclass
+    name: str = ""  # 在每个子类中覆写
 
     @abstractmethod
     async def handle(self, ctx: InboundContext, next_fn: Callable) -> None:
-        """Process *ctx* and optionally call *next_fn* to continue the pipeline."""
+        """处理 *ctx*，并可选地调用 *next_fn* 以继续管道。"""
 
     async def __call__(self, ctx: InboundContext, next_fn: Callable) -> None:
-        """Allow middleware instances to be called directly (duck-typing compat)."""
+        """允许中间件实例被直接调用（鸭子类型兼容）。"""
         return await self.handle(ctx, next_fn)
 
     def __repr__(self) -> str:
@@ -998,45 +993,44 @@ class InboundMiddleware(ABC):
 
 
 class InboundPipeline:
-    """Onion-model middleware pipeline engine for inbound message processing.
+    """洋葱模型的中间件管道引擎，用于处理入站消息。
 
-    Inspired by OpenClaw's MessagePipeline (extensions/yuanbao/src/business/
-    pipeline/engine.ts).  Supports named middlewares, conditional guards
-    (``when``), and ``use_before`` / ``use_after`` / ``remove`` for dynamic
-    composition.
+    灵感来自 OpenClaw 的 MessagePipeline（extensions/yuanbao/src/business/
+    pipeline/engine.ts）。支持具名中间件、条件守卫（``when``），
+    以及 ``use_before`` / ``use_after`` / ``remove`` 进行动态组合。
 
-    Accepts both ``InboundMiddleware`` instances (OOP style) and plain
-    ``async def(ctx, next_fn)`` callables (functional style) for flexibility.
+    同时接受 ``InboundMiddleware`` 实例（OOP 风格）和普通的
+    ``async def(ctx, next_fn)`` 可调用对象（函数式风格），以提供灵活性。
     """
 
     def __init__(self) -> None:
-        self._middlewares: list = []  # list of (name, handler, when_fn | None)
+        self._middlewares: list = []  # (name, handler, when_fn | None) 列表
 
-    # -- Internal helpers --------------------------------------------------
+    # -- 内部辅助方法 --------------------------------------------------
 
     @staticmethod
     def _normalize(name_or_mw, handler=None):
-        """Normalize (name, handler) or (InboundMiddleware,) into (name, callable)."""
+        """将 (name, handler) 或 (InboundMiddleware,) 归一化为 (name, callable)。"""
         if isinstance(name_or_mw, InboundMiddleware):
             return name_or_mw.name, name_or_mw
-        # Functional style: name is a str, handler is a callable
+        # 函数式风格：name 为字符串，handler 为可调用对象
         return name_or_mw, handler
 
-    # -- Registration API --------------------------------------------------
+    # -- 注册 API --------------------------------------------------
 
     def use(self, name_or_mw, handler=None, when=None) -> "InboundPipeline":
-        """Append a middleware to the end of the pipeline.
+        """在管道末尾追加一个中间件。
 
-        Accepts either:
-          - ``pipeline.use(SomeMiddleware())``  — OOP style
-          - ``pipeline.use("name", some_fn)``   — functional style
+        接受以下两种形式之一：
+          - ``pipeline.use(SomeMiddleware())``  —— OOP 风格
+          - ``pipeline.use("name", some_fn)``   —— 函数式风格
         """
         name, h = self._normalize(name_or_mw, handler)
         self._middlewares.append((name, h, when))
         return self
 
     def use_before(self, target: str, name_or_mw, handler=None, when=None) -> "InboundPipeline":
-        """Insert a middleware before *target* (by name).  Appends if not found."""
+        """在 *target*（按名称）之前插入一个中间件。找不到则追加到末尾。"""
         name, h = self._normalize(name_or_mw, handler)
         idx = next((i for i, (n, _, _) in enumerate(self._middlewares) if n == target), None)
         entry = (name, h, when)
@@ -1047,7 +1041,7 @@ class InboundPipeline:
         return self
 
     def use_after(self, target: str, name_or_mw, handler=None, when=None) -> "InboundPipeline":
-        """Insert a middleware after *target* (by name).  Appends if not found."""
+        """在 *target*（按名称）之后插入一个中间件。找不到则追加到末尾。"""
         name, h = self._normalize(name_or_mw, handler)
         idx = next((i for i, (n, _, _) in enumerate(self._middlewares) if n == target), None)
         entry = (name, h, when)
@@ -1058,19 +1052,19 @@ class InboundPipeline:
         return self
 
     def remove(self, name: str) -> "InboundPipeline":
-        """Remove a middleware by name."""
+        """按名称移除一个中间件。"""
         self._middlewares = [(n, h, w) for n, h, w in self._middlewares if n != name]
         return self
 
     @property
     def middleware_names(self) -> list:
-        """Return ordered list of registered middleware names (for testing)."""
+        """返回已注册中间件名称的有序列表（用于测试）。"""
         return [n for n, _, _ in self._middlewares]
 
-    # -- Execution ---------------------------------------------------------
+    # -- 执行 ---------------------------------------------------------
 
     async def execute(self, ctx: InboundContext) -> None:
-        """Run all middlewares in order.  Each middleware receives ``(ctx, next_fn)``."""
+        """按顺序运行所有中间件。每个中间件接收 ``(ctx, next_fn)``。"""
         chain = self._middlewares
         index = 0
 
@@ -1079,7 +1073,7 @@ class InboundPipeline:
             while index < len(chain):
                 name, handler, when_fn = chain[index]
                 index += 1
-                # Conditional guard: skip when returns False
+                # 条件守卫：when 返回 False 时跳过
                 if when_fn is not None and not when_fn(ctx):
                     continue
                 try:
@@ -1088,26 +1082,26 @@ class InboundPipeline:
                     logger.error("[InboundPipeline] middleware [%s] error", name, exc_info=True)
                     raise
                 return
-            # End of chain — nothing more to do
+            # 链末尾 —— 无更多操作
 
         await next_fn()
 class DecodeMiddleware(InboundMiddleware):
-    """Decode raw inbound frames from JSON or Protobuf into ctx.push.
+    """将原始入站帧从 JSON 或 Protobuf 解码到 ctx.push。
 
-    Encapsulates JSON push parsing (aligned with TS decodeFromContent)
-    and Protobuf decoding via ``decode_inbound_push``.
+    封装 JSON push 解析（与 TS decodeFromContent 对齐）
+    以及通过 ``decode_inbound_push`` 进行的 Protobuf 解码。
     """
 
     name = "decode"
 
-    # -- JSON push parsing -------------------------------------------------
+    # -- JSON push 解析 -------------------------------------------------
 
     @staticmethod
     def convert_json_msg_body(raw_body: list) -> list:
-        """Normalize raw JSON msg_body array to [{"msg_type": str, "msg_content": dict}].
+        """将原始 JSON msg_body 数组归一化为 [{"msg_type": str, "msg_content": dict}]。
 
-        Compatible with both PascalCase (MsgType/MsgContent) and
-        snake_case (msg_type/msg_content) naming.
+        同时兼容 PascalCase（MsgType/MsgContent）和
+        snake_case（msg_type/msg_content）命名。
         """
         result = []
         for item in raw_body or []:
@@ -1125,19 +1119,17 @@ class DecodeMiddleware(InboundMiddleware):
 
     @staticmethod
     def parse_json_push(raw_json: dict) -> dict | None:
-        """Convert JSON-format push to a dict with the same structure as
-        ``decode_inbound_push``.
+        """将 JSON 格式的 push 转换为与 ``decode_inbound_push`` 相同结构的 dict。
 
-        Supports standard callback format (callback_command + from_account +
-        msg_body) and legacy format fields (GroupId, MsgSeq, MsgKey, MsgBody,
-        etc.).
+        支持标准回调格式（callback_command + from_account +
+        msg_body）以及遗留格式字段（GroupId、MsgSeq、MsgKey、MsgBody 等）。
         """
         if not raw_json:
             return None
 
-        # Tencent IM callback format uses PascalCase (From_Account, To_Account, MsgBody).
-        # Internal format uses snake_case (from_account, to_account, msg_body).
-        # Support both.
+        # 腾讯 IM 回调格式使用 PascalCase（From_Account、To_Account、MsgBody）。
+        # 内部格式使用 snake_case（from_account、to_account、msg_body）。
+        # 两者均支持。
         from_account = (
             raw_json.get("from_account", "")
             or raw_json.get("From_Account", "")
@@ -1153,7 +1145,7 @@ class DecodeMiddleware(InboundMiddleware):
         )
         msg_body = DecodeMiddleware.convert_json_msg_body(msg_body_raw)
 
-        # Recall callbacks may have neither from_account nor msg_body.
+        # 撤回回调可能既没有 from_account 也没有 msg_body。
         if not from_account and not msg_body and not raw_json.get("callback_command"):
             return None
 
@@ -1173,10 +1165,10 @@ class DecodeMiddleware(InboundMiddleware):
             "trace_id": (raw_json.get("log_ext") or {}).get("trace_id", "") if isinstance(raw_json.get("log_ext"), dict) else "",
         }
 
-    # -- Pipeline handler --------------------------------------------------
+    # -- 管道 handler --------------------------------------------------
 
     def _decode_single(self, adapter, data: bytes) -> tuple:
-        """Decode a single raw frame into (push_dict, decoded_via) or (None, '')."""
+        """将单个原始帧解码为 (push_dict, decoded_via)，或 (None, '')。"""
         try:
             conn_json = json.loads(data.decode("utf-8"))
         except Exception:
@@ -1199,7 +1191,7 @@ class DecodeMiddleware(InboundMiddleware):
     async def handle(self, ctx: InboundContext, next_fn) -> None:
         data_list = ctx.raw_frames
         if not data_list:
-            return  # Stop pipeline — nothing to decode
+            return  # 停止管道 —— 无内容可解码
 
         merged_push = None
         decoded_via = ""
@@ -1214,7 +1206,7 @@ class DecodeMiddleware(InboundMiddleware):
                 continue
 
             if merged_push is None:
-                # First valid push becomes the base
+                # 第一个有效 push 作为基础
                 merged_push = push
                 decoded_via = via
                 logger.info(
@@ -1222,7 +1214,7 @@ class DecodeMiddleware(InboundMiddleware):
                     ctx.adapter.name, via, len(data),
                 )
             else:
-                # Subsequent pushes: merge msg_body into the base with a
+                # 后续 push：将其 msg_body 合并到基础 push 中
                 extra_body = push.get("msg_body", [])
                 if extra_body:
                     _sep = {"msg_type": "TIMTextElem", "msg_content": {"text": "\n"}}
@@ -1233,7 +1225,7 @@ class DecodeMiddleware(InboundMiddleware):
                     )
 
         if not merged_push:
-            return  # Stop pipeline
+            return  # 停止管道
 
         ctx.push = merged_push
         ctx.decoded_via = decoded_via
@@ -1252,7 +1244,7 @@ class DecodeMiddleware(InboundMiddleware):
 
 
 class ExtractFieldsMiddleware(InboundMiddleware):
-    """Extract common fields from ctx.push into ctx attributes."""
+    """从 ctx.push 中提取公共字段到 ctx 属性。"""
 
     name = "extract-fields"
 
@@ -1269,23 +1261,23 @@ class ExtractFieldsMiddleware(InboundMiddleware):
 
 
 class DedupMiddleware(InboundMiddleware):
-    """Inbound message deduplication."""
+    """入站消息去重。"""
 
     name = "dedup"
 
     async def handle(self, ctx: InboundContext, next_fn) -> None:
         if ctx.msg_id and ctx.adapter._dedup.is_duplicate(ctx.msg_id):
             logger.debug("[%s] Duplicate message ignored: msg_id=%s", ctx.adapter.name, ctx.msg_id)
-            return  # Stop pipeline
+            return  # 停止管道
         await next_fn()
 
 
 class RecallGuardMiddleware(InboundMiddleware):
-    """Intercept Group.CallbackAfterRecallMsg / C2C.CallbackAfterMsgWithDraw.
+    """拦截 Group.CallbackAfterRecallMsg / C2C.CallbackAfterMsgWithDraw。
 
-    Branch A: message in transcript (observed, not yet consumed) → redact content
-    Branch B: message not in transcript → append system note
-    Branch C: message currently being processed → silent interrupt + delayed redact
+    分支 A：消息在会话记录中（已观察但尚未消费）→ 抹除内容
+    分支 B：消息不在会话记录中 → 追加系统提示
+    分支 C：消息正在处理中 → 静默中断 + 延迟抹除
     """
 
     name = "recall_guard"
@@ -1342,7 +1334,7 @@ class RecallGuardMiddleware(InboundMiddleware):
                 recalled_content = adapter._msg_content_cache.get(recalled_id)
                 self._patch_transcript(adapter, recalled_id, group_code, from_account, recalled_content)
 
-    # -- Branch C: interrupt currently-processing message ---------------
+    # -- 分支 C：中断当前正在处理的消息 ---------------
 
     @staticmethod
     def _find_processing_session(adapter, recalled_id: str) -> Optional[str]:
@@ -1374,8 +1366,8 @@ class RecallGuardMiddleware(InboundMiddleware):
             source=cls._build_source(adapter, group_code, from_account),
             internal=True,
         )
-        # Set pending + signal directly (bypass handle_message to avoid busy-ack).
-        # May overwrite a user message pending in the same ~200ms window — acceptable.
+        # 直接设置 pending 并触发信号（绕过 handle_message 以避免忙应答）。
+        # 可能覆盖同一 ~200ms 窗口内 pending 的用户消息 —— 可以接受。
         adapter._pending_messages[session_key] = synth_event
         active_event = adapter._active_sessions.get(session_key)
         if active_event is not None:
@@ -1383,8 +1375,8 @@ class RecallGuardMiddleware(InboundMiddleware):
 
         logger.info("[%s] Recall interrupt: msg_id=%s session=%s", adapter.name, recalled_id, session_key[:30])
 
-        # The interrupted turn will persist the recalled content *after* our
-        # interrupt — schedule a delayed redaction to clean it up.
+        # 被中断的轮次会在我们的中断*之后*才持久化被撤回的内容 ——
+        # 安排一次延迟抹除来清理它。
         recalled_text = adapter._processing_msg_texts.get(session_key, "")
         if recalled_text:
             cls._schedule_content_redact(adapter, session_key, recalled_text, group_code, from_account)
@@ -1402,8 +1394,8 @@ class RecallGuardMiddleware(InboundMiddleware):
                 ).session_id
             except Exception:
                 return
-            # Poll until the recalled content appears in transcript — the
-            # interrupted turn hasn't finished writing yet when scheduled.
+            # 轮询直到被撤回的内容出现在会话记录中 —— 调度时
+            # 被中断的轮次尚未完成写入。
             for _ in range(30):
                 await asyncio.sleep(0.5)
                 try:
@@ -1425,7 +1417,7 @@ class RecallGuardMiddleware(InboundMiddleware):
         adapter._background_tasks.add(task)
         task.add_done_callback(adapter._background_tasks.discard)
 
-    # -- Branch A/B: patch transcript (session idle) --------------------
+    # -- 分支 A/B：修改会话记录（会话闲置时） --------------------
 
     @classmethod
     def _patch_transcript(cls, adapter, recalled_id: str, group_code: str,
@@ -1439,21 +1431,20 @@ class RecallGuardMiddleware(InboundMiddleware):
             logger.warning("[%s] Recall: failed to resolve session: %s", adapter.name, exc)
             return
 
-        # Load transcript from canonical store (state.db).  Since PR #29278
-        # added a ``platform_message_id`` column to the messages table and
-        # ``append_to_transcript`` wires the incoming dict's ``message_id``
-        # into it, ``load_transcript`` returns rows with ``message_id`` set
-        # for any message that was observed with one — Branch A1 (exact id
-        # match) is the canonical path again.
+        # 从权威存储（state.db）加载会话记录。由于 PR #29278 在 messages 表中
+        # 新增了 ``platform_message_id`` 列，且 ``append_to_transcript`` 会把
+        # 入站 dict 的 ``message_id`` 写入该列，因此 ``load_transcript``
+        # 返回的行中，凡是被观察到带有 message_id 的消息都会带上该字段 ——
+        # 分支 A1（精确 id 匹配）再次成为权威路径。
         try:
             transcript = store.load_transcript(sid)
         except Exception as exc:
             logger.warning("[%s] Recall: failed to load transcript: %s", adapter.name, exc)
             return
 
-        # Branch A1: exact platform message_id match. Authoritative when the
-        # row was persisted with a platform_message_id (observed group
-        # messages and any inbound message whose adapter carried a msg_id).
+        # 分支 A1：精确 platform message_id 匹配。当行在持久化时带有
+        # platform_message_id（被观察的群消息，以及任何 adapter 携带了
+        # msg_id 的入站消息），此分支为权威路径。
         target = None
         branch_label = ""
         for entry in transcript:
@@ -1461,10 +1452,9 @@ class RecallGuardMiddleware(InboundMiddleware):
                 target = entry
                 branch_label = "branch A1: id match"
                 break
-        # Branch A2: content-match fallback for messages that lack an exact
-        # platform id on the row — e.g. agent-processed @bot messages
-        # (run.py doesn't carry msg_id through) or older rows persisted
-        # before the platform_message_id column existed.
+        # 分支 A2：内容匹配兜底，用于行上缺少精确 platform id 的消息 ——
+        # 例如 agent 处理过的 @bot 消息（run.py 不会把 msg_id 透传过来），
+        # 或在 platform_message_id 列出现之前持久化的旧行。
         if target is None and recalled_content:
             for entry in transcript:
                 if entry.get("role") == "user" and entry.get("content") == recalled_content:
@@ -1480,7 +1470,7 @@ class RecallGuardMiddleware(InboundMiddleware):
                 logger.warning("[%s] Recall: rewrite_transcript failed: %s", adapter.name, exc)
             return
 
-        # Branch B: not found in transcript → append system note
+        # 分支 B：会话记录中找不到 → 追加系统提示
         store.append_to_transcript(sid, {
             "role": "system",
             "content": f'[recall] message_id="{recalled_id}" has been recalled; do not quote or reference it.',
@@ -1490,13 +1480,13 @@ class RecallGuardMiddleware(InboundMiddleware):
 
 
 class SkipSelfMiddleware(InboundMiddleware):
-    """Filter out bot's own messages."""
+    """过滤掉 bot 自身发送的消息。"""
 
     name = "skip-self"
 
     @staticmethod
     def _is_self_reference(from_account: str, bot_id: Optional[str]) -> bool:
-        """Detect whether the message is from the bot itself."""
+        """检测消息是否来自 bot 自身。"""
         if not from_account or not bot_id:
             return False
         return from_account == bot_id
@@ -1504,12 +1494,12 @@ class SkipSelfMiddleware(InboundMiddleware):
     async def handle(self, ctx: InboundContext, next_fn) -> None:
         if self._is_self_reference(ctx.from_account, ctx.adapter._bot_id):
             logger.debug("[%s] Ignoring self-sent message from %s", ctx.adapter.name, ctx.from_account)
-            return  # Stop pipeline
+            return  # 停止管道
         await next_fn()
 
 
 class ChatRoutingMiddleware(InboundMiddleware):
-    """Determine chat_id, chat_type, chat_name from push fields."""
+    """从 push 字段推导 chat_id、chat_type、chat_name。"""
 
     name = "chat-routing"
 
@@ -1526,11 +1516,10 @@ class ChatRoutingMiddleware(InboundMiddleware):
 
 
 class AccessPolicy:
-    """Platform-level DM / Group access control policy.
+    """平台级 DM / Group 访问控制策略。
 
-    Encapsulates the allow/deny logic so that both inbound middleware
-    and outbound ``send_dm`` can share the same rules without reaching
-    into adapter internals.
+    封装允许/拒绝逻辑，使入站中间件和出站 ``send_dm``
+    可以共享同一套规则，而无需深入 adapter 内部实现。
     """
 
     def __init__(
@@ -1546,7 +1535,7 @@ class AccessPolicy:
         self._group_allow_from = group_allow_from
 
     def is_dm_allowed(self, sender_id: str) -> bool:
-        """Platform-level DM inbound filter (open / allowlist / disabled)."""
+        """平台级 DM 入站过滤（open / allowlist / disabled）。"""
         if self._dm_policy == "disabled":
             return False
         if self._dm_policy == "allowlist":
@@ -1554,7 +1543,7 @@ class AccessPolicy:
         return True
 
     def is_group_allowed(self, group_code: str) -> bool:
-        """Platform-level group chat inbound filter (open / allowlist / disabled)."""
+        """平台级群聊入站过滤（open / allowlist / disabled）。"""
         if self._group_policy == "disabled":
             return False
         if self._group_policy == "allowlist":
@@ -1571,7 +1560,7 @@ class AccessPolicy:
 
 
 class AccessGuardMiddleware(InboundMiddleware):
-    """Platform-level DM/Group access control filter."""
+    """平台级 DM/Group 访问控制过滤器。"""
 
     name = "access-guard"
 
@@ -1596,11 +1585,11 @@ class AccessGuardMiddleware(InboundMiddleware):
 
 
 class AutoSetHomeMiddleware(InboundMiddleware):
-    """Auto-designate the first inbound conversation as Yuanbao home channel.
+    """自动将第一个入站会话指定为元宝 home channel。
 
-    Triggers when no home channel is configured, or when an existing group-chat
-    home is superseded by the first DM (direct > group upgrade).
-    Silent: writes config.yaml and env, no user-facing message.
+    在未配置 home channel 时触发，或在已有的群聊 home 被首个 DM 取代时触发
+    （direct > group 升级）。
+    静默执行：写入 config.yaml 和环境变量，不产生面向用户的消息。
     """
 
     name = "auto-sethome"
@@ -1634,14 +1623,14 @@ class AutoSetHomeMiddleware(InboundMiddleware):
                         "[%s] Auto-sethome: designated %s (%s) as Yuanbao home channel",
                         adapter.name, ctx.chat_id, ctx.chat_name,
                     )
-                    # Silent auto-sethome: no user-facing message, only log
+                    # 静默 auto-sethome：无面向用户的消息，仅记录日志
                 except Exception as e:
                     logger.warning("[%s] Auto-sethome failed: %s", adapter.name, e)
         await next_fn()
 
 
 class ExtractContentMiddleware(InboundMiddleware):
-    """Extract raw text and media refs from msg_body."""
+    """从 msg_body 中提取原始文本和媒体引用。"""
 
     name = "extract-content"
 
@@ -1649,7 +1638,7 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @staticmethod
     def _format_shared_link(custom: dict) -> str:
-        """Format elem_type 1010 (share card) into bracket-placeholder text."""
+        """将 elem_type 1010（分享卡片）格式化为方括号占位符文本。"""
         title = custom.get("title", "")
         link = custom.get("link", "")
         header = f"[share_card: {title} | {link}]" if link else f"[share_card: {title}]"
@@ -1667,7 +1656,7 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @staticmethod
     def _format_link_understanding(custom: dict) -> Optional[str]:
-        """Format elem_type 1007 (link understanding card) into bracket-placeholder text."""
+        """将 elem_type 1007（链接理解卡片）格式化为方括号占位符文本。"""
         content = custom.get("content")
         if not content:
             return None
@@ -1682,13 +1671,13 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @staticmethod
     def _parse_resource_id(url: str) -> str:
-        """Extract resourceId from Yuanbao resource URL query parameters.
+        """从元宝资源 URL 的查询参数中提取 resourceId。
 
-        Args:
-            url: Resource URL (e.g., https://...?resourceId=abc123)
+        参数：
+            url: 资源 URL（如 https://...?resourceId=abc123）
 
-        Returns:
-            Resource ID string, or empty string if not found
+        返回：
+            Resource ID 字符串，未找到时返回空字符串
         """
         if not url:
             return ""
@@ -1701,16 +1690,16 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @classmethod
     def _extract_text(cls, msg_body: list) -> str:
-        """Extract plain text content from MsgBody.
+        """从 MsgBody 中提取纯文本内容。
 
-        - TIMTextElem      -> text field
+        - TIMTextElem      -> text 字段
         - TIMImageElem     -> "[image]" / "[image|ybres:RID]"
         - TIMFileElem      -> "[file: {filename}]" / "[file:{name}|ybres:RID]"
         - TIMSoundElem     -> "[voice]" / "[voice|ybres:RID]"
         - TIMVideoFileElem -> "[video]" / "[video|ybres:RID]"
-        - TIMFaceElem      -> "[emoji: {name}]" or "[emoji]"
-        - TIMCustomElem    -> try to extract data field, otherwise "[custom message]"
-        - Multiple elems joined with spaces
+        - TIMFaceElem      -> "[emoji: {name}]" 或 "[emoji]"
+        - TIMCustomElem    -> 尝试提取 data 字段，否则为 "[custom message]"
+        - 多个元素以空格连接
         """
         parts: list[str] = []
         for elem in msg_body:
@@ -1722,12 +1711,12 @@ class ExtractContentMiddleware(InboundMiddleware):
                 if text:
                     parts.append(text)
             elif elem_type == "TIMImageElem":
-                # Extract resourceId from image_info_array URL
+                # 从 image_info_array URL 中提取 resourceId
                 image_info_array = content.get("image_info_array")
                 if not isinstance(image_info_array, list):
                     image_info_array = []
                 image_info = None
-                # Prefer medium image (index 1), fallback to index 0
+                # 优先取中图（index 1），其次取 index 0
                 if len(image_info_array) > 1 and isinstance(image_info_array[1], dict):
                     image_info = image_info_array[1]
                 elif len(image_info_array) > 0 and isinstance(image_info_array[0], dict):
@@ -1771,7 +1760,7 @@ class ExtractContentMiddleware(InboundMiddleware):
                             else:
                                 parts.append("[unsupported message type]")
                         elif ctype == 1009:
-                            # WeChat forwarded chat record: use the truncated summary text.
+                            # 微信转发聊天记录：使用截断后的摘要文本。
                             parts.append(custom.get("text", "[chat record]"))
                         else:
                             parts.append("[unsupported message type]")
@@ -1780,7 +1769,7 @@ class ExtractContentMiddleware(InboundMiddleware):
                 else:
                     parts.append("[unsupported message type]")
             elif elem_type == "TIMFaceElem":
-                # Sticker/emoji: extract name from data JSON
+                # 贴纸/表情：从 data JSON 中提取名称
                 raw_data = content.get("data", "")
                 face_name = ""
                 if raw_data:
@@ -1791,15 +1780,15 @@ class ExtractContentMiddleware(InboundMiddleware):
                         pass
                 parts.append(f"[emoji: {face_name}]" if face_name else "[emoji]")
             elif elem_type:
-                # Unknown element type — include type as placeholder
+                # 未知元素类型 —— 将类型作为占位符包含进来
                 parts.append(f"[{elem_type}]")
 
         return " ".join(parts) if parts else ""
 
     @staticmethod
     def _rewrite_slash_command(text: str) -> str:
-        """Normalize input text: strip whitespace and convert full-width slash
-        (Chinese input method) to ASCII slash so commands are recognized correctly.
+        """归一化输入文本：去除空白，并将全角斜杠（中文输入法）转换为
+        ASCII 斜杠，使命令能被正确识别。
         """
         text = text.strip()
         if text.startswith('\uff0f'):  # Full-width slash
@@ -1808,9 +1797,9 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @staticmethod
     def _extract_inbound_media_refs(msg_body: list) -> List[Dict[str, str]]:
-        """Extract inbound image/file references from TIM msg_body.
+        """从 TIM msg_body 中提取入站图片/文件引用。
 
-        Return example:
+        返回示例：
           [{"kind": "image", "url": "https://..."}, {"kind": "file", "url": "...", "name": "a.pdf"}]
         """
         refs: List[Dict[str, str]] = []
@@ -1823,7 +1812,7 @@ class ExtractContentMiddleware(InboundMiddleware):
                 continue
 
             if msg_type == "TIMImageElem":
-                # Prefer medium image (index 1), fallback to index 0.
+                # 优先取中图（index 1），其次取 index 0。
                 image_info_array = content.get("image_info_array")
                 if not isinstance(image_info_array, list):
                     image_info_array = []
@@ -1853,7 +1842,7 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @staticmethod
     def _extract_link_urls(msg_body: list) -> list:
-        """Extract link URLs from share-card (1010) and link-understanding (1007) custom elems."""
+        """从分享卡片（1010）和链接理解（1007）自定义元素中提取链接 URL。"""
         urls: list[str] = []
         for elem in msg_body or []:
             if not isinstance(elem, dict) or elem.get("msg_type") != "TIMCustomElem":
@@ -1886,19 +1875,19 @@ class ExtractContentMiddleware(InboundMiddleware):
 
     @staticmethod
     def _extract_forwarded_records(msg_body: list, user_id: str = "") -> Optional[dict]:
-        """Extract ForwardMsgData from ext_map for elem_type 1009 (WeChat forward).
+        """为 elem_type 1009（微信转发）从 ext_map 中提取 ForwardMsgData。
 
-        The detailed chat-record payload lives in ``msg_content.ext_map``
-        (protobuf field 999, ``map<string, string>``):
-          - key format: ``wexin_forward_msg_[forward_msg_id]_[userid]``
-          - value: a **base64-encoded protobuf** ``ForwardMsgData`` (NOT JSON).
-            Decode with base64 then ``decode_forward_msg_data`` to recover the
-            ``sub_type`` / ``nick_name`` / ``msg`` structure.
+        详细的聊天记录 payload 存放在 ``msg_content.ext_map``
+        （protobuf field 999，``map<string, string>``）中：
+          - key 格式：``wexin_forward_msg_[forward_msg_id]_[userid]``
+          - value：**base64 编码的 protobuf** ``ForwardMsgData``（不是 JSON）。
+            先用 base64 解码，再用 ``decode_forward_msg_data`` 还原出
+            ``sub_type`` / ``nick_name`` / ``msg`` 结构。
 
-        Matching strategy: take the first ``wexin_forward_msg_`` entry whose
-        decoded payload is a valid ``ForwardMsgData`` (``sub_type == 1``).
+        匹配策略：取第一个解码后为有效 ``ForwardMsgData``
+        （``sub_type == 1``）的 ``wexin_forward_msg_`` 条目。
 
-        Returns the parsed ``ForwardMsgData`` dict or ``None``.
+        返回解析后的 ``ForwardMsgData`` dict，或 ``None``。
         """
         for elem in msg_body or []:
             if not isinstance(elem, dict) or elem.get("msg_type") != "TIMCustomElem":
@@ -1921,7 +1910,7 @@ class ExtractContentMiddleware(InboundMiddleware):
                 return None
 
             def _parse_value(value):
-                # ext_map values are base64-encoded ForwardMsgData protobuf.
+                # ext_map 的值是 base64 编码的 ForwardMsgData protobuf。
                 if not isinstance(value, str) or not value:
                     return None
                 try:
@@ -1933,7 +1922,7 @@ class ExtractContentMiddleware(InboundMiddleware):
                     return data
                 return None
 
-            # Take the first valid wexin_forward_msg_ entry.
+            # 取第一个有效的 wexin_forward_msg_ 条目。
             for key, value in ext_map.items():
                 if not key.startswith("wexin_forward_msg_"):
                     continue
@@ -1951,7 +1940,7 @@ class ExtractContentMiddleware(InboundMiddleware):
         await next_fn()
 
 class PlaceholderFilterMiddleware(InboundMiddleware):
-    """Skip pure placeholder messages (e.g. '[image]' with no media)."""
+    """跳过纯占位符消息（例如无媒体的 '[image]'）。"""
 
     name = "placeholder-filter"
 
@@ -1962,7 +1951,7 @@ class PlaceholderFilterMiddleware(InboundMiddleware):
 
     @classmethod
     def is_skippable_placeholder(cls, text: str, media_count: int = 0) -> bool:
-        """Detect whether the message is a pure placeholder (should be skipped)."""
+        """检测消息是否为纯占位符（应被跳过）。"""
         if media_count > 0:
             return False
         stripped = text.strip()
@@ -1971,20 +1960,20 @@ class PlaceholderFilterMiddleware(InboundMiddleware):
     async def handle(self, ctx: InboundContext, next_fn) -> None:
         if self.is_skippable_placeholder(ctx.raw_text, len(ctx.media_refs)):
             logger.debug("[%s] Skipping placeholder message: %r", ctx.adapter.name, ctx.raw_text)
-            return  # Stop pipeline
+            return  # 停止管道
         await next_fn()
 
 
 class OwnerCommandMiddleware(InboundMiddleware):
-    """Detect bot-owner slash commands in group chat.
+    """在群聊中检测 bot 拥有者的斜杠命令。
 
-    Identifies in-group allowlisted slash commands and determines sender identity.
-    Owner commands skip @Bot detection; non-owner attempts are rejected.
+    识别群内已加入白名单的斜杠命令，并判定发送者身份。
+    拥有者命令跳过 @Bot 检测；非拥有者的尝试会被拒绝。
     """
 
     name = "owner-command"
 
-    # Slash command allowlist that bot owner can execute in group without @Bot
+    # bot 拥有者在群内无需 @Bot 即可执行的白名单斜杠命令
     ALLOWLIST: frozenset = frozenset({
         "/new", "/reset", "/retry", "/undo", "/stop",
         "/approve", "/deny", "/background", "/bg",
@@ -1993,7 +1982,7 @@ class OwnerCommandMiddleware(InboundMiddleware):
 
     @staticmethod
     def _rewrite_slash_command(text: str) -> str:
-        """Normalize full-width slash to ASCII slash and strip whitespace."""
+        """将全角斜杠归一化为 ASCII 斜杠并去除空白。"""
         text = text.strip()
         if text.startswith('\uff0f'):  # Full-width slash
             text = '/' + text[1:]
@@ -2008,17 +1997,17 @@ class OwnerCommandMiddleware(InboundMiddleware):
         chat_type: str,
         from_account: str,
     ) -> Tuple[Optional[str], Optional[str], bool]:
-        """Identify allowlisted slash commands and determine sender identity.
+        """识别白名单斜杠命令并判定发送者身份。
 
-        Returns (cmd, cmd_line, is_owner):
-          - (None, None, False): Not an allowlisted command
-          - (cmd, cmd_line, True): Owner match
-          - (cmd, cmd_line, False): Allowlisted command but sender is not owner
+        返回 (cmd, cmd_line, is_owner)：
+          - (None, None, False)：不是白名单命令
+          - (cmd, cmd_line, True)：拥有者匹配
+          - (cmd, cmd_line, False)：白名单命令，但发送者不是拥有者
         """
         if chat_type != "group" or not cls.ALLOWLIST:
             return None, None, False
 
-        # Extract TIMTextElem: only do command recognition with exactly one text segment
+        # 提取 TIMTextElem：仅在恰好有一段文本时才做命令识别
         text_elems = [
             e for e in (msg_body or [])
             if e.get("msg_type") == "TIMTextElem"
@@ -2034,10 +2023,10 @@ class OwnerCommandMiddleware(InboundMiddleware):
         if cmd not in cls.ALLOWLIST:
             return None, None, False
 
-        # Sender identity check: bot owner <-> push.from_account == push.bot_owner_id.
-        # The allowlisted commands (/approve, /deny, /stop, /reset, ...) are
-        # privileged — leaking them to non-owners lets any group member approve
-        # a dangerous tool call, kill the owner's task, or wipe session state.
+        # 发送者身份校验：bot 拥有者 <-> push.from_account == push.bot_owner_id。
+        # 白名单命令（/approve、/deny、/stop、/reset、...）属于特权命令 ——
+        # 一旦泄露给非拥有者，任何群成员都能批准危险的工具调用、
+        # 终止拥有者的任务，或清空会话状态。
         owner_id = str((push or {}).get("bot_owner_id") or "").strip()
         is_owner = bool(owner_id) and owner_id == from_account
         return cmd, cmd_line, is_owner
@@ -2051,7 +2040,7 @@ class OwnerCommandMiddleware(InboundMiddleware):
             from_account=ctx.from_account,
         )
         if matched_cmd and not is_owner:
-            # Non-owner tried an owner-only command — reject and stop
+            # 非拥有者尝试了 owner 专属命令 —— 拒绝并停止
             logger.info(
                 "[%s] Reject non-owner slash command: chat=%s from=%s cmd=%s",
                 adapter.name, ctx.chat_id, ctx.from_account, matched_cmd,
@@ -2073,7 +2062,7 @@ class OwnerCommandMiddleware(InboundMiddleware):
 
 
 class BuildSourceMiddleware(InboundMiddleware):
-    """Build SessionSource from context fields."""
+    """从上下文字段构建 SessionSource。"""
 
     name = "build-source"
 
@@ -2091,20 +2080,20 @@ class BuildSourceMiddleware(InboundMiddleware):
 
 
 class GroupAtGuardMiddleware(InboundMiddleware):
-    """In group chat, observe non-@bot messages; only reply on @Bot.
+    """在群聊中观察非 @bot 消息；仅在 @Bot 时才回复。
 
-    Owner commands skip @Bot detection (owner doesn't need to @Bot).
+    拥有者命令跳过 @Bot 检测（拥有者无需 @Bot）。
     """
 
     name = "group-at-guard"
 
     @staticmethod
     def _is_at_bot(msg_body: list, bot_id: Optional[str]) -> bool:
-        """Detect whether the message @Bot.
+        """检测消息是否 @Bot。
 
-        AT element format: TIMCustomElem, msg_content.data is a JSON string:
+        AT 元素格式：TIMCustomElem，msg_content.data 为 JSON 字符串：
             {"elem_type": 1002, "text": "@xxx", "user_id": "<botId>"}
-        Considered @Bot when elem_type == 1002 and user_id == bot_id.
+        当 elem_type == 1002 且 user_id == bot_id 时视为 @Bot。
         """
         if not bot_id:
             return False
@@ -2124,7 +2113,7 @@ class GroupAtGuardMiddleware(InboundMiddleware):
 
     @staticmethod
     def _extract_bot_mention_text(msg_body: list, bot_id: Optional[str]) -> str:
-        """Extract the display text used to @-mention this bot (e.g. ``@yuanbao-bot``)."""
+        """提取用于 @-提及本 bot 的展示文本（例如 ``@yuanbao-bot``）。"""
         if not bot_id:
             return ""
         for elem in msg_body:
@@ -2145,7 +2134,7 @@ class GroupAtGuardMiddleware(InboundMiddleware):
 
     @staticmethod
     def _build_group_channel_prompt(msg_body: list, bot_id: Optional[str]) -> str:
-        """Build a per-turn group-chat prompt that highlights which message to respond to."""
+        """构建一个按轮次的群聊提示词，强调应回复哪条消息。"""
         bid = str(bot_id or "unknown")
         bot_mention = GroupAtGuardMiddleware._extract_bot_mention_text(msg_body, bot_id) or "unknown"
         return (
@@ -2166,12 +2155,11 @@ class GroupAtGuardMiddleware(InboundMiddleware):
         msg_id: Optional[str] = None,
         forwarded_records: Optional[dict] = None,
     ) -> None:
-        """Write a group message into the session transcript without triggering the agent.
+        """将一条群消息写入会话记录，但不触发 agent。
 
-        This allows the model to see the full group conversation when it is
-        eventually invoked via @bot.  Messages are stored with ``role: "user"``
-        in the format ``[nickname|user_id]\\n<content>`` so the model
-        can distinguish participants and their user ids.
+        这样当模型最终通过 @bot 被调用时，能看到完整的群对话。
+        消息以 ``role: "user"`` 存储，格式为
+        ``[nickname|user_id]\\n<content>``，便于模型区分参与者及其 user id。
         """
         store = getattr(adapter, "_session_store", None)
         if not store:
@@ -2215,21 +2203,19 @@ class GroupAtGuardMiddleware(InboundMiddleware):
                 "[%s] Group message observed (no @bot): chat=%s from=%s",
                 adapter.name, ctx.chat_id, ctx.from_account,
             )
-            return  # Stop pipeline — message observed but not dispatched
+            return  # 停止管道 —— 消息已被观察但未派发
         await next_fn()
 
 
 class GroupAttributionMiddleware(InboundMiddleware):
-    """Tag group @bot messages with [nickname|user_id] attribution and channel_prompt.
+    """为群 @bot 消息打上 [nickname|user_id] 归因标签和 channel_prompt。
 
-    For group messages that pass the @bot guard (i.e. the bot is mentioned),
-    this middleware:
-      - Builds a per-turn channel_prompt so the model knows its identity and
-        the attribution scheme.
-      - Rewrites ctx.raw_text to ``[nickname|user_id]\\n<content>`` to match
-        the observed-history format.
-      - Suppresses the runner's default ``[user_name]`` shared-thread prefix
-        by clearing ``source.user_name``.
+    对于通过 @bot 守卫的群消息（即 bot 被提及），该中间件：
+      - 构建按轮次的 channel_prompt，让模型知道自身身份和归因方案。
+      - 将 ctx.raw_text 改写为 ``[nickname|user_id]\\n<content>``，以匹配
+        已观察历史的格式。
+      - 通过清空 ``source.user_name`` 来抑制 runner 默认的
+        ``[user_name]`` 共享线程前缀。
     """
 
     name = "group-attribution"
@@ -2243,32 +2229,32 @@ class GroupAttributionMiddleware(InboundMiddleware):
             user_id_label = ctx.from_account or "unknown"
             nickname_label = ctx.sender_nickname or ctx.from_account or "unknown"
             ctx.raw_text = f"[{nickname_label}|{user_id_label}]\n{ctx.raw_text}"
-            # Suppress runner's default ``[user_name]`` shared-thread prefix so
-            # the text the model sees matches the observed-history format.
+            # 抑制 runner 默认的 ``[user_name]`` 共享线程前缀，使模型
+            # 看到的文本与已观察历史的格式一致。
             if ctx.source is not None:
                 ctx.source = dataclasses.replace(ctx.source, user_name=None)
         await next_fn()
 
 
 class YuanbaoMessageType(Enum):
-    """Yuanbao-local message subtypes; coerced back to :class:`MessageType`
-    before leaving the adapter (see :class:`DispatchMiddleware`)."""
+    """元宝本地的消息子类型；在离开 adapter 之前会被强制转换回
+    :class:`MessageType`（见 :class:`DispatchMiddleware`）。"""
 
-    # WeChat forwarded chat records (TIMCustomElem, elem_type 1009).
+    # 微信转发聊天记录（TIMCustomElem，elem_type 1009）。
     CHAT_RECORD = "chat_record"
 
 
 class ClassifyMessageTypeMiddleware(InboundMiddleware):
-    """Determine MessageType from text content and msg_body elements."""
+    """根据文本内容和 msg_body 元素判定 MessageType。"""
 
     name = "classify-msg-type"
 
     @staticmethod
     def _classify(text: str, msg_body: list):
-        """Classify message type based on text and msg_body.
+        """根据文本和 msg_body 判定消息类型。
 
-        Returns a base :class:`MessageType`, or a yuanbao-local
-        :class:`YuanbaoMessageType` for platform-specific subtypes.
+        返回一个基础 :class:`MessageType`，或针对平台特定子类型
+        返回一个元宝本地的 :class:`YuanbaoMessageType`。
         """
         if text.startswith("/"):
             return MessageType.COMMAND
@@ -2298,12 +2284,12 @@ class ClassifyMessageTypeMiddleware(InboundMiddleware):
 
 
 class QuoteContextMiddleware(InboundMiddleware):
-    """Extract quote/reply context from cloud_custom_data."""
+    """从 cloud_custom_data 中提取引用/回复上下文。"""
 
     name = "quote-context"
 
     def _extract_quote_context(self, cloud_custom_data: str) -> Tuple[Optional[str], Optional[str]]:
-        """Extract quote text context, mapping to MessageEvent.reply_to_*.
+        """提取引用文本上下文，映射到 MessageEvent.reply_to_*。
         """
         if not cloud_custom_data:
             return None, None
@@ -2326,13 +2312,11 @@ class QuoteContextMiddleware(InboundMiddleware):
     async def _extract_media_refs_from_transcript(
         self, ctx: InboundContext
     ) -> List[Tuple[str, str, str]]:
-        """Look up the quoted message in the transcript history and return any
-        ``[kind|ybres:RID]`` anchors found in its content as
-        ``(rid, kind, filename)`` tuples.
+        """在会话历史中查找被引用的消息，并返回其内容中找到的
+        ``[kind|ybres:RID]`` 锚点，形式为 ``(rid, kind, filename)`` 元组。
 
-        Returns ``[]`` when ``ctx.reply_to_message_id`` is unset, when the
-        transcript store / source is unavailable, or when the quoted message
-        carries no resolvable media anchors.
+        当 ``ctx.reply_to_message_id`` 未设置、会话存储/source 不可用，
+        或被引用消息不含可解析的媒体锚点时，返回 ``[]``。
         """
         if ctx.reply_to_message_id is None:
             return []
@@ -2372,21 +2356,20 @@ class QuoteContextMiddleware(InboundMiddleware):
 
 
 class ForwardedRecordsParseMiddleware(InboundMiddleware):
-    """Deep-parse WeChat forwarded chat records (elem_type 1009) for dispatch.
+    """为派发而深度解析微信转发聊天记录（elem_type 1009）。
 
-    Activates when a full ``ForwardMsgData`` dict is available on the current
-    turn, carried by the current message (``ctx.forwarded_records``).
-    Resolves media to ``[kind|ybres:RID]``
-    placeholders, appends downloadable refs to ``ctx.media_refs`` (for
-    :class:`MediaResolveMiddleware`), and rewrites ``ctx.raw_text``.
+    当当前轮次可获得完整的 ``ForwardMsgData`` dict（由当前消息通过
+    ``ctx.forwarded_records`` 携带）时激活。将媒体解析为
+    ``[kind|ybres:RID]`` 占位符，把可下载的 ref 追加到
+    ``ctx.media_refs``（供 :class:`MediaResolveMiddleware` 使用），
+    并改写 ``ctx.raw_text``。
 
-    Group @bot turns *without* a forward on the current message rely on the
-    eagerly-rendered summaries that :class:`GroupAtGuardMiddleware` writes to
-    the transcript at observe time — there is no run-time summary fallback
-    here.
+    群 @bot 轮次若*未*在当前消息上携带转发，则依赖
+    :class:`GroupAtGuardMiddleware` 在观察时写入会话记录的预渲染摘要 ——
+    此处没有运行时摘要兜底。
 
-    On any failure the middleware leaves ``ctx.raw_text`` untouched
-    (graceful degradation, design §2.8).
+    任何失败情况下，该中间件都保持 ``ctx.raw_text`` 不变
+    （优雅降级，design §2.8）。
     """
 
     name = "forwarded-records-parse"
@@ -2397,7 +2380,7 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
                 self._send_loading_heartbeat(ctx)
                 ctx.raw_text = self.build_forward_text(ctx.forwarded_records, ctx=ctx, is_dispatch=True)
         except Exception as exc:
-            # Degrade gracefully: leave ctx.raw_text as-is.
+            # 优雅降级：保持 ctx.raw_text 原样。
             logger.warning(
                 "[%s] forwarded-records deep parse failed: %s",
                 getattr(ctx.adapter, "name", "yuanbao"), exc,
@@ -2405,11 +2388,11 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
 
         await next_fn()
 
-    # -- Heartbeat ---------------------------------------------------------
+    # -- 心跳 ---------------------------------------------------------
 
     @staticmethod
     async def _send_loading_heartbeat(ctx: InboundContext) -> None:
-        """Best-effort RUNNING heartbeat so the user sees a loading bubble."""
+        """尽力发送一次 RUNNING 心跳，让用户看到加载气泡。"""
         try:
             await ctx.adapter._outbound.heartbeat.send_heartbeat_once(
                 ctx.chat_id, WS_HEARTBEAT_RUNNING,
@@ -2417,25 +2400,24 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
         except Exception:
             pass
 
-    # -- Record rendering helpers -----------------------------------------
+    # -- 记录渲染辅助方法 -----------------------------------------
 
     @classmethod
     def _media_marker(
         cls, media: dict, plain_text: str = "",
     ) -> Tuple[str, Optional[Dict[str, str]]]:
-        """Render one ``msgContent.multimedia`` entry as a textual marker.
+        """将一个 ``msgContent.multimedia`` 条目渲染为文本标记。
 
-        Returns ``(marker, ref)``. Downloadable media emits a
-        ``[kind|ybres:RID]`` marker and a ``ctx.media_refs`` ref dict when a
-        usable RID/URL is present; otherwise a plain ``[kind] name`` marker
-        and ``ref=None``.
+        返回 ``(marker, ref)``。当存在可用的 RID/URL 时，可下载媒体会产生
+        ``[kind|ybres:RID]`` 标记和一个 ``ctx.media_refs`` ref dict；
+        否则产生纯 ``[kind] name`` 标记且 ``ref=None``。
         """
         media_type = (media.get("type", "") or media.get("doc_type", "")).strip().lower()
         url = str(media.get("url") or "").strip()
         media_id = str(media.get("media_id") or "").strip()
         file_name = str(media.get("file_name") or "").strip()
-        # media_id is directly usable as a ybres RID (design §2.10.9);
-        # fall back to parsing the resourceId out of the URL.
+        # media_id 可直接作为 ybres RID 使用（design §2.10.9）；
+        # 否则回退到从 URL 中解析 resourceId。
         rid = media_id or ExtractContentMiddleware._parse_resource_id(url)
 
         if media_type == "image":
@@ -2452,7 +2434,7 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
             return f"[file] {file_name}".rstrip(), None
 
         if media_type == "url":
-            # Link share (e.g. WeChat article) — keep URL for the agent.
+            # 链接分享（如微信文章）—— 保留 URL 给 agent。
             link_title = file_name or str(media.get("title") or "")
             return f"[link] {link_title} {url}".rstrip(), None
 
@@ -2463,7 +2445,7 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
 
         return f"[{media_type or 'media'}] {url or file_name}".rstrip(), None
 
-    # Per-record combined-text cap; record count is NOT capped (design §2.10.3).
+    # 单条记录合并文本的上限；记录数量不做上限（design §2.10.3）。
     FORWARD_MSG_TEXT_MAX_CHARS = 1000
 
     @classmethod
@@ -2471,15 +2453,14 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
         cls,
         forward_data: dict,
     ) -> Iterator[Tuple[str, str, List[Dict[str, str]]]]:
-        """Walk ``ForwardMsgData['msg']`` and yield ``(sender, body, refs)``.
+        """遍历 ``ForwardMsgData['msg']``，产出 ``(sender, body, refs)``。
 
-        Per-record dispatch over ``msgContent`` (text / multimedia / nested
-        forward / fallback); ``body`` is capped at
-        :attr:`FORWARD_MSG_TEXT_MAX_CHARS`. Media goes through
-        :meth:`_media_marker`, always building full ``[kind|ybres:RID]``
-        markers; ``refs`` holds that record's downloadable ``ctx.media_refs``
-        entries in textual order — the order PatchAnchorsMiddleware relies on
-        (design §2.10.6). Headers / footers are the caller's job.
+        对每条记录基于 ``msgContent`` 进行派发（文本 / 多媒体 / 嵌套转发 /
+        兜底）；``body`` 以 :attr:`FORWARD_MSG_TEXT_MAX_CHARS` 为上限。
+        媒体经过 :meth:`_media_marker` 处理，始终构建完整的
+        ``[kind|ybres:RID]`` 标记；``refs`` 按文本顺序保存该记录的可下载
+        ``ctx.media_refs`` 条目 —— 这一顺序是 PatchAnchorsMiddleware 所依赖的
+        （design §2.10.6）。头部/尾部由调用方负责。
         """
         for msg in (forward_data.get("msg") if isinstance(forward_data, dict) else None) or []:
             if not isinstance(msg, dict):
@@ -2519,19 +2500,18 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
                 rendered = rendered[: cls.FORWARD_MSG_TEXT_MAX_CHARS] + "…(已截断)"
             yield sender, rendered, refs
 
-    # -- Prompt builders ---------------------------------------------------
+    # -- 提示词构建器 ---------------------------------------------------
 
     @classmethod
     def build_forward_text(
         cls, forward_data: dict, *, ctx: InboundContext, is_dispatch: bool,
     ) -> str:
-        """Render ``ForwardMsgData`` into forward text.
+        """将 ``ForwardMsgData`` 渲染为转发文本。
 
-        Body lines are ``发送人：正文`` with full ``[kind|ybres:RID]`` media
-        markers preserved. When ``is_dispatch`` is true, refs are appended to
-        ``ctx.media_refs`` for downstream resolution and a ``用户附言：
-        {ctx.raw_text}`` footer is added; observed callers skip both since
-        no later middleware runs.
+        正文行为 ``发送人：正文``，并保留完整的 ``[kind|ybres:RID]`` 媒体
+        标记。当 ``is_dispatch`` 为 true 时，refs 会追加到
+        ``ctx.media_refs`` 以供下游解析，并添加 ``用户附言：{ctx.raw_text}``
+        尾部；观察型调用方两者都跳过，因为后续没有中间件再运行。
         """
         nickname = ctx.sender_nickname or "用户"
         lines = [f"当前用户的昵称为{nickname}", "以下为用户的聊天记录"]
@@ -2546,19 +2526,19 @@ class ForwardedRecordsParseMiddleware(InboundMiddleware):
 
 
 class MediaResolveMiddleware(InboundMiddleware):
-    """Resolve inbound media references to downloadable URLs."""
+    """将入站媒体引用解析为可下载的 URL。"""
 
     name = "media-resolve"
 
-    # --- Resource download cache (keyed by resourceId) ---
-    # Avoids redundant downloads of the same resource within the TTL window.
+    # --- 资源下载缓存（以 resourceId 为 key） ---
+    # 避免在 TTL 窗口内重复下载同一资源。
     _resource_cache: ClassVar[Dict[str, Tuple[str, str, float]]] = {}  # rid -> (local_path, mime, ts)
     _RESOURCE_CACHE_TTL_S: ClassVar[int] = 24 * 60 * 60  # 24 hours
     _RESOURCE_CACHE_MAX_SIZE: ClassVar[int] = 256
 
     @classmethod
     def _get_cached_resource(cls, resource_id: str) -> Optional[Tuple[str, str]]:
-        """Return cached ``(local_path, mime)`` if still valid and file exists, else None."""
+        """若缓存仍有效且文件存在，返回缓存的 ``(local_path, mime)``，否则返回 None。"""
         if not resource_id:
             return None
         entry = cls._resource_cache.get(resource_id)
@@ -2568,7 +2548,7 @@ class MediaResolveMiddleware(InboundMiddleware):
         if time.time() - ts > cls._RESOURCE_CACHE_TTL_S:
             cls._resource_cache.pop(resource_id, None)
             return None
-        # Verify the cached file still exists on disk (cache dir may be swept).
+        # 校验缓存文件在磁盘上仍然存在（缓存目录可能被清理）。
         if not os.path.isfile(local_path):
             cls._resource_cache.pop(resource_id, None)
             return None
@@ -2576,11 +2556,11 @@ class MediaResolveMiddleware(InboundMiddleware):
 
     @classmethod
     def _put_cached_resource(cls, resource_id: str, local_path: str, mime: str) -> None:
-        """Store download result in cache. Evicts oldest entries when over capacity."""
+        """将下载结果存入缓存。超容量时淘汰最旧的条目。"""
         if not resource_id:
             return
         if len(cls._resource_cache) >= cls._RESOURCE_CACHE_MAX_SIZE:
-            # Drop the oldest 25% of entries by timestamp.
+            # 按时间戳丢弃最旧的 25% 条目。
             sorted_keys = sorted(cls._resource_cache, key=lambda k: cls._resource_cache[k][2])
             for k in sorted_keys[: cls._RESOURCE_CACHE_MAX_SIZE // 4]:
                 cls._resource_cache.pop(k, None)
@@ -2588,7 +2568,7 @@ class MediaResolveMiddleware(InboundMiddleware):
 
     @staticmethod
     def _guess_image_ext_from_url(url: str) -> str:
-        """Guess image extension from URL path."""
+        """根据 URL 路径猜测图片扩展名。"""
         path = urllib.parse.urlparse(url).path
         ext = os.path.splitext(path)[1].lower()
         if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".tiff"}:
@@ -2597,10 +2577,10 @@ class MediaResolveMiddleware(InboundMiddleware):
 
     @staticmethod
     async def _fetch_resource_url(adapter, resource_id: str) -> str:
-        """Low-level helper: exchange a ``resourceId`` for a direct download URL.
+        """底层辅助方法：用 ``resourceId`` 换取直接下载 URL。
 
-        Handles token retrieval, the ``/api/resource/v1/download`` API call,
-        and a single 401-retry with token force-refresh.  Raises on failure.
+        处理 token 获取、``/api/resource/v1/download`` API 调用，
+        以及一次带 token 强制刷新的 401 重试。失败时抛出异常。
         """
         resource_id = resource_id.strip()
         if not resource_id:
@@ -2625,7 +2605,7 @@ class MediaResolveMiddleware(InboundMiddleware):
             for attempt in range(2):
                 resp = await client.get(api_url, params={"resourceId": resource_id}, headers=headers)
                 if resp.status_code == 401 and attempt == 0:
-                    # Force refresh token once on expiry and retry
+                    # 过期时强制刷新 token 一次并重试
                     token_data = await SignManager.force_refresh(
                         adapter._app_key, adapter._app_secret, adapter._api_domain,
                     )
@@ -2656,11 +2636,11 @@ class MediaResolveMiddleware(InboundMiddleware):
 
     @staticmethod
     async def _resolve_download_url(adapter, url: str) -> str:
-        """Resolve Yuanbao resource placeholder to a directly fetchable real URL.
+        """将元宝资源占位 URL 解析为可直接获取的真实 URL。
 
-        Common URL patterns:
+        常见 URL 模式：
           https://hunyuan.tencent.com/api/resource/download?resourceId=...
-        Direct GET returns 401; need business API:
+        直接 GET 会返回 401；需要走业务 API：
           GET /api/resource/v1/download?resourceId=...
         """
         try:
@@ -2685,11 +2665,10 @@ class MediaResolveMiddleware(InboundMiddleware):
         file_name: Optional[str] = None, log_tag: str = "",
         resource_id: str = "",
     ) -> Optional[Tuple[str, str]]:
-        """Download a Yuanbao resource and cache locally. Returns ``(local_path, mime)`` or ``None``.
+        """下载元宝资源并缓存到本地。返回 ``(local_path, mime)`` 或 ``None``。
 
-        When *resource_id* is provided, an in-memory cache keyed by resourceId
-        is consulted first to skip redundant downloads of the same resource
-        within the TTL window.
+        当提供 *resource_id* 时，会先查询以 resourceId 为 key 的内存缓存，
+        以便在 TTL 窗口内跳过对同一资源的重复下载。
         """
         if resource_id:
             hit = cls._get_cached_resource(resource_id)
@@ -2728,7 +2707,7 @@ class MediaResolveMiddleware(InboundMiddleware):
             return local_path, mime
 
         if kind == "video":
-            # Yuanbao video resources carry no reliable extension; default to mp4.
+            # 元宝视频资源没有可靠的扩展名；默认使用 mp4。
             local_path = cache_video_from_bytes(file_bytes)
             mime = guess_mime_type(local_path) or (
                 content_type if content_type.startswith("video/") else "video/mp4"
@@ -2756,10 +2735,10 @@ class MediaResolveMiddleware(InboundMiddleware):
     async def _resolve_media_urls(
         cls, adapter, media_refs: List[Dict[str, str]]
     ) -> Tuple[List[str], List[str]]:
-        """Resolve inbound media refs: download to local cache, return (local_paths, mime_types).
+        """解析入站媒体引用：下载到本地缓存，返回 (local_paths, mime_types)。
 
-        Yuanbao COS hostnames resolve to private IPs, tripping the SSRF guard
-        in vision_tools. We download ourselves and return local cache paths.
+        元宝 COS 主机名会解析到内网 IP，从而触发 vision_tools 中的 SSRF
+        守卫。我们自行下载并返回本地缓存路径。
         """
         media_urls: List[str] = []
         media_types: List[str] = []
@@ -2771,7 +2750,7 @@ class MediaResolveMiddleware(InboundMiddleware):
             if kind not in _RESOLVABLE_MEDIA_KINDS or not url:
                 continue
 
-            # Extract resourceId from the placeholder URL for cache dedup.
+            # 从占位 URL 中提取 resourceId 以便缓存去重。
             rid = ExtractContentMiddleware._parse_resource_id(url)
 
             try:
@@ -2807,7 +2786,7 @@ class MediaResolveMiddleware(InboundMiddleware):
         *,
         log_prefix: str,
     ) -> Tuple[List[str], List[str]]:
-        """Resolve a list of ``(rid, kind, filename)`` ybres tuples to local paths.
+        """将一组 ``(rid, kind, filename)`` ybres 元组解析为本地路径。
         """
         media_paths: List[str] = []
         mimes: List[str] = []
@@ -2841,7 +2820,7 @@ class MediaResolveMiddleware(InboundMiddleware):
     async def _collect_observed_media(
         cls, adapter, source,
     ) -> Tuple[List[str], List[str]]:
-        """Resolve recent observed image/file anchors from transcript into ``(local_paths, mimes)``."""
+        """将最近观察到的图片/文件锚点从会话记录解析为 ``(local_paths, mimes)``。"""
         store = getattr(adapter, "_session_store", None)
         if not store:
             return [], []
@@ -2857,13 +2836,11 @@ class MediaResolveMiddleware(InboundMiddleware):
         if not history:
             return [], []
 
-        # Walk the most recent LOOKBACK messages newest→oldest so that when we
-        # hit the per-turn resolve cap we keep the *latest* media references,
-        # not the oldest ones in the window. Within a single message, also
-        # iterate matches in reverse so the last-added image wins on ties.
-        # Final ``order`` is reversed back to chronological (old→new) before
-        # handing off to ``_resolve_ybres_refs`` so downstream prompt insertion
-        # preserves natural reading order.
+        # 从最近 LOOKBACK 条消息按 新→旧 顺序遍历，这样当触及每轮解析上限时，
+        # 保留的是*最新*的媒体引用，而非窗口中最旧的。在单条消息内也反向
+        # 遍历匹配项，使平局时最后加入的图片胜出。最终的 ``order`` 在
+        # 交给 ``_resolve_ybres_refs`` 之前会再次反转为时间顺序（旧→新），
+        # 以便下游提示词插入保持自然的阅读顺序。
         window = history[-OBSERVED_MEDIA_BACKFILL_LOOKBACK:]
         order: List[Tuple[str, str, str]] = []  # (rid, kind, filename)
         seen: set = set()
@@ -2888,7 +2865,7 @@ class MediaResolveMiddleware(InboundMiddleware):
             if len(order) >= OBSERVED_MEDIA_BACKFILL_MAX_RESOLVE_PER_TURN:
                 break
 
-        # Restore chronological order (oldest→newest) for downstream resolution.
+        # 恢复时间顺序（旧→新）以供下游解析。
         order.reverse()
 
         if not order:
@@ -2902,10 +2879,10 @@ class MediaResolveMiddleware(InboundMiddleware):
     async def _resolve_quote_media(
         cls, adapter, quote_media_refs: List[Tuple[str, str, str]],
     ) -> Tuple[List[str], List[str]]:
-        """Resolve media anchors carried by the quoted message.
+        """解析被引用消息所携带的媒体锚点。
 
-        ``quote_media_refs`` is a list of ``(rid, kind, filename)`` tuples
-        produced by :class:`QuoteContextMiddleware` from the transcript.
+        ``quote_media_refs`` 是一组 ``(rid, kind, filename)`` 元组，由
+        :class:`QuoteContextMiddleware` 从会话记录中产出。
         """
         return await cls._resolve_ybres_refs(
             adapter, quote_media_refs, log_prefix="quote",
@@ -2913,16 +2890,16 @@ class MediaResolveMiddleware(InboundMiddleware):
 
     @staticmethod
     def _collect_quote_local_media(ctx: InboundContext) -> Tuple[List[str], List[str]]:
-        """Private-chat fallback for recovering already-local quoted media.
+        """私聊兜底：恢复已是本地的被引用媒体。
 
-        Only already-local media is handled here: by the time a turn is cached,
-        ``PatchAnchorsMiddleware`` has rewritten resolved ``|ybres:`` anchors to
-        ``[image: /path]`` / ``[file: name → /path]``. Unresolved anchors are an
-        original-turn resolution failure and belong to that turn's handling, not
-        this quote fallback — so no re-download happens here.
+        此处只处理已经是本地的媒体：到某一轮被缓存时，
+        ``PatchAnchorsMiddleware`` 已把解析过的 ``|ybres:`` 锚点改写为
+        ``[image: /path]`` / ``[file: name → /path]``。未解析的锚点属于
+        原始轮次的解析失败，归该轮次处理，而非此引用兜底 —— 因此此处
+        不会重新下载。
 
-        Returns ``(local_paths, mimes)`` for media already downloaded to the
-        local cache on its original turn, ready to inject as-is.
+        返回 ``(local_paths, mimes)``，即在其原始轮次已下载到本地缓存的
+        媒体，可直接原样注入。
         """
         paths: List[str] = []
         mimes: List[str] = []
@@ -2936,7 +2913,7 @@ class MediaResolveMiddleware(InboundMiddleware):
         if not isinstance(text, str) or not text:
             return paths, mimes
 
-        # Already-local media paths written by PatchAnchorsMiddleware.
+        # PatchAnchorsMiddleware 写入的已是本地的媒体路径。
         seen: set = set()
         for m in _YB_LOCAL_MEDIA_RE.finditer(text):
             kind = (m.group(1) or "").strip().lower()
@@ -2955,10 +2932,9 @@ class MediaResolveMiddleware(InboundMiddleware):
         return paths, mimes
 
     async def handle(self, ctx: InboundContext, next_fn) -> None:
-        # NOTE: Reaching this middleware in a group chat implies the message has
-        # @-mentioned the bot (or is an owner command). GroupAtGuardMiddleware
-        # short-circuits non-@bot group messages earlier in the pipeline, so we
-        # don't need to re-check @bot status here before downloading media.
+        # NOTE：在群聊中到达此中间件，意味着消息已 @-提及 bot（或是 owner 命令）。
+        # GroupAtGuardMiddleware 会在管道更早处短路非 @bot 的群消息，因此此处
+        # 在下载媒体前无需再次检查 @bot 状态。
         adapter = ctx.adapter
 
         urls: List[str] = []
@@ -2974,27 +2950,26 @@ class MediaResolveMiddleware(InboundMiddleware):
                 urls.append(u)
                 types.append(m)
 
-        # 1) Media carried by the current message itself.
+        # 1) 当前消息自身携带的媒体。
         own_pairs = await self._resolve_media_urls(adapter, ctx.media_refs)
         own_count = sum(1 for u in own_pairs[0] if u)
         _add_unique_pairs(own_pairs)
 
-        # 2) Second source — quoted media takes priority; otherwise fall back
-        #    to observed-media backfill in groups only (DMs already had their
-        #    media resolved on the turn it was sent).
+        # 2) 第二来源 —— 被引用媒体优先；否则仅在群聊中回退到
+        #    observed-media 回填（DM 已在发送当轮解析过媒体）。
         if ctx.reply_to_message_id is not None:
             if ctx.quote_media_refs:
                 _add_unique_pairs(await self._resolve_quote_media(adapter, ctx.quote_media_refs))
             else:
-                # DM quote fallback: no transcript message_id match (DM user rows
-                # carry no platform message_id), so recover already-local media
-                # from the adapter msg cache. Patched on its original turn — no
-                # re-download needed, inject as-is.
+                # DM 引用兜底：会话记录中没有 message_id 匹配（DM 用户行
+                # 不携带 platform message_id），因此从 adapter msg 缓存中
+                # 恢复已是本地的媒体。在其原始轮次已处理 —— 无需重新下载，
+                # 直接原样注入。
                 _add_unique_pairs(self._collect_quote_local_media(ctx))
         elif ctx.chat_type == "group":
-            # Group chats: only @-bot turns reach this middleware
-            # (see GroupAtGuardMiddleware note at top of handle()),
-            # so unconditional observed-media hydration is safe here.
+            # 群聊：只有 @-bot 的轮次才会到达此中间件
+            # （见 handle() 顶部 GroupAtGuardMiddleware 的说明），
+            # 因此此处无条件进行 observed-media 注入是安全的。
             try:
                 _add_unique_pairs(await self._collect_observed_media(adapter, ctx.source))
             except Exception as exc:
@@ -3006,27 +2981,25 @@ class MediaResolveMiddleware(InboundMiddleware):
         ctx.media_urls = urls
         ctx.media_types = types
 
-        # Re-check placeholder after media resolution.
-        # Use ``own_count`` (not ``len(urls)``) to preserve the original
-        # semantics: a placeholder text accompanied only by quote/observed
-        # media (i.e. no fresh attachment of its own) is still skippable.
+        # 媒体解析后再次检查占位符。
+        # 使用 ``own_count``（而非 ``len(urls)``）以保留原始语义：
+        # 仅伴随引用/观察媒体（即没有自身的新附件）的占位符文本仍可跳过。
         if PlaceholderFilterMiddleware.is_skippable_placeholder(ctx.raw_text, own_count):
             logger.debug("[%s] Skip placeholder after media download: %r", adapter.name, ctx.raw_text)
-            return  # Stop pipeline
+            return  # 停止管道
         await next_fn()
 
 
 class PatchAnchorsMiddleware(InboundMiddleware):
-    """Replace ``[kind|ybres:RID]`` anchors in ``ctx.raw_text`` with local paths.
+    """将 ``ctx.raw_text`` 中的 ``[kind|ybres:RID]`` 锚点替换为本地路径。
 
-    Runs after :class:`MediaResolveMiddleware` so that ``ctx.media_urls`` /
-    ``ctx.media_types`` are already populated with downloaded resources
-    (own media + quote media or group-observed media).  The transcript
-    written downstream then records usable local paths for the model
-    instead of opaque ``ybres:`` references.
+    在 :class:`MediaResolveMiddleware` 之后运行，以便
+    ``ctx.media_urls`` / ``ctx.media_types`` 已填充下载好的资源
+    （自身媒体 + 引用媒体或群观察媒体）。这样下游写入的会话记录中，
+    记录的就是模型可用的本地路径，而非不透明的 ``ybres:`` 引用。
 
-    Only resolved media (paths starting with ``/``) are substituted; any
-    anchor without a corresponding local resource is left untouched.
+    仅替换已解析的媒体（以 ``/`` 开头的路径）；任何没有对应本地资源的
+    锚点保持不变。
     """
 
     name = "patch-anchors"
@@ -3067,7 +3040,7 @@ class PatchAnchorsMiddleware(InboundMiddleware):
 
 
 class DispatchMiddleware(InboundMiddleware):
-    """Build MessageEvent and dispatch to AI handler."""
+    """构建 MessageEvent 并派发给 AI handler。"""
 
     name = "dispatch"
 
@@ -3086,9 +3059,9 @@ class DispatchMiddleware(InboundMiddleware):
                 message_type=(
                     MessageType.DOCUMENT
                     if any(mt.startswith(("application/", "text/")) for mt in ctx.media_types)
-                    # Coerce yuanbao-local subtypes (e.g. CHAT_RECORD) back to a
-                    # base MessageType: chat records are deep-parsed into a text
-                    # prompt, so TEXT is the right kind for downstream routing.
+                    # 将元宝本地子类型（如 CHAT_RECORD）强制转换回基础
+                    # MessageType：聊天记录已被深度解析为文本提示词，
+                    # 因此 TEXT 才是下游路由正确的类型。
                     else ctx.msg_type if isinstance(ctx.msg_type, MessageType)
                     else MessageType.TEXT
                 ),
@@ -3139,7 +3112,7 @@ class DispatchMiddleware(InboundMiddleware):
 
     @staticmethod
     async def _consume_group_queue(adapter: "YuanbaoAdapter", session_key: str) -> None:
-        """Drain the group queue one dispatch at a time, waiting for each to finish."""
+        """逐个排空群队列，每次派发并等待其完成后才继续下一个。"""
         _IDLE_TIMEOUT = 2.0
         queue = adapter._group_queues.get(session_key)
         if not queue:
@@ -3165,13 +3138,13 @@ class DispatchMiddleware(InboundMiddleware):
 
 
 class InboundPipelineBuilder:
-    """Factory for building InboundPipeline instances.
+    """构建 InboundPipeline 实例的工厂。
 
-    Separates pipeline assembly (business knowledge) from the pipeline engine
-    (InboundPipeline) so the engine stays generic and reusable.
+    将管道装配（业务知识）与管道引擎（InboundPipeline）分离，
+    使引擎保持通用且可复用。
     """
 
-    # Default middleware sequence for Yuanbao inbound message processing.
+    # 元宝入站消息处理的默认中间件顺序。
     _DEFAULT_MIDDLEWARES: list[type] = [
         DecodeMiddleware,
         ExtractFieldsMiddleware,
@@ -3197,26 +3170,26 @@ class InboundPipelineBuilder:
 
     @classmethod
     def build(cls) -> InboundPipeline:
-        """Build the default inbound message processing pipeline."""
+        """构建默认的入站消息处理管道。"""
         pipeline = InboundPipeline()
         for mw_cls in cls._DEFAULT_MIDDLEWARES:
             pipeline.use(mw_cls())
         return pipeline
 
 class ConnectionManager:
-    """Manages the WebSocket connection lifecycle for YuanbaoAdapter.
+    """管理 YuanbaoAdapter 的 WebSocket 连接生命周期。
 
-    Responsibilities:
-      - Opening and closing the WebSocket
-      - AUTH_BIND handshake
-      - Heartbeat (ping/pong) loop
-      - Receive loop (frame dispatch)
-      - Reconnect with exponential backoff
+    职责：
+      - 打开和关闭 WebSocket
+      - AUTH_BIND 握手
+      - 心跳（ping/pong）循环
+      - 接收循环（帧分发）
+      - 带指数退避的重连
     """
 
     def __init__(self, adapter: "YuanbaoAdapter") -> None:
         self._adapter = adapter
-        self._ws = None  # websockets connection
+        self._ws = None  # websockets 连接
         self._connect_id: Optional[str] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._recv_task: Optional[asyncio.Task] = None
@@ -3225,11 +3198,11 @@ class ConnectionManager:
         self._consecutive_hb_timeouts: int = 0
         self._reconnect_attempts: int = 0
         self._reconnecting: bool = False
-        # Debounce buffer for aggregating multi-part inbound messages
+        # 防抖缓冲区，用于聚合多部分的入站消息
         self._inbound_buffer: Dict[str, list] = {}  # key -> [raw_data_frames, ...]
         self._inbound_timers: Dict[str, asyncio.TimerHandle] = {}  # key -> timer
 
-    # -- Properties --------------------------------------------------------
+    # -- 属性 --------------------------------------------------------
 
     @property
     def ws(self):
@@ -3257,12 +3230,12 @@ class ConnectionManager:
                 return False
         return False
 
-    # -- Open / Close ------------------------------------------------------
+    # -- 打开 / 关闭 ------------------------------------------------------
 
     async def open(self) -> bool:
-        """Open WebSocket connection: sign-token → WS connect → AUTH_BIND → start loops.
+        """打开 WebSocket 连接：sign-token → WS 连接 → AUTH_BIND → 启动循环。
 
-        Returns True on success, False on failure.
+        成功返回 True，失败返回 False。
         """
         adapter = self._adapter
 
@@ -3281,7 +3254,7 @@ class ConnectionManager:
             logger.error("[%s] %s", adapter.name, msg)
             return False
 
-        # Idempotency guard
+        # 幂等性保护
         if self._ws is not None:
             try:
                 open_attr = getattr(self._ws, "open", None)
@@ -3291,25 +3264,25 @@ class ConnectionManager:
             except Exception:
                 pass
 
-        # Acquire platform-scoped lock to prevent duplicate connections
+        # 获取平台级锁以防止重复连接
         if not adapter._acquire_platform_lock(
             'yuanbao-app-key', adapter._app_key, 'Yuanbao app key'
         ):
             return False
 
         try:
-            # Step 1: Get sign token
+            # 步骤 1：获取 sign token
             logger.info("[%s] Fetching sign token from %s", adapter.name, adapter._api_domain)
             token_data = await SignManager.get_token(
                 adapter._app_key, adapter._app_secret, adapter._api_domain,
                 route_env=adapter._route_env,
             )
 
-            # Update bot_id if returned by sign-token API
+            # 若 sign-token API 返回了 bot_id 则更新
             if token_data.get("bot_id"):
                 adapter._bot_id = str(token_data["bot_id"])
 
-            # Step 2: Open WebSocket connection (disable built-in ping/pong)
+            # 步骤 2：打开 WebSocket 连接（禁用内置 ping/pong）
             logger.info("[%s] Connecting to %s", adapter.name, adapter._ws_url)
             self._ws = await asyncio.wait_for(
                 websockets.connect(  # type: ignore[attr-defined]
@@ -3321,13 +3294,13 @@ class ConnectionManager:
                 timeout=CONNECT_TIMEOUT_SECONDS,
             )
 
-            # Step 3: Authenticate (AUTH_BIND + wait for BIND_ACK)
+            # 步骤 3：鉴权（AUTH_BIND + 等待 BIND_ACK）
             authed = await self._authenticate(token_data)
             if not authed:
                 await self._cleanup_ws()
                 return False
 
-            # Step 4: Start background tasks
+            # 步骤 4：启动后台任务
             self._reconnect_attempts = 0
             adapter._mark_connected()
             adapter._loop = asyncio.get_running_loop()
@@ -3358,7 +3331,7 @@ class ConnectionManager:
             return False
 
     async def close(self) -> None:
-        """Cancel background tasks, fail pending futures, and close the WebSocket."""
+        """取消后台任务、让 pending future 失败，并关闭 WebSocket。"""
 
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
@@ -3376,24 +3349,24 @@ class ConnectionManager:
                 pass
             self._recv_task = None
 
-        # Fail any pending ACK futures
+        # 让所有 pending ACK future 失败
         disc_exc = RuntimeError("YuanbaoAdapter disconnected")
         for fut in self._pending_acks.values():
             if not fut.done():
                 fut.set_exception(disc_exc)
         self._pending_acks.clear()
 
-        # Clear refresh locks to avoid stale locks from a previous event loop
+        # 清理刷新锁，以避免来自前一个事件循环的失效锁
         SignManager.clear_locks()
 
         await self._cleanup_ws()
 
-    # -- Authentication ----------------------------------------------------
+    # -- 鉴权 ----------------------------------------------------
 
     async def _authenticate(self, token_data: dict) -> bool:
-        """Send AUTH_BIND and read frames until BIND_ACK is received.
+        """发送 AUTH_BIND 并读取帧，直到收到 BIND_ACK。
 
-        Returns True on success, False on failure/timeout.
+        成功返回 True，失败/超时返回 False。
         """
         adapter = self._adapter
         if self._ws is None:
@@ -3460,7 +3433,7 @@ class ConnectionManager:
             return False
 
     def _extract_connect_id(self, decoded_msg: dict) -> Optional[str]:
-        """Extract connectId from decoded BIND_ACK message."""
+        """从解码后的 BIND_ACK 消息中提取 connectId。"""
         data: bytes = decoded_msg.get("data", b"")
         if not data:
             return None
@@ -3480,10 +3453,10 @@ class ConnectionManager:
             logger.warning("[%s] Failed to extract connectId: %s", self._adapter.name, exc)
             return None
 
-    # -- Heartbeat ---------------------------------------------------------
+    # -- 心跳 ---------------------------------------------------------
 
     async def _heartbeat_loop(self) -> None:
-        """Send HEARTBEAT (ping) every 30s; trigger reconnect after threshold misses."""
+        """每 30s 发送一次 HEARTBEAT（ping）；连续丢失超过阈值则触发重连。"""
         adapter = self._adapter
         try:
             while adapter._running:
@@ -3521,10 +3494,10 @@ class ConnectionManager:
         except asyncio.CancelledError:
             pass
 
-    # -- Receive loop ------------------------------------------------------
+    # -- 接收循环 ------------------------------------------------------
 
     async def _receive_loop(self) -> None:
-        """Read WS frames and dispatch by cmd_type."""
+        """读取 WS 帧并按 cmd_type 分发。"""
         adapter = self._adapter
         try:
             async for raw in self._ws:  # type: ignore[union-attr]
@@ -3552,7 +3525,7 @@ class ConnectionManager:
             self.schedule_reconnect()
 
     async def _handle_frame(self, raw: bytes) -> None:
-        """Handle a single WebSocket frame."""
+        """处理单个 WebSocket 帧。"""
         adapter = self._adapter
         try:
             msg = decode_conn_msg(raw)
@@ -3578,8 +3551,8 @@ class ConnectionManager:
                     fut.set_result(True)
             return
 
-        # Fire-and-forget heartbeat ACKs — server always responds but callers don't
-        # wait on these; silently discard to avoid "Unmatched Response" noise.
+        # 即发即忘的心跳 ACK —— 服务器总会响应，但调用方不会等待这些；
+        # 静默丢弃以避免 "Unmatched Response" 噪音。
         if cmd_type == CMD_TYPE["Response"] and cmd in {
             "send_group_heartbeat",
             "send_private_heartbeat",
@@ -3587,7 +3560,7 @@ class ConnectionManager:
             logger.debug("[%s] Heartbeat ACK received: cmd=%s msg_id=%s", adapter.name, cmd, msg_id)
             return
 
-        # Response to an outbound RPC call
+        # 出站 RPC 调用的响应
         if cmd_type == CMD_TYPE["Response"]:
             if msg_id and msg_id in self._pending_acks:
                 fut = self._pending_acks.pop(msg_id)
@@ -3603,7 +3576,7 @@ class ConnectionManager:
                 )
             return
 
-        # Server-initiated Push
+        # 服务器主动发起的 Push
         if cmd_type == CMD_TYPE["Push"]:
             logger.info("[%s] Push received: cmd=%s msg_id=%s data_len=%d", adapter.name, cmd, msg_id, len(data))
             if need_ack and self._ws is not None:
@@ -3623,7 +3596,7 @@ class ConnectionManager:
                         fut.set_exception(exc)
                 return
 
-            # Genuine inbound message — dispatch to AI
+            # 真正的入站消息 —— 派发给 AI
             if data:
                 logger.info(
                     "[%s] WS received inbound push, decoding and dispatching: cmd=%s, data_len=%d",
@@ -3637,14 +3610,14 @@ class ConnectionManager:
             adapter.name, cmd_type, cmd, msg_id,
         )
 
-    # -- Inbound dispatch ---------------------------------------------------
+    # -- 入站分发 ---------------------------------------------------
 
-    _DEBOUNCE_WINDOW: float = 1.5  # seconds to wait for companion messages
+    _DEBOUNCE_WINDOW: float = 1.5  # 等待配套消息的秒数
 
     def _extract_sender_key(self, raw_data: bytes) -> str:
-        """Lightweight decode to extract sender key for debounce grouping.
+        """轻量解码以提取用于防抖分组的 sender key。
 
-        Returns 'from_account:group_code' or a fallback unique key.
+        返回 'from_account:group_code'，或一个兜底的唯一 key。
         """
         try:
             parsed = json.loads(raw_data.decode("utf-8"))
@@ -3662,32 +3635,31 @@ class ConnectionManager:
                     return f"{from_account}:{group_code}"
         except Exception:
             pass
-        # Protobuf: try decode_inbound_push for sender info
+        # Protobuf：尝试用 decode_inbound_push 提取发送者信息
         try:
             push = decode_inbound_push(raw_data)
             if push:
                 return f"{push.get('from_account', '')}:{push.get('group_code', '')}"
         except Exception:
             pass
-        # Fallback: unique key (no aggregation)
+        # 兜底：唯一 key（不进行聚合）
         return f"__unknown_{id(raw_data)}"
 
     def _push_to_inbound(self, raw_data: bytes) -> None:
-        """Debounced inbound dispatch.
+        """防抖式入站分发。
 
-        Buffers raw frames from the same sender within a short time window,
-        then dispatches all buffered data as a single aggregated pipeline
-        execution.  This merges multi-part messages (e.g. image + text sent
-        as separate WS pushes) into one pipeline run.
+        在一个短时间窗口内缓冲来自同一发送者的原始帧，然后将所有缓冲
+        数据作为一次聚合的管道执行来分发。这会将多部分消息（例如图片
+        + 文本作为独立的 WS push 发送）合并为一次管道运行。
         """
         key = self._extract_sender_key(raw_data)
 
-        # Cancel existing timer for this key (reset debounce window)
+        # 取消该 key 已存在的定时器（重置防抖窗口）
         existing_timer = self._inbound_timers.pop(key, None)
         if existing_timer:
             existing_timer.cancel()
 
-        # Append to buffer
+        # 追加到缓冲区
         if key not in self._inbound_buffer:
             self._inbound_buffer[key] = []
         self._inbound_buffer[key].append(raw_data)
@@ -3697,7 +3669,7 @@ class ConnectionManager:
             self._adapter.name, key, len(self._inbound_buffer[key]),
         )
 
-        # Schedule flush after debounce window
+        # 在防抖窗口结束后调度 flush
         loop = asyncio.get_running_loop()
         timer = loop.call_later(
             self._DEBOUNCE_WINDOW,
@@ -3707,7 +3679,7 @@ class ConnectionManager:
         self._inbound_timers[key] = timer
 
     def _flush_inbound_buffer(self, key: str) -> None:
-        """Flush the debounce buffer for a given key — execute the pipeline."""
+        """flush 指定 key 的防抖缓冲区 —— 执行管道。"""
         self._inbound_timers.pop(key, None)
         data_list = self._inbound_buffer.pop(key, [])
         if not data_list:
@@ -3726,7 +3698,7 @@ class ConnectionManager:
             name=f"yuanbao-pipeline-{key}",
         ))
 
-    # -- Send business request ---------------------------------------------
+    # -- 发送业务请求 ---------------------------------------------
 
     async def send_biz_request(
         self,
@@ -3734,12 +3706,12 @@ class ConnectionManager:
         req_id: str,
         timeout: float = DEFAULT_SEND_TIMEOUT,
     ) -> dict:
-        """Send a business-layer request and wait for the response.
+        """发送业务层请求并等待响应。
 
-        1. Register a Future in pending_acks[req_id]
-        2. Send encoded_conn_msg (bytes) to WS
+        1. 在 pending_acks[req_id] 中注册一个 Future
+        2. 将 encoded_conn_msg（bytes）发送到 WS
         3. asyncio.wait_for(future, timeout)
-        4. Clean up pending_acks on timeout/exception
+        4. 超时/异常时清理 pending_acks
         """
         if self._ws is None:
             raise RuntimeError("Not connected")
@@ -3758,15 +3730,15 @@ class ConnectionManager:
         finally:
             self._pending_acks.pop(req_id, None)
 
-    # -- Reconnect ---------------------------------------------------------
+    # -- 重连 ---------------------------------------------------------
 
     def schedule_reconnect(self) -> None:
-        """Schedule a reconnect only if running and not already reconnecting."""
+        """仅在运行中且未正在重连时调度一次重连。"""
         if self._adapter._running and not self._reconnecting:
             asyncio.create_task(self._reconnect_with_backoff())
 
     async def _reconnect_with_backoff(self) -> bool:
-        """Reconnect with exponential backoff (1s, 2s, 4s, … up to 60s)."""
+        """带指数退避的重连（1s、2s、4s、…… 上限 60s）。"""
         if self._reconnecting:
             logger.debug("[%s] Reconnect already in progress, skipping", self._adapter.name)
             return False
@@ -3777,7 +3749,7 @@ class ConnectionManager:
             self._reconnecting = False
 
     async def _do_reconnect(self) -> bool:
-        """Internal reconnect loop, called under the _reconnecting guard."""
+        """内部重连循环，在 _reconnecting 保护下调用。"""
         adapter = self._adapter
         for attempt in range(MAX_RECONNECT_ATTEMPTS):
             self._reconnect_attempts = attempt + 1
@@ -3852,18 +3824,17 @@ class ConnectionManager:
         return False
 
     async def _cleanup_ws(self) -> None:
-        """Close and clear the WebSocket connection, bounded by
-        ``WS_CLOSE_TIMEOUT_S`` so an unresponsive server can't stall teardown
-        (see the constant's definition for the full rationale)."""
+        """关闭并清理 WebSocket 连接，受 ``WS_CLOSE_TIMEOUT_S`` 上限约束，
+        以防无响应的服务器卡住拆卸过程（完整理由见该常量的定义）。"""
         ws = self._ws
         self._ws = None
         if ws is not None:
             try:
                 await asyncio.wait_for(ws.close(), timeout=WS_CLOSE_TIMEOUT_S)
             except asyncio.TimeoutError:
-                # Server never echoed the close frame within the bound; drop the
-                # connection. websockets force-closes the transport on cancel,
-                # and at shutdown the loop is tearing down anyway.
+                # 服务器在上限内始终未回传 close 帧；丢弃连接。
+                # websockets 在取消时会强制关闭传输层，且关闭时事件循环
+                # 本身也正在拆除。
                 logger.debug(
                     "[%s] WS close handshake exceeded %.1fs — dropping connection",
                     self._adapter.name, WS_CLOSE_TIMEOUT_S,
@@ -3872,32 +3843,32 @@ class ConnectionManager:
                 pass
 
 class MediaSendHandler(ABC):
-    """Abstract base class for media send strategies.
+    """媒体发送策略的抽象基类。
 
-    Subclasses implement:
-      - acquire_file(): how to obtain file bytes (download URL / read local)
-      - build_msg_body(): how to build TIMxxxElem from upload result
+    子类实现：
+      - acquire_file()：如何获取文件字节（下载 URL / 读取本地）
+      - build_msg_body()：如何从上传结果构建 TIMxxxElem
 
-    The shared flow (check ws → cancel notifier → validate → COS upload
-    → lock → dispatch) is handled by the base handle() template method.
+    共享流程（检查 ws → 取消通知 → 校验 → COS 上传
+    → 加锁 → 分发）由基类 handle() 模板方法处理。
     """
 
     @abstractmethod
     async def acquire_file(
         self, adapter: "YuanbaoAdapter", **kwargs: Any,
     ) -> Tuple[bytes, str, str]:
-        """Return (file_bytes, filename, content_type).
+        """返回 (file_bytes, filename, content_type)。
 
-        Raises:
-            ValueError: when file cannot be acquired (not found, empty, etc.)
+        异常：
+            ValueError: 无法获取文件时（未找到、为空等）。
         """
 
     @abstractmethod
     def build_msg_body(self, upload_result: dict, **kwargs: Any) -> list:
-        """Build platform-specific MsgBody list from COS upload result."""
+        """从 COS 上传结果构建平台特定的 MsgBody 列表。"""
 
     def needs_cos_upload(self) -> bool:
-        """Override to return False for non-COS media (e.g. sticker)."""
+        """对非 COS 媒体（如贴纸）覆写为返回 False。"""
         return True
 
     async def handle(
@@ -3908,7 +3879,7 @@ class MediaSendHandler(ABC):
         caption: Optional[str] = None,
         **kwargs: Any,
     ) -> "SendResult":
-        """Template method: shared media send flow."""
+        """模板方法：共享的媒体发送流程。"""
         conn = adapter._connection
         sender = adapter._outbound.sender
 
@@ -3918,14 +3889,14 @@ class MediaSendHandler(ABC):
         adapter._outbound.cancel_slow_notifier(chat_id)
 
         try:
-            # 1. Acquire file bytes
+            # 1. 获取文件字节
             file_bytes, filename, content_type = await self.acquire_file(
                 adapter, **kwargs,
             )
 
-            # 2. Validate (only for handlers that upload to COS; stickers use
-            # TIMFaceElem and legitimately carry no file bytes, so skipping
-            # validate_media here avoids a spurious "Empty file: sticker").
+            # 2. 校验（仅对上传到 COS 的 handler；贴纸使用 TIMFaceElem，
+            # 合理地不携带文件字节，因此此处跳过 validate_media 可避免
+            # 误报 "Empty file: sticker"）。
             if self.needs_cos_upload():
                 validation_err = MessageSender.validate_media(
                     file_bytes, filename, adapter.MEDIA_MAX_SIZE_MB,
@@ -3936,7 +3907,7 @@ class MediaSendHandler(ABC):
             if self.needs_cos_upload():
                 file_uuid = md5_hex(file_bytes)
 
-                # 3. Get COS upload credentials
+                # 3. 获取 COS 上传凭证
                 token_data = await adapter._get_cached_token()
                 token: str = token_data.get("token", "")
                 bot_id: str = (
@@ -3952,7 +3923,7 @@ class MediaSendHandler(ABC):
                     route_env=adapter._route_env,
                 )
 
-                # 4. Upload to COS
+                # 4. 上传到 COS
                 upload_result = await upload_to_cos(
                     file_bytes=file_bytes,
                     filename=filename,
@@ -3962,8 +3933,8 @@ class MediaSendHandler(ABC):
                     region=credentials["region"],
                 )
 
-                # 5. Build MsgBody
-                # Remove keys already passed explicitly to avoid "multiple values" TypeError
+                # 5. 构建 MsgBody
+                # 移除已显式传入的 key，以避免 "multiple values" TypeError
                 fwd_kwargs = {
                     k: v for k, v in kwargs.items()
                     if k not in {"file_uuid", "filename", "content_type"}
@@ -3976,16 +3947,16 @@ class MediaSendHandler(ABC):
                     **fwd_kwargs,
                 )
             else:
-                # Non-COS media (e.g. sticker): build MsgBody directly
+                # 非 COS 媒体（如贴纸）：直接构建 MsgBody
                 msg_body = self.build_msg_body({}, **kwargs)
 
-            # 6. Append caption if provided
+            # 6. 若提供了 caption 则追加
             if caption:
                 msg_body.append(
                     {"msg_type": "TIMTextElem", "msg_content": {"text": caption}},
                 )
 
-            # 7. Lock + dispatch
+            # 7. 加锁 + 分发
             gc = kwargs.get("group_code", "")
             return await sender.dispatch_msg_body(chat_id, msg_body, reply_to, group_code=gc)
 
@@ -4001,7 +3972,7 @@ class MediaSendHandler(ABC):
 
 
 class ImageUrlHandler(MediaSendHandler):
-    """Strategy: send image from a URL (download → COS → TIMImageElem)."""
+    """策略：从 URL 发送图片（下载 → COS → TIMImageElem）。"""
 
     async def acquire_file(self, adapter, **kwargs):
         image_url: str = kwargs["image_url"]
@@ -4028,7 +3999,7 @@ class ImageUrlHandler(MediaSendHandler):
 
 
 class ImageFileHandler(MediaSendHandler):
-    """Strategy: send image from a local file path (read → COS → TIMImageElem)."""
+    """策略：从本地文件路径发送图片（读取 → COS → TIMImageElem）。"""
 
     async def acquire_file(self, adapter, **kwargs):
         image_path: str = kwargs["image_path"]
@@ -4054,7 +4025,7 @@ class ImageFileHandler(MediaSendHandler):
 
 
 class FileUrlHandler(MediaSendHandler):
-    """Strategy: send file from a URL (download → COS → TIMFileElem)."""
+    """策略：从 URL 发送文件（下载 → COS → TIMFileElem）。"""
 
     async def acquire_file(self, adapter, **kwargs):
         file_url: str = kwargs["file_url"]
@@ -4080,7 +4051,7 @@ class FileUrlHandler(MediaSendHandler):
 
 
 class DocumentHandler(MediaSendHandler):
-    """Strategy: send local file/document (read → COS → TIMFileElem)."""
+    """策略：发送本地文件/文档（读取 → COS → TIMFileElem）。"""
 
     async def acquire_file(self, adapter, **kwargs):
         file_path: str = kwargs["file_path"]
@@ -4103,13 +4074,13 @@ class DocumentHandler(MediaSendHandler):
 
 
 class StickerHandler(MediaSendHandler):
-    """Strategy: send sticker/emoji (TIMFaceElem, no COS upload needed)."""
+    """策略：发送贴纸/表情（TIMFaceElem，无需 COS 上传）。"""
 
     def needs_cos_upload(self) -> bool:
         return False
 
     async def acquire_file(self, adapter, **kwargs):
-        # Sticker does not need file bytes; return dummy values
+        # 贴纸不需要文件字节；返回占位值
         return b"", "sticker", "application/octet-stream"
 
     def build_msg_body(self, upload_result, **kwargs):
@@ -4134,27 +4105,26 @@ class StickerHandler(MediaSendHandler):
             return build_sticker_msg_body(sticker)
 
 class GroupQueryService:
-    """Encapsulates all group query operations (both low-level WS calls and
-    higher-level AI-tool-facing wrappers).
+    """封装所有群查询操作（包括底层 WS 调用和面向 AI 工具的高层封装）。
 
-    Responsibilities:
-      - Low-level WS encode/decode for group info and member list queries
-      - Chat-id parsing, error wrapping and result filtering for AI tools
-      - Member cache population on the adapter
+    职责：
+      - 群信息和成员列表查询的底层 WS 编解码
+      - 面向 AI 工具的 chat_id 解析、错误包装和结果过滤
+      - 在 adapter 上填充成员缓存
     """
 
     def __init__(self, adapter: "YuanbaoAdapter") -> None:
         self._adapter = adapter
 
     # ------------------------------------------------------------------
-    # Low-level WS query methods
+    # 底层 WS 查询方法
     # ------------------------------------------------------------------
 
     async def query_group_info_raw(self, group_code: str) -> Optional[dict]:
-        """Query group info via WS (group name, owner, member count, etc.).
+        """通过 WS 查询群信息（群名、群主、成员数等）。
 
-        Returns:
-            Decoded dict or None on failure.
+        返回：
+            解码后的 dict，失败返回 None。
         """
         adapter = self._adapter
         if adapter._connection.ws is None:
@@ -4184,10 +4154,10 @@ class GroupQueryService:
     async def get_group_member_list_raw(
         self, group_code: str, offset: int = 0, limit: int = 200
     ) -> Optional[dict]:
-        """Query group member list via WS.
+        """通过 WS 查询群成员列表。
 
-        Returns:
-            Decoded dict or None on failure.  Also populates adapter._member_cache.
+        返回：
+            解码后的 dict，失败返回 None。同时会填充 adapter._member_cache。
         """
         adapter = self._adapter
         if adapter._connection.ws is None:
@@ -4219,14 +4189,14 @@ class GroupQueryService:
             return None
 
     # ------------------------------------------------------------------
-    # AI-tool-facing wrappers (chat_id parsing + filtering)
+    # 面向 AI 工具的封装（chat_id 解析 + 过滤）
     # ------------------------------------------------------------------
 
     async def query_group_info(self, chat_id: str) -> dict:
-        """AI tool: Query current group info.
+        """AI 工具：查询当前群信息。
 
-        No parameters needed (group_code extracted from session context).
-        Returns group name, owner, member count, etc.
+        无需参数（group_code 从会话上下文中提取）。
+        返回群名、群主、成员数等。
         """
         if not chat_id.startswith("group:"):
             return {"error": "This command is only available in group chats"}
@@ -4242,14 +4212,14 @@ class GroupQueryService:
         action: str = "list_all",
         name: Optional[str] = None,
     ) -> dict:
-        """AI tool: Query group member list.
+        """AI 工具：查询群成员列表。
 
-        Args:
-            chat_id: Chat ID (extracted from session context)
-            action: 'find' (search by name) | 'list_bots' (list bots) | 'list_all' (list all)
-            name: Search keyword when action='find'
+        参数：
+            chat_id: 会话 ID（从会话上下文提取）
+            action: 'find'（按名称搜索）| 'list_bots'（列出 bot）| 'list_all'（列出全部）
+            name: action='find' 时的搜索关键词
 
-        Returns:
+        返回：
             {"members": [...], "total": int, "mentionHint": str}
         """
         if not chat_id.startswith("group:"):
@@ -4272,26 +4242,26 @@ class GroupQueryService:
         elif action == "list_bots":
             members = [m for m in members if "bot" in (m.get("nickname", "") or "").lower()]
 
-        # Construct mentionHint
+        # 构建 mentionHint
         mention_hint = ""
         if members and len(members) <= 10:
             names = [m.get("name_card") or m.get("nickname") or m.get("user_id", "") for m in members]
             mention_hint = "Mention with @name: " + ", ".join(names)
 
         return {
-            "members": members[:50],  # Limit return count
+            "members": members[:50],  # 限制返回数量
             "total": len(members),
             "mentionHint": mention_hint,
         }
 
 
 class HeartbeatManager:
-    """Manages reply heartbeat (RUNNING / FINISH) lifecycle.
+    """管理回复心跳（RUNNING / FINISH）的生命周期。
 
-    Responsibilities:
-      - Periodic RUNNING heartbeat sender (every 2s)
-      - Auto-FINISH after 30s inactivity
-      - Explicit stop with optional FINISH signal
+    职责：
+      - 周期性 RUNNING 心跳发送（每 2s 一次）
+      - 闲置 30s 后自动 FINISH
+      - 显式停止，可选择发送 FINISH 信号
     """
 
     def __init__(self, adapter: "YuanbaoAdapter") -> None:
@@ -4300,7 +4270,7 @@ class HeartbeatManager:
         self._reply_hb_last_active: Dict[str, float] = {}
 
     async def send_heartbeat_once(self, chat_id: str, heartbeat_val: int) -> None:
-        """Send a single heartbeat (RUNNING or FINISH), best effort."""
+        """发送单次心跳（RUNNING 或 FINISH），尽力而为。"""
         adapter = self._adapter
         conn = adapter._connection
         if conn.ws is None or not adapter._bot_id:
@@ -4330,7 +4300,7 @@ class HeartbeatManager:
             logger.debug("[%s] send_heartbeat_once failed: %s", adapter.name, exc)
 
     async def start(self, chat_id: str) -> None:
-        """Start or renew the Reply Heartbeat periodic sender (RUNNING, every 2s)."""
+        """启动或续期 Reply Heartbeat 周期发送器（RUNNING，每 2s 一次）。"""
         adapter = self._adapter
         conn = adapter._connection
         if conn.ws is None or not adapter._bot_id:
@@ -4350,8 +4320,8 @@ class HeartbeatManager:
         self._reply_heartbeat_tasks[chat_id] = task
 
     async def _worker(self, chat_id: str) -> None:
-        """Background coroutine: send RUNNING heartbeat every 2s.
-        30s without renewal -> send FINISH and exit.
+        """后台协程：每 2s 发送一次 RUNNING 心跳。
+        30s 未续期 -> 发送 FINISH 并退出。
         """
         try:
             await self.send_heartbeat_once(chat_id, WS_HEARTBEAT_RUNNING)
@@ -4385,7 +4355,7 @@ class HeartbeatManager:
             self._reply_hb_last_active.pop(chat_id, None)
 
     async def stop(self, chat_id: str, send_finish: bool = True) -> None:
-        """Stop Reply Heartbeat and optionally send FINISH."""
+        """停止 Reply Heartbeat，可选择发送 FINISH。"""
         task = self._reply_heartbeat_tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
@@ -4400,7 +4370,7 @@ class HeartbeatManager:
                 pass
 
     async def close(self) -> None:
-        """Cancel all reply heartbeat tasks."""
+        """取消所有回复心跳任务。"""
         for task in list(self._reply_heartbeat_tasks.values()):
             if not task.done():
                 task.cancel()
@@ -4409,10 +4379,10 @@ class HeartbeatManager:
 
 
 class SlowResponseNotifier:
-    """Manages delayed 'please wait' notifications for slow agent responses.
+    """管理针对 agent 慢响应的延迟“请稍候”通知。
 
-    Starts a timer per chat_id; if the agent hasn't replied within
-    SLOW_RESPONSE_TIMEOUT_S seconds, sends a courtesy message.
+    每个 chat_id 启动一个定时器；若 agent 在 SLOW_RESPONSE_TIMEOUT_S 秒内
+    未回复，则发送一条礼貌提示消息。
     """
 
     def __init__(self, adapter: "YuanbaoAdapter", sender: "MessageSender") -> None:
@@ -4421,7 +4391,7 @@ class SlowResponseNotifier:
         self._tasks: Dict[str, asyncio.Task] = {}
 
     async def start(self, chat_id: str) -> None:
-        """Start a delayed task that notifies the user when the agent is slow."""
+        """启动一个延迟任务，在 agent 响应慢时通知用户。"""
         self.cancel(chat_id)
         task = asyncio.create_task(
             self._notifier(chat_id),
@@ -4430,7 +4400,7 @@ class SlowResponseNotifier:
         self._tasks[chat_id] = task
 
     async def _notifier(self, chat_id: str) -> None:
-        """Wait SLOW_RESPONSE_TIMEOUT_S, then push a 'please wait' message."""
+        """等待 SLOW_RESPONSE_TIMEOUT_S 后，推送一条“请稍候”消息。"""
         try:
             await asyncio.sleep(SLOW_RESPONSE_TIMEOUT_S)
             logger.info(
@@ -4444,13 +4414,13 @@ class SlowResponseNotifier:
             logger.debug("[%s] Slow-response notifier failed: %s", self._adapter.name, exc)
 
     def cancel(self, chat_id: str) -> None:
-        """Cancel the pending slow-response notifier for *chat_id*, if any."""
+        """取消 *chat_id* 对应的待执行慢响应通知（如果存在）。"""
         task = self._tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
 
     async def close(self) -> None:
-        """Cancel all slow-response tasks."""
+        """取消所有慢响应任务。"""
         for task in list(self._tasks.values()):
             if not task.done():
                 task.cancel()
@@ -4458,28 +4428,28 @@ class SlowResponseNotifier:
 
 
 class MessageSender:
-    """Core message sending dispatcher for YuanbaoAdapter.
+    """YuanbaoAdapter 的核心消息发送分发器。
 
-    Responsibilities:
-      - Per-chat-id lock management (serial send ordering)
-      - Text chunk sending with retry
-      - C2C / Group message encoding and dispatch
-      - Media send helpers (image, file, sticker, document)
-      - Direct send helper (text + media, used by send_message tool)
+    职责：
+      - 每个 chat-id 的锁管理（串行发送顺序）
+      - 带重试的文本分块发送
+      - C2C / Group 消息的编码与分发
+      - 媒体发送辅助方法（图片、文件、贴纸、文档）
+      - 直接发送辅助（文本 + 媒体，供 send_message 工具使用）
     """
 
     IMAGE_EXTS: ClassVar[frozenset] = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"})
-    CHAT_DICT_MAX_SIZE: ClassVar[int] = 1000  # Max distinct chat IDs in _chat_locks
+    CHAT_DICT_MAX_SIZE: ClassVar[int] = 1000  # _chat_locks 中不同 chat ID 的最大数量
 
     def __init__(self, adapter: "YuanbaoAdapter") -> None:
         self._adapter = adapter
         self._chat_locks: collections.OrderedDict[str, asyncio.Lock] = collections.OrderedDict()
 
-        # Optional hooks injected by OutboundManager for coordination
-        self._on_send_start: Optional[Callable[[str], Any]] = None   # cancel slow-notifier
-        self._on_send_finish: Optional[Callable[[str], Any]] = None  # send FINISH heartbeat
+        # 由 OutboundManager 注入的可选协调钩子
+        self._on_send_start: Optional[Callable[[str], Any]] = None   # 取消慢响应通知
+        self._on_send_finish: Optional[Callable[[str], Any]] = None  # 发送 FINISH 心跳
 
-        # Media send handlers (strategy pattern)
+        # 媒体发送 handler（策略模式）
         self._media_handlers: Dict[str, MediaSendHandler] = {
             "image_url": ImageUrlHandler(),
             "image_file": ImageFileHandler(),
@@ -4488,16 +4458,16 @@ class MessageSender:
             "sticker": StickerHandler(),
         }
 
-    # -- Media handler registry ---------------------------------------------
+    # -- 媒体 handler 注册表 ---------------------------------------------
 
     def register_handler(self, name: str, handler: MediaSendHandler) -> None:
-        """Register (or replace) a named media send handler."""
+        """注册（或替换）一个具名的媒体发送 handler。"""
         self._media_handlers[name] = handler
 
-    # -- Chat lock ---------------------------------------------------------
+    # -- 聊天锁 ---------------------------------------------------------
 
     def get_chat_lock(self, chat_id: str) -> asyncio.Lock:
-        """Return (or create) a per-chat-id lock with safe LRU eviction."""
+        """返回（或创建）一个按 chat-id 的锁，带安全的 LRU 淘汰。"""
         if chat_id in self._chat_locks:
             self._chat_locks.move_to_end(chat_id)
             return self._chat_locks[chat_id]
@@ -4513,7 +4483,7 @@ class MessageSender:
         self._chat_locks[chat_id] = asyncio.Lock()
         return self._chat_locks[chat_id]
 
-    # -- Text send ---------------------------------------------------------
+    # -- 文本发送 ---------------------------------------------------------
 
     async def send_text(
         self,
@@ -4522,7 +4492,7 @@ class MessageSender:
         reply_to: Optional[str] = None,
         group_code: str = "",
     ) -> "SendResult":
-        """Send text message with auto-chunking and per-chat-id ordering guarantee."""
+        """发送文本消息，带自动分块和按 chat-id 的顺序保证。"""
         adapter = self._adapter
         conn = adapter._connection
         if conn.ws is None:
@@ -4546,7 +4516,7 @@ class MessageSender:
                 if not result.success:
                     return result
 
-        # Notify outbound coordinator that send is complete (e.g. FINISH heartbeat)
+        # 通知出站协调器发送已完成（例如 FINISH 心跳）
         if self._on_send_finish:
             try:
                 await self._on_send_finish(chat_id)
@@ -4562,7 +4532,7 @@ class MessageSender:
         caption: Optional[str] = None,
         **kwargs: Any,
     ) -> "SendResult":
-        """Dispatch media send to the named handler strategy."""
+        """将媒体发送分发给具名的 handler 策略。"""
         handler = self._media_handlers.get(handler_name)
         if handler is None:
             return SendResult(
@@ -4574,7 +4544,7 @@ class MessageSender:
             reply_to=reply_to, caption=caption, **kwargs,
         )
 
-    # -- Direct send (text + media, used by send_message tool) -------------
+    # -- 直接发送（文本 + 媒体，供 send_message 工具使用） -------------
 
     async def send_direct(
         self,
@@ -4582,23 +4552,22 @@ class MessageSender:
         message: str,
         media_files: Optional[List[Tuple[str, bool]]] = None,
     ) -> Dict[str, Any]:
-        """Send text + media via Yuanbao (used by the ``send_message`` tool).
+        """通过元宝发送文本 + 媒体（供 ``send_message`` 工具使用）。
 
-        Unlike Weixin which creates a fresh adapter per call, Yuanbao reuses
-        the running gateway adapter (persistent WebSocket).  Logic mirrors
-        send_weixin_direct: send text first, then iterate media_files by
-        extension.
+        与每次调用都创建新 adapter 的 Weixin 不同，元宝复用运行中的
+        网关 adapter（持久 WebSocket）。逻辑与 send_weixin_direct 对齐：
+        先发送文本，再按扩展名遍历 media_files。
         """
         adapter = self._adapter
         last_result: Optional["SendResult"] = None
 
-        # 1. Send text
+        # 1. 发送文本
         if message.strip():
             last_result = await adapter.send(chat_id, message)
             if not last_result.success:
                 return {"error": f"Yuanbao send failed: {last_result.error}"}
 
-        # 2. Iterate media_files, dispatch by file extension
+        # 2. 遍历 media_files，按文件扩展名分发
         for media_path, _is_voice in media_files or []:
             ext = Path(media_path).suffix.lower()
             if ext in self.IMAGE_EXTS:
@@ -4626,7 +4595,7 @@ class MessageSender:
         reply_to: Optional[str] = None,
         group_code: str = "",
     ) -> "SendResult":
-        """Lock + dispatch an arbitrary MsgBody to C2C or group."""
+        """加锁并将任意 MsgBody 分发到 C2C 或群。"""
         lock = self.get_chat_lock(chat_id)
         async with lock:
             if chat_id.startswith("group:"):
@@ -4648,7 +4617,7 @@ class MessageSender:
         retry: int = 3,
         group_code: str = "",
     ) -> "SendResult":
-        """Send a single text chunk with retry (exponential backoff: 1s, 2s, 4s)."""
+        """发送单个文本分块，带重试（指数退避：1s、2s、4s）。"""
         adapter = self._adapter
         last_error: str = "Unknown error"
         for attempt in range(retry):
@@ -4684,10 +4653,10 @@ class MessageSender:
         )
         return SendResult(success=False, error=f"Max retries exceeded: {last_error}")
 
-    # -- C2C / Group message -----------------------------------------------
+    # -- C2C / Group 消息 -----------------------------------------------
 
     async def send_c2c_message(self, to_account: str, text: str, group_code: str = "") -> dict:
-        """Send C2C text message, return {success: bool, msg_key: str}."""
+        """发送 C2C 文本消息，返回 {success: bool, msg_key: str}。"""
         msg_body = [{"msg_type": "TIMTextElem", "msg_content": {"text": text}}]
         return await self.send_c2c_msg_body(to_account, msg_body, group_code=group_code)
 
@@ -4697,15 +4666,15 @@ class MessageSender:
         text: str,
         reply_to: Optional[str] = None,
     ) -> dict:
-        """Send group text message, auto-converting @nickname to TIMCustomElem."""
+        """发送群文本消息，自动将 @nickname 转换为 TIMCustomElem。"""
         msg_body = self._build_msg_body_with_mentions(text, group_code)
         return await self.send_group_msg_body(group_code, msg_body, reply_to)
 
-    # @mention pattern: (whitespace or start) + @ + nickname + (whitespace or end)
+    # @mention 模式：（空白或起始）+ @ + 昵称 +（空白或结束）
     _AT_USER_RE = re.compile(r'(?:(?<=\s)|(?<=^))@(\S+?)(?=\s|$)', re.MULTILINE)
 
     def _build_msg_body_with_mentions(self, text: str, group_code: str) -> list:
-        """Parse @nickname patterns and build mixed TIMTextElem + TIMCustomElem msg_body."""
+        """解析 @nickname 模式，构建混合的 TIMTextElem + TIMCustomElem msg_body。"""
         cached = self._adapter._member_cache.get(group_code)
         if cached:
             ts, member_list = cached
@@ -4757,7 +4726,7 @@ class MessageSender:
         return msg_body
 
     async def send_c2c_msg_body(self, to_account: str, msg_body: list, group_code: str = "") -> dict:
-        """Send C2C message with arbitrary MsgBody."""
+        """发送带任意 MsgBody 的 C2C 消息。"""
         adapter = self._adapter
         req_id = f"c2c_{next_seq_no()}"
         encoded = encode_send_c2c_message(
@@ -4775,7 +4744,7 @@ class MessageSender:
         msg_body: list,
         reply_to: Optional[str] = None,
     ) -> dict:
-        """Send group message with arbitrary MsgBody."""
+        """发送带任意 MsgBody 的群消息。"""
         adapter = self._adapter
         req_id = f"grp_{next_seq_no()}"
         encoded = encode_send_group_message(
@@ -4787,13 +4756,13 @@ class MessageSender:
         )
         return await self._dispatch_encoded(adapter, encoded, req_id)
 
-    # -- Common dispatch helper --------------------------------------------
+    # -- 通用分发辅助 --------------------------------------------
 
     @staticmethod
     async def _dispatch_encoded(
         adapter: "YuanbaoAdapter", encoded: bytes, req_id: str,
     ) -> dict:
-        """Send pre-encoded bytes via WS and return a normalised result dict."""
+        """通过 WS 发送已编码的 bytes，并返回归一化的结果 dict。"""
         try:
             response = await adapter._connection.send_biz_request(encoded, req_id=req_id)
             return {"success": True, "msg_key": response.get("msg_id", "")}
@@ -4802,16 +4771,16 @@ class MessageSender:
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 
-    # -- Media validation ---------------------------------------------------
+    # -- 媒体校验 ---------------------------------------------------
 
     @staticmethod
     def validate_media(
         file_bytes: Optional[bytes], filename: str, max_size_mb: int = 20
     ) -> Optional[str]:
-        """Media pre-validation: check file validity before sending/uploading.
+        """媒体预校验：在发送/上传前检查文件有效性。
 
-        Returns:
-            Error description (str) if validation fails, otherwise None.
+        返回：
+            校验失败时返回错误描述 (str)，否则返回 None。
         """
         if file_bytes is None or len(file_bytes) == 0:
             return f"Empty file: {filename}"
@@ -4821,7 +4790,7 @@ class MessageSender:
             return f"File too large: {filename} ({size_mb:.1f}MB > {max_size_mb}MB)"
         return None
 
-    # -- Text truncation (table-aware) --------------------------------------
+    # -- 文本截断（表格感知） --------------------------------------
 
     @staticmethod
     def truncate_message(
@@ -4830,33 +4799,33 @@ class MessageSender:
         len_fn: Optional[Callable[[str], int]] = None,
     ) -> List[str]:
         """
-        Split a long message into chunks with table-awareness.
+        将长消息拆分为多个分块，具备表格感知能力。
 
-        Delegates core splitting to ``MarkdownProcessor.chunk_markdown_text``
-        and strips page indicators like ``(1/3)`` from the output.
+        将核心拆分委托给 ``MarkdownProcessor.chunk_markdown_text``，
+        并从输出中去掉形如 ``(1/3)`` 的页码指示符。
 
-        Falls back to ``BasePlatformAdapter.truncate_message`` for non-table
-        content and for overall text that fits in a single chunk.
+        对于非表格内容，以及整体文本能放入单个分块的情况，
+        回退到 ``BasePlatformAdapter.truncate_message``。
         """
         _len = len_fn or len
         if _len(content) <= max_length:
             return [content]
 
-        # Delegate to MarkdownProcessor for table/fence-aware chunking
+        # 委托给 MarkdownProcessor 进行表格/围栏感知的分块
         chunks = MarkdownProcessor.chunk_markdown_text(
             content, max_length, len_fn=len_fn,
         )
 
-        # Strip page indicators like (1/3) that BasePlatformAdapter may add
+        # 去掉 BasePlatformAdapter 可能添加的形如 (1/3) 的页码指示符
         chunks = [_INDICATOR_RE.sub('', c) for c in chunks]
 
         return chunks if chunks else [content]
 
-    # -- Cron wrapper stripping ---------------------------------------------
+    # -- Cron 包装剥离 ---------------------------------------------
 
     @staticmethod
     def strip_cron_wrapper(content: str) -> str:
-        """Strip scheduler cron header/footer wrapper for cleaner Yuanbao output."""
+        """剥离调度器 cron 的头部/尾部包装，以获得更干净的元宝输出。"""
         if not content.startswith("Cronjob Response: "):
             return content
 
@@ -4875,26 +4844,26 @@ class MessageSender:
         body = content[body_start:footer_pos].strip()
         return body or content
 
-    # -- Cleanup on disconnect ---------------------------------------------
+    # -- 断开连接时的清理 ---------------------------------------------
 
     async def close(self) -> None:
-        """Release chat locks (no-op for now; placeholder for future cleanup)."""
+        """释放聊天锁（目前为空操作；为未来清理预留）。"""
         self._chat_locks.clear()
 
 
 class OutboundManager:
-    """Outbound coordinator that orchestrates sending, heartbeat and slow-response.
+    """出站协调器，统筹发送、心跳和慢响应。
 
-    Composes:
-      - MessageSender   — core text/media sending
-      - HeartbeatManager — reply heartbeat (RUNNING / FINISH) lifecycle
-      - SlowResponseNotifier — delayed 'please wait' notifications
+    组合：
+      - MessageSender   —— 核心文本/媒体发送
+      - HeartbeatManager —— 回复心跳（RUNNING / FINISH）生命周期
+      - SlowResponseNotifier —— 延迟的“请稍候”通知
 
-    YuanbaoAdapter holds a single ``_outbound: OutboundManager`` and delegates
-    all outbound operations through it.
+    YuanbaoAdapter 持有单个 ``_outbound: OutboundManager``，并通过它
+    委托所有出站操作。
     """
 
-    # Expose class-level constants from MessageSender for backward compatibility
+    # 暴露 MessageSender 的类级常量，以保持向后兼容
     CHAT_DICT_MAX_SIZE: ClassVar[int] = MessageSender.CHAT_DICT_MAX_SIZE
 
     def __init__(self, adapter: "YuanbaoAdapter") -> None:
@@ -4903,108 +4872,108 @@ class OutboundManager:
         self.heartbeat: HeartbeatManager = HeartbeatManager(adapter)
         self.slow_notifier: SlowResponseNotifier = SlowResponseNotifier(adapter, self.sender)
 
-        # Wire coordination hooks into MessageSender
+        # 将协调钩子接到 MessageSender
         self.sender._on_send_start = self._handle_send_start
         self.sender._on_send_finish = self._handle_send_finish
 
-    # -- Coordination hooks ------------------------------------------------
+    # -- 协调钩子 ------------------------------------------------
 
     def _handle_send_start(self, chat_id: str) -> None:
-        """Called by MessageSender before sending: cancel slow-response notifier."""
+        """由 MessageSender 在发送前调用：取消慢响应通知。"""
         self.slow_notifier.cancel(chat_id)
 
     async def _handle_send_finish(self, chat_id: str) -> None:
-        """Called by MessageSender after sending: send FINISH heartbeat."""
+        """由 MessageSender 在发送后调用：发送 FINISH 心跳。"""
         await self.heartbeat.send_heartbeat_once(chat_id, WS_HEARTBEAT_FINISH)
 
-    # -- Delegated public API (used by YuanbaoAdapter) ---------------------
+    # -- 委托的公共 API（供 YuanbaoAdapter 使用） ---------------------
 
     async def send_text(
         self, chat_id: str, content: str, reply_to: Optional[str] = None,
         group_code: str = "",
     ) -> "SendResult":
-        """Send text message with auto-chunking."""
+        """发送文本消息，带自动分块。"""
         return await self.sender.send_text(chat_id, content, reply_to, group_code=group_code)
 
     async def send_media(
         self, chat_id: str, handler_name: str, **kwargs: Any,
     ) -> "SendResult":
-        """Dispatch media send to the named handler strategy."""
+        """将媒体发送分发给具名的 handler 策略。"""
         return await self.sender.send_media(chat_id, handler_name, **kwargs)
 
     async def send_direct(
         self, chat_id: str, message: str,
         media_files: Optional[List[Tuple[str, bool]]] = None,
     ) -> Dict[str, Any]:
-        """Send text + media (used by send_message tool)."""
+        """发送文本 + 媒体（供 send_message 工具使用）。"""
         return await self.sender.send_direct(chat_id, message, media_files)
 
     async def start_typing(self, chat_id: str) -> None:
-        """Start reply heartbeat (RUNNING)."""
+        """启动回复心跳（RUNNING）。"""
         await self.heartbeat.start(chat_id)
 
     async def stop_typing(self, chat_id: str, send_finish: bool = False) -> None:
-        """Stop reply heartbeat."""
+        """停止回复心跳。"""
         await self.heartbeat.stop(chat_id, send_finish=send_finish)
 
     async def start_slow_notifier(self, chat_id: str) -> None:
-        """Start slow-response notifier."""
+        """启动慢响应通知。"""
         await self.slow_notifier.start(chat_id)
 
     def cancel_slow_notifier(self, chat_id: str) -> None:
-        """Cancel slow-response notifier."""
+        """取消慢响应通知。"""
         self.slow_notifier.cancel(chat_id)
 
     def get_chat_lock(self, chat_id: str) -> asyncio.Lock:
-        """Proxy to MessageSender.get_chat_lock for backward compatibility."""
+        """代理到 MessageSender.get_chat_lock，以保持向后兼容。"""
         return self.sender.get_chat_lock(chat_id)
 
     @property
     def _chat_locks(self) -> collections.OrderedDict:
-        """Proxy to MessageSender._chat_locks for backward compatibility."""
+        """代理到 MessageSender._chat_locks，以保持向后兼容。"""
         return self.sender._chat_locks
 
     @staticmethod
     def validate_media(
         file_bytes: Optional[bytes], filename: str, max_size_mb: int = 20,
     ) -> Optional[str]:
-        """Proxy to MessageSender.validate_media."""
+        """代理到 MessageSender.validate_media。"""
         return MessageSender.validate_media(file_bytes, filename, max_size_mb)
 
     async def close(self) -> None:
-        """Shut down all sub-managers."""
+        """关闭所有子管理器。"""
         await self.sender.close()
         await self.heartbeat.close()
         await self.slow_notifier.close()
 
 
 class YuanbaoAdapter(BasePlatformAdapter):
-    """Yuanbao AI Bot adapter backed by a persistent WebSocket connection."""
+    """基于持久 WebSocket 连接的元宝 AI Bot adapter。"""
 
     PLATFORM = Platform.YUANBAO
-    MAX_TEXT_CHUNK: int = 4000  # Yuanbao single message character limit
-    splits_long_messages = True  # send() auto-chunks via truncate_message(MAX_TEXT_CHUNK)
-    MEDIA_MAX_SIZE_MB: int = 50  # Max media file size in MB for upload validation
-    REPLY_REF_MAX_ENTRIES: ClassVar[int] = 500  # Max capacity of reference dedup dict
+    MAX_TEXT_CHUNK: int = 4000  # 元宝单条消息字符数上限
+    splits_long_messages = True  # send() 通过 truncate_message(MAX_TEXT_CHUNK) 自动分块
+    MEDIA_MAX_SIZE_MB: int = 50  # 上传校验时的最大媒体文件大小（MB）
+    REPLY_REF_MAX_ENTRIES: ClassVar[int] = 500  # 引用去重 dict 的最大容量
 
-    # -- Active instance registry (class-level singleton) -------------------
+    # -- 活跃实例注册表（类级单例） -------------------
 
     _active_instance: ClassVar[Optional["YuanbaoAdapter"]] = None
 
     @classmethod
     def get_active(cls) -> Optional["YuanbaoAdapter"]:
-        """Return the currently connected YuanbaoAdapter, or None."""
+        """返回当前已连接的 YuanbaoAdapter，或 None。"""
         return cls._active_instance
 
     @classmethod
     def set_active(cls, adapter: Optional["YuanbaoAdapter"]) -> None:
-        """Register (or clear) the active adapter instance."""
+        """注册（或清除）活跃的 adapter 实例。"""
         cls._active_instance = adapter
 
     def __init__(self, config: PlatformConfig, **kwargs: Any) -> None:
         super().__init__(config, Platform.YUANBAO)
 
-        # Credentials / endpoints from config.extra (populated by config.py from env/yaml)
+        # 来自 config.extra 的凭证/端点（由 config.py 从环境变量/yaml 填充）
         _extra = config.extra or {}
         self._app_key: str = (_extra.get("app_id") or "").strip()
         self._app_secret: str = (_extra.get("app_secret") or "").strip()
@@ -5013,40 +4982,40 @@ class YuanbaoAdapter(BasePlatformAdapter):
         self._api_domain: str = (_extra.get("api_domain") or DEFAULT_API_DOMAIN).rstrip("/")
         self._route_env: str = (_extra.get("route_env") or "").strip()
 
-        # Core managers (UML composition)
+        # 核心管理器（UML 组合关系）
         self._connection: ConnectionManager = ConnectionManager(self)
         self._outbound: OutboundManager = OutboundManager(self)
 
-        # Inbound dispatch tasks — tracked so disconnect() can cancel them
+        # 入站分发任务 —— 跟踪以便 disconnect() 能取消它们
         self._inbound_tasks: set[asyncio.Task] = set()
 
-        # Set of background tasks — prevent GC from collecting fire-and-forget tasks
+        # 后台任务集合 —— 防止 GC 回收即发即忘的任务
         self._background_tasks: set[asyncio.Task] = set()
 
-        # Member cache: group_code -> (updated_ts, [{"user_id":..., "nickname":..., ...}, ...])
-        # Populated by get_group_member_list(), used by @mention resolution.
-        # Entries older than MEMBER_CACHE_TTL_S are treated as stale.
+        # 成员缓存：group_code -> (updated_ts, [{"user_id":..., "nickname":..., ...}, ...])
+        # 由 get_group_member_list() 填充，供 @mention 解析使用。
+        # 早于 MEMBER_CACHE_TTL_S 的条目视为过期。
         self._member_cache: Dict[str, Tuple[float, list]] = {}
-        self.MEMBER_CACHE_TTL_S: float = 300.0  # 5 minutes
+        self.MEMBER_CACHE_TTL_S: float = 300.0  # 5 分钟
 
-        # Inbound message deduplication (WS reconnect / network jitter)
+        # 入站消息去重（WS 重连 / 网络抖动）
         self._dedup = MessageDeduplicator(ttl_seconds=300)
 
-        # Group chat sequential dispatch queue (session_key → asyncio.Queue).
+        # 群聊串行分发队列（session_key → asyncio.Queue）。
         self._group_queues: Dict[str, asyncio.Queue] = {}
 
-        # Recall support: track which msg_id is being processed per session_key
-        # so RecallGuardMiddleware can detect "currently processing" messages.
+        # 撤回支持：按 session_key 跟踪正在处理的 msg_id，
+        # 以便 RecallGuardMiddleware 检测“正在处理”的消息。
         self._processing_msg_ids: Dict[str, str] = {}
         self._processing_msg_texts: Dict[str, str] = {}
-        # Bounded cache of msg_id → attributed content for recent messages.
-        # Used by _patch_transcript as content-match fallback when transcript
-        # entries lack a message_id field (agent-processed @bot messages).
+        # 有界的 msg_id → 归因内容缓存，用于最近的消息。
+        # 当会话记录条目缺少 message_id 字段时（agent 处理过的 @bot 消息），
+        # 由 _patch_transcript 作为内容匹配兜底使用。
         self._msg_content_cache: Dict[str, str] = {}
 
-        # Reply-to dedup: inbound_msg_id -> expire_ts
+        # Reply-to 去重：inbound_msg_id -> expire_ts
         # ------------------------------------------------------------------
-        # Access control policy (DM / Group)
+        # 访问控制策略（DM / Group）
         # ------------------------------------------------------------------
         dm_policy: str = (
             _extra.get("dm_policy")
@@ -5077,18 +5046,17 @@ class YuanbaoAdapter(BasePlatformAdapter):
             group_allow_from=group_allow_from,
         )
 
-        # Group query service (AI tool backing)
+        # 群查询服务（AI 工具后端）
         self._group_query = GroupQueryService(self)
 
-        # Inbound message processing pipeline (middleware pattern)
+        # 入站消息处理管道（中间件模式）
         self._inbound_pipeline: InboundPipeline = InboundPipelineBuilder.build()
 
         # ------------------------------------------------------------------
-        # Auto-sethome: first user to message the bot becomes the owner.
-        # If no home channel is configured, the first conversation will be
-        # automatically set as the home channel.  When the existing home
-        # channel is a group chat (group:xxx), it stays eligible for
-        # upgrade — the first DM will override it with direct:xxx.
+        # Auto-sethome：第一个给 bot 发消息的用户成为拥有者。
+        # 若未配置 home channel，第一个会话会被自动设为 home channel。
+        # 当现有 home channel 是群聊（group:xxx）时，它仍可被升级 ——
+        # 第一个 DM 会用 direct:xxx 覆盖它。
         # ------------------------------------------------------------------
         _existing_home = os.getenv("YUANBAO_HOME_CHANNEL") or (
             config.home_channel.chat_id if config.home_channel else ""
@@ -5096,33 +5064,33 @@ class YuanbaoAdapter(BasePlatformAdapter):
         self._auto_sethome_done: bool = bool(_existing_home) and not _existing_home.startswith("group:")
 
     # ------------------------------------------------------------------
-    # Task tracking helper
+    # 任务跟踪辅助
     # ------------------------------------------------------------------
 
     def _track_task(self, task: asyncio.Task) -> asyncio.Task:
-        """Register a fire-and-forget task so it won't be GC'd prematurely."""
+        """注册一个即发即忘的任务，以免被 GC 过早回收。"""
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
         return task
 
     # ------------------------------------------------------------------
-    # Abstract method implementations
+    # 抽象方法实现
     # ------------------------------------------------------------------
 
     @property
     def enforces_own_access_policy(self) -> bool:
-        """Yuanbao gates DM/group access at intake via dm_policy/group_policy."""
+        """元宝在入口处通过 dm_policy/group_policy 控制 DM/group 访问。"""
         return True
 
     async def connect(self) -> bool:
-        """Connect to Yuanbao WS gateway and authenticate.
+        """连接元宝 WS 网关并进行鉴权。
 
-        Delegates to ConnectionManager.open().
+        委托给 ConnectionManager.open()。
         """
         return await self._connection.open()
 
     async def disconnect(self) -> None:
-        """Cancel background tasks and close the WebSocket connection."""
+        """取消后台任务并关闭 WebSocket 连接。"""
         if YuanbaoAdapter._active_instance is self:
             YuanbaoAdapter.set_active(None)
 
@@ -5130,11 +5098,11 @@ class YuanbaoAdapter(BasePlatformAdapter):
         self._mark_disconnected()
         self._release_platform_lock()
 
-        # Delegate to managers
+        # 委托给各管理器
         await self._connection.close()
         await self._outbound.close()
 
-        # Cancel all in-flight inbound dispatch tasks
+        # 取消所有进行中的入站分发任务
         for task in list(self._inbound_tasks):
             if not task.done():
                 task.cancel()
@@ -5152,34 +5120,34 @@ class YuanbaoAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         group_code: str = "",
     ) -> SendResult:
-        """Send text message with auto-chunking. Delegates to OutboundManager."""
+        """发送文本消息，带自动分块。委托给 OutboundManager。"""
         return await self._outbound.send_text(chat_id, content, reply_to, group_code=group_code)
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Return basic chat metadata derived from the chat_id prefix.
+        """返回由 chat_id 前缀推导的基础聊天元数据。
 
-        chat_id conventions:
-          "group:<group_code>"  → group chat
-          "direct:<account>"   → C2C / direct message (default)
+        chat_id 约定：
+          "group:<group_code>"  → 群聊
+          "direct:<account>"   → C2C / 私聊（默认）
 
-        TODO (T06): fetch real chat name/member-count from Yuanbao API.
+        TODO (T06)：从元宝 API 获取真实的聊天名/成员数。
         """
         if chat_id.startswith("group:"):
             return {"name": chat_id, "type": "group"}
         return {"name": chat_id, "type": "dm"}
 
     async def send_typing(self, chat_id: str, metadata: Optional[dict] = None) -> None:
-        """Send "typing" status heartbeat (RUNNING). Delegates to OutboundManager."""
+        """发送 "typing" 状态心跳（RUNNING）。委托给 OutboundManager。"""
         try:
             await self._outbound.start_typing(chat_id)
         except Exception:
             pass
 
     async def stop_typing(self, chat_id: str) -> None:
-        """Stop the RUNNING heartbeat loop without sending FINISH immediately.
+        """停止 RUNNING 心跳循环，但不立即发送 FINISH。
 
-        FINISH is sent by send() after actual message delivery to ensure correct ordering:
-        RUNNING... -> message arrives -> FINISH.
+        FINISH 由 send() 在消息实际送达后发送，以保证正确顺序：
+        RUNNING... -> 消息到达 -> FINISH。
         """
         try:
             await self._outbound.stop_typing(chat_id, send_finish=False)
@@ -5187,7 +5155,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
             pass
 
     async def _process_message_background(self, event, session_key: str) -> None:
-        """Wrap base class processing with a slow-response notifier."""
+        """用慢响应通知包装基类的消息处理。"""
         chat_id = event.source.chat_id
         await self._outbound.start_slow_notifier(chat_id)
         try:
@@ -5196,35 +5164,35 @@ class YuanbaoAdapter(BasePlatformAdapter):
             self._outbound.cancel_slow_notifier(chat_id)
 
     # ------------------------------------------------------------------
-    # Group query (delegate to GroupQueryService)
+    # 群查询（委托给 GroupQueryService）
     # ------------------------------------------------------------------
 
     async def query_group_info(self, group_code: str) -> Optional[dict]:
-        """Query group info (delegates to GroupQueryService)."""
+        """查询群信息（委托给 GroupQueryService）。"""
         return await self._group_query.query_group_info_raw(group_code)
 
     async def get_group_member_list(
         self, group_code: str, offset: int = 0, limit: int = 200
     ) -> Optional[dict]:
-        """Query group member list (delegates to GroupQueryService)."""
+        """查询群成员列表（委托给 GroupQueryService）。"""
         return await self._group_query.get_group_member_list_raw(group_code, offset=offset, limit=limit)
 
     # ------------------------------------------------------------------
-    # DM active private chat + access control
+    # DM 主动私聊 + 访问控制
     # ------------------------------------------------------------------
 
-    DM_MAX_CHARS = 10000  # DM text limit
+    DM_MAX_CHARS = 10000  # DM 文本上限
 
     async def send_dm(self, user_id: str, text: str, group_code: str = "") -> SendResult:
         """
-        Actively send C2C private chat message.
+        主动发送 C2C 私聊消息。
 
-        Args:
-            user_id: Target user ID
-            text: Message text (limit 10000 characters)
-            group_code: Source group code (for group-originated DM context)
+        参数：
+            user_id: 目标用户 ID
+            text: 消息文本（上限 10000 字符）
+            group_code: 来源群 code（用于群发起的 DM 上下文）
 
-        Returns:
+        返回：
             SendResult
         """
         if not self._access_policy.is_dm_allowed(user_id):
@@ -5235,7 +5203,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
         return await self.send(chat_id, text, group_code=group_code)
 
     # ------------------------------------------------------------------
-    # Media send methods
+    # 媒体发送方法
     # ------------------------------------------------------------------
 
     async def send_image(
@@ -5247,7 +5215,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
         metadata: Optional[dict] = None,
         **kwargs: Any,
     ) -> SendResult:
-        """Send image message (URL). Delegates to OutboundManager via ImageUrlHandler."""
+        """发送图片消息（URL）。通过 ImageUrlHandler 委托给 OutboundManager。"""
         return await self._outbound.send_media(
             chat_id, "image_url",
             reply_to=reply_to, caption=caption, image_url=image_url,
@@ -5263,7 +5231,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
         metadata: Optional[dict] = None,
         **kwargs: Any,
     ) -> SendResult:
-        """Send local image file. Delegates to OutboundManager via ImageFileHandler."""
+        """发送本地图片文件。通过 ImageFileHandler 委托给 OutboundManager。"""
         return await self._outbound.send_media(
             chat_id, "image_file",
             reply_to=reply_to, caption=caption, image_path=image_path,
@@ -5279,7 +5247,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
         metadata: Optional[dict] = None,
         **kwargs: Any,
     ) -> SendResult:
-        """Send file message (URL). Delegates to OutboundManager via FileUrlHandler."""
+        """发送文件消息（URL）。通过 FileUrlHandler 委托给 OutboundManager。"""
         return await self._outbound.send_media(
             chat_id, "file_url",
             reply_to=reply_to, file_url=file_url, filename=filename,
@@ -5294,7 +5262,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs: Any,
     ) -> SendResult:
-        """Send sticker/emoji. Delegates to OutboundManager via StickerHandler."""
+        """发送贴纸/表情。通过 StickerHandler 委托给 OutboundManager。"""
         return await self._outbound.send_media(
             chat_id, "sticker",
             reply_to=reply_to,
@@ -5312,7 +5280,7 @@ class YuanbaoAdapter(BasePlatformAdapter):
         metadata: Optional[dict] = None,
         **kwargs: Any,
     ) -> SendResult:
-        """Send local file (document). Delegates to OutboundManager via DocumentHandler."""
+        """发送本地文件（文档）。通过 DocumentHandler 委托给 OutboundManager。"""
         return await self._outbound.send_media(
             chat_id, "document",
             reply_to=reply_to, caption=caption,
@@ -5321,14 +5289,14 @@ class YuanbaoAdapter(BasePlatformAdapter):
         )
 
     async def _get_cached_token(self) -> dict:
-        """Get the current valid sign token (using module-level cache)."""
+        """获取当前有效的 sign token（使用模块级缓存）。"""
         return await SignManager.get_token(
             self._app_key, self._app_secret, self._api_domain,
             route_env=self._route_env,
         )
 
     def get_status(self) -> dict:
-        """Return a snapshot of the current connection status."""
+        """返回当前连接状态的快照。"""
         conn = self._connection
         return {
             "connected": conn.is_connected,
@@ -5340,12 +5308,12 @@ class YuanbaoAdapter(BasePlatformAdapter):
 
 
 # ---------------------------------------------------------------------------
-# Module-level thin delegates (preserve import compatibility for external callers)
+# 模块级轻量委托（为外部调用方保持导入兼容性）
 # ---------------------------------------------------------------------------
 
 
 def get_active_adapter() -> Optional["YuanbaoAdapter"]:
-    """Delegate to ``YuanbaoAdapter.get_active()``."""
+    """委托给 ``YuanbaoAdapter.get_active()``。"""
     return YuanbaoAdapter.get_active()
 
 
@@ -5355,5 +5323,5 @@ async def send_yuanbao_direct(
     message: str,
     media_files: Optional[List[Tuple[str, bool]]] = None,
 ) -> Dict[str, Any]:
-    """Delegate to ``OutboundManager.send_direct``."""
+    """委托给 ``OutboundManager.send_direct``。"""
     return await adapter._outbound.send_direct(chat_id, message, media_files)

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Standalone NeuTTS synthesis helper.
+"""独立的 NeuTTS 合成辅助程序。
 
-Called by tts_tool.py via subprocess to keep the TTS model (~500MB)
-in a separate process that exits after synthesis — no lingering memory.
+由 tts_tool.py 通过 subprocess 调用，以便把 TTS 模型（约 500MB）放在
+一个独立的进程中，合成完成后即退出——不会残留占用内存。
 
-Usage:
+用法：
     python -m tools.neutts_synth --text "Hello" --out output.wav \
         --ref-audio samples/jo.wav --ref-text samples/jo.txt
 
-Requires: python -m pip install -U neutts[all]
-System:   apt install espeak-ng  (or brew install espeak-ng)
+依赖：python -m pip install -U neutts[all]
+系统：apt install espeak-ng  （或 brew install espeak-ng）
 """
 
 import argparse
@@ -19,14 +19,14 @@ from pathlib import Path
 
 
 def _write_wav(path: str, samples, sample_rate: int = 24000) -> None:
-    """Write a WAV file from float32 samples (no soundfile dependency)."""
+    """将 float32 采样写入 WAV 文件（不依赖 soundfile）。"""
     import numpy as np
 
     if not isinstance(samples, np.ndarray):
         samples = np.array(samples, dtype=np.float32)
     samples = samples.flatten()
 
-    # Clamp and convert to int16
+    # 限幅并转换为 int16
     samples = np.clip(samples, -1.0, 1.0)
     pcm = (samples * 32767).astype(np.int16)
 
@@ -59,7 +59,7 @@ def main():
     parser.add_argument("--device", default="cpu", help="Device (cpu/cuda/mps)")
     args = parser.parse_args()
 
-    # Validate inputs
+    # 校验输入
     ref_audio = Path(args.ref_audio).expanduser()
     ref_text_path = Path(args.ref_text).expanduser()
     if not ref_audio.exists():
@@ -71,7 +71,7 @@ def main():
 
     ref_text = ref_text_path.read_text(encoding="utf-8").strip()
 
-    # Import and run NeuTTS
+    # 导入并运行 NeuTTS
     try:
         from neutts import NeuTTS
     except ImportError:
@@ -87,7 +87,7 @@ def main():
     ref_codes = tts.encode_reference(str(ref_audio))
     wav = tts.infer(args.text, ref_codes, ref_text)
 
-    # Write output
+    # 写入输出
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

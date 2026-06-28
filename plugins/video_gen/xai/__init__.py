@@ -1,21 +1,18 @@
-"""xAI Grok-Imagine video generation backend.
+"""xAI Grok-Imagine 视频生成后端。
 
-Surface: text-to-video and image-to-video (animate an input image)
-through xAI's ``/videos/generations`` endpoint. Edit and extend are not
-exposed in this unified surface — xAI is the only backend that supports
-them and the inconsistency would force per-backend prose in the agent's
-tool description.
+支持：文生视频和图生视频（对输入图片进行动画处理）
+通过 xAI 的 ``/videos/generations`` 端点实现。编辑和扩展功能不
+在此统一接口中暴露 — xAI 是唯一支持这些功能的后端，
+而不一致会迫使 agent 的工具描述中出现按后端区分的文案。
 
-Originally salvaged from PR #10600 by @Jaaneek; reshaped into the
-:class:`VideoGenProvider` plugin interface and trimmed to the
-generate-only surface.
+最初从 @Jaaneek 的 PR #10600 中 salvaged；后来重构为
+:class:`VideoGenProvider` 插件接口，并精简为仅生成接口。
 
-Authentication: xAI Grok OAuth tokens (preferred — billed against the
-user's SuperGrok or X Premium+ subscription) or ``XAI_API_KEY``. Both routes are
-resolved through ``tools.xai_http.resolve_xai_http_credentials`` so a
-single login covers chat + TTS + image gen + video gen + transcription.
-Output is an HTTPS URL from xAI's CDN; the gateway downloads and
-delivers it.
+认证方式：xAI Grok OAuth token（首选 — 计入用户的
+SuperGrok 或 X Premium+ 订阅）或 ``XAI_API_KEY``。两种方式均通过
+``tools.xai_http.resolve_xai_http_credentials`` 解析，因此一次登录
+即可覆盖聊天 + TTS + 图片生成 + 视频生成 + 转录。
+输出为 xAI CDN 的 HTTPS URL；网关负责下载并交付。
 """
 
 from __future__ import annotations
@@ -41,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1"
@@ -79,16 +76,16 @@ _MODELS: Dict[str, Dict[str, Any]] = {
 
 
 # ---------------------------------------------------------------------------
-# HTTP helpers
+# HTTP 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _resolve_xai_credentials() -> Tuple[str, str]:
-    """Return ``(api_key, base_url)`` from the shared xAI credential resolver.
+    """从共享的 xAI 凭证解析器返回 ``(api_key, base_url)``。
 
-    Order: runtime provider (xai-oauth pool entry) → singleton ``auth.json``
-    OAuth tokens → ``XAI_API_KEY`` env var. ``api_key`` is empty when no
-    credential source is available; callers must check before using it.
+    优先级顺序：运行时 provider（xai-oauth 池条目）→ 单例 ``auth.json``
+    OAuth token → ``XAI_API_KEY`` 环境变量。当没有可用的凭证来源时，
+    ``api_key`` 为空；调用方必须在使用前进行检查。
     """
     try:
         from tools.xai_http import resolve_xai_http_credentials
@@ -125,7 +122,7 @@ def _xai_headers(api_key: str) -> Dict[str, str]:
 
 
 def _image_ref_to_xai_url(value: str) -> str:
-    """Return a URL/data URI accepted by xAI for image inputs."""
+    """返回 xAI 图片输入可接受的 URL/data URI。"""
     ref = (value or "").strip()
     if not ref:
         return ""
@@ -171,11 +168,11 @@ def _resolve_model_for_modality(
     modality: str,
     explicit_model: bool,
 ) -> str:
-    """Select xAI's text/video model without treating config as a prompt override.
+    """选择 xAI 的文/视频模型，不将配置视为 prompt 覆盖。
 
-    ``grok-imagine-video-1.5-preview`` currently rejects text-only video
-    generation, but it is the desired image-to-video backend. Explicit tool
-    ``model=`` still wins for users who intentionally request another model.
+    ``grok-imagine-video-1.5-preview`` 目前拒绝纯文本视频生成，
+    但它是所需的图生视频后端。用户通过显式 ``model=`` 仍可
+    优先指定其他模型。
     """
     requested = (model or "").strip()
     if explicit_model and requested:
@@ -194,8 +191,7 @@ async def _submit(
     api_key: str,
     base_url: str,
 ) -> str:
-    """POST to /videos/generations — xAI's only public endpoint for our
-    text-to-video and image-to-video surface."""
+    """POST 到 /videos/generations — xAI 用于文生视频和图生视频的唯一公开端点。"""
     response = await client.post(
         f"{base_url}/videos/generations",
         headers={**_xai_headers(api_key), "x-idempotency-key": str(uuid.uuid4())},

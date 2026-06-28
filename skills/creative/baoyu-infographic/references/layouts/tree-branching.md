@@ -1,41 +1,41 @@
 # tree-branching
 
-Hierarchical structure branching from root to leaves, showing categories and subcategories.
+从根到叶的层级分支结构，展示类别和子类别。
 
-## Structure
+## 结构
 
-- Root/trunk at top or left
-- Branches splitting into sub-branches
-- Leaves as terminal nodes
-- Clear parent-child relationships
-- Balanced or organic branching
+- 根/主干置于顶部或左侧
+- 分支再分裂为子分支
+- 叶节点为终端节点
+- 清晰的父子关系
+- 均衡或有机的分支
 
-## Best For
+## 最适用于
 
-- Taxonomies and classifications
-- Decision trees
-- Organizational charts
-- File/folder structures
-- Family trees
+- 分类法和归类
+- 决策树
+- 组织架构图
+- 文件/文件夹结构
+- 家谱
 
-## Visual Elements
+## 视觉元素
 
-- Connecting lines showing relationships
-- Nodes at branch points
-- Icons or labels at each node
-- Color coding by branch
-- Visual weight decreasing toward leaves
+- 连线体现关系
+- 分支点设节点
+- 每个节点配图标或标签
+- 按分支颜色编码
+- 向叶节点方向视觉权重递减
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Root concept prominently labeled
-- Branch and leaf labels
-- Optional descriptions at key nodes
-- Legend for categories
+- 标题置于顶部
+- 根概念醒目标注
+- 分支和叶节点标签
+- 关键节点可选配描述
+- 类别配图例
 
-## Recommended Pairings
+## 推荐搭配
 
-- `cartoon-hand-drawn`: Friendly taxonomies
-- `da-vinci-notebook`: Scientific classifications
-- `origami`: Geometric tree structures
+- `cartoon-hand-drawn`：友好型分类
+- `da-vinci-notebook`：科学分类
+- `origami`：几何树状结构

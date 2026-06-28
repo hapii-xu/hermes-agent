@@ -1,11 +1,10 @@
-"""Managed uv — one path, no guessing.
+"""托管 uv —— 唯一路径，无需猜测。
 
-Hermes owns its own uv binary at ``$HERMES_HOME/bin/uv`` (or ``uv.exe`` on
-Windows).  Every code path that needs uv resolves it from that single location.
-If the binary is missing, ``ensure_uv()`` bootstraps it via the official
-standalone installer with ``UV_UNMANAGED_INSTALL`` / ``UV_INSTALL_DIR`` pointed
-at ``$HERMES_HOME/bin`` so the installer writes directly there — no PATH
-probing, no conda guards, no multi-location resolution chains.
+Hermes 在 ``$HERMES_HOME/bin/uv``（Windows 上为 ``uv.exe``）持有自己的 uv 二进制文件。
+每个需要 uv 的代码路径都从该单一位置解析它。如果二进制文件缺失，
+``ensure_uv()`` 会通过官方独立安装程序引导安装，并将 ``UV_UNMANAGED_INSTALL`` /
+``UV_INSTALL_DIR`` 指向 ``$HERMES_HOME/bin``，使安装程序直接写入该位置 ——
+无需探测 PATH，无需 conda 防护，也无需多位置解析链。
 """
 
 from __future__ import annotations
@@ -28,11 +27,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def managed_uv_path() -> Path:
-    """Return the path where Hermes keeps *its* uv binary.
+    """返回 Hermes 存放其 uv 二进制文件的路径。
 
-    ``$HERMES_HOME/bin/uv`` on POSIX, ``$HERMES_HOME\\bin\\uv.exe`` on
-    Windows.  The directory may not exist yet — callers should use
-    ``ensure_uv()`` to bootstrap it.
+    POSIX 上为 ``$HERMES_HOME/bin/uv``，Windows 上为 ``$HERMES_HOME\\bin\\uv.exe``。
+    该目录可能尚不存在 —— 调用者应使用 ``ensure_uv()`` 来引导安装。
     """
     home = get_hermes_home()
     if platform.system() == "Windows":
@@ -41,9 +39,9 @@ def managed_uv_path() -> Path:
 
 
 def resolve_uv() -> Optional[str]:
-    """Return the managed uv path if it exists, else ``None``.
+    """如果托管的 uv 路径存在则返回该路径，否则返回 ``None``。
 
-    No side effects — pure lookup.
+    无副作用 —— 纯粹的查找操作。
     """
     p = managed_uv_path()
     if p.is_file() and os.access(p, os.X_OK):
@@ -52,29 +50,24 @@ def resolve_uv() -> Optional[str]:
 
 
 class _UvResult(str):
-    """``ensure_uv()`` return value that survives an update boundary.
+    """``ensure_uv()`` 的返回值，可在更新边界存活。
 
-    ``ensure_uv()``'s arity has flipped between a single path string and a
-    ``(path, fresh_bootstrap)`` tuple across releases. ``hermes update`` runs
-    the call site from the *old*, already-imported ``hermes_cli.main`` against
-    this *freshly pulled* module, so the two can disagree on how many values
-    ``ensure_uv()`` returns. An install parked on a 2-tuple release runs
-    ``uv_bin, fresh_bootstrap = ensure_uv()`` against the single-value module
-    and crashes the first update: the returned path is a plain ``str``, which is
-    itself iterable, so the 2-target unpack walks its characters and raises
-    ``ValueError: too many values to unpack (expected 2)`` (and on the failure
-    path the ``None`` return raises ``TypeError: cannot unpack non-iterable
-    NoneType``). This wrapper answers to both conventions:
+    ``ensure_uv()`` 的参数数量在不同版本间曾在单一路径字符串和 ``(path, fresh_bootstrap)``
+    元组之间切换。``hermes update`` 会从*已导入的旧版* ``hermes_cli.main`` 调用这个
+    *新拉取的*模块，因此两端对 ``ensure_uv()`` 返回多少个值可能产生分歧。安装在
+    2-元组版本上的调用方执行 ``uv_bin, fresh_bootstrap = ensure_uv()`` 时，如果新模块
+    只返回单值，返回的路径本身是 ``str``（可迭代），2-目标解包会遍历其字符并抛出
+    ``ValueError: too many values to unpack (expected 2)``（失败路径下 ``None`` 返回
+    会抛出 ``TypeError: cannot unpack non-iterable NoneType``）。这个包装类兼容两种约定：
 
-        uv_bin = ensure_uv()         # behaves as the path str ("" when absent)
-        uv_bin, fresh = ensure_uv()  # unpacks as (path|None, fresh_bootstrap)
+        uv_bin = ensure_uv()         # 行为如同路径 str（缺失时为空字符串 ""）
+        uv_bin, fresh = ensure_uv()  # 解包为 (path|None, fresh_bootstrap)
 
-    Missing uv is the empty string (falsy) instead of ``None`` so legacy
-    2-target call sites can still unpack a failure without raising, while
-    ``if not uv_bin`` keeps working for single-value callers.
+    缺失 uv 时返回空字符串（falsy）而非 ``None``，这样旧的 2-目标调用点仍能解包
+    失败而不抛异常，同时 ``if not uv_bin`` 对单值调用者依然有效。
 
-    POSIX only. This wrapper is **never** returned on Windows — see
-    ``ensure_uv()`` for why the ``__iter__`` override is unsafe there.
+    仅限 POSIX。此包装类在 Windows 上**永不**返回 —— 参见 ``ensure_uv()`` 了解为何
+    ``__iter__`` 覆盖在 Windows 上不安全。
     """
 
     fresh_bootstrap: bool
@@ -85,14 +78,13 @@ class _UvResult(str):
         return self
 
     def __iter__(self):
-        # Tuple-unpacking hook for legacy ``uv_bin, fresh = ensure_uv()`` sites.
-        # First element mirrors the historical contract: the path string, or
-        # ``None`` when uv is unavailable.
+        # 旧版 ``uv_bin, fresh = ensure_uv()`` 调用点的元组解包钩子。
+        # 第一个元素镜像历史约定：路径字符串，或 uv 不可用时为 ``None``。
         return iter(((str(self) or None), self.fresh_bootstrap))
 
 
 def _ensure_uv_path() -> Optional[str]:
-    """Resolve the managed uv path, installing it if necessary (plain ``str``/``None``)."""
+    """解析托管的 uv 路径，必要时进行安装（返回纯 ``str``/``None``）。"""
     existing = resolve_uv()
     if existing:
         return existing
@@ -109,7 +101,7 @@ def _ensure_uv_path() -> Optional[str]:
         print(f"  ✗ Failed to install managed uv: {exc}")
         return None
 
-    # Verify
+    # 验证
     result = resolve_uv()
     if result:
         version = subprocess.run(
@@ -125,46 +117,40 @@ def _ensure_uv_path() -> Optional[str]:
 
 
 def ensure_uv():
-    """Return the managed uv path, installing it first if necessary.
+    """返回托管的 uv 路径，必要时先进行安装。
 
-    On **POSIX** the result is a :class:`_UvResult` (a ``str`` subclass) that is
-    both usable directly as the path *and* unpackable as
-    ``(path, fresh_bootstrap)`` for older call sites parked on a 2-tuple
-    release — see :class:`_UvResult` for the update-boundary rationale.
+    在 **POSIX** 上，结果为 :class:`_UvResult`（``str`` 的子类），既可直接作为路径使用，
+    也可解包为 ``(path, fresh_bootstrap)`` 以兼容旧版调用点 —— 参见 :class:`_UvResult`
+    了解更新边界的原理。
 
-    On **Windows** we deliberately return a plain ``str``/``None`` instead.
-    ``subprocess`` there serializes the argv via ``subprocess.list2cmdline``,
-    which iterates every entry *as a string* (``for c in arg``). The dependency
-    installer passes uv straight into the command list (``[uv_bin, "pip", ...]``),
-    so a ``_UvResult`` — whose ``__iter__`` yields ``(path, fresh_bootstrap)``
-    rather than characters — would inject the bool into the command line and
-    crash the install with ``TypeError: sequence item 1: expected str instance,
-    bool found``. A plain ``str`` matches the historical Windows contract and is
-    subprocess-safe. (A single value cannot satisfy both 2-target unpacking and
-    Windows char-iteration: both use the iterator protocol, with contradictory
-    results.)
+    在 **Windows** 上，我们刻意返回纯 ``str``/``None``。``subprocess`` 在 Windows 上通过
+    ``subprocess.list2cmdline`` 序列化 argv，会*将每个条目作为字符串迭代*（``for c in arg``）。
+    依赖安装器会将 uv 直接传入命令列表（``[uv_bin, "pip", ...]``），因此 ``_UvResult`` ——
+    其 ``__iter__`` 产出 ``(path, fresh_bootstrap)`` 而非字符 —— 会将 bool 注入命令行并
+    以 ``TypeError: sequence item 1: expected str instance, bool found`` 使安装崩溃。
+    纯 ``str`` 符合 Windows 的历史约定且对 subprocess 安全。（单值无法同时满足 2-目标解包
+    和 Windows 字符迭代：两者都使用迭代器协议，但结果相互矛盾。）
 
-    On failure the result is falsy — never raises — so callers can fall back to
-    pip gracefully.
+    失败时结果为 falsy —— 永不抛异常 —— 以便调用者可以优雅地回退到 pip。
     """
     result = _ensure_uv_path()
     if platform.system() == "Windows":
-        # See docstring: a str subclass with an overridden __iter__ is unsafe as
-        # a Windows subprocess argument. Hand back the plain path (or None).
+        # 参见文档字符串：带有覆盖 __iter__ 的 str 子类在 Windows 上作为
+        # subprocess 参数是不安全的。返回纯路径（或 None）。
         return result
     return _UvResult(result)
 
 
 def update_managed_uv() -> Optional[str]:
-    """Run ``uv self update`` on the managed uv binary.
+    """在托管的 uv 二进制文件上运行 ``uv self update``。
 
-    Call this during ``hermes update`` so the managed copy stays current.
-    Returns the managed path on success, ``None`` if uv isn't available or
-    the self-update fails (non-fatal — the old version still works).
+    在 ``hermes update`` 期间调用此函数，以保持托管副本为最新。
+    成功时返回托管路径；如果 uv 不可用或自更新失败则返回 ``None``
+    （非致命错误 —— 旧版本仍可正常工作）。
     """
     existing = resolve_uv()
     if not existing:
-        # Not installed yet — ensure_uv() will handle that elsewhere.
+        # 尚未安装 —— ensure_uv() 会在其他地方处理。
         return None
 
     result = subprocess.run(
@@ -182,28 +168,28 @@ def update_managed_uv() -> Optional[str]:
         ).stdout.strip()
         print(f"  ✓ Managed uv updated ({version})")
     else:
-        # Non-fatal — old uv still works fine.
+        # 非致命错误 —— 旧版 uv 仍可正常工作。
         logger.debug("uv self update failed (rc=%d): %s", result.returncode, result.stderr)
     return existing
 
 
 # ---------------------------------------------------------------------------
-# Installer internals
+# 安装器内部实现
 # ---------------------------------------------------------------------------
 
 def _install_uv(target: Path) -> None:
-    """Bootstrap uv into *target* using the official standalone installer.
+    """使用官方独立安装程序将 uv 引导安装到 *target*。
 
-    Uses ``UV_UNMANAGED_INSTALL`` (POSIX) or ``UV_INSTALL_DIR`` (Windows)
-    so the astral installer writes the binary directly into
-    ``$HERMES_HOME/bin/`` instead of ``~/.local/bin/``.
+    使用 ``UV_UNMANAGED_INSTALL``（POSIX）或 ``UV_INSTALL_DIR``（Windows），
+    使 astral 安装程序将二进制文件直接写入 ``$HERMES_HOME/bin/``
+    而非 ``~/.local/bin/``。
     """
     system = platform.system()
     env = {
         **os.environ,
-        # Tell the astral installer to drop the binary in our dir, not
-        # ~/.local/bin.  UV_UNMANAGED_INSTALL is the POSIX env var; Windows
-        # uses UV_INSTALL_DIR.
+        # 告诉 astral 安装程序将二进制文件放入我们的目录，而非
+        # ~/.local/bin。UV_UNMANAGED_INSTALL 是 POSIX 环境变量；Windows
+        # 使用 UV_INSTALL_DIR。
         "UV_UNMANAGED_INSTALL": str(target.parent),
         "UV_INSTALL_DIR": str(target.parent),
     }
@@ -215,7 +201,7 @@ def _install_uv(target: Path) -> None:
 
 
 def _install_uv_posix(env: dict[str, str]) -> None:
-    """Download + sh the POSIX installer (two-stage to avoid curl|sh pitfalls)."""
+    """下载并执行 POSIX 安装脚本（两阶段以避免 curl|sh 的陷阱）。"""
     with tempfile.NamedTemporaryFile(suffix=".sh", delete=False) as f:
         installer_path = f.name
 
@@ -239,7 +225,7 @@ def _install_uv_posix(env: dict[str, str]) -> None:
 
 
 def _install_uv_windows(env: dict[str, str]) -> None:
-    """Invoke the PowerShell installer."""
+    """调用 PowerShell 安装脚本。"""
     cmd = (
         'irm https://astral.sh/uv/install.ps1 | iex'
     )

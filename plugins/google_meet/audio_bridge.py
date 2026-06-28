@@ -1,20 +1,18 @@
-"""Virtual audio bridge for feeding generated speech into Chrome's mic.
+"""将生成的语音馈送到 Chrome 麦克风的虚拟音频桥。
 
-v2 module. Provisions a platform-specific virtual audio device so the
-Meet bot's Chromium instance can be pointed at an input source we
-control. The OpenAI Realtime client writes PCM bytes into this device;
-Chrome reads them as if they were coming from a microphone.
+v2 模块。为 Meet bot 的 Chromium 实例配置特定于平台的虚拟音频设备，
+使其可以指向我们控制的输入源。OpenAI Realtime 客户端将 PCM 字节写入此设备；
+Chrome 读取这些字节，就好像它们来自麦克风一样。
 
-Linux (primary): uses pactl (PulseAudio) to create a null-sink plus a
-virtual source whose master is the null-sink's monitor. Callers set
-PULSE_SOURCE=<source_name> in Chrome's env and pass the fake-mic flag.
+Linux（主要平台）：使用 pactl (PulseAudio) 创建一个 null-sink 以及
+一个以 null-sink 的 monitor 为 master 的虚拟 source。调用方在 Chrome 的环境中
+设置 PULSE_SOURCE=<source_name> 并传入 fake-mic 标志。
 
-macOS: requires BlackHole 2ch to be installed. This module only
-verifies its presence and returns the device name; routing OS default
-input is left to the user (or a future switchaudio-osx integration) to
-avoid surprising the user's system audio state.
+macOS：需要安装 BlackHole 2ch。此模块仅验证其存在并返回设备名称；
+将操作系统默认输入路由到该设备留给用户（或未来的 switchaudio-osx 集成）处理，
+以避免意外更改用户的系统音频状态。
 
-Windows: not supported in v2.
+Windows：v2 不支持。
 """
 
 from __future__ import annotations
@@ -28,10 +26,10 @@ _BLACKHOLE_DEVICE = "BlackHole 2ch"
 
 
 class AudioBridge:
-    """Manages a virtual audio device for Chrome fake-mic input.
+    """管理用于 Chrome 假麦克风输入的虚拟音频设备。
 
-    Call ``setup()`` once before launching the Meet bot and
-    ``teardown()`` when the session ends. ``teardown()`` is idempotent.
+    在启动 Meet bot 之前调用一次 ``setup()``，
+    在会话结束时调用 ``teardown()``。``teardown()`` 是幂等的。
     """
 
     def __init__(self, name_prefix: str = "hermes_meet") -> None:
@@ -59,10 +57,10 @@ class AudioBridge:
     # ── lifecycle ─────────────────────────────────────────────────────────
 
     def setup(self) -> dict:
-        """Provision the virtual audio device.
+        """配置虚拟音频设备。
 
-        Returns a dict describing the device. Raises RuntimeError on
-        unsupported platforms or when required system tools are missing.
+        返回描述设备的字典。在不支持的平台上
+        或缺少所需系统工具时抛出 RuntimeError。
         """
         system = platform.system()
         if system == "Linux":
@@ -74,12 +72,12 @@ class AudioBridge:
         raise RuntimeError(f"unsupported platform: {system}")
 
     def teardown(self) -> None:
-        """Release the virtual audio device. Idempotent."""
+        """释放虚拟音频设备。幂等操作。"""
         if self._torn_down:
             return
-        # Only Linux needs explicit unloading.
+        # 只有 Linux 需要显式卸载。
         if self._platform == "linux" and self._module_ids:
-            # Unload in reverse order (virtual-source before null-sink).
+            # 按逆序卸载（先 virtual-source，再 null-sink）。
             for mod_id in reversed(self._module_ids):
                 try:
                     subprocess.run(
@@ -89,7 +87,7 @@ class AudioBridge:
                         stdin=subprocess.DEVNULL,
                     )
                 except Exception:
-                    # Best-effort teardown — never raise from here.
+                    # 尽力而为的清理 — 此处永远不抛出异常。
                     pass
             self._module_ids = []
         self._torn_down = True
@@ -140,7 +138,7 @@ class AudioBridge:
                 stdin=subprocess.DEVNULL,
             )
         except subprocess.CalledProcessError as exc:
-            # Roll back the null-sink we just created so we don't leak it.
+            # 回滚我们刚刚创建的 null-sink，避免泄漏。
             subprocess.run(
                 ["pactl", "unload-module", str(sink_mod_id)],
                 check=False,
@@ -209,11 +207,11 @@ class AudioBridge:
 
     @staticmethod
     def _parse_module_id(stdout: str) -> int:
-        """pactl load-module prints the new module ID to stdout."""
+        """pactl load-module 会将新的模块 ID 打印到 stdout。"""
         text = (stdout or "").strip()
         if not text:
             raise RuntimeError("pactl load-module returned empty stdout")
-        # Take the last whitespace-separated token on the first non-empty line.
+        # 取第一个非空行的最后一个空白分隔的 token。
         first = text.splitlines()[0].strip()
         token = first.split()[-1]
         try:
@@ -225,21 +223,20 @@ class AudioBridge:
 
 
 def chrome_fake_audio_flags(bridge_info: dict) -> list[str]:
-    """Return Chrome flags for using the fake audio input.
+    """返回用于使用假音频输入的 Chrome 标志。
 
-    The PulseAudio source is selected via the ``PULSE_SOURCE`` env var,
-    which callers must set in Chrome's environment before launch:
+    PulseAudio source 通过 ``PULSE_SOURCE`` 环境变量选择，
+    调用方必须在启动 Chrome 之前将其设置到 Chrome 的环境中：
 
         env["PULSE_SOURCE"] = bridge_info["device_name"]
 
-    On macOS the caller must ensure the system default audio input is
-    set to the returned BlackHole device (we do not flip that switch).
+    在 macOS 上，调用方须确保系统默认音频输入
+    已设置为返回的 BlackHole 设备（我们不负责切换该设置）。
     """
     system = platform.system()
     if system == "Linux":
-        # Chromium on Linux picks up the PulseAudio source selected via
-        # PULSE_SOURCE env var; the fake-ui flag skips the permission
-        # prompt so the bot can pick "use my mic" without user input.
+        # Linux 上的 Chromium 通过 PULSE_SOURCE 环境变量选择 PulseAudio source；
+        # fake-ui 标志跳过权限提示，使 bot 可以在没有用户输入的情况下选择"使用我的麦克风"。
         return ["--use-fake-ui-for-media-stream"]
     if system == "Darwin":
         return ["--use-fake-ui-for-media-stream"]

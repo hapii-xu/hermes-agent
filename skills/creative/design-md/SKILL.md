@@ -1,6 +1,6 @@
 ---
 name: design-md
-description: Author/validate/export Google's DESIGN.md token spec files.
+description: 创作/验证/导出 Google 的 DESIGN.md 令牌规范文件。
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -13,30 +13,24 @@ metadata:
 
 # DESIGN.md Skill
 
-DESIGN.md is Google's open spec (Apache-2.0, `google-labs-code/design.md`) for
-describing a visual identity to coding agents. One file combines:
+DESIGN.md 是 Google 的开放规范（Apache-2.0，`google-labs-code/design.md`），用于向编码智能体描述视觉身份。单个文件结合了：
 
-- **YAML front matter** — machine-readable design tokens (normative values)
-- **Markdown body** — human-readable rationale, organized into canonical sections
+- **YAML front matter** —— 机器可读的设计令牌（规范性值）
+- **Markdown 正文** —— 人类可读的设计理由，按规范章节组织
 
-Tokens give exact values. Prose tells agents *why* those values exist and how to
-apply them. The CLI (`npx @google/design.md`) lints structure + WCAG contrast,
-diffs versions for regressions, and exports to Tailwind or W3C DTCG JSON.
+令牌给出精确值。正文告诉智能体这些值*为什么*存在以及如何应用。CLI（`npx @google/design.md`）会校验结构和 WCAG 对比度、对比版本以发现回归，并导出为 Tailwind 或 W3C DTCG JSON。
 
-## When to use this skill
+## 何时使用此 skill
 
-- User asks for a DESIGN.md file, design tokens, or a design system spec
-- User wants consistent UI/brand across multiple projects or tools
-- User pastes an existing DESIGN.md and asks to lint, diff, export, or extend it
-- User asks to port a style guide into a format agents can consume
-- User wants contrast / WCAG accessibility validation on their color palette
+- 用户要求一个 DESIGN.md 文件、设计令牌或设计系统规范
+- 用户希望跨多个项目或工具保持一致的 UI/品牌
+- 用户粘贴一个现有的 DESIGN.md 并要求校验、对比、导出或扩展它
+- 用户要求将样式指南移植为智能体可消费的格式
+- 用户希望对其调色板进行对比度 / WCAG 可访问性验证
 
-For purely visual inspiration or layout examples, use `popular-web-designs`
-instead. For *process and taste* when designing a one-off HTML artifact
-from scratch (prototype, deck, landing page, component lab), use
-`claude-design`. This skill is for the *formal spec file* itself.
+若仅是为了视觉灵感或布局示例，请改用 `popular-web-designs`。若要从零设计一次性 HTML 产物（原型、幻灯片、落地页、组件实验室）的*流程与品味*，请使用 `claude-design`。本 skill 面向的是*正式规范文件*本身。
 
-## File anatomy
+## 文件结构剖析
 
 ```md
 ---
@@ -94,106 +88,84 @@ Public Sans for everything except small all-caps labels...
 `button-primary` is the only high-emphasis action on a page...
 ```
 
-## Token types
+## 令牌类型
 
-| Type | Format | Example |
+| 类型 | 格式 | 示例 |
 |------|--------|---------|
-| Color | `#` + hex (sRGB) | `"#1A1C1E"` |
-| Dimension | number + unit (`px`, `em`, `rem`) | `48px`, `-0.02em` |
-| Token reference | `{path.to.token}` | `{colors.primary}` |
-| Typography | object with `fontFamily`, `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `fontFeature`, `fontVariation` | see above |
+| 颜色 | `#` + 十六进制 (sRGB) | `"#1A1C1E"` |
+| 尺寸 | 数字 + 单位 (`px`, `em`, `rem`) | `48px`, `-0.02em` |
+| 令牌引用 | `{path.to.token}` | `{colors.primary}` |
+| 排版 | 含 `fontFamily`, `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `fontFeature`, `fontVariation` 的对象 | 见上文 |
 
-Component property whitelist: `backgroundColor`, `textColor`, `typography`,
-`rounded`, `padding`, `size`, `height`, `width`. Variants (hover, active,
-pressed) are **separate component entries** with related key names
-(`button-primary-hover`), not nested.
+组件属性白名单：`backgroundColor`, `textColor`, `typography`, `rounded`, `padding`, `size`, `height`, `width`。变体（hover、active、pressed）是**独立的组件条目**，使用关联的键名（`button-primary-hover`），而非嵌套。
 
-## Canonical section order
+## 规范章节顺序
 
-Sections are optional, but present ones MUST appear in this order. Duplicate
-headings reject the file.
+章节是可选的，但存在的章节必须按此顺序出现。重复的标题会导致文件被拒绝。
 
-1. Overview (alias: Brand & Style)
+1. Overview（别名：Brand & Style）
 2. Colors
 3. Typography
-4. Layout (alias: Layout & Spacing)
-5. Elevation & Depth (alias: Elevation)
+4. Layout（别名：Layout & Spacing）
+5. Elevation & Depth（别名：Elevation）
 6. Shapes
 7. Components
 8. Do's and Don'ts
 
-Unknown sections are preserved, not errored. Unknown token names are accepted
-if the value type is valid. Unknown component properties produce a warning.
+未知章节会被保留，而非报错。未知令牌名在值类型有效时会被接受。未知组件属性会产生警告。
 
-## Workflow: authoring a new DESIGN.md
+## 工作流：创作新的 DESIGN.md
 
-1. **Ask the user** (or infer) the brand tone, accent color, and typography
-   direction. If they provided a site, image, or vibe, translate it to the
-   token shape above.
-2. **Write `DESIGN.md`** in their project root using `write_file`. Always
-   include `name:` and `colors:`; other sections optional but encouraged.
-3. **Use token references** (`{colors.primary}`) in the `components:` section
-   instead of re-typing hex values. Keeps the palette single-source.
-4. **Lint it** (see below). Fix any broken references or WCAG failures
-   before returning.
-5. **If the user has an existing project**, also write Tailwind or DTCG
-   exports next to the file (`tailwind.theme.json`, `tokens.json`).
+1. **询问用户**（或推断）品牌基调、强调色和排版方向。若他们提供了网站、图片或氛围，将其转换为上文的令牌结构。
+2. **用 `write_file` 在他们的项目根目录写入 `DESIGN.md`**。始终包含 `name:` 和 `colors:`；其他章节可选但推荐。
+3. **在 `components:` 章节使用令牌引用**（`{colors.primary}`），而非重新输入十六进制值。保持调色板单一来源。
+4. **校验它**（见下文）。在返回前修复任何损坏的引用或 WCAG 失败。
+5. **若用户有现有项目**，也在文件旁写入 Tailwind 或 DTCG 导出（`tailwind.theme.json`、`tokens.json`）。
 
-## Workflow: lint / diff / export
+## 工作流：校验 / 对比 / 导出
 
-The CLI is `@google/design.md` (Node). Use `npx` — no global install needed.
+CLI 为 `@google/design.md`（Node）。使用 `npx` —— 无需全局安装。
 
 ```bash
-# Validate structure + token references + WCAG contrast
+# 校验结构 + 令牌引用 + WCAG 对比度
 npx -y @google/design.md lint DESIGN.md
 
-# Compare two versions, fail on regression (exit 1 = regression)
+# 对比两个版本，回归时失败 (exit 1 = 回归)
 npx -y @google/design.md diff DESIGN.md DESIGN-v2.md
 
-# Export to Tailwind theme JSON
+# 导出为 Tailwind 主题 JSON
 npx -y @google/design.md export --format tailwind DESIGN.md > tailwind.theme.json
 
-# Export to W3C DTCG (Design Tokens Format Module) JSON
+# 导出为 W3C DTCG (Design Tokens Format Module) JSON
 npx -y @google/design.md export --format dtcg DESIGN.md > tokens.json
 
-# Print the spec itself — useful when injecting into an agent prompt
+# 打印规范本身 —— 注入到智能体提示词时很有用
 npx -y @google/design.md spec --rules-only --format json
 ```
 
-All commands accept `-` for stdin. `lint` returns exit 1 on errors. Use the
-`--format json` flag and parse the output if you need to report findings
-structurally.
+所有命令都接受 `-` 表示 stdin。`lint` 在出错时返回 exit 1。若需要结构化报告发现，使用 `--format json` 标志并解析输出。
 
-### Lint rule reference (what the 7 rules catch)
+### 校验规则参考（7 条规则分别捕获什么）
 
-- `broken-ref` (error) — `{colors.missing}` points at a non-existent token
-- `duplicate-section` (error) — same `## Heading` appears twice
+- `broken-ref` (error) —— `{colors.missing}` 指向不存在的令牌
+- `duplicate-section` (error) —— 同一个 `## Heading` 出现两次
 - `invalid-color`, `invalid-dimension`, `invalid-typography` (error)
-- `wcag-contrast` (warning/info) — component `textColor` vs `backgroundColor`
-  ratio against WCAG AA (4.5:1) and AAA (7:1)
-- `unknown-component-property` (warning) — outside the whitelist above
+- `wcag-contrast` (warning/info) —— 组件 `textColor` 对 `backgroundColor` 按 WCAG AA (4.5:1) 和 AAA (7:1) 的对比率
+- `unknown-component-property` (warning) —— 超出上文白名单
 
-When the user cares about accessibility, call this out explicitly in your
-summary — WCAG findings are the most load-bearing reason to use the CLI.
+当用户关心可访问性时，在总结中明确指出 —— WCAG 发现是使用 CLI 最关键的理由。
 
-## Pitfalls
+## 陷阱
 
-- **Don't nest component variants.** `button-primary.hover` is wrong;
-  `button-primary-hover` as a sibling key is right.
-- **Hex colors must be quoted strings.** YAML will otherwise choke on `#` or
-  truncate values like `#1A1C1E` oddly.
-- **Negative dimensions need quotes too.** `letterSpacing: -0.02em` parses as
-  a YAML flow — write `letterSpacing: "-0.02em"`.
-- **Section order is enforced.** If the user gives you prose in a random order,
-  reorder it to match the canonical list before saving.
-- **`version: alpha` is the current spec version** (as of Apr 2026). The spec
-  is marked alpha — watch for breaking changes.
-- **Token references resolve by dotted path.** `{colors.primary}` works;
-  `{primary}` does not.
+- **不要嵌套组件变体。** `button-primary.hover` 是错的；`button-primary-hover` 作为同级键才对。
+- **十六进制颜色必须是带引号的字符串。** 否则 YAML 会在 `#` 处出错，或奇怪地截断 `#1A1C1E` 这样的值。
+- **负尺寸也需要引号。** `letterSpacing: -0.02em` 会被解析为 YAML 流；应写 `letterSpacing: "-0.02em"`。
+- **章节顺序是强制的。** 若用户给你的正文是随机顺序，在保存前重新排序以匹配规范列表。
+- **`version: alpha` 是当前规范版本**（截至 2026 年 4 月）。该规范标记为 alpha —— 注意破坏性变更。
+- **令牌引用按点分路径解析。** `{colors.primary}` 有效；`{primary}` 无效。
 
-## Spec source of truth
+## 规范权威来源
 
-- Repo: https://github.com/google-labs-code/design.md (Apache-2.0)
-- CLI: `@google/design.md` on npm
-- License of generated DESIGN.md files: whatever the user's project uses;
-  the spec itself is Apache-2.0.
+- 仓库：https://github.com/google-labs-code/design.md (Apache-2.0)
+- CLI：npm 上的 `@google/design.md`
+- 生成的 DESIGN.md 文件许可：由用户项目决定；规范本身为 Apache-2.0。

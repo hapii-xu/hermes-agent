@@ -1,8 +1,8 @@
-"""Shared curses-based UI components for Hermes CLI.
+"""Hermes CLI 的共享 curses TUI 组件。
 
-Used by `hermes tools` and `hermes skills` for interactive checklists.
-Provides a curses multi-select with keyboard navigation, plus a
-text-based numbered fallback for terminals without curses support.
+供 `hermes tools` 和 `hermes skills` 的交互式清单使用。
+提供带键盘导航的 curses 多选组件，以及针对不支持 curses 的终端
+的纯文本编号备选方案。
 """
 import sys
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ from hermes_cli.colors import Colors, color
 
 
 def _query_matches(label: str, query: str) -> bool:
-    """Return True when every query token is a case-insensitive subsequence."""
+    """当每个 query token 都是大小写不敏感的子序列时返回 True。"""
     normalized = label.lower()
     tokens = query.lower().split()
 
@@ -37,10 +37,10 @@ _WORD_BOUNDARY = frozenset("-_/. ")
 
 
 def _is_boundary(target: str, index: int) -> bool:
-    """True if position ``index`` in ``target`` starts a word.
+    """如果 ``target`` 中位置 ``index`` 处开始一个单词则返回 True。
 
-    Mirrors ``isBoundary`` in the TS scorer: start-of-string, after a
-    separator char, or a lower->upper camelCase transition.
+    镜像 TS 评分器中的 ``isBoundary``：字符串开头、分隔符字符之后、
+    或小写到大写的驼峰命名转换。
     """
     if index == 0:
         return True
@@ -50,23 +50,21 @@ def _is_boundary(target: str, index: int) -> bool:
     if prev in _WORD_BOUNDARY:
         return True
 
-    # camelCase / lower->upper transition (e.g. the `O` in `gptO`).
+    # camelCase / 小写到大写转换（例如 `gptO` 中的 `O`）。
     cur = target[index]
 
     return prev == prev.lower() and cur != cur.lower() and cur == cur.upper()
 
 
 def _token_score(orig: str, lower: str, token: str) -> float | None:
-    """Score one token against a target. None if the token isn't a subsequence.
+    """对一个 token 与目标进行评分。如果 token 不是子序列则返回 None。
 
-    A faithful port of ``fuzzyScore`` in ui-tui/src/lib/fuzzy.ts and
-    web/src/lib/fuzzy.ts so all three surfaces rank model ids identically:
-    contiguous runs, word-boundary / first-char starts, prefix matches, and
-    exact matches all score higher than scattered subsequence hits.
+    忠实移植自 ui-tui/src/lib/fuzzy.ts 和 web/src/lib/fuzzy.ts 中的
+    ``fuzzyScore``，使三个界面以相同方式排列 model id：连续匹配、
+    单词边界/首字符匹配、前缀匹配和精确匹配的得分都高于分散的子序列匹配。
 
-    ``lower`` is ``orig`` lowercased; matching is done against ``lower`` while
-    boundary detection uses ``orig`` (so the camelCase rule works), exactly as
-    in the TS scorer.
+    ``lower`` 是 ``orig`` 的小写形式；匹配针对 ``lower`` 进行，而
+    边界检测使用 ``orig``（以便驼峰规则生效），与 TS 评分器完全一致。
     """
     score = 0.0
     prev = -1
@@ -96,25 +94,25 @@ def _token_score(orig: str, lower: str, token: str) -> float | None:
         prev = idx
         search_from = idx + 1
 
-    # Prefix bonus: the token matched a contiguous prefix of the target.
+    # 前缀加分：token 匹配了目标的连续前缀。
     if positions and positions[0] == 0 and positions[-1] == len(positions) - 1:
         score += 8
 
-    # Exact full match dominates everything else.
+    # 精确完全匹配优先于其他所有情况。
     if lower == token:
         score += 20
 
-    # Slightly prefer shorter targets when scores are otherwise close.
+    # 当得分接近时，稍微偏好更短的目标。
     score -= len(lower) * 0.01
 
     return score
 
 
 def _fuzzy_score(label: str, query: str) -> float | None:
-    """Aggregate score for a multi-token query (AND). None if any token fails.
+    """多 token 查询（AND）的聚合评分。如果任一 token 不匹配则返回 None。
 
-    Mirrors ``fuzzyScoreMulti`` in the TS scorer: every whitespace-separated
-    token must match; per-token scores are summed.
+    镜像 TS 评分器中的 ``fuzzyScoreMulti``：每个空白分隔的 token 都必须
+    匹配；各 token 得分相加。
     """
     lower = label.lower()
     tokens = query.lower().split()
@@ -136,11 +134,11 @@ def _fuzzy_score(label: str, query: str) -> float | None:
 
 
 def _filter_indices(items: List[str], query: str) -> List[int]:
-    """Return item indices matching *query*, ranked best-first.
+    """返回匹配 *query* 的项目索引，按最佳匹配优先排序。
 
-    An empty query keeps every item in original order. Otherwise items are
-    filtered to fuzzy matches and sorted by score descending, ties broken by
-    original index so equal-scoring rows keep their catalog order.
+    空查询保留所有项目且保持原始顺序。否则项目经过模糊匹配过滤并按
+    得分降序排列，得分相同时按原始索引排序，使得分相同的行保持其
+    目录顺序。
     """
     q = query.strip()
 
@@ -162,14 +160,14 @@ def _filter_indices(items: List[str], query: str) -> List[int]:
 
 @dataclass
 class _SearchState:
-    """Mutable search state shared by curses picker loops."""
+    """curses 选择器循环共享的可变搜索状态。"""
 
     active: bool = False
     query: str = ""
 
 
 def _reconcile_cursor(filtered: List[int], cursor: int) -> tuple[int, int]:
-    """Return ``(cursor, cursor_pos)`` inside the filtered index list."""
+    """在过滤后的索引列表内返回 ``(cursor, cursor_pos)``。"""
     if not filtered:
         return cursor, 0
 
@@ -182,7 +180,7 @@ def _reconcile_cursor(filtered: List[int], cursor: int) -> tuple[int, int]:
 def _move_filtered_cursor(
     filtered: List[int], cursor: int, cursor_pos: int, delta: int
 ) -> int:
-    """Move through the filtered index list, wrapping like the legacy menus."""
+    """在过滤后的索引列表中移动光标，像传统菜单一样循环。"""
     if not filtered:
         return cursor
 
@@ -192,7 +190,7 @@ def _move_filtered_cursor(
 def _scroll_for_cursor(
     scroll_offset: int, cursor_pos: int, visible_rows: int, total_rows: int
 ) -> int:
-    """Clamp scroll offset so the cursor remains visible."""
+    """钳制滚动偏移量，使光标保持可见。"""
     visible_rows = max(1, visible_rows)
 
     if cursor_pos < scroll_offset:
@@ -206,18 +204,18 @@ def _scroll_for_cursor(
 def _handle_active_search_key(
     curses_mod, key: int, search: _SearchState
 ) -> tuple[bool, bool, bool]:
-    """Handle a key while the search prompt is active.
+    """在搜索提示激活时处理按键。
 
-    Returns ``(handled, confirm, changed)``. Active search consumes query
-    editing keys, but leaves navigation keys for the menu loop to handle.
+    返回 ``(handled, confirm, changed)``。活跃搜索消耗查询编辑键，
+    但将导航键留给菜单循环处理。
     """
     if not search.active:
         return False, False, False
 
     if key == 27:
-        # Esc stops search AND clears the query, restoring the full list (so a
-        # no-match filter can't strand the user on an empty list). Signals
-        # `changed` when there was a query so the driver resets scroll/cursor.
+        # Esc 停止搜索并清除查询，恢复完整列表（以便无匹配过滤
+        # 不会让用户卡在空列表上）。当存在查询时发出 `changed` 信号，
+        # 让驱动重置滚动/光标。
         had_query = bool(search.query)
         search.active = False
         search.query = ""
@@ -234,7 +232,7 @@ def _handle_active_search_key(
     if key in (curses_mod.KEY_ENTER, 10, 13):
         return True, True, False
 
-    if 32 <= key < 127:  # printable ASCII; avoids Latin-1 mojibake from 128-255
+    if 32 <= key < 127:  # 可打印 ASCII；避免 128-255 的 Latin-1 乱码
         search.query += chr(key)
         return True, False, True
 
@@ -242,17 +240,16 @@ def _handle_active_search_key(
 
 
 def flush_stdin() -> None:
-    """Flush any stray bytes from the stdin input buffer.
+    """刷新 stdin 输入缓冲区中的残留字节。
 
-    Must be called after ``curses.wrapper()`` (or any terminal-mode library
-    like simple_term_menu) returns, **before** the next ``input()`` /
-    ``getpass.getpass()`` call.  ``curses.endwin()`` restores the terminal
-    but does NOT drain the OS input buffer — leftover escape-sequence bytes
-    (from arrow keys, terminal mode-switch responses, or rapid keypresses)
-    remain buffered and silently get consumed by the next ``input()`` call,
-    corrupting user data (e.g. writing ``^[^[`` into .env files).
+    必须在 ``curses.wrapper()``（或 simple_term_menu 等任何终端模式
+    库）返回**之后**、下一次 ``input()`` / ``getpass.getpass()`` 调用
+    **之前**调用。``curses.endwin()`` 恢复终端但不会清空 OS 输入
+    缓冲区 — 残留的转义序列字节（来自方向键、终端模式切换响应
+    或快速按键）仍然缓冲，会被下一次 ``input()`` 调用静默消费，
+    破坏用户数据（例如将 ``^[^[`` 写入 .env 文件）。
 
-    On non-TTY stdin (piped, redirected) or Windows, this is a no-op.
+    在非 TTY stdin（管道、重定向）或 Windows 上，这是 no-op。
     """
     try:
         if not sys.stdin.isatty():
@@ -263,8 +260,8 @@ def flush_stdin() -> None:
         pass
 
 
-# Normalized menu actions returned by ``read_menu_key``.  Using sentinels keeps
-# every menu's key-handling branch identical and free of raw escape-byte logic.
+# ``read_menu_key`` 返回的标准化菜单动作。使用哨兵值使每个菜单的
+# 按键处理分支保持一致，无需处理原始转义字节逻辑。
 NAV_UP = "up"
 NAV_DOWN = "down"
 NAV_SELECT = "select"
@@ -274,29 +271,28 @@ NAV_NONE = "none"
 
 
 def read_menu_key(stdscr) -> str:
-    """Read one keypress and normalize it to a menu action.
+    """读取一次按键并将其标准化为菜单动作。
 
-    Decodes raw arrow-key escape sequences in addition to the translated
-    ``curses.KEY_*`` values.  Even with ``keypad(True)`` (which
-    ``curses.wrapper`` sets), some terminals/terminfo entries deliver cursor
-    keys as raw CSI/SS3 byte sequences — ``getch()`` then returns ``27`` (ESC)
-    followed by e.g. ``[`` ``A``.  Treating that leading ``27`` as a cancel is
-    what made the setup wizard's provider/model pickers bail to the numbered
-    fallback the moment a user pressed up/down.
+    除了 ``curses.KEY_*`` 翻译值外，还解码原始方向键转义序列。
+    即使设置了 ``keypad(True)``（``curses.wrapper`` 会设置），某些
+    终端/terminfo 条目仍以原始 CSI/SS3 字节序列传递光标键 —
+    ``getch()`` 然后返回 ``27``（ESC），接着例如 ``[`` ``A``。
+    将开头的 ``27`` 视为取消，正是导致设置向导的 provider/model
+    选择器在用户按上/下时退出到编号备选方案的原因。
 
-    Returns one of the ``NAV_*`` constants.  A lone ESC (no continuation byte
-    within a short window) is the only thing that maps to ``NAV_CANCEL`` via
-    the escape path; ``q`` also cancels.  Unknown sequences map to
-    ``NAV_NONE`` so the caller simply ignores them rather than misfiring.
+    返回 ``NAV_*`` 常量之一。单独的 ESC（在短时间内无后续字节）
+    是通过转义路径映射到 ``NAV_CANCEL`` 的唯一情况；``q`` 也可以
+    取消。未知序列映射到 ``NAV_NONE``，调用方可以忽略它们而不会
+    误触发。
     """
     return _decode_menu_key(stdscr, stdscr.getch())
 
 
 def _decode_menu_key(stdscr, key: int) -> str:
-    """Normalize an already-read keypress to a menu action.
+    """将已读取的按键标准化为菜单动作。
 
-    Split out from ``read_menu_key`` so search-aware loops can peek the raw
-    key (e.g. to catch ``/``) before falling back to nav decoding.
+    从 ``read_menu_key`` 中拆分出来，以便感知搜索的循环可以在回退
+    到导航解码之前检查原始键（例如捕获 ``/``）。
     """
     import curses
 
@@ -311,39 +307,39 @@ def _decode_menu_key(stdscr, key: int) -> str:
     if key == ord("q"):
         return NAV_CANCEL
 
-    if key == 27:  # ESC — could be a lone ESC (cancel) or an escape sequence.
-        # Wait briefly for a continuation byte.  On slow PTYs (SSH/tmux) the
-        # bytes of an arrow key can arrive across separate reads, so a tiny
-        # timeout avoids misreading a split sequence as a bare ESC.
+    if key == 27:  # ESC — 可能是单独的 ESC（取消）或转义序列。
+        # 短暂等待后续字节。在慢速 PTY（SSH/tmux）上，方向键的字节
+        # 可能分多次 read 到达，因此微小的超时可以避免将拆分的序列
+        # 误读为单独的 ESC。
         try:
             stdscr.timeout(60)
             nxt = stdscr.getch()
         finally:
-            stdscr.timeout(-1)  # restore blocking mode
+            stdscr.timeout(-1)  # 恢复阻塞模式
 
         if nxt == -1:
-            return NAV_CANCEL  # genuine lone ESC
+            return NAV_CANCEL  # 真正的单独 ESC
 
-        if nxt in (ord("["), ord("O")):  # CSI / SS3 introducer
+        if nxt in (ord("["), ord("O")):  # CSI / SS3 引入符
             final = stdscr.getch()
             if final in (ord("A"), ord("k")):
                 return NAV_UP
             if final in (ord("B"), ord("j")):
                 return NAV_DOWN
-            # Consume the tail of any other CSI sequence (e.g. ``[3~`` Delete,
-            # ``[H`` Home) up to its terminator so stray bytes don't leak into
-            # the next input() and corrupt it.
-            while 0x20 <= final <= 0x3F:  # CSI parameter/intermediate bytes
+            # 消费任何其他 CSI 序列的尾部（例如 ``[3~`` Delete、
+            # ``[H`` Home）直到其终止符，避免残留字节泄漏到下一次
+            # input() 并破坏它。
+            while 0x20 <= final <= 0x3F:  # CSI 参数/中间字节
                 final = stdscr.getch()
             return NAV_NONE
-        # ESC followed by some other byte we don't handle — swallow it.
+        # ESC 后跟某个我们不处理的其他字节 — 吞掉它。
         return NAV_NONE
 
     return NAV_NONE
 
 
-# Sentinel: an on_action reducer returns this to mean "keep looping" (the
-# keypress changed cursor/selection state but didn't resolve the menu).
+# 哨兵值：on_action reducer 返回此值表示"继续循环"（按键改变了
+# 光标/选择状态但未完成菜单）。
 _KEEP = object()
 
 
@@ -362,46 +358,46 @@ def _run_curses_menu(
     searchable=False,
     search_labels=None,
 ):
-    """Shared curses single-/multi-select event loop.
+    """共享的 curses 单选/多选事件循环。
 
-    Owns every piece the three public menus used to duplicate verbatim:
-    the non-TTY guard, ``curses.wrapper`` setup (cursor hide + color pairs),
-    the per-frame ``clear``/``getmaxyx``/``refresh`` cycle, scroll-offset math,
-    row iteration, the ``read_menu_key`` dispatch with ``NAV_UP``/``NAV_DOWN``
-    cursor wrap, ``flush_stdin``, and the ``KeyboardInterrupt`` / curses-
-    unavailable fallback. Per-menu behavior is supplied as callbacks so the
-    rendered output stays byte-identical to the old hand-rolled loops.
+    拥有三个公共菜单过去逐字重复的所有内容：非 TTY 守卫、
+    ``curses.wrapper`` 设置（隐藏光标 + 颜色对）、每帧的
+    ``clear``/``getmaxyx``/``refresh`` 循环、滚动偏移计算、行迭代、
+    ``read_menu_key`` 分发及 ``NAV_UP``/``NAV_DOWN`` 光标循环、
+    ``flush_stdin``、以及 ``KeyboardInterrupt`` / curses 不可用时的
+    回退。每个菜单的行为通过回调提供，使渲染输出与旧的手工循环
+    保持字节级一致。
 
-    Callbacks / params:
+    回调/参数：
         draw_header(stdscr, max_y, max_x) -> int
-            Draw the title/hint/description rows. Returns the first screen row
-            index where the scrollable item list should start. When search is
-            active it receives the live ``_SearchState`` via the optional
-            ``search`` keyword (drawn by the menu so the hint line can show it).
+            绘制标题/提示/描述行。返回可滚动项目列表应开始的
+            第一个屏幕行索引。当搜索激活时，通过可选的 ``search``
+            关键字接收实时的 ``_SearchState``（由菜单绘制，以便
+            提示行可以显示它）。
         draw_row(stdscr, y, idx, is_cursor, max_x) -> None
-            Draw one item row. ``idx`` is always the ORIGINAL item index, so
-            per-menu rendering is unchanged whether or not a filter is active.
+            绘制一个项目行。``idx`` 始终是原始项目索引，因此无论
+            过滤是否激活，每个菜单的渲染都保持不变。
         on_action(action, cursor) -> value
-            Reducer for SELECT/TOGGLE/CANCEL. Return ``_KEEP`` to continue the
-            loop; return anything else to resolve the menu with that value.
-            (UP/DOWN cursor movement is handled by the driver itself.)
-        reserve_bottom: number of bottom screen rows kept clear of items
-            (1 = leave the final row blank, matching the old loops).
+            SELECT/TOGGLE/CANCEL 的 reducer。返回 ``_KEEP`` 继续循环；
+            返回其他任何值则以该值结束菜单。
+            （UP/DOWN 光标移动由驱动本身处理。）
+        reserve_bottom：保持不清项目的底部屏幕行数
+            （1 = 最后一行留空，与旧循环一致）。
         draw_footer(stdscr, max_y, max_x) -> None
-            Optional bottom-row painter (e.g. a status bar). Drawn after the
-            item rows; its row budget must be included in ``reserve_bottom``.
-        extra_color_pairs: also init pair 3 (dim gray) for status bars.
+            可选的底部行绘制器（例如状态栏）。在项目行之后绘制；
+            其行预算必须包含在 ``reserve_bottom`` 中。
+        extra_color_pairs：同时初始化颜色对 3（暗灰色）用于状态栏。
         fallback() -> value
-            Called when curses errors out on a real TTY (curses unavailable).
-        cancel_value: returned on non-TTY stdin, ESC/cancel, or KeyboardInterrupt.
-        searchable: when true, ``/`` opens a type-to-filter prompt over
-            ``search_labels``. Returned values are always ORIGINAL item indices.
-        search_labels: per-item text used for filtering (required when
-            ``searchable`` is true; length must equal ``item_count``).
+            当 curses 在真实 TTY 上出错（curses 不可用）时调用。
+        cancel_value：在非 TTY stdin、ESC/取消或 KeyboardInterrupt 时返回。
+        searchable：为 true 时，``/`` 打开基于 ``search_labels`` 的
+            输入过滤提示。返回值始终是原始项目索引。
+        search_labels：用于过滤的每个项目文本（``searchable`` 为 true
+            时必需；长度必须等于 ``item_count``）。
     """
-    # Non-TTY (piped/redirected stdin): curses and input() both hang or spin,
-    # so return the cancel value directly — matching the pre-refactor guard in
-    # each menu (the numbered fallback is only for curses errors on a real TTY).
+    # 非 TTY（管道/重定向 stdin）：curses 和 input() 都会挂起或空转，
+    # 因此直接返回取消值 — 与重构前每个菜单中的守卫一致（编号备选
+    # 方案仅用于真实 TTY 上的 curses 错误）。
     if not sys.stdin.isatty():
         return cancel_value
 
@@ -425,8 +421,8 @@ def _run_curses_menu(
             cursor = initial_cursor
             scroll_offset = 0
             search = _SearchState()
-            # Non-None labels for filtering; empty when search is disabled so
-            # _filter_indices stays a cheap identity range.
+            # 用于过滤的非 None 标签；搜索禁用时为空，使
+            # _filter_indices 保持廉价的恒等范围。
             labels: List[str] = (
                 search_labels if (use_search and search_labels is not None) else []
             )
@@ -442,8 +438,8 @@ def _run_curses_menu(
                 )
                 cursor, cursor_pos = _reconcile_cursor(filtered, cursor)
 
-                # draw_header accepts an optional `search` kwarg when the menu
-                # wants to render the live filter; tolerate headers that don't.
+                # draw_header 在菜单想渲染实时过滤器时接受可选的
+                # `search` 关键字；兼容不使用的 header。
                 try:
                     items_start = draw_header(stdscr, max_y, max_x, search=search)
                 except TypeError:
@@ -478,8 +474,8 @@ def _run_curses_menu(
                     key = stdscr.getch()
 
                     if search.active:
-                        # Active search consumes query-editing keys; nav keys
-                        # fall through to be decoded below.
+                        # 活跃搜索消耗查询编辑键；导航键
+                        # 继续到下方解码。
                         handled, confirm, changed = _handle_active_search_key(
                             curses, key, search
                         )
@@ -536,16 +532,15 @@ def curses_checklist(
     cancel_returns: Set[int] | None = None,
     status_fn: Optional[Callable[[Set[int]], str]] = None,
 ) -> Set[int]:
-    """Curses multi-select checklist. Returns set of selected indices.
+    """Curses 多选清单。返回选中索引的集合。
 
-    Args:
-        title: Header line displayed above the checklist.
-        items: Display labels for each row.
-        selected: Indices that start checked (pre-selected).
-        cancel_returns: Returned on ESC/q. Defaults to the original *selected*.
-        status_fn: Optional callback ``f(chosen_indices) -> str`` whose return
-            value is rendered on the bottom row of the terminal.  Use this for
-            live aggregate info (e.g. estimated token counts).
+    参数：
+        title：清单上方显示的标题行。
+        items：每行的显示标签。
+        selected：起始时已选中（预选）的索引。
+        cancel_returns：ESC/q 时返回。默认为原始的 *selected*。
+        status_fn：可选回调 ``f(chosen_indices) -> str``，其返回值
+            在终端的最后一行渲染。用于实时汇总信息（例如预估 token 数）。
     """
     if cancel_returns is None:
         cancel_returns = set(selected)
@@ -588,7 +583,7 @@ def curses_checklist(
         try:
             status_text = status_fn(chosen)
             if status_text:
-                # Right-align on the bottom row
+                # 在最后一行右对齐
                 sx = max(0, max_x - len(status_text) - 1)
                 sattr = curses.A_DIM
                 if curses.has_colors():
@@ -628,19 +623,17 @@ def curses_radiolist(
     description: str | None = None,
     searchable: bool = False,
 ) -> int:
-    """Curses single-select radio list. Returns the selected index.
+    """Curses 单选列表。返回选中的索引。
 
-    Args:
-        title: Header line displayed above the list.
-        items: Display labels for each row.
-        selected: Index that starts selected (pre-selected).
-        cancel_returns: Returned on ESC/q. Defaults to the original *selected*.
-        description: Optional multi-line text shown between the title and
-            the item list.  Useful for context that should survive the
-            curses screen clear.
-        searchable: When true, ``/`` opens a type-to-filter prompt. The
-            returned value is always the original item index, not a filtered
-            row position.
+    参数：
+        title：列表上方显示的标题行。
+        items：每行的显示标签。
+        selected：起始时选中的索引（预选）。
+        cancel_returns：ESC/q 时返回。默认为原始的 *selected*。
+        description：标题和项目列表之间显示的可选多行文本。
+            用于在 curses 屏幕清除后仍需保留的上下文信息。
+        searchable：为 true 时，``/`` 打开输入过滤提示。返回值
+            始终是原始项目索引，而非过滤后的行位置。
     """
     if cancel_returns is None:
         cancel_returns = selected
@@ -659,7 +652,7 @@ def curses_radiolist(
             stdscr.addnstr(row, 0, title, max_x - 1, hattr)
             row += 1
 
-            # Description lines
+            # 描述行
             for dline in desc_lines:
                 if row >= max_y - 1:
                     break
@@ -676,7 +669,7 @@ def curses_radiolist(
             row += 1
         except curses.error:
             pass
-        # One blank row between the hint and the item list.
+        # 提示和项目列表之间的一个空行。
         return row + 1
 
     def _draw_row(stdscr, y, i, is_cursor, max_x):
@@ -719,7 +712,7 @@ def _radio_numbered_fallback(
     selected: int,
     cancel_returns: int,
 ) -> int:
-    """Text-based numbered fallback for radio selection."""
+    """单选的单选文本编号备选方案。"""
     print(color(f"\n  {title}", Colors.YELLOW))
     print(color("  Select by number, Enter to confirm.\n", Colors.DIM))
 
@@ -747,13 +740,13 @@ def curses_single_select(
     cancel_label: str = "Cancel",
     searchable: bool = False,
 ) -> int | None:
-    """Curses single-select menu. Returns selected index or None on cancel.
+    """Curses 单选菜单。返回选中索引，取消时返回 None。
 
-    Works inside prompt_toolkit because curses.wrapper() restores the terminal
-    safely, unlike simple_term_menu which conflicts with /dev/tty.
+    在 prompt_toolkit 内也能工作，因为 curses.wrapper() 能安全恢复终端，
+    不像 simple_term_menu 会与 /dev/tty 冲突。
 
-    When ``searchable`` is true, ``/`` opens a type-to-filter prompt; the
-    returned value is always the original item index (or None for cancel).
+    当 ``searchable`` 为 true 时，``/`` 打开输入过滤提示；返回值始终是
+    原始项目索引（取消时为 None）。
     """
     all_items = list(items) + [cancel_label]
     cancel_idx = len(items)
@@ -792,12 +785,12 @@ def curses_single_select(
 
     def _on_action(action, cursor):
         if action == NAV_SELECT:
-            # Selecting the synthetic cancel row resolves to None, mirroring
-            # the old post-loop ``>= cancel_idx`` guard.
+            # 选中合成的取消行时解析为 None，镜像旧的
+            # 循环后 ``>= cancel_idx`` 守卫。
             return None if cursor >= cancel_idx else cursor
         if action == NAV_CANCEL:
             return None
-        return _KEEP  # NAV_TOGGLE — no-op for this menu
+        return _KEEP  # NAV_TOGGLE — 此菜单的 no-op
 
     return _run_curses_menu(
         initial_cursor=min(default_index, len(all_items) - 1),
@@ -818,7 +811,7 @@ def _numbered_single_fallback(
     items: List[str],
     cancel_idx: int,
 ) -> int | None:
-    """Text-based numbered fallback for single-select."""
+    """单选的文本编号备选方案。"""
     print(f"\n  {title}\n")
     for i, label in enumerate(items, 1):
         print(f"  {i}. {label}")
@@ -844,7 +837,7 @@ def _numbered_fallback(
     cancel_returns: Set[int],
     status_fn: Optional[Callable[[Set[int]], str]] = None,
 ) -> Set[int]:
-    """Text-based toggle fallback for terminals without curses."""
+    """不支持 curses 的终端的文本切换备选方案。"""
     chosen = set(selected)
     print(color(f"\n  {title}", Colors.YELLOW))
     print(color("  Toggle by number, Enter to confirm.\n", Colors.DIM))

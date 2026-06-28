@@ -1,8 +1,8 @@
-"""Shared path validation helpers for tool implementations.
+"""供工具实现共享的路径校验辅助函数。
 
-Extracts the ``resolve() + relative_to()`` and ``..`` traversal check
-patterns previously duplicated across skill_manager_tool, skills_tool,
-skills_hub, cronjob_tools, and credential_files.
+抽取出此前在 skill_manager_tool、skills_tool、skills_hub、
+cronjob_tools 和 credential_files 中重复出现的 ``resolve() + relative_to()``
+以及 ``..`` 路径穿越检查模式。
 """
 
 import logging
@@ -13,13 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def validate_within_dir(path: Path, root: Path) -> Optional[str]:
-    """Ensure *path* resolves to a location within *root*.
+    """确保 *path* 解析后的位置位于 *root* 之内。
 
-    Returns an error message string if validation fails, or ``None`` if the
-    path is safe.  Uses ``Path.resolve()`` to follow symlinks and normalize
-    ``..`` components.
+    校验失败时返回错误消息字符串，路径安全时返回 ``None``。内部使用
+    ``Path.resolve()`` 来跟随符号链接并规范化 ``..`` 组成部分。
 
-    Usage::
+    用法::
 
         error = validate_within_dir(user_path, allowed_root)
         if error:
@@ -35,9 +34,9 @@ def validate_within_dir(path: Path, root: Path) -> Optional[str]:
 
 
 def has_traversal_component(path_str: str) -> bool:
-    """Return True if *path_str* contains ``..`` traversal components.
+    """当 *path_str* 含有 ``..`` 路径穿越组成部分时返回 True。
 
-    Quick check for obvious traversal attempts before doing full resolution.
+    在执行完整解析之前，对明显的穿越尝试做一次快速检查。
     """
     parts = Path(path_str).parts
     return ".." in parts

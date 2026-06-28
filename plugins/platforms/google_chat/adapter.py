@@ -1,38 +1,37 @@
 """
-Google Chat platform adapter.
+Google Chat 平台适配器。
 
-Uses Google Cloud Pub/Sub (pull subscription) for inbound events and the
-Google Chat REST API for outbound messages. Pattern parallels Slack Socket
-Mode and Telegram long-polling: no public endpoint required.
+使用 Google Cloud Pub/Sub（pull 订阅）处理入站事件，使用
+Google Chat REST API 发送出站消息。模式类似于 Slack Socket
+Mode 和 Telegram 长轮询：无需公共端点。
 
-Concurrency model
+并发模型
 -----------------
-The Pub/Sub SubscriberClient invokes its message callback in a background
-thread (managed by the client's internal executor). The adapter's
-``handle_message`` coroutine must run on the asyncio event loop, so the
-callback uses ``asyncio.run_coroutine_threadsafe`` with
-``add_done_callback`` (never ``.result()`` — that would block the callback
-thread and saturate the Pub/Sub executor under load).
+Pub/Sub SubscriberClient 在后台线程（由客户端内部 executor 管理）中
+调用其消息回调。适配器的 ``handle_message`` 协程必须运行在 asyncio 事件
+循环上，因此回调使用 ``asyncio.run_coroutine_threadsafe`` 配合
+``add_done_callback``（绝不使用 ``.result()`` —— 那会阻塞回调线程
+并在负载下耗尽 Pub/Sub executor）。
 
-All outbound Chat REST calls go through ``asyncio.to_thread`` because the
-googleapiclient is synchronous. This keeps the event loop responsive.
+所有出站 Chat REST 调用通过 ``asyncio.to_thread`` 执行，因为
+googleapiclient 是同步的。这保持了事件循环的响应性。
 
-Pub/Sub delivery diagram::
+Pub/Sub 消息传递示意图::
 
-    Pub/Sub stream   ->  callback thread        ->  asyncio loop
+    Pub/Sub 流     ->  回调线程               ->  asyncio 循环
     (streaming_pull)     (_on_pubsub_message)       (handle_message)
          |                       |                        |
-         |   at-least-once       |  parse + dedup         |  agent work
-         |   delivery            |  _submit_on_loop       |  send() response
-         |                       |  message.ack()         |
+         |   at-least-once       |  解析 + 去重            |  agent 工作
+         |   投递                |  _submit_on_loop        |  send() 响应
+         |                       |  message.ack()          |
          v                       v                        v
 
-Event type routing
+事件类型路由
 ------------------
-Inbound envelope carries ``type`` in [MESSAGE, ADDED_TO_SPACE, REMOVED_FROM_SPACE,
-CARD_CLICKED]. Only MESSAGE dispatches to the agent. ADDED_TO_SPACE caches the
-bot's resource name (belt-and-suspenders on top of eager resolution in connect()).
-CARD_CLICKED is ACK'd only in v1 (follow-up PR implements interactivity).
+入站信封在 [MESSAGE, ADDED_TO_SPACE, REMOVED_FROM_SPACE,
+CARD_CLICKED] 中携带 ``type``。只有 MESSAGE 会分派给 agent。ADDED_TO_SPACE
+缓存 bot 的资源名称（作为 connect() 中主动解析的额外保障）。
+CARD_CLICKED 在 v1 中仅做 ACK（后续 PR 实现交互功能）。
 """
 
 from __future__ import annotations
@@ -46,20 +45,17 @@ import re
 from pathlib import Path as _Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-# Heavy google-cloud + googleapiclient imports are deferred to first
-# adapter use. Importing them eagerly here added ~110ms wall and ~33MB
-# RSS to *every* CLI invocation (the plugin loader imports this module at
-# ``model_tools`` import time, so ``hermes status``, ``hermes chat``, etc.
-# all paid the cost even though they never instantiate the adapter).
+# 重量级的 google-cloud + googleapiclient 导入延迟到适配器首次使用时。
+# 在此处立即导入会为*每次* CLI 调用增加约 110ms 的墙钟时间和 ~33MB 的
+# RSS（插件加载器在 ``model_tools`` 导入时导入此模块，因此 ``hermes status``、
+# ``hermes chat`` 等即使从不实例化适配器也要付出此代价）。
 #
-# All names below are module globals that ``_load_google_modules()``
-# rebinds on first call. The ``HttpError = Exception`` placeholder is
-# important: ``except HttpError as exc:`` clauses elsewhere in this
-# module bind the *current* module-global at try/except evaluation time,
-# so as long as ``_load_google_modules()`` runs before any such
-# ``try`` block executes (which it does — ``__init__`` calls it), the
-# rebound real ``googleapiclient.errors.HttpError`` is what actually
-# matches at runtime.
+# 以下所有名称都是模块全局变量，``_load_google_modules()`` 在首次调用时
+# 会重新绑定它们。``HttpError = Exception`` 占位符很重要：此模块中其他地方
+# 的 ``except HttpError as exc:`` 子句在 try/except 求值时绑定*当前*的模块
+# 全局变量，因此只要 ``_load_google_modules()`` 在任何此类 ``try`` 块执行之前
+# 运行（确实如此 —— ``__init__`` 会调用它），重新绑定后的真正
+# ``googleapiclient.errors.HttpError`` 就会在运行时实际匹配。
 GOOGLE_CHAT_AVAILABLE: bool = False
 httplib2: Any = None  # type: ignore
 pubsub_v1: Any = None  # type: ignore
@@ -74,18 +70,15 @@ _google_modules_loaded: bool = False
 
 
 def _load_google_modules() -> bool:
-    """Lazily import the heavy google-cloud + googleapiclient stack.
+    """延迟导入重量级的 google-cloud + googleapiclient 依赖栈。
 
-    Idempotent. Returns True if the optional deps are installed and
-    were successfully imported, False otherwise. On success, mutates
-    the module globals so existing code using ``pubsub_v1``,
-    ``service_account``, ``HttpError``, etc. transparently uses the
-    real classes.
+    幂等操作。如果可选依赖已安装并成功导入则返回 True，否则返回 False。
+    成功时修改模块全局变量，使使用 ``pubsub_v1``、``service_account``、
+    ``HttpError`` 等的现有代码透明地使用真实类。
 
-    Why deferred: the import chain pulls in google.cloud.pubsub_v1,
-    googleapiclient, grpc, and friends — about 33MB RSS and 110ms wall
-    on a fresh interpreter. Plugin discovery imports this module on
-    every CLI invocation, even ones that never touch a gateway.
+    为何延迟：导入链会拉入 google.cloud.pubsub_v1、googleapiclient、grpc
+    及其依赖 —— 在全新解释器上约占 33MB RSS 和 110ms 墙钟时间。插件发现
+    会在每次 CLI 调用时导入此模块，即使是那些从不涉及 gateway 的命令。
     """
     global GOOGLE_CHAT_AVAILABLE, _google_modules_loaded
     global httplib2, pubsub_v1, gax_exceptions, service_account
@@ -118,14 +111,12 @@ def _load_google_modules() -> bool:
 
 from gateway.config import Platform, PlatformConfig
 
-# Trigger registration of the dynamic ``google_chat`` enum member at module
-# import time.  ``_missing_()`` caches the pseudo-member in
-# ``_value2member_map_`` *and* ``_member_map_``, so after this call
-# ``Platform.GOOGLE_CHAT`` resolves via attribute access too.  Without this
-# line, any code (including tests) that references ``Platform.GOOGLE_CHAT``
-# before an adapter instance is constructed would hit ``AttributeError``.
-# Built-ins avoid this because they have explicit enum members; plugin
-# platforms earn the attribute by asking for it once.
+# 在模块导入时触发动态 ``google_chat`` 枚举成员的注册。
+# ``_missing_()`` 将伪成员缓存到 ``_value2member_map_`` *和* ``_member_map_``
+# 中，因此在此调用之后 ``Platform.GOOGLE_CHAT`` 也可以通过属性访问解析。
+# 如果没有这一行，任何在构建适配器实例之前引用 ``Platform.GOOGLE_CHAT``
+# 的代码（包括测试）都会触发 ``AttributeError``。内置平台避免了这个问题，
+# 因为它们有显式枚举成员；插件平台通过请求一次来获得属性访问能力。
 Platform("google_chat")
 from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.base import (
@@ -141,46 +132,42 @@ from gateway.platforms.base import (
 )
 
 
-# Pin the logger name to the legacy module path so operator log filters,
-# grep aliases, and the gateway's bundled log views keep matching after
-# the in-tree → plugin migration. ``__name__`` resolves to
-# ``hermes_plugins.platforms__google_chat.adapter`` once the plugin
-# loader namespaces this module, which would silently break every
-# downstream log-monitor that greps for ``gateway.platforms.google_chat``.
+# 将 logger 名称固定为旧模块路径，以便运维人员的日志过滤器、grep 别名
+# 以及 gateway 内置的日志视图在 in-tree → plugin 迁移后继续匹配。
+# ``__name__`` 在插件加载器为此模块分配命名空间后会解析为
+# ``hermes_plugins.platforms__google_chat.adapter``，这将悄悄破坏所有
+# grep ``gateway.platforms.google_chat`` 的下游日志监控工具。
 logger = logging.getLogger("gateway.platforms.google_chat")
 
 
-# Regex validating Pub/Sub subscription path format.
+# 验证 Pub/Sub 订阅路径格式的正则表达式。
 _SUBSCRIPTION_PATH_RE = re.compile(
     r"^projects/(?P<project>[^/]+)/subscriptions/(?P<sub>[^/]+)$"
 )
 
-# SA scopes — chat.bot is sufficient for the bot's own messaging operations
-# (messages.create / patch / delete, spaces metadata, memberships,
-# media.download for inbound user attachments). The bot CANNOT call
-# media.upload — Google requires user OAuth for that endpoint, no scope
-# adjustment changes it.
+# SA scopes — chat.bot 足以满足 bot 自身的消息操作
+# （messages.create / patch / delete、spaces 元数据、memberships、
+# media.download 用于入站用户附件）。bot 无法调用 media.upload ——
+# Google 要求该端点使用用户 OAuth，任何 scope 调整都无法改变这一点。
 #
-# Native attachment delivery (bot → user) is handled via a separate user-
-# OAuth flow in ``oauth.py`` (this plugin's helper module): the user grants the bot
-# the chat.messages.create scope ONCE via an in-chat consent flow; the
-# bot then calls media.upload on the user's behalf when sending files.
-# See https://developers.google.com/chat/api/guides/auth/users
+# 原生附件投递（bot → 用户）通过 ``oauth.py``（此插件的辅助模块）中
+# 的独立用户 OAuth 流程处理：用户通过聊天内同意流程一次性授予 bot
+# chat.messages.create scope；然后 bot 代表用户调用 media.upload 发送文件。
+# 参见 https://developers.google.com/chat/api/guides/auth/users
 _CHAT_SCOPES = [
     "https://www.googleapis.com/auth/chat.bot",
     "https://www.googleapis.com/auth/pubsub",
 ]
 
-# Google Chat text-message size limit is 4096; leave margin.
+# Google Chat 文本消息大小限制为 4096；留出余量。
 _MAX_TEXT_LENGTH = 4000
 
-# Per-space rate-limit hit counter threshold; warn if exceeded.
+# 每个 space 的速率限制命中计数器阈值；超过时发出警告。
 _RATE_LIMIT_WARN_THRESHOLD = 5
 
-# Outbound retry parameters. Google's Chat REST API returns transient 5xx
-# and 429 occasionally — without a retry wrapper, single hiccups drop
-# user-visible messages. Backoff stays bounded so a true outage is still
-# surfaced quickly. Pattern lifted from PR #14965.
+# 出站重试参数。Google 的 Chat REST API 偶尔会返回瞬时 5xx 和 429
+# 错误 —— 没有重试包装器的话，单次故障就会丢弃用户可见的消息。
+# 退避保持有界，以便真正的故障仍能被快速上报。模式借鉴自 PR #14965。
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 1.0
 _RETRY_MAX_DELAY = 8.0
@@ -189,24 +176,24 @@ _RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
 def _is_retryable_error(exc: BaseException) -> bool:
-    """Classify outbound API errors as transient (retryable) vs permanent.
+    """将出站 API 错误分类为瞬时（可重试）或永久性错误。
 
-    Retries are applied to:
-      - HTTP 429 (rate-limited)
-      - HTTP 5xx (server errors)
-      - Network/transport failures (timeout, connection reset, DNS)
+    重试适用于以下情况：
+      - HTTP 429（速率限制）
+      - HTTP 5xx（服务器错误）
+      - 网络/传输层故障（超时、连接重置、DNS）
 
-    Authentication errors (401/403), client errors (4xx other than 429),
-    and well-formed non-retryable failures are NOT retried — those
-    indicate a misconfiguration or revoked token, not a hiccup.
+    身份验证错误（401/403）、客户端错误（429 以外的 4xx）以及格式正确
+    的不可重试失败不会被重试 —— 这些表明配置错误或 token 被撤销，
+    而非瞬时故障。
     """
-    # googleapiclient.errors.HttpError carries resp.status
+    # googleapiclient.errors.HttpError 携带 resp.status
     resp = getattr(exc, "resp", None)
     status = getattr(resp, "status", None)
     if isinstance(status, int):
         return status in _RETRYABLE_HTTP_STATUSES
-    # Fallback heuristics for SSL/socket errors that don't carry an
-    # HTTP status: text matches against common transport-layer wording.
+    # 对不携带 HTTP 状态码的 SSL/socket 错误的回退启发式判断：
+    # 文本匹配常见传输层错误措辞。
     text = str(exc).lower()
     if "timeout" in text or "timed out" in text:
         return True
@@ -216,15 +203,14 @@ def _is_retryable_error(exc: BaseException) -> bool:
         return True
     return False
 
-# Sentinel kept in ``_typing_messages`` after ``send()`` patches the typing
-# marker into the agent's real response. Two purposes:
-#   * ``send_typing`` checks for any value before posting — sentinel keeps
-#     ``_keep_typing`` (running on the base-class timer) from creating a
-#     fresh "Hermes is thinking…" card during the small window between
-#     ``send()`` finishing and the base-class cancelling its typing_task.
-#   * ``stop_typing`` checks for the sentinel and skips the API delete —
-#     otherwise the safety-net cleanup at base.py:_process_message_background
-#     would delete the response we just patched and leave a tombstone.
+# 在 ``send()`` 将 typing 标记修补为 agent 的真实响应后，
+# ``_typing_messages`` 中保留的哨兵值。有两个用途：
+#   * ``send_typing`` 在发布前检查任何值 —— 哨兵防止 ``_keep_typing``
+#     （在基类计时器上运行）在 ``send()`` 完成和基类取消 typing_task
+#     之间的小窗口期内创建新的"Hermes is thinking…"卡片。
+#   * ``stop_typing`` 检查哨兵并跳过 API 删除 —— 否则 base.py 中
+#     _process_message_background 的安全清理会删除我们刚修补的响应，
+#     留下一个墓碑。
 _TYPING_CONSUMED_SENTINEL = "<consumed>"
 
 

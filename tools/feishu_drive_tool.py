@@ -1,8 +1,7 @@
-"""Feishu Drive Tools -- document comment operations via Feishu/Lark API.
+"""飞书 Drive 工具 —— 通过飞书/Lark API 进行文档评论操作。
 
-Provides tools for listing, replying to, and adding document comments.
-Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
-The lark client is injected per-thread by the comment event handler.
+提供列出、回复、新增文档评论的工具。采用与 feishu_comment.py 相同的
+懒加载 + BaseRequest 模式。lark 客户端由评论事件处理器按线程注入。
 """
 
 import json
@@ -13,23 +12,23 @@ from tools.registry import registry, tool_error, tool_result
 
 logger = logging.getLogger(__name__)
 
-# Thread-local storage for the lark client injected by feishu_comment handler.
+# 用于存放由 feishu_comment 处理器注入的 lark 客户端的线程本地存储。
 _local = threading.local()
 
 
 def set_client(client):
-    """Store a lark client for the current thread (called by feishu_comment)."""
+    """为当前线程保存一个 lark 客户端（由 feishu_comment 调用）。"""
     _local.client = client
 
 
 def get_client():
-    """Return the lark client for the current thread, or None."""
+    """返回当前线程的 lark 客户端，没有则返回 None。"""
     return getattr(_local, "client", None)
 
 
 def _check_feishu():
-    # See ``tools/feishu_doc_tool.py::_check_feishu`` — ``find_spec`` keeps
-    # CLI startup fast (the SDK itself takes ~5s to import eagerly).
+    # 参见 ``tools/feishu_doc_tool.py::_check_feishu`` —— 用 ``find_spec`` 可以让
+    # CLI 启动保持快速（该 SDK 本身完整导入大约需要 5 秒）。
     import importlib.util
     try:
         return importlib.util.find_spec("lark_oapi") is not None
@@ -38,7 +37,7 @@ def _check_feishu():
 
 
 def _do_request(client, method, uri, paths=None, queries=None, body=None):
-    """Build and execute a BaseRequest, return (code, msg, data_dict)."""
+    """构建并执行一个 BaseRequest，返回 (code, msg, data_dict)。"""
     from lark_oapi import AccessTokenType
     from lark_oapi.core.enum import HttpMethod
     from lark_oapi.core.model.base_request import BaseRequest
@@ -60,14 +59,14 @@ def _do_request(client, method, uri, paths=None, queries=None, body=None):
 
     request = builder.build()
 
-    # Tool handlers run synchronously in a worker thread (no running event
-    # loop), so call the blocking lark client directly.
+    # 工具处理器在工作线程中同步运行（没有正在运行的事件循环），
+    # 因此直接调用阻塞式的 lark 客户端。
     response = client.request(request)
 
     code = getattr(response, "code", None)
     msg = getattr(response, "msg", "")
 
-    # Parse response data
+    # 解析响应数据
     data = {}
     raw = getattr(response, "raw", None)
     if raw and hasattr(raw, "content"):
@@ -379,7 +378,7 @@ def _handle_add_comment(args: dict, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# 注册
 # ---------------------------------------------------------------------------
 
 registry.register(

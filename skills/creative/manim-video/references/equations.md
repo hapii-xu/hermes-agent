@@ -1,15 +1,15 @@
-# Equations and LaTeX Reference
+# 公式与 LaTeX 参考
 
-## Basic LaTeX
+## 基础 LaTeX
 
 ```python
 eq = MathTex(r"E = mc^2")
-eq = MathTex(r"f(x) &= x^2 + 2x + 1 \\ &= (x + 1)^2")  # multi-line aligned
+eq = MathTex(r"f(x) &= x^2 + 2x + 1 \\ &= (x + 1)^2")  # 多行对齐
 ```
 
-**Always use raw strings (`r""`).**
+**始终使用原始字符串（`r""`）。**
 
-## Step-by-Step Derivations
+## 逐步推导
 
 ```python
 step1 = MathTex(r"a^2 + b^2 = c^2")
@@ -19,7 +19,7 @@ self.wait(1.5)
 self.play(TransformMatchingTex(step1, step2), run_time=1.5)
 ```
 
-## Selective Color
+## 选择性着色
 
 ```python
 eq = MathTex(r"a^2", r"+", r"b^2", r"=", r"c^2")
@@ -27,7 +27,7 @@ eq[0].set_color(RED)
 eq[4].set_color(GREEN)
 ```
 
-## Building Incrementally
+## 逐步搭建
 
 ```python
 parts = MathTex(r"f(x)", r"=", r"\sum_{n=0}^{\infty}", r"\frac{f^{(n)}(a)}{n!}", r"(x-a)^n")
@@ -38,7 +38,7 @@ self.wait(0.5)
 self.play(Write(parts[3:]))
 ```
 
-## Highlighting
+## 高亮
 
 ```python
 highlight = SurroundingRectangle(eq[2], color=YELLOW, buff=0.1)
@@ -46,7 +46,7 @@ self.play(Create(highlight))
 self.play(Indicate(eq[4], color=YELLOW))
 ```
 
-## Annotation
+## 标注
 
 ```python
 brace = Brace(eq, DOWN, color=YELLOW)
@@ -54,38 +54,38 @@ label = brace.get_text("Fundamental Theorem", font_size=24)
 self.play(GrowFromCenter(brace), Write(label))
 ```
 
-## Common LaTeX
+## 常用 LaTeX
 
 ```python
-MathTex(r"\frac{a}{b}")                  # fraction
-MathTex(r"\alpha, \beta, \gamma")         # Greek
-MathTex(r"\sum_{i=1}^{n} x_i")           # summation
-MathTex(r"\int_{0}^{\infty} e^{-x} dx")  # integral
-MathTex(r"\vec{v}")                       # vector
-MathTex(r"\lim_{x \to \infty} f(x)")    # limit
+MathTex(r"\frac{a}{b}")                  # 分数
+MathTex(r"\alpha, \beta, \gamma")         # 希腊字母
+MathTex(r"\sum_{i=1}^{n} x_i")           # 求和
+MathTex(r"\int_{0}^{\infty} e^{-x} dx")  # 积分
+MathTex(r"\vec{v}")                       # 向量
+MathTex(r"\lim_{x \to \infty} f(x)")    # 极限
 ```
 
-## Matrices
+## 矩阵
 
-`MathTex` supports standard LaTeX matrix environments via `amsmath` (loaded by default):
+`MathTex` 通过 `amsmath`（默认已加载）支持标准的 LaTeX 矩阵环境：
 
 ```python
-# Bracketed matrix
+# 带方括号的矩阵
 MathTex(r"\begin{bmatrix} 1 & 0 \\ 0 & 1 \end{bmatrix}")
 
-# Parenthesized matrix
+# 带圆括号的矩阵
 MathTex(r"\begin{pmatrix} a & b \\ c & d \end{pmatrix}")
 
-# Determinant (vertical bars)
+# 行列式（竖线）
 MathTex(r"\begin{vmatrix} a & b \\ c & d \end{vmatrix}")
 
-# Plain (no delimiters)
+# 无定界符（裸矩阵）
 MathTex(r"\begin{matrix} x_1 \\ x_2 \\ x_3 \end{matrix}")
 ```
 
-For matrices you need to animate element-by-element or color individual entries, use the `IntegerMatrix`, `DecimalMatrix`, or `MobjectMatrix` mobjects instead — see `mobjects.md`.
+如果矩阵需要逐元素动画化或给单个元素着色，请改用 `IntegerMatrix`、`DecimalMatrix` 或 `MobjectMatrix` 这些 mobject —— 参见 `mobjects.md`。
 
-## Cases and Piecewise Functions
+## 分段函数（cases）
 
 ```python
 MathTex(r"""
@@ -96,9 +96,9 @@ MathTex(r"""
 """)
 ```
 
-## Aligned Environments
+## 对齐环境
 
-For multi-line derivations with alignment, use `aligned` inside `MathTex`:
+对于带对齐的多行推导，在 `MathTex` 中使用 `aligned`：
 
 ```python
 MathTex(r"""
@@ -111,12 +111,12 @@ MathTex(r"""
 """)
 ```
 
-Note: `MathTex` wraps content in `align*` by default. Override with `tex_environment` if needed:
+注意：`MathTex` 默认会把内容包在 `align*` 里。如有需要，用 `tex_environment` 覆盖：
 ```python
 MathTex(r"...", tex_environment="gather*")
 ```
 
-## Derivation Pattern
+## 推导模式
 
 ```python
 class DerivationScene(Scene):
@@ -130,31 +130,31 @@ class DerivationScene(Scene):
         self.play(s1.animate.set_opacity(0.4), TransformMatchingTex(s1.copy(), s2))
 ```
 
-## substrings_to_isolate for Complex Equations
+## substrings_to_isolate 用于复杂公式
 
-For dense equations where manually splitting into parts is impractical, use `substrings_to_isolate` to tell Manim which substrings to track as individual elements:
+对于难以手动拆分成几部分的密集公式，用 `substrings_to_isolate` 告诉 Manim 把哪些子串当作独立元素来追踪：
 
 ```python
-# Without isolation — the whole expression is one blob
+# 不隔离 —— 整个表达式是一团
 lagrangian = MathTex(
     r"\mathcal{L} = \bar{\psi}(i \gamma^\mu D_\mu - m)\psi - \tfrac{1}{4}F_{\mu\nu}F^{\mu\nu}"
 )
 
-# With isolation — each named substring is a separate submobject
+# 加隔离 —— 每个具名子串都是一个独立的子 mobject
 lagrangian = MathTex(
     r"\mathcal{L} = \bar{\psi}(i \gamma^\mu D_\mu - m)\psi - \tfrac{1}{4}F_{\mu\nu}F^{\mu\nu}",
     substrings_to_isolate=[r"\psi", r"D_\mu", r"\gamma^\mu", r"F_{\mu\nu}"]
 )
-# Now you can color individual terms
+# 现在你可以给单独的项着色了
 lagrangian.set_color_by_tex(r"\psi", BLUE)
 lagrangian.set_color_by_tex(r"F_{\mu\nu}", YELLOW)
 ```
 
-Essential for `TransformMatchingTex` on complex equations — without isolation, matching fails on dense expressions.
+对于在复杂公式上做 `TransformMatchingTex` 不可或缺 —— 不加隔离，匹配在密集表达式上会失败。
 
-## Multi-Line Complex Equations
+## 多行复杂公式
 
-For equations with multiple related lines, pass each line as a separate argument:
+对于含多条相关行的公式，把每行作为单独的参数传入：
 
 ```python
 maxwell = MathTex(
@@ -162,15 +162,15 @@ maxwell = MathTex(
     r"\nabla \times \mathbf{B} = \mu_0\mathbf{J} + \mu_0\epsilon_0\frac{\partial \mathbf{E}}{\partial t}"
 ).arrange(DOWN)
 
-# Each line is a separate submobject — animate independently
+# 每一行是独立的子 mobject —— 可单独动画化
 self.play(Write(maxwell[0]))
 self.wait(1)
 self.play(Write(maxwell[1]))
 ```
 
-## TransformMatchingTex with key_map
+## TransformMatchingTex 配合 key_map
 
-Map specific substrings between source and target equations during transformation:
+在变换过程中，把源公式和目标公式之间的特定子串映射起来：
 
 ```python
 eq1 = MathTex(r"A^2 + B^2 = C^2")
@@ -178,12 +178,12 @@ eq2 = MathTex(r"A^2 = C^2 - B^2")
 
 self.play(TransformMatchingTex(
     eq1, eq2,
-    key_map={"+": "-"},   # map "+" in source to "-" in target
-    path_arc=PI / 2,      # arc the pieces into position
+    key_map={"+": "-"},   # 把源中的 "+" 映射为目标中的 "-"
+    path_arc=PI / 2,      # 让碎片沿弧线飞到位置
 ))
 ```
 
-## set_color_by_tex — Color by Substring
+## set_color_by_tex —— 按子串着色
 
 ```python
 eq = MathTex(r"E = mc^2")
@@ -192,9 +192,9 @@ eq.set_color_by_tex("m", RED)
 eq.set_color_by_tex("c", GREEN)
 ```
 
-## TransformMatchingTex with matched_keys
+## TransformMatchingTex 配合 matched_keys
 
-When matching substrings are ambiguous, specify which to align explicitly:
+当匹配的子串存在歧义时，显式指定要对齐哪些：
 
 ```python
 kw = dict(font_size=72, t2c={"A": BLUE, "B": TEAL, "C": GREEN})
@@ -207,10 +207,10 @@ lines = [
 
 self.play(TransformMatchingTex(
     lines[0].copy(), lines[1],
-    matched_keys=["A^2", "B^2", "C^2"],  # explicitly match these
-    key_map={"+": "-"},                    # map + to -
-    path_arc=PI / 2,                       # arc pieces into position
+    matched_keys=["A^2", "B^2", "C^2"],  # 显式匹配这些
+    key_map={"+": "-"},                    # 把 + 映射为 -
+    path_arc=PI / 2,                       # 让碎片沿弧线飞到位置
 ))
 ```
 
-Without `matched_keys`, the animation matches the longest common substrings, which can produce unexpected results on complex equations (e.g., "^2 = C^2" matching across terms).
+如果不加 `matched_keys`，动画会匹配最长公共子串，在复杂公式上可能产生意外结果（例如 "^2 = C^2" 跨项匹配）。

@@ -1,34 +1,28 @@
-"""Provider/model inventory context — shared substrate for the dashboard
-``/api/model/options``, the TUI ``model.options``/``model.save_key``
-JSON-RPC handlers, and the interactive picker.
+"""Provider/model 库存上下文 —— dashboard ``/api/model/options``、TUI
+``model.options``/``model.save_key`` JSON-RPC 处理器以及交互式选择器的共享底层模块。
 
-Before this module the three call-sites each duplicated:
+在此模块之前，三个调用站点各自重复了以下逻辑：
 
-1. The 17-LOC config-slice that pulls ``model.{default,name,provider,base_url}``,
-   ``providers:``, and ``custom_providers:`` out of ``load_config()``;
-2. The call into ``list_authenticated_providers`` with the resulting kwargs;
-3. (TUI only) a 45-LOC post-pass that merges authenticated rows with
-   unconfigured ``CANONICAL_PROVIDERS`` rows and emits ``authenticated``/
-   ``auth_type``/``key_env``/``warning`` hints for the picker UI.
+1. 17 行的 config 切片，从 ``load_config()`` 中提取 ``model.{default,name,provider,base_url}``、
+   ``providers:`` 和 ``custom_providers:``；
+2. 用生成的 kwargs 调用 ``list_authenticated_providers``；
+3. （仅 TUI）一个 45 行的后处理步骤，将已认证行与未配置的 ``CANONICAL_PROVIDERS`` 行合并，
+   并为选择器 UI 输出 ``authenticated``/``auth_type``/``key_env``/``warning`` 提示。
 
-Consolidating those three steps into one entry point eliminates two bugs
-the duplicates were hiding:
+将这三个步骤整合到一个入口点中，消除了重复代码隐藏的两个 bug：
 
-- The dashboard read ``cfg.get("custom_providers")`` directly, missing the
-  v12+ keyed ``providers:`` form (which the TUI handled via
-  ``get_compatible_custom_providers``).
-- The TUI's canonical-merge keyed on ``is_user_defined`` to decide
-  ordering. Section 3 of ``list_authenticated_providers`` sets
-  ``is_user_defined=True`` even for canonical slugs that appear in the
-  ``providers:`` config dict, which silently demoted them to the tail of
-  the picker. ``_reorder_canonical`` keys on slug membership instead.
+- Dashboard 直接读取 ``cfg.get("custom_providers")``，遗漏了 v12+ 的带键
+  ``providers:`` 格式（TUI 通过 ``get_compatible_custom_providers`` 正确处理了该格式）。
+- TUI 的 canonical 合并以 ``is_user_defined`` 作为排序依据。而
+  ``list_authenticated_providers`` 的第 3 节会对出现在 ``providers:`` 配置字典中的
+  canonical slug 也设置 ``is_user_defined=True``，这会将它们悄悄降到选择器末尾。
+  ``_reorder_canonical`` 改为依据 slug 成员身份排序。
 
-Substrate facts (verified May 2026):
-- ``list_authenticated_providers`` already populates each row's
-  ``models`` from the curated catalog (same source as the picker). Do
-  NOT call ``provider_model_ids()`` per row to "freshen" — that bypasses
-  curation and pulls in non-agentic models (Nous /models returns ~400
-  IDs including TTS, embeddings, rerankers, image/video generators).
+底层事实（2026 年 5 月验证）：
+- ``list_authenticated_providers`` 已经从精选目录中填充每行的 ``models``
+  （与选择器使用相同数据源）。不要对每行调用 ``provider_model_ids()`` 来"刷新"
+  —— 那会绕过精选机制并拉入非 agent 模型（Nous /models 返回约 400 个 ID，
+  包括 TTS、embeddings、rerankers、image/video 生成器）。
 """
 
 from __future__ import annotations
@@ -37,14 +31,14 @@ from dataclasses import dataclass, replace
 from typing import Optional
 
 
-# ─── Public types ───────────────────────────────────────────────────────
+# ─── 公共类型 ───────────────────────────────────────────────────────
 
 
 @dataclass(frozen=True)
 class ConfigContext:
-    """Snapshot of the model + provider config every inventory caller
-    needs. Built once via ``load_picker_context()``; the TUI overlays
-    live agent state via ``with_overrides()`` before passing through.
+    """每个库存调用方所需的 model + provider 配置快照。
+    通过 ``load_picker_context()`` 构建一次；TUI 在传递前通过
+    ``with_overrides()`` 叠加实时 agent 状态。
     """
 
     current_provider: str
@@ -60,11 +54,10 @@ class ConfigContext:
         current_model: Optional[str] = None,
         current_base_url: Optional[str] = None,
     ) -> "ConfigContext":
-        """Return a copy with truthy overrides applied.
+        """返回一个副本，应用真值覆盖。
 
-        Truthy-only because the TUI reads agent attributes that may be
-        empty strings before an agent is spawned — empties must NOT
-        clobber the disk-config values.
+        仅检查真值，因为 TUI 读取的 agent 属性在 agent 生成前可能是
+        空字符串 —— 空值不能覆盖磁盘配置中的值。
         """
         kw: dict = {}
         if current_provider:
@@ -77,10 +70,10 @@ class ConfigContext:
 
 
 def load_picker_context() -> ConfigContext:
-    """Load the disk-config snapshot every consumer needs.
+    """加载每个消费者所需的磁盘配置快照。
 
-    Replaces the inline 17-LOC config-slice that ``web_server.py`` and
-    ``tui_gateway/server.py`` (×2 sites) used to do.
+    替代了 ``web_server.py`` 和 ``tui_gateway/server.py``（×2 处）
+    以前内联的 17 行 config 切片。
     """
     from hermes_cli.config import get_compatible_custom_providers, load_config
 
@@ -91,7 +84,7 @@ def load_picker_context() -> ConfigContext:
         current_provider = model_cfg.get("provider", "") or ""
         current_base_url = model_cfg.get("base_url", "") or ""
     else:
-        # config.model can be a bare string in older configs.
+        # config.model 在旧配置中可能是纯字符串。
         current_model = str(model_cfg) if model_cfg else ""
         current_provider = ""
         current_base_url = ""
@@ -105,7 +98,7 @@ def load_picker_context() -> ConfigContext:
     )
 
 
-# ─── Public: payload builder ────────────────────────────────────────────
+# ─── 公共：payload 构建器 ────────────────────────────────────────────
 
 
 def build_models_payload(
@@ -120,35 +113,34 @@ def build_models_payload(
     refresh: bool = False,
     max_models: int | None = None,
 ) -> dict:
-    """Build the ``{providers, model, provider}`` shape every consumer
-    needs from a single substrate call.
+    """构建 ``{providers, model, provider}`` 结构，每个消费者
+    从单次底层调用中都需要此形状。
 
-    Flags:
-    - ``include_unconfigured``: append ``CANONICAL_PROVIDERS`` rows that
-      ``list_authenticated_providers`` didn't emit (TUI uses this to show
-      the full provider universe in the picker).
-    - ``picker_hints``: add ``authenticated``/``auth_type``/``key_env``/
-      ``warning`` per row (TUI ``ModelPickerDialog`` shape).
-    - ``canonical_order``: reorder canonical-slug rows to
-      ``CANONICAL_PROVIDERS`` declaration order; truly-custom rows go
-      last (TUI display order).
-    - ``pricing``: enrich each row with formatted per-model pricing and,
-      for Nous, ``free_tier``/``unavailable_models`` so the GUI picker can
-      show $/Mtok columns and gate paid models on free accounts —
-      mirroring the ``hermes model`` CLI picker. Adds network calls
-      (pricing fetch + Nous tier check); only set for interactive pickers.
-    - ``capabilities``: add a per-row ``capabilities`` map
-      ``{model: {fast, reasoning}}`` so pickers can gate the model-options
-      controls (fast toggle / reasoning) to what each model actually
-      supports, instead of offering knobs the backend would reject.
-    - ``force_fresh_nous_tier``: bypass the short Nous free-tier cache when
-      selecting Portal-recommended Nous models and applying tier gating. Keep
-      this false for UI picker opens; explicit auth/model flows can opt in
-      when they need freshly-purchased credits to show up immediately.
-    - ``refresh``: bust the per-provider model-id disk cache so every row
-      re-fetches its live catalog. Set only for an explicit user-triggered
-      "refresh models" action; normal picker opens leave it false to stay
-      snappy on the 1h cache.
+    标志位：
+    - ``include_unconfigured``：追加 ``list_authenticated_providers``
+      未输出的 ``CANONICAL_PROVIDERS`` 行（TUI 用此标志在选择器中
+      显示完整的 provider 集合）。
+    - ``picker_hints``：为每行添加 ``authenticated``/``auth_type``/
+      ``key_env``/``warning``（TUI ``ModelPickerDialog`` 形状）。
+    - ``canonical_order``：将 canonical slug 行重排为
+      ``CANONICAL_PROVIDERS`` 声明顺序；真正的自定义行放到最后
+      （TUI 显示顺序）。
+    - ``pricing``：为每行补充格式化的每模型定价，对 Nous 还添加
+      ``free_tier``/``unavailable_models``，以便 GUI 选择器显示
+      $/Mtok 列并在免费账户下限制付费模型 —— 与 ``hermes model``
+      CLI 选择器一致。会增加网络调用（pricing 获取 + Nous 层级检查）；
+      仅在交互式选择器中设置。
+    - ``capabilities``：为每行添加 ``capabilities`` 映射
+      ``{model: {fast, reasoning}}``，以便选择器根据每个模型实际支持
+      的功能来限制 model-options 控件（fast 切换 / reasoning），
+      而不是提供后端会拒绝的选项。
+    - ``force_fresh_nous_tier``：在选择 Portal 推荐的 Nous 模型并
+      应用层级限制时，绕过短期 Nous 免费层级缓存。UI 选择器打开时
+      保持为 false；显式 auth/model 流程在需要新购额度立即生效时
+      可以选择启用。
+    - ``refresh``：清除每个 provider 的 model-id 磁盘缓存，使每行
+      重新获取其实时目录。仅在显式用户触发的"刷新模型"操作中设置；
+      普通选择器打开保持为 false 以在 1 小时缓存上保持响应速度。
     """
     from hermes_cli.model_switch import list_authenticated_providers
 
@@ -163,15 +155,13 @@ def build_models_payload(
         refresh=refresh,
     )
 
-    # --- Deduplicate: remove models from aggregators that overlap with
-    # user-defined providers.  When a local proxy (e.g. litellm-proxy)
-    # serves a model whose name also appears in an aggregator's curated
-    # catalog, the picker would show the model under both providers.
-    # Selecting it from the aggregator row sets model.provider to the
-    # aggregator (e.g. openrouter) instead of the user's proxy — silently
-    # breaking the call.  Filtering at the payload level keeps the
-    # aggregator rows honest: they only show models the user can't get
-    # from a more-specific provider.  (#45954)
+    # --- 去重：从聚合器中移除与用户定义 provider 重叠的模型。
+    # 当本地代理（例如 litellm-proxy）提供的模型名称也出现在聚合器的
+    # 精选目录中时，选择器会在两个 provider 下都显示该模型。
+    # 从聚合器行选择它会将 model.provider 设置为聚合器
+    # （例如 openrouter）而非用户的代理 —— 悄悄破坏了调用。
+    # 在 payload 层级过滤可保持聚合器行的真实性：它们只显示用户
+    # 无法从更具体的 provider 获取的模型。（#45954）
     try:
         from hermes_cli.providers import is_routing_aggregator as _is_routing_aggregator
     except Exception:
@@ -184,22 +174,19 @@ def build_models_payload(
                 user_models.update(m.lower() for m in (row.get("models") or []))
         if user_models:
             for row in rows:
-                # A user's own configured provider is never an "aggregator
-                # duplicate" of itself: user_models is built from these very
-                # rows, and is_routing_aggregator() reports True for every
-                # custom:* slug.  Without this guard the dedup strips a
-                # user-defined custom provider's entire model list (all of it
-                # lives in user_models), emptying its picker row.
+                # 用户自己配置的 provider 永远不是其自身的"聚合器
+                # 重复"：user_models 就是从这些行构建的，而
+                # is_routing_aggregator() 对每个 custom:* slug 都返回 True。
+                # 没有此保护，去重会清空用户定义的自定义 provider 的
+                # 整个模型列表（全部都在 user_models 中），使其选择器行为空。
                 if row.get("is_user_defined"):
                     continue
                 slug = row.get("slug", "")
-                # Only strip overlaps from TRUE routing aggregators (OpenRouter,
-                # custom:* proxies). Flat-namespace resellers (opencode-go /
-                # opencode-zen) serve every listed model as a first-party model,
-                # so their rows must keep models that a user's proxy happens to
-                # share a name with — otherwise a subscription provider's own
-                # catalog (minimax-m3, glm-5, deepseek-v4-flash, ...) is silently
-                # gutted in the picker. (#47077)
+                # 仅从真正的路由聚合器（OpenRouter、custom:* 代理）中移除重叠项。
+                # 扁平命名空间的转售商（opencode-go / opencode-zen）将每个列出的模型
+                # 作为第一方模型提供，因此它们的行必须保留与用户代理同名的模型 ——
+                # 否则订阅 provider 自己的目录（minimax-m3、glm-5、deepseek-v4-flash 等）
+                # 会在选择器中被悄悄清空。（#47077）
                 if not _is_routing_aggregator(slug):
                     continue
                 original = row.get("models") or []
@@ -227,13 +214,12 @@ def build_models_payload(
 
 
 def _apply_capabilities(rows: list[dict]) -> None:
-    """Attach a ``{model: {fast, reasoning}}`` map to each provider row.
+    """为每个 provider 行附加 ``{model: {fast, reasoning}}`` 映射。
 
-    `fast` mirrors ``model_supports_fast_mode`` (the same gate the runtime
-    enforces). `reasoning` comes from the models.dev catalog when known and
-    defaults to True otherwise — the effort dial is broadly accepted and a
-    no-op on models that ignore it, whereas hiding it from a capable-but-
-    uncatalogued model is the worse failure.
+    `fast` 与 ``model_supports_fast_mode`` 一致（运行时执行的相同检查）。
+    `reasoning` 来自 models.dev 目录（如果已知），否则默认为 True ——
+    effort 旋钮被广泛接受且对忽略它的模型无影响，而对有能力但未收录的模型
+    隐藏它则是更严重的失败。
     """
     from hermes_cli.models import model_supports_fast_mode
 
@@ -264,11 +250,11 @@ def _apply_capabilities(rows: list[dict]) -> None:
         row["capabilities"] = caps
 
 
-# ─── Internal: row post-processing ──────────────────────────────────────
+# ─── 内部：行后处理 ──────────────────────────────────────────────────
 
 
 def _append_unconfigured_rows(rows: list[dict], ctx: ConfigContext) -> list[dict]:
-    """Build skeleton rows for canonical providers missing from ``rows``."""
+    """为 ``rows`` 中缺失的 canonical provider 构建骨架行。"""
     from hermes_cli.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
 
     seen = {r["slug"].lower() for r in rows}
@@ -292,23 +278,21 @@ def _append_unconfigured_rows(rows: list[dict], ctx: ConfigContext) -> list[dict
 
 
 def _apply_picker_hints(rows: list[dict]) -> None:
-    """Add ``authenticated``/``auth_type``/``key_env``/``warning`` per row.
+    """为每行添加 ``authenticated``/``auth_type``/``key_env``/``warning``。
 
-    Mutates ``rows`` in-place. Rows already from
-    ``list_authenticated_providers`` are marked ``authenticated=True``;
-    the unconfigured skeleton rows from ``_append_unconfigured_rows`` get
-    the picker's setup-hint shape.
+    就地修改 ``rows``。来自 ``list_authenticated_providers`` 的行
+    已标记 ``authenticated=True``；来自 ``_append_unconfigured_rows``
+    的未配置骨架行则获取选择器的设置提示形状。
     """
     from hermes_cli.auth import PROVIDER_REGISTRY
 
     for row in rows:
         if "authenticated" in row:
             continue
-        # Distinguish authenticated rows (returned by
-        # list_authenticated_providers) from skeleton rows (from
-        # _append_unconfigured_rows). The skeleton rows have empty
-        # `models` AND source="canonical"; authenticated rows have
-        # populated `models` OR a non-canonical source.
+        # 区分已认证行（由 list_authenticated_providers 返回）
+        # 和骨架行（来自 _append_unconfigured_rows）。骨架行具有
+        # 空 `models` 且 source="canonical"；已认证行具有填充的
+        # `models` 或非 canonical source。
         is_skeleton = row.get("source") == "canonical" and not row.get("models")
         row["authenticated"] = not is_skeleton
         if not is_skeleton or row.get("is_user_defined"):
@@ -330,14 +314,14 @@ def _apply_picker_hints(rows: list[dict]) -> None:
 
 
 def _reorder_canonical(rows: list[dict]) -> list[dict]:
-    """Canonical slugs in ``CANONICAL_PROVIDERS`` declaration order;
-    truly-custom rows last.
+    """Canonical slug 按 ``CANONICAL_PROVIDERS`` 声明顺序排列；
+    真正的自定义行放到最后。
 
-    Keys on slug membership, NOT ``is_user_defined`` — section 3 of
-    ``list_authenticated_providers`` sets ``is_user_defined=True`` on
-    rows from the ``providers:`` config dict even when the slug is
-    canonical. Keying on the flag would silently demote canonical
-    providers configured via the new keyed schema.
+    依据 slug 成员身份排序，而非 ``is_user_defined`` ——
+    ``list_authenticated_providers`` 的第 3 节会对来自 ``providers:``
+    配置字典的行也设置 ``is_user_defined=True``，即使 slug 是 canonical 的。
+    如果依据该标志排序，会悄悄将通过新的带键模式配置的 canonical provider
+    降到末尾。
     """
     from hermes_cli.models import CANONICAL_PROVIDERS
 
@@ -355,22 +339,22 @@ def _apply_pricing(
     *,
     force_fresh_nous_tier: bool = False,
 ) -> None:
-    """Enrich each provider row with per-model pricing + Nous tier gating.
+    """为每个 provider 行补充每模型定价 + Nous 层级限制。
 
-    Mutates ``rows`` in-place. For every row whose provider supports live
-    pricing (openrouter / nous / novita) adds::
+    就地修改 ``rows``。对于每个支持实时定价的 provider
+    （openrouter / nous / novita），添加::
 
         row["pricing"] = {model_id: {"input": "$3.00", "output": "$15.00",
                                      "cache": "$0.30" | None, "free": bool}}
 
-    For Nous additionally adds::
+    对于 Nous 还额外添加::
 
-        row["free_tier"] = bool            # current account is free-tier
-        row["unavailable_models"] = [...]  # paid models a free user can't pick
+        row["free_tier"] = bool            # 当前账户是否为免费层级
+        row["unavailable_models"] = [...]  # 免费用户无法选择的付费模型
 
-    Prices are pre-formatted via ``_format_price_per_mtok`` so the GUI just
-    renders strings — identical formatting to the CLI picker. All failures
-    are swallowed (best-effort): a row simply gets no ``pricing`` key.
+    价格通过 ``_format_price_per_mtok`` 预格式化，GUI 直接渲染字符串 ——
+    与 CLI 选择器格式完全相同。所有失败都被静默处理（尽力而为）：
+    行只是没有 ``pricing`` 键。
     """
     from hermes_cli.models import (
         _format_price_per_mtok,
@@ -379,7 +363,7 @@ def _apply_pricing(
         partition_nous_models_by_tier,
     )
 
-    # Resolve Nous free-tier once (cached in models.py for the TTL window).
+    # 一次性解析 Nous 免费层级（在 models.py 中按 TTL 窗口缓存）。
     nous_free_tier: Optional[bool] = None
 
     for row in rows:
@@ -405,7 +389,7 @@ def _apply_pricing(
             inp = _format_price_per_mtok(inp_raw) if inp_raw != "" else ""
             out = _format_price_per_mtok(out_raw) if out_raw != "" else ""
             cache = _format_price_per_mtok(cache_raw) if cache_raw else None
-            # A model is "free" when both input and output cost nothing.
+            # 当 input 和 output 都免费时，模型为"免费"。
             is_free = inp == "free" and (out == "free" or out == "")
             formatted[mid] = {
                 "input": inp,

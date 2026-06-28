@@ -29,8 +29,8 @@ describe('splitReasoning', () => {
   })
 
   it('does not strip trailing prose after a stray mid-text <think> mention', () => {
-    // Regression for "TUI eats last paragraph of output": when the model
-    // emits a literal `<think>` somewhere in prose (quoted explanation, code
+    // 回归测试："TUI 吞掉了输出的最后一段"：当 model
+    // 在文本中输出字面量 `<think>` somewhere in prose (quoted explanation, code
     // example, partial stream-mid-tag), the trailing greedy unclosed-tag
     // regex used to consume every paragraph after it. Real unclosed
     // reasoning blocks always lead the message — anchor to ^ so prose

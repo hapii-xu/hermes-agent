@@ -1,7 +1,7 @@
 """
-Gateway subcommand for hermes CLI.
+hermes CLI 的 gateway 子命令。
 
-Handles: hermes gateway [run|start|stop|restart|status|install|uninstall|setup]
+处理：hermes gateway [run|start|stop|restart|status|install|uninstall|setup]
 """
 
 import asyncio
@@ -35,8 +35,8 @@ from hermes_cli.config import (
     write_platform_config_field,
 )
 
-# display_hermes_home is imported lazily at call sites to avoid ImportError
-# when hermes_constants is cached from a pre-update version during `hermes update`.
+# display_hermes_home 在调用处延迟导入，以避免在 `hermes update` 期间
+# hermes_constants 被缓存为更新前版本时出现 ImportError。
 from hermes_cli.setup import (
     print_header,
     print_info,
@@ -52,7 +52,7 @@ from hermes_cli.colors import Colors, color
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Process Management (for manual gateway runs)
+# 进程管理（用于手动运行 gateway）
 # =============================================================================
 
 
@@ -81,16 +81,15 @@ class ProfileGatewayProcess:
 
 
 def _get_service_pids() -> set:
-    """Return PIDs currently managed by systemd or launchd gateway services.
+    """返回当前由 systemd 或 launchd gateway 服务管理的 PID 集合。
 
-    Used to avoid killing freshly-restarted service processes when sweeping
-    for stale manual gateway processes after a service restart.  Relies on the
-    service manager having committed the new PID before the restart command
-    returns (true for both systemd and launchd in practice).
+    用于在 service 重启后清理过期的手动 gateway 进程时，避免误杀刚刚重启的
+    服务进程。依赖于 service manager 在 restart 命令返回前已提交新 PID（实际
+    上 systemd 和 launchd 都是如此）。
     """
     pids: set = set()
 
-    # --- systemd (Linux): user and system scopes ---
+    # --- systemd (Linux)：用户和系统作用域 ---
     if supports_systemd_services():
         for scope_args in [["systemctl", "--user"], ["systemctl"]]:
             try:
@@ -138,7 +137,7 @@ def _get_service_pids() -> set:
                 timeout=5,
             )
             if result.returncode == 0:
-                # Output: "PID\tStatus\tLabel" header, then one data line
+                # 输出："PID\tStatus\tLabel" 表头，然后是一行数据
                 for line in result.stdout.strip().splitlines():
                     parts = line.split()
                     if len(parts) >= 3 and parts[2] == label:
@@ -155,13 +154,12 @@ def _get_service_pids() -> set:
 
 
 def _get_parent_pid(pid: int) -> int | None:
-    """Return the parent PID for ``pid``, or ``None`` when unavailable.
+    """返回 ``pid`` 的父 PID，如果不可用则返回 ``None``。
 
-    Uses psutil (core dependency) which works on every platform.  The
-    older implementation shelled out to ``ps -o ppid= -p <pid>``, which
-    silently fails on Windows (no ``ps``) so the ancestor walk terminated
-    at self — the caller's dedup / exclude logic then couldn't distinguish
-    "hermes CLI that invoked this scan" from "real gateway process".
+    使用 psutil（核心依赖），可在所有平台上工作。旧实现通过 shell 调用
+    ``ps -o ppid= -p <pid>``，在 Windows 上会静默失败（没有 ``ps``），导致
+    祖先遍历时在自身处终止——调用者的去重/排除逻辑因此无法区分"调用此扫描
+    的 hermes CLI"和"真正的 gateway 进程"。
     """
     if pid <= 1:
         return None
@@ -173,7 +171,7 @@ def _get_parent_pid(pid: int) -> int | None:
         pass
     except Exception:
         return None
-    # Fallback: shell out to ps (POSIX only — bare ``ps`` doesn't exist on Windows).
+    # 回退：通过 shell 调用 ps（仅限 POSIX——裸 ``ps`` 在 Windows 上不存在）。
     if not shutil.which("ps"):
         return None
     try:
@@ -198,7 +196,7 @@ def _get_parent_pid(pid: int) -> int | None:
 
 
 def _is_pid_ancestor_of_current_process(target_pid: int) -> bool:
-    """Return True when ``target_pid`` is this process or one of its ancestors."""
+    """当 ``target_pid`` 是当前进程或其祖先之一时返回 True。"""
     if target_pid <= 0:
         return False
 
@@ -213,7 +211,7 @@ def _is_pid_ancestor_of_current_process(target_pid: int) -> bool:
 
 
 def _request_gateway_self_restart(pid: int) -> bool:
-    """Ask a running gateway ancestor to restart itself asynchronously."""
+    """请求正在运行的 gateway 祖先进程异步重启自身。"""
     if not hasattr(signal, "SIGUSR1"):
         return False
     if not _is_pid_ancestor_of_current_process(pid):
@@ -226,28 +224,25 @@ def _request_gateway_self_restart(pid: int) -> bool:
 
 
 def _graceful_restart_via_sigusr1(pid: int, drain_timeout: float) -> bool:
-    """Send SIGUSR1 to a gateway PID and wait for it to exit gracefully.
+    """向 gateway PID 发送 SIGUSR1 并等待其优雅退出。
 
-    SIGUSR1 is wired in gateway/run.py to ``request_restart(via_service=True)``
-    which drains in-flight agent runs (up to ``agent.restart_drain_timeout``
-    seconds), then exits.  Both systemd (``Restart=always``) and launchd
-    (unconditional ``<key>KeepAlive</key><true/>``) restart on any exit.
+    SIGUSR1 在 gateway/run.py 中连接到 ``request_restart(via_service=True)``，
+    该函数会排空进行中的 agent 运行（最多 ``agent.restart_drain_timeout`` 秒），
+    然后退出。systemd（``Restart=always``）和 launchd（无条件的
+    ``<key>KeepAlive</key><true/>``）都会在任何退出时重启。
 
-    This is the drain-aware alternative to ``systemctl restart`` / ``SIGTERM``,
-    which SIGKILL in-flight agents after a short timeout.
+    这是 ``systemctl restart`` / ``SIGTERM`` 的排空感知替代方案，后者会在短时间
+    超时后 SIGKILL 进行中的 agent。
 
     Args:
-        pid: Gateway process PID (systemd MainPID, launchd PID, or bare
-            process PID).
-        drain_timeout: Seconds to wait for the process to exit after sending
-            SIGUSR1.  Should be slightly larger than the gateway's
-            ``agent.restart_drain_timeout`` to allow the drain loop to
-            finish cleanly.
+        pid: Gateway 进程 PID（systemd MainPID、launchd PID 或裸进程 PID）。
+        drain_timeout: 发送 SIGUSR1 后等待进程退出的秒数。应略大于 gateway 的
+            ``agent.restart_drain_timeout``，以允许排空循环干净完成。
 
     Returns:
-        True if the PID was signalled and exited within the timeout.
-        False if SIGUSR1 couldn't be sent or the process didn't exit in
-        time (caller should fall back to a harder restart path).
+        如果 PID 已发送信号并在超时时间内退出，返回 True。
+        如果无法发送 SIGUSR1 或进程未及时退出，返回 False
+        （调用者应回退到更强制的重启路径）。
     """
     if not hasattr(signal, "SIGUSR1"):
         return False
@@ -256,7 +251,7 @@ def _graceful_restart_via_sigusr1(pid: int, drain_timeout: float) -> bool:
     try:
         os.kill(pid, signal.SIGUSR1)  # windows-footgun: ok — POSIX signal, guarded by hasattr(signal, 'SIGUSR1') above
     except ProcessLookupError:
-        # Already gone — nothing to drain.
+        # 进程已退出 — 无需排空。
         return True
     except (PermissionError, OSError):
         return False
@@ -264,32 +259,30 @@ def _graceful_restart_via_sigusr1(pid: int, drain_timeout: float) -> bool:
     import time as _time
 
     deadline = _time.monotonic() + max(drain_timeout, 1.0)
-    # IMPORTANT Windows note: ``os.kill(pid, 0)`` is NOT a no-op on
-    # Windows — Python's implementation calls ``TerminateProcess(handle, 0)``
-    # for sig=0, hard-killing the target. Use the cross-platform
-    # ``_pid_exists`` helper in gateway.status which does OpenProcess +
-    # WaitForSingleObject on Windows.
+    # 重要 Windows 说明：``os.kill(pid, 0)`` 在 Windows 上不是空操作——
+    # Python 的实现对 sig=0 调用 ``TerminateProcess(handle, 0)``，会强制终止
+    # 目标进程。请使用 gateway.status 中的跨平台 ``_pid_exists`` 辅助函数，
+    # 它在 Windows 上使用 OpenProcess + WaitForSingleObject。
     from gateway.status import _pid_exists
 
     while _time.monotonic() < deadline:
         if not _pid_exists(pid):
             return True
         _time.sleep(0.5)
-    # Drain didn't finish in time.
+    # 排空未在规定时间内完成。
     return False
 
 
 def _get_ancestor_pids() -> set[int]:
-    """Return the set of PIDs in the current process's ancestor chain.
+    """返回当前进程祖先链中的 PID 集合。
 
-    Walks from the current PID up to PID 1 (init) so that process-table scans
-    never match the calling CLI process or any of its parents.  This prevents
-    ``hermes gateway status`` from falsely counting the ``hermes`` CLI that
-    invoked it as a running gateway instance (see #13242).
+    从当前 PID 向上遍历到 PID 1（init），确保进程表扫描永远不会匹配调用 CLI
+    进程或其任何父进程。这可以防止 ``hermes gateway status`` 错误地将调用它的
+    ``hermes`` CLI 计为正在运行的 gateway 实例（见 #13242）。
     """
     ancestors: set[int] = set()
     pid = os.getpid()
-    # Cap iterations to avoid infinite loops on exotic platforms.
+    # 限制迭代次数以避免在特殊平台上的无限循环。
     for _ in range(64):
         ancestors.add(pid)
         parent = _get_parent_pid(pid)
@@ -314,22 +307,19 @@ def _scan_gateway_pids(
     all_profiles: bool = False,
     include_restart_managers: bool = False,
 ) -> list[int]:
-    """Best-effort process-table scan for gateway PIDs.
+    """尽力而为的进程表扫描，查找 gateway PID。
 
-    This supplements the profile-scoped PID file so status views can still spot
-    a live gateway when the PID file is stale/missing, and ``--all`` sweeps can
-    discover gateways outside the current profile.
+    这是对 profile 作用域 PID 文件的补充，使状态视图在 PID 文件过期/缺失时
+    仍能发现存活的 gateway，并且 ``--all`` 扫描能发现当前 profile 之外的 gateway。
     """
-    # Exclude the entire ancestor chain so the CLI process that invoked this
-    # scan (e.g. ``hermes gateway status``) is never mistaken for a running
-    # gateway.  See #13242.
+    # 排除整个祖先链，使调用此扫描的 CLI 进程（例如 ``hermes gateway status``）
+    # 永远不会被误认为正在运行的 gateway。见 #13242。
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
-    # Strict command-line matcher shared with gateway.status: requires the
-    # actual ``gateway run`` subcommand (or the dedicated entrypoints), so this
-    # scan no longer false-matches ``gateway status``/``dashboard`` siblings or
-    # unrelated processes like ``python -m tui_gateway``. Lazy import mirrors the
-    # circular-import avoidance used elsewhere in this module.
+    # 与 gateway.status 共享的严格命令行匹配器：需要实际的 ``gateway run``
+    # 子命令（或专用入口点），因此此扫描不再错误匹配 ``gateway status``/
+    # ``dashboard`` 兄弟命令或不相关的进程（如 ``python -m tui_gateway``）。
+    # 延迟导入镜像了本模块其他地方使用的循环导入避免策略。
     from gateway.status import (
         looks_like_gateway_command_line,
         looks_like_gateway_runtime_command_line,
@@ -351,11 +341,10 @@ def _scan_gateway_pids(
                 or f"hermes_home={current_home_lc}" in command_lc
             )
 
-        # Default-profile case: no profile flag in argv. Accept as long as
-        # the command doesn't advertise *some other* profile. HERMES_HOME
-        # may be passed via env (not visible in wmic/CIM command line) so
-        # its absence is NOT disqualifying — only a non-matching explicit
-        # HERMES_HOME= in argv is.
+        # 默认 profile 情况：argv 中没有 profile 标志。只要命令没有声明
+        # *其他* profile，就接受。HERMES_HOME 可能通过 env 传递（在 wmic/CIM
+        # 命令行中不可见），因此其缺失不会取消资格——只有 argv 中不匹配的
+        # 显式 HERMES_HOME= 才会。
         if "--profile " in command_lc or " -p " in command_lc:
             return False
         if (
@@ -372,11 +361,10 @@ def _scan_gateway_pids(
 
     try:
         if is_windows():
-            # Prefer wmic when present (fast, stable output format).  On
-            # modern Windows 11 / Win 10 late builds, wmic has been
-            # removed as part of the WMIC deprecation — fall back to
-            # PowerShell's Get-CimInstance.  Any OSError here (FileNotFoundError
-            # on missing wmic) trips the fallback.
+            # 优先使用 wmic（存在时，输出格式快速稳定）。在现代 Windows 11 /
+            # Win 10 后期版本中，wmic 已作为 WMIC 弃用的一部分被移除——回退到
+            # PowerShell 的 Get-CimInstance。此处的任何 OSError（缺失 wmic 时的
+            # FileNotFoundError）都会触发回退。
             wmic_path = shutil.which("wmic")
             used_fallback = False
             result = None
@@ -399,8 +387,8 @@ def _scan_gateway_pids(
                 except (OSError, subprocess.TimeoutExpired):
                     result = None
             if result is None or result.returncode != 0 or not (result.stdout or ""):
-                # Fallback: PowerShell Get-CimInstance, emit LIST-style output
-                # so the downstream parser below doesn't need to branch.
+                # 回退：PowerShell Get-CimInstance，输出 LIST 样式，以便
+                # 下游解析器无需分支处理。
                 powershell = shutil.which("powershell") or shutil.which("pwsh")
                 if powershell is None:
                     return []
@@ -442,8 +430,8 @@ def _scan_gateway_pids(
                             pass
                     current_cmd = ""
         else:
-            # Try /proc first (works in Docker without procps installed),
-            # fall back to ps -A eww.
+            # 优先尝试 /proc（在无 procps 的 Docker 中也能工作），
+            # 否则回退到 ps -A eww。
             _found_via_proc = False
             if os.path.isdir("/proc"):
                 try:
@@ -508,17 +496,14 @@ def _scan_gateway_pids(
     except (OSError, subprocess.TimeoutExpired):
         return []
 
-    # Windows-specific: collapse venv launcher stubs.  A venv-built
-    # ``pythonw.exe`` in ``<venv>/Scripts/`` is a ~100 KB launcher exe
-    # that spawns the base Python (e.g. ``C:\Program Files\Python311\
-    # pythonw.exe``) with the same command line, preserving the venv's
-    # ``pyvenv.cfg`` context.  This is standard Windows CPython venv
-    # behaviour — BUT it means every gateway run produces two pythonw
-    # PIDs with identical command lines (one launcher stub, one actual
-    # interpreter) which is confusing in ``gateway status`` output.
-    # Filter the stub: if a PID in our result is the PARENT of another
-    # PID in our result, and both are pythonw.exe, the parent is the
-    # launcher stub — drop it, keep the child.
+    # Windows 特定：折叠 venv launcher 存根。通过 venv 构建的 ``pythonw.exe``
+    # 位于 ``<venv>/Scripts/``，是一个约 100 KB 的启动器 exe，会以相同的命令行
+    # 生成基础 Python（例如 ``C:\Program Files\Python311\pythonw.exe``），保留
+    # venv 的 ``pyvenv.cfg`` 上下文。这是标准的 Windows CPython venv 行为——但这
+    # 意味着每次 gateway 运行都会产生两个命令行相同的 pythonw PID（一个启动器
+    # 存根，一个实际解释器），在 ``gateway status`` 输出中会造成混淆。
+    # 过滤存根：如果结果中的一个 PID 是另一个 PID 的父进程，且两者都是
+    # pythonw.exe，则父进程是启动器存根——删除它，保留子进程。
     if is_windows() and len(pids) > 1:
         pids = _filter_venv_launcher_stubs(pids)
 
@@ -526,11 +511,11 @@ def _scan_gateway_pids(
 
 
 def _filter_venv_launcher_stubs(pids: list[int]) -> list[int]:
-    """Drop venv-launcher ``pythonw.exe`` stubs that are parents of the real
-    interpreter process.  See comment at the tail of ``_scan_gateway_pids``.
+    """过滤掉作为真实解释器进程父进程的 venv-launcher ``pythonw.exe`` 存根。
+    详见 ``_scan_gateway_pids`` 末尾的注释。
 
-    Uses ``psutil`` (core dependency).  Safe on any platform; only invoked
-    on Windows by the caller because the stub pattern is Windows-specific.
+    使用 ``psutil``（核心依赖）。在任何平台上都是安全的；仅由 Windows 上的
+    调用者触发，因为存根模式是 Windows 特有的。
     """
     try:
         import psutil  # type: ignore
@@ -538,7 +523,7 @@ def _filter_venv_launcher_stubs(pids: list[int]) -> list[int]:
         return pids
 
     pid_set = set(pids)
-    # Collect each PID's parent so we can flag "child of another matched PID".
+    # 收集每个 PID 的父进程，以便标记"另一个匹配 PID 的子进程"。
     parent_of: dict[int, int | None] = {}
     for pid in pids:
         try:
@@ -546,7 +531,7 @@ def _filter_venv_launcher_stubs(pids: list[int]) -> list[int]:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             parent_of[pid] = None
 
-    # For each child whose parent is also in our set, drop the parent.
+    # 对于父进程也在集合中的每个子进程，删除其父进程。
     drop: set[int] = set()
     for pid, ppid in parent_of.items():
         if ppid is not None and ppid in pid_set:
@@ -558,16 +543,15 @@ def _filter_venv_launcher_stubs(pids: list[int]) -> list[int]:
 def find_gateway_pids(
     exclude_pids: set | None = None, all_profiles: bool = False
 ) -> list:
-    """Find PIDs of running gateway processes.
+    """查找正在运行的 gateway 进程的 PID。
 
     Args:
-        exclude_pids: PIDs to exclude from the result (e.g. service-managed
-            PIDs that should not be killed during a stale-process sweep).
-        all_profiles: When ``True``, return gateway PIDs across **all**
-            profiles (the pre-7923 global behaviour).  ``hermes update``
-            needs this because a code update affects every profile.
-            When ``False`` (default), only PIDs belonging to the current
-            Hermes profile are returned.
+        exclude_pids: 从结果中排除的 PID（例如在清理过期进程时不应被杀死的
+            服务管理 PID）。
+        all_profiles: 当为 ``True`` 时，返回 **所有** profile 的 gateway PID
+            （pre-7923 的全局行为）。``hermes update`` 需要此选项，因为代码
+            更新会影响每个 profile。当为 ``False``（默认）时，仅返回属于当前
+            Hermes profile 的 PID。
     """
     _exclude = set(exclude_pids or set())
     pids: list[int] = []
@@ -596,7 +580,7 @@ def find_gateway_pids(
 def find_profile_gateway_processes(
     exclude_pids: set | None = None,
 ) -> list[ProfileGatewayProcess]:
-    """Return running gateway PIDs mapped to Hermes profiles via PID files."""
+    """返回正在运行的 gateway PID，通过 PID 文件映射到 Hermes profile。"""
     _exclude = set(exclude_pids or set())
     processes: list[ProfileGatewayProcess] = []
     try:
@@ -629,16 +613,16 @@ def _gateway_run_args_for_profile(profile: str) -> list[str]:
 
 
 def _capture_gateway_argv(pid: int) -> list[str] | None:
-    """Return the live argv of a running gateway process, or ``None``.
+    """返回正在运行的 gateway 进程的实时 argv，或 ``None``。
 
-    Used to respawn gateways that have no profile→PID-file mapping (e.g. a
-    Windows Scheduled Task running ``pythonw.exe -m hermes_cli.main gateway
-    run``). ``_pause_windows_gateways_for_update`` force-kills such gateways
-    before mutating the venv; without their original command line we cannot
-    bring them back, so we snapshot it here before the kill.
+    用于重新生成没有 profile→PID 文件映射的 gateway（例如运行 ``pythonw.exe
+    -m hermes_cli.main gateway run`` 的 Windows 计划任务）。
+    ``_pause_windows_gateways_for_update`` 在修改 venv 之前会强制杀死此类
+    gateway；没有它们的原始命令行，我们就无法恢复它们，所以我们在杀死之前
+    在此处快照。
 
-    Best-effort: returns ``None`` if psutil is unavailable, the process is
-    gone, access is denied, or the argv doesn't look like a gateway command.
+    尽力而为：如果 psutil 不可用、进程已退出、访问被拒绝，或 argv 不像
+    gateway 命令，则返回 ``None``。
     """
     if pid <= 1:
         return None
@@ -654,9 +638,8 @@ def _capture_gateway_argv(pid: int) -> list[str] | None:
         return None
     if not argv:
         return None
-    # Guard against snapshotting an unrelated process whose PID happened to be
-    # reported by the scan: only respawn things that actually look like a
-    # gateway run command line.
+    # 防止快照一个不相关的进程，其 PID 恰好被扫描报告：仅重新生成确实像
+    # gateway 运行命令行的内容。
     try:
         from gateway.status import looks_like_gateway_command_line
 
@@ -670,13 +653,12 @@ def _capture_gateway_argv(pid: int) -> list[str] | None:
 def launch_detached_gateway_restart_by_cmdline(
     old_pid: int, run_argv: list[str]
 ) -> bool:
-    """Relaunch a gateway by replaying its captured command line after exit.
+    """通过在退出后重放其捕获的命令行来重新启动 gateway。
 
-    Companion to ``launch_detached_profile_gateway_restart`` for gateways that
-    have no profile→PID-file mapping (Scheduled-Task / manually-launched
-    ``gateway run`` whose HERMES_HOME or argv doesn't match a known profile).
-    Uses the identical detached-watcher mechanism; only the respawn argv
-    differs (the process's own argv instead of a profile-derived one).
+    作为 ``launch_detached_profile_gateway_restart`` 的配套函数，用于没有
+    profile→PID 文件映射的 gateway（计划任务/手动启动的 ``gateway run``，
+    其 HERMES_HOME 或 argv 与已知 profile 不匹配）。使用相同的分离式观察者
+    机制；只是重新生成的 argv 不同（进程自身的 argv 而非 profile 派生的）。
     """
     if old_pid <= 0 or not run_argv:
         return False
@@ -684,14 +666,14 @@ def launch_detached_gateway_restart_by_cmdline(
 
 
 def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
-    """Relaunch a manually-run profile gateway after its current PID exits."""
+    """在当前 PID 退出后重新启动手动运行的 profile gateway。"""
     if old_pid <= 0:
         return False
     return _spawn_gateway_restart_watcher(old_pid, _gateway_run_args_for_profile(profile))
 
 
 def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
-    """Spawn the detached watcher that respawns ``run_argv`` once ``old_pid`` exits."""
+    """生成分离式观察者，一旦 ``old_pid`` 退出便重新生成 ``run_argv``。"""
     if old_pid <= 0 or not run_argv:
         return False
 
@@ -4215,11 +4197,10 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
     _guard_existing_gateway_process_conflict(replace=replace)
     sys.path.insert(0, str(PROJECT_ROOT))
 
-    # Detached Windows gateway runs must ignore console-control broadcasts
-    # from sibling CLI processes, but foreground `hermes gateway run` still
-    # needs to obey the banner's "Press Ctrl+C to stop" contract.
-    # Service-style launchers set HERMES_GATEWAY_DETACHED=1; older wrappers
-    # without the marker are handled by the non-TTY fallback.
+    # 脱管的 Windows gateway 运行必须忽略来自兄弟 CLI 进程的 console-control 广播，
+    # 但前台 `hermes gateway run` 仍需遵守横幅的"按 Ctrl+C 停止"约定。
+    # 服务式启动器设置 HERMES_GATEWAY_DETACHED=1；没有此标记的旧包装器
+    # 由非 TTY 回退路径处理。
     try:
         _stdin_is_tty = bool(sys.stdin and sys.stdin.isatty())
     except (ValueError, OSError):
@@ -4231,43 +4212,39 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
             if hasattr(signal, "SIGBREAK"):
                 signal.signal(signal.SIGBREAK, signal.SIG_IGN)
         except (OSError, ValueError):
-            # SetConsoleCtrlHandler not available (rare on Windows) —
-            # best-effort, proceed either way.
+            # SetConsoleCtrlHandler 不可用（Windows 上罕见）—
+            # 尽力而为，无论如何继续。
             pass
-        # Python's signal module only hooks SIGINT/SIGBREAK. To also
-        # absorb CTRL_CLOSE_EVENT / CTRL_LOGOFF_EVENT and any other
-        # console control signals Windows may broadcast to the console
-        # process group, call the native SetConsoleCtrlHandler(NULL, TRUE)
-        # — this tells the kernel to IGNORE all console control events
-        # for this process entirely, which is what background services
-        # are supposed to do. Belt-and-braces over the Python-level
-        # handlers above.
+        # Python 的 signal 模块只能钩住 SIGINT/SIGBREAK。为了同时
+        # 吸收 CTRL_CLOSE_EVENT / CTRL_LOGOFF_EVENT 以及 Windows 可能
+        # 广播给控制台进程组的任何其他控制台控制信号，调用原生的
+        # SetConsoleCtrlHandler(NULL, TRUE) — 这会告诉内核完全忽略
+        # 此进程的所有控制台控制事件，这正是后台服务应该做的。
+        # 在上面的 Python 级处理器基础上再加一层保险。
         try:
             import ctypes
 
             kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            # BOOL SetConsoleCtrlHandler(NULL, Add)  —  Add=TRUE means
-            # "install the NULL handler", which has the documented
-            # effect of ignoring Ctrl+C. Called twice for defense in
-            # depth: once before any Python import could have flipped
-            # our disposition, once as our last word.
+            # BOOL SetConsoleCtrlHandler(NULL, Add) — Add=TRUE 表示
+            # "安装 NULL 处理器"，其文档记录的效果是忽略 Ctrl+C。
+            # 调用两次以实现纵深防御：一次在任何 Python import 可能
+            # 改变我们的处置之前，一次作为我们的最终确认。
             kernel32.SetConsoleCtrlHandler(None, 1)
         except (OSError, AttributeError):
             pass
 
-    # Refresh the systemd unit definition on every boot so that restart
-    # settings (RestartSec, StartLimitIntervalSec, etc.) stay current even
-    # when the process was respawned via exit-code-75 (stale-code or
-    # /restart) rather than through `hermes gateway restart` which already
-    # calls refresh_systemd_unit_if_needed().  Without this, a code update
-    # that ships new unit settings won't take effect until the next manual
-    # `hermes gateway start/restart` — leaving the gateway vulnerable to
-    # the exact failure mode the new settings were meant to prevent.
+    # 每次启动时刷新 systemd unit 定义，以确保 restart 设置
+    # （RestartSec、StartLimitIntervalSec 等）保持最新，即使进程是通过
+    # exit-code-75（陈旧代码或 /restart）重新生成的，而不是通过
+    # `hermes gateway restart`（后者已经调用
+    # refresh_systemd_unit_if_needed()）。否则，包含新 unit 设置的代码更新
+    # 在下次手动执行 `hermes gateway start/restart` 之前不会生效 —
+    # 使 gateway 容易受到新设置本应防止的故障模式的影响。
     if supports_systemd_services():
         try:
             refresh_systemd_unit_if_needed(system=False)
         except Exception:
-            pass  # best-effort; don't block gateway startup
+            pass  # 尽力而为；不要阻塞 gateway 启动
 
     from gateway.run import start_gateway
 
@@ -4279,20 +4256,17 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
     print("└─────────────────────────────────────────────────────────┘")
     print()
 
-    # Exit with code 1 if gateway fails to connect any platform,
-    # so systemd Restart=always will retry on transient errors
+    # 如果 gateway 无法连接任何平台，以退出码 1 退出，
+    # 这样 systemd Restart=always 会在临时错误时重试
     verbosity = None if quiet else verbose
 
-    # ── Exit-path diagnostics ────────────────────────────────────────────
-    # When the gateway dies silently on Windows (no shutdown log, no
-    # traceback in gateway.log / errors.log), we're usually blind to the
-    # cause. The code below captures *every* way the asyncio.run() call
-    # below can return, with full context dumped to a dedicated log so
-    # the next silent death yields evidence instead of a mystery. This
-    # is diagnostic scaffolding; cheap to keep on, costs nothing during
-    # normal operation, and the emitted lines are opt-in via the
-    # HERMES_GATEWAY_EXIT_DIAG env var (default: on while we're still
-    # chasing the Windows lifecycle bug).
+    # ── 退出路径诊断 ────────────────────────────────────────────
+    # 当 gateway 在 Windows 上无声死亡时（没有关闭日志，gateway.log /
+    # errors.log 中也没有 traceback），我们通常对原因一无所知。下面的代码
+    # 捕获 asyncio.run() 调用的*所有*返回方式，并将完整上下文转储到专用日志，
+    # 以便下次无声死亡能提供证据而不是谜团。这是诊断脚手架；保持开启成本很低，
+    # 正常运行时零开销，且输出的日志行通过 HERMES_GATEWAY_EXIT_DIAG 环境变量
+    # 控制（默认：开启，因为我们仍在追踪 Windows 生命周期 bug）。
     import atexit as _atexit
     import traceback as _traceback
     from datetime import datetime as _dt, timezone as _tz
@@ -4319,7 +4293,7 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
             with open(log_dir / "gateway-exit-diag.log", "a", encoding="utf-8") as f:
                 f.write(_json.dumps(line, default=str) + "\n")
         except Exception:
-            pass  # never let the diagnostic itself crash the gateway
+            pass  # 绝不让诊断本身导致 gateway 崩溃
 
     _exit_diag(
         "gateway.start",
@@ -4339,8 +4313,8 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
         success = asyncio.run(start_gateway(replace=replace, verbosity=verbosity))
         _exit_diag("asyncio.run.returned", success=success)
     except KeyboardInterrupt:
-        # On Windows-detached runs this shouldn't fire (we absorb SIGINT above),
-        # but keep the handler for console runs.
+        # 在 Windows 脱管运行中这不应该触发（我们在上面吸收了 SIGINT），
+        # 但为控制台运行保留此处理器。
         _exit_diag(
             "asyncio.run.KeyboardInterrupt",
             traceback=_traceback.format_exc(),
@@ -4355,8 +4329,8 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
         )
         raise
     except BaseException as e:
-        # Absolutely everything else: Exception, asyncio.CancelledError,
-        # even exotic BaseException subclasses. We want the cause logged.
+        # 所有其他情况：Exception、asyncio.CancelledError、
+        # 甚至特殊的 BaseException 子类。我们需要记录原因。
         _exit_diag(
             "asyncio.run.exception",
             exc_type=type(e).__name__,
@@ -4371,11 +4345,11 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
 
 
 # =============================================================================
-# Gateway Setup (Interactive Messaging Platform Configuration)
+# Gateway 设置（交互式消息平台配置）
 # =============================================================================
 
-# Per-platform config: each entry defines the env vars, setup instructions,
-# and prompts needed to configure a messaging platform.
+# 各平台配置：每个条目定义了配置消息平台所需的 env 变量、
+# 设置说明和提示信息。
 _PLATFORMS = [
     # Telegram moved to plugins/platforms/telegram/ — setup metadata discovered
     # dynamically via the platform registry entry registered by
@@ -5414,7 +5388,7 @@ def _setup_signal():
 
     save_env_value("SIGNAL_ALLOWED_USERS", allowed)
 
-    # Group messaging
+    # 群组消息
     print()
     if prompt_yes_no(
         "  Enable group messaging? (disabled by default for security)", False
@@ -5444,34 +5418,34 @@ def _setup_signal():
 
 
 def _builtin_setup_fn(key: str):
-    """Resolve the interactive setup function for a built-in platform key.
+    """解析内置 platform key 对应的交互式 setup 函数。
 
-    Late-bound to avoid a circular import with ``hermes_cli.setup`` (which
-    imports from this module for the remaining bespoke flows).
+    延迟绑定以避免与 ``hermes_cli.setup`` 产生循环 import（后者
+    为了剩余的定制流程会从此模块导入）。
     """
     from hermes_cli import setup as _s
 
     return {
-        # telegram moved into the plugin: setup_fn registered by
-        # plugins/platforms/telegram/adapter.py::register(). #41112.
-        # discord moved into the plugin: setup_fn is registered by
-        # plugins/platforms/discord/adapter.py::register() and dispatched
-        # via the plugin path in _configure_platform().
-        # slack moved into the plugin: setup_fn is registered by
-        # plugins/platforms/slack/adapter.py::register() and dispatched
-        # via the plugin path in _configure_platform(). #41112.
-        # matrix moved into the plugin: setup_fn registered by
-        # plugins/platforms/matrix/adapter.py::register() and dispatched via
-        # the plugin path in _configure_platform(). #41112.
-        # mattermost moved into the plugin: setup_fn is registered by
-        # plugins/platforms/mattermost/adapter.py::register() and dispatched
-        # via the plugin path in _configure_platform().
+        # telegram 已移入 plugin:setup_fn 由
+        # plugins/platforms/telegram/adapter.py::register() 注册。#41112.
+        # discord 已移入 plugin:setup_fn 由
+        # plugins/platforms/discord/adapter.py::register() 注册，
+        # 并通过 _configure_platform() 中的 plugin 路径分发。
+        # slack 已移入 plugin:setup_fn 由
+        # plugins/platforms/slack/adapter.py::register() 注册，
+        # 并通过 _configure_platform() 中的 plugin 路径分发。#41112.
+        # matrix 已移入 plugin:setup_fn 由
+        # plugins/platforms/matrix/adapter.py::register() 注册，
+        # 并通过 _configure_platform() 中的 plugin 路径分发。#41112.
+        # mattermost 已移入 plugin:setup_fn 由
+        # plugins/platforms/mattermost/adapter.py::register() 注册，
+        # 并通过 _configure_platform() 中的 plugin 路径分发。
         "bluebubbles": _s._setup_bluebubbles,
         "webhooks": _s._setup_webhooks,
         "signal": _setup_signal,
-        # whatsapp + dingtalk moved into plugins: setup_fn registered by
-        # plugins/platforms/{whatsapp,dingtalk}/adapter.py::register() and
-        # dispatched via the plugin path in _configure_platform(). #41112.
+        # whatsapp + dingtalk 已移入 plugin:setup_fn 由
+        # plugins/platforms/{whatsapp,dingtalk}/adapter.py::register() 注册，
+        # 并通过 _configure_platform() 中的 plugin 路径分发。#41112.
         "weixin": _setup_weixin,
         # feishu moved into the plugin: setup_fn registered by
         # plugins/platforms/feishu/adapter.py::register(). #41112.

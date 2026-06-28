@@ -1,31 +1,29 @@
-"""Petdex pet engine — shared core for the CLI, TUI, and desktop surfaces.
+"""Petdex 宠物引擎 — CLI、TUI 和桌面端的共享核心。
 
-Petdex (https://github.com/crafter-station/petdex) is a public gallery of
-animated sprite "pets" for coding agents.  Each pet is a ``pet.json`` plus a
-``spritesheet.{webp,png}`` of 192×208 px cells. Current Codex/petdex sheets use
-an 8-column × 9-row atlas; older Hermes/petdex sheets used an 8-row atlas.
-Hermes infers the row taxonomy from the sheet and maps agent activity onto
-idle/run/review/failed/wave/jump.
+Petdex (https://github.com/crafter-station/petdex) 是一个公开的动画精灵
+"宠物" 画廊，供编码代理使用。每个宠物由一个 ``pet.json`` 和一个
+``spritesheet.{webp,png}``（192×208 像素单元格）组成。当前 Codex/petdex
+spritesheet 使用 8 列 × 9 行的 atlas；较早的 Hermes/petdex spritesheet 使用
+8 行的 atlas。Hermes 根据 spritesheet 的形状推断行分类，并将代理活动映射到
+idle/run/review/failed/wave/jump 状态。
 
-This package is the **single source of truth** for the feature so the base
-CLI (Python) and TUI (Ink, via ``tui_gateway``) never duplicate the hard
-parts:
+本包是该功能的 **唯一真相来源**，因此基础 CLI（Python）和 TUI（Ink，通过
+``tui_gateway``）无需重复实现核心逻辑：
 
-- :mod:`agent.pet.constants` — frame geometry + the :class:`PetState` enum.
-- :mod:`agent.pet.state`     — map agent activity → a :class:`PetState`.
-- :mod:`agent.pet.manifest`  — fetch the public petdex manifest.
-- :mod:`agent.pet.store`     — install / list / resolve pets on disk
-                               (profile-aware via ``get_hermes_home()``).
-- :mod:`agent.pet.render`    — decode a spritesheet and encode frames for a
-                               terminal (kitty / iTerm2 / sixel graphics
-                               protocols, with a Unicode half-block
-                               fallback).
+- :mod:`agent.pet.constants` — 帧几何 + :class:`PetState` 枚举。
+- :mod:`agent.pet.state`     — 将代理活动映射到 :class:`PetState`。
+- :mod:`agent.pet.manifest`  — 获取公开的 petdex 清单。
+- :mod:`agent.pet.store`     — 在磁盘上安装/列出/解析宠物
+                               （通过 ``get_hermes_home()`` 感知 profile）。
+- :mod:`agent.pet.render`    — 解码 spritesheet 并为终端编码帧
+                               （kitty / iTerm2 / sixel 图形协议，
+                               并以 Unicode 半块作为后备）。
 
-Rendering in the Electron desktop is necessarily TypeScript (canvas), but it
-reuses the same on-disk store and the same state semantics.
+Electron 桌面端的渲染必然是 TypeScript（canvas），但它复用相同的磁盘存储
+和相同的状态语义。
 
-The whole feature is a *display* concern: it adds no model tool, mutates no
-system prompt or toolset, and therefore has zero effect on prompt caching.
+整个功能是一个 *显示* 关注点：它不添加模型工具，不修改系统提示或工具集，
+因此对 prompt 缓存没有影响。
 """
 
 from agent.pet.constants import (

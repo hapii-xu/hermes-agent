@@ -1,10 +1,10 @@
-"""HTTP routes for memory-provider OAuth connect, mounted by ``web_server``.
+"""memory provider OAuth 连接的 HTTP 路由，由 ``web_server`` 挂载。
 
-Kept out of ``web_server.py`` so the memory feature's surface stays in the
-memory layer. Dispatch is by convention: a provider's flow lives at
-``plugins.memory.<provider>.oauth_flow`` exposing ``start_loopback_flow_background``
-and ``get_flow_status``; a provider without that module simply 404s. No provider
-is named here.
+从 ``web_server.py`` 中分离出来，以便 memory 功能的接口保持在 memory 层。
+调度按约定进行：provider 的 flow 位于
+``plugins.memory.<provider>.oauth_flow``，暴露 ``start_loopback_flow_background``
+和 ``get_flow_status``；没有该模块的 provider 将直接返回 404。此处不显式
+引用任何 provider。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/memory/providers")
 
 
 def _resolve_flow(provider: str):
-    """Return a provider's OAuth flow module by convention, or raise 404."""
+    """按约定返回 provider 的 OAuth flow 模块，否则抛出 404。"""
     if not provider.isidentifier():
         raise HTTPException(status_code=404, detail=f"unknown memory provider {provider!r}")
     try:
@@ -30,8 +30,8 @@ def _resolve_flow(provider: str):
 
 @contextmanager
 def _scope_to_profile(profile: Optional[str]):
-    """Scope config resolution to ``profile`` so the flow's eager path resolve
-    targets that profile's honcho.json. None/""/"current" leaves it untouched."""
+    """将配置解析范围限定到 ``profile``，使 flow 的即时路径解析
+    定位到该 profile 的 honcho.json。None/""/"current" 则保持不变。"""
     requested = (profile or "").strip()
     if not requested or requested.lower() == "current":
         yield
@@ -56,12 +56,12 @@ def _scope_to_profile(profile: Optional[str]):
 
 @router.post("/{provider}/oauth/start")
 async def start_memory_oauth(provider: str, profile: Optional[str] = None):
-    """Begin a provider's zero-CLI OAuth flow — opens the browser and captures
-    the grant via the loopback listener. Returns immediately; poll status."""
+    """启动 provider 的零 CLI OAuth flow — 打开浏览器并通过
+    环回监听器捕获授权。立即返回；请轮询状态。"""
     flow = _resolve_flow(provider)
     try:
-        # The flow resolves its config path eagerly inside this scope; the worker
-        # thread it spawns outlives the request and the override.
+        # flow 在此范围内即时解析其配置路径；它启动的工作线程
+        # 的生命周期超过请求和覆盖。
         with _scope_to_profile(profile):
             return flow.start_loopback_flow_background()
     except HTTPException:
@@ -72,7 +72,7 @@ async def start_memory_oauth(provider: str, profile: Optional[str] = None):
 
 @router.get("/{provider}/oauth/status")
 async def memory_oauth_status(provider: str, profile: Optional[str] = None):
-    """Poll a provider's OAuth flow: idle | pending | connected | error."""
+    """轮询 provider 的 OAuth flow 状态：idle | pending | connected | error。"""
     flow = _resolve_flow(provider)
     try:
         with _scope_to_profile(profile):

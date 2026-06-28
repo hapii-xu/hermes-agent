@@ -1,15 +1,15 @@
 """
-CLI commands for the DM pairing system.
+DM 配对系统的 CLI 命令。
 
-Usage:
-    hermes pairing list              # Show all pending + approved users
-    hermes pairing approve <platform> <code>  # Approve a pairing code
-    hermes pairing revoke <platform> <user_id> # Revoke user access
-    hermes pairing clear-pending     # Clear all expired/pending codes
+用法:
+    hermes pairing list              # 显示所有待审批 + 已批准的用户
+    hermes pairing approve <platform> <code>  # 批准配对码
+    hermes pairing revoke <platform> <user_id> # 撤销用户访问权限
+    hermes pairing clear-pending     # 清除所有过期/待处理的配对码
 """
 
 def pairing_command(args):
-    """Handle hermes pairing subcommands."""
+    """处理 hermes pairing 子命令。"""
     from gateway.pairing import PairingStore
 
     store = PairingStore()
@@ -29,7 +29,7 @@ def pairing_command(args):
 
 
 def _cmd_list(store):
-    """List all pending and approved users."""
+    """列出所有待审批和已批准的用户。"""
     pending = store.list_pending()
     approved = store.list_approved()
 
@@ -62,7 +62,7 @@ def _cmd_list(store):
 
 
 def _cmd_approve(store, platform: str, code: str):
-    """Approve a pairing code."""
+    """批准一个配对码。"""
     platform = platform.lower().strip()
     code = code.upper().strip()
 
@@ -74,9 +74,8 @@ def _cmd_approve(store, platform: str, code: str):
         print(f"\n  Approved! User {display} on {platform} can now use the bot~")
         print("  They'll be recognized automatically on their next message.\n")
     elif store._is_locked_out(platform):
-        # Disambiguate: approve_code returns None for both invalid codes
-        # and lockout. Tell the operator it's lockout so they don't chase
-        # a "wrong code" rabbit hole (#10195).
+        # 消除歧义：approve_code 对无效码和锁定都返回 None。
+        # 告诉操作者是锁定，以免他们在"错误配对码"的死胡同里打转 (#10195)。
         import time as _time
         limits = store._load_json(store._rate_limit_path())
         lockout_until = limits.get(f"_lockout:{platform}", 0)
@@ -97,7 +96,7 @@ def _cmd_approve(store, platform: str, code: str):
 
 
 def _cmd_revoke(store, platform: str, user_id: str):
-    """Revoke a user's access."""
+    """撤销用户的访问权限。"""
     platform = platform.lower().strip()
 
     if store.revoke(platform, user_id):
@@ -107,7 +106,7 @@ def _cmd_revoke(store, platform: str, user_id: str):
 
 
 def _cmd_clear_pending(store):
-    """Clear all pending pairing codes."""
+    """清除所有待处理的配对码。"""
     count = store.clear_pending()
     if count:
         print(f"\n  Cleared {count} pending pairing request(s).\n")

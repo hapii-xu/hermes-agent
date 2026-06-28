@@ -1,32 +1,31 @@
-"""CLI entry point for the hermes-agent ACP adapter.
+"""hermes-agent ACP 适配器的 CLI 入口点。
 
-Loads environment variables from ``~/.hermes/.env``, configures logging
-to write to stderr (so stdout is reserved for ACP JSON-RPC transport),
-and starts the ACP agent server.
+从 ``~/.hermes/.env`` 加载环境变量，配置日志写入 stderr
+（这样 stdout 保留给 ACP JSON-RPC 传输使用），并启动 ACP 代理服务器。
 
-Usage::
+用法::
 
     python -m acp_adapter.entry
-    # or
+    # 或
     hermes acp
-    # or
+    # 或
     hermes-acp
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# 重要：hermes_bootstrap 必须是第一个导入 — 在 Windows 上设置 UTF-8 stdio。
+# POSIX 上无操作。完整原因参见 hermes_bootstrap.py。
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
-    # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
-    # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
+    # 当 hermes_bootstrap 尚未在 venv 中注册时的优雅降级 —
+    # 这会在 ``hermes update`` 的部分完成时发生，即 git-reset 已
+    # 拉入新代码但 ``uv pip install -e .`` 尚未完成。缺少 bootstrap
+    # 意味着 Windows 上会跳过 UTF-8 stdio 设置；POSIX 不受影响。
     pass
 else:
-    # Stop a ``utils/``/``proxy/``/``ui/`` package in the launch directory from
-    # shadowing Hermes's own modules — ``hermes acp`` can be started from any
-    # cwd, including a project that has same-named packages on its path.
+    # 阻止启动目录中的 ``utils/``/``proxy/``/``ui/`` 包遮蔽
+    # Hermes 自身的模块 — ``hermes acp`` 可以从任何 cwd 启动，
+    # 包括路径上存在同名包的项目。
     hermes_bootstrap.harden_import_path()
 
 import argparse
@@ -37,22 +36,20 @@ from pathlib import Path
 from hermes_constants import get_hermes_home
 
 
-# Methods clients send as periodic liveness probes. They are not part of the
-# ACP schema, so the acp router correctly returns JSON-RPC -32601 to the
-# caller — but the supervisor task that dispatches the request then surfaces
-# the raised RequestError via ``logging.exception("Background task failed")``,
-# which dumps a traceback to stderr every probe interval. Clients like
-# acp-bridge already treat the -32601 response as "agent alive", so the
-# traceback is pure noise. We keep the protocol response intact and only
-# silence the stderr noise for this specific benign case.
+# 客户端作为周期性活性探测发送的方法。它们不是 ACP schema 的一部分，
+# 因此 acp 路由正确地向调用者返回 JSON-RPC -32601 — 但分发请求的
+# supervisor task 会通过 ``logging.exception("Background task failed")``
+# 抛出 RequestError，导致每个探测间隔都向 stderr 输出 traceback。
+# acp-bridge 等客户端已经将 -32601 响应视为"代理存活"，因此 traceback
+# 纯属噪音。我们保持协议响应不变，仅在这种特定的良性情况下消除
+# stderr 噪音。
 _BENIGN_PROBE_METHODS = frozenset({"ping", "health", "healthcheck"})
 
 
 class _BenignProbeMethodFilter(logging.Filter):
-    """Suppress acp 'Background task failed' tracebacks caused by unknown
-    liveness-probe methods (e.g. ``ping``) while leaving every other
-    background-task error — including method_not_found for any non-probe
-    method — visible in stderr.
+    """抑制由未知活性探测方法（如 ``ping``）引起的 ACP 'Background task failed'
+    traceback，同时保留所有其他后台任务错误 — 包括非探测方法的 method_not_found —
+    在 stderr 中可见。
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -62,8 +59,8 @@ class _BenignProbeMethodFilter(logging.Filter):
         if not exc_info:
             return True
         exc = exc_info[1]
-        # Imported lazily so this module stays importable when the optional
-        # ``agent-client-protocol`` dependency is not installed.
+        # 惰性导入，以便在可选依赖 ``agent-client-protocol`` 未安装时
+        # 本模块仍可正常导入。
         try:
             from acp.exceptions import RequestError
         except ImportError:
@@ -78,7 +75,7 @@ class _BenignProbeMethodFilter(logging.Filter):
 
 
 def _setup_logging() -> None:
-    """Route all logging to stderr so stdout stays clean for ACP stdio."""
+    """将所有日志路由到 stderr，使 stdout 保持干净用于 ACP stdio。"""
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
         logging.Formatter(
@@ -92,14 +89,14 @@ def _setup_logging() -> None:
     root.addHandler(handler)
     root.setLevel(logging.INFO)
 
-    # Quiet down noisy libraries
+    # 降低嘈杂日志库的级别
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
 
 
 def _load_env() -> None:
-    """Load .env from HERMES_HOME (default ``~/.hermes``)."""
+    """从 HERMES_HOME（默认 ``~/.hermes``）加载 .env。"""
     from hermes_cli.env_loader import load_hermes_dotenv
 
     hermes_home = get_hermes_home()
@@ -169,10 +166,9 @@ def _run_setup() -> None:
     finally:
         sys.argv = old_argv
 
-    # Offer browser-tools install as a follow-up. The terminal auth method
-    # is the one supported first-run UX for registry installs, so this is
-    # the natural moment to ask. Skip silently if stdin isn't a TTY (the
-    # answer can't be collected anyway).
+    # 提供浏览器工具安装作为后续步骤。终端认证方式是注册中心安装
+    # 支持的首次运行体验，因此此时询问是自然的时机。如果 stdin 不是
+    # TTY 则静默跳过（无论如何也无法收集回答）。
     if not sys.stdin.isatty():
         return
     try:
@@ -187,12 +183,12 @@ def _run_setup() -> None:
 
 
 def _run_setup_browser(assume_yes: bool = False) -> int:
-    """Bootstrap agent-browser + Chromium.
+    """引导安装 agent-browser + Chromium。
 
-    Routes through dep_ensure -> install.{sh,ps1} --ensure, sharing code
-    with ``hermes postinstall`` and the runtime lazy installer.
+    通过 dep_ensure -> install.{sh,ps1} --ensure 路由，与
+    ``hermes postinstall`` 和运行时惰性安装器共享代码。
 
-    Returns 0 on success, 1 on failure.
+    成功返回 0，失败返回 1。
     """
     from hermes_cli.dep_ensure import ensure_dependency
 
@@ -215,7 +211,7 @@ def _run_setup_browser(assume_yes: bool = False) -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Entry point: load env, configure logging, run the ACP agent."""
+    """入口点：加载环境、配置日志、运行 ACP 代理。"""
     args = _parse_args(argv)
     if args.version:
         _print_version()
@@ -238,7 +234,7 @@ def main(argv: list[str] | None = None) -> None:
     logger = logging.getLogger(__name__)
     logger.info("Starting hermes-agent ACP adapter")
 
-    # Ensure the project root is on sys.path so ``from run_agent import AIAgent`` works
+    # 确保项目根目录在 sys.path 中，使 ``from run_agent import AIAgent`` 可用
     project_root = str(Path(__file__).resolve().parent.parent)
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
@@ -246,11 +242,11 @@ def main(argv: list[str] | None = None) -> None:
     import acp
     from .server import HermesACPAgent
 
-    # MCP tool discovery from config.yaml — run before asyncio.run() so
-    # it's safe to use blocking waits.  (ACP also registers per-session
-    # MCP servers dynamically via asyncio.to_thread inside the event
-    # loop; that path is unaffected.)  Moved from model_tools.py module
-    # scope to avoid freezing the gateway's loop on lazy import (#16856).
+    # 从 config.yaml 发现 MCP 工具 — 在 asyncio.run() 之前运行，
+    # 这样使用阻塞等待是安全的。（ACP 也会在事件循环内通过
+    # asyncio.to_thread 动态注册每个会话的 MCP 服务器；该路径不受
+    # 影响。）从 model_tools.py 模块级移到此处，以避免在惰性导入时
+    # 冻结 gateway 的事件循环 (#16856)。
     try:
         from tools.mcp_tool import discover_mcp_tools
         discover_mcp_tools()

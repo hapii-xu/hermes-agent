@@ -1,10 +1,9 @@
-"""Browser sign-in flow for the Honcho memory provider — no CLI step.
+"""Honcho memory provider 的浏览器登录流程 — 无需 CLI 步骤。
 
-``begin_authorization`` / ``complete_authorization`` are the transport-agnostic
-core: the code can arrive via the loopback listener here or a future
-``hermes://`` handler. Endpoints are env-overridable with local-dev defaults
-because ``/authorize`` (dashboard) and ``/oauth/token`` (API) live on
-different origins.
+``begin_authorization`` / ``complete_authorization`` 是与传输无关的核心：
+code 可以通过本文件中的 loopback 监听器获取，也可以通过未来的
+``hermes://`` 处理器获取。端点可通过环境变量覆盖（含本地开发默认值），
+因为 ``/authorize``（dashboard）和 ``/oauth/token``（API）位于不同的 origin。
 """
 
 from __future__ import annotations
@@ -27,23 +26,23 @@ from plugins.memory.honcho.client import resolve_active_host, resolve_config_pat
 
 logger = logging.getLogger(__name__)
 
-# The loopback redirect registered for the Hermes OAuth client. IP-literal so
-# the browser can't resolve the advertised host to ::1 and miss the IPv4 bind.
+# 为 Hermes OAuth 客户端注册的 loopback 重定向地址。使用 IP 字面量，防止
+# 浏览器将广播的主机名解析为 ::1 而错过 IPv4 绑定。
 LOOPBACK_HOST = "127.0.0.1"
 LOOPBACK_PORT = 8765
 LOOPBACK_REDIRECT_URI = f"http://{LOOPBACK_HOST}:{LOOPBACK_PORT}/callback"
 
-# Pending authorizations live only until their callback returns; keyed by the
-# CSRF ``state`` so a stray/forged callback can't complete a grant.
+# 待处理的授权仅在回调返回前有效；以 CSRF ``state`` 为键，
+# 防止随机/伪造的回调完成授权。
 _PENDING_TTL_SECONDS = 600
 
 
 def _display_config_path(path: object) -> str:
-    """Home-relative display string for the consent screen.
+    """用于授权界面的主目录相对显示路径。
 
-    The absolute path (username + home layout) never leaves the machine — it's
-    only shown to the user. Collapse ``$HOME`` to ``~``; for a path outside
-    home, send the bare filename rather than leak an arbitrary absolute path.
+    绝对路径（用户名 + 主目录布局）不会离开本机 — 它仅向用户显示。
+    将 ``$HOME`` 折叠为 ``~``；对于主目录之外的路径，返回裸文件名，
+    而不是泄露任意绝对路径。
     """
     from pathlib import Path as _Path
 
@@ -56,7 +55,7 @@ def _display_config_path(path: object) -> str:
 
 @dataclass(frozen=True)
 class OAuthEndpoints:
-    """Resolved authorization-server URLs and client identity."""
+    """已解析的授权服务器 URL 与客户端标识。"""
 
     authorize_url: str  # dashboard /authorize
     token_url: str  # API /oauth/token
@@ -64,15 +63,15 @@ class OAuthEndpoints:
     scope: str
 
 
-# Cloud (production) hosts; dashboard serves /authorize, API serves /oauth/token.
+# 云端（生产环境）主机；dashboard 提供 /authorize，API 提供 /oauth/token。
 _CLOUD_DASHBOARD = "https://app.honcho.dev"
 _CLOUD_TOKEN_URL = "https://api.honcho.dev/oauth/token"
 _LOCAL_DASHBOARD = "http://localhost:3000"
 _LOCAL_TOKEN_URL = "http://localhost:8000/oauth/token"
 
-# One OAuth client for every surface. Consent branding/UI adapt via the
-# ``source`` query param (not a separate client_id), so there's a single grant
-# identity to refresh — no clientId-vs-refresh-token desync to revoke the grant.
+# 每个界面共用一个 OAuth 客户端。授权品牌/界面通过 ``source`` 查询参数
+# （而非独立的 client_id）适配，因此只有一个授权身份用于刷新 — 无需担心
+# clientId 与 refresh token 不同步而导致撤销授权。
 _DEFAULT_CLIENT_ID = "hermes-agent"
 
 
@@ -83,11 +82,11 @@ def _is_loopback_url(url: str | None) -> bool:
 def resolve_endpoints(
     environment: str | None = None, base_url: str | None = None
 ) -> OAuthEndpoints:
-    """Resolve OAuth endpoints, zero-config by default.
+    """解析 OAuth 端点，默认零配置。
 
-    Keys off the host's honcho ``environment`` (production → cloud, local →
-    localhost); a self-hosted ``base_url`` derives the token endpoint from the
-    API host. Env vars override every field for unusual deployments.
+    根据主机的 honcho ``environment``（production → 云端，local → localhost）
+    确定；自托管的 ``base_url`` 从 API 主机派生 token 端点。环境变量可覆盖
+    所有字段以适应特殊部署场景。
     """
     if environment is None or base_url is None:
         try:
@@ -102,7 +101,7 @@ def resolve_endpoints(
     is_local = (environment or "").lower() == "local" or _is_loopback_url(base_url)
     default_dashboard = _LOCAL_DASHBOARD if is_local else _CLOUD_DASHBOARD
     default_token = _LOCAL_TOKEN_URL if is_local else _CLOUD_TOKEN_URL
-    # Self-hosted API (non-loopback base_url): token rides the same host.
+    # 自托管 API（非 loopback base_url）：token 端点使用相同主机。
     if base_url and not is_local:
         default_token = f"{base_url.rstrip('/')}/oauth/token"
 
@@ -127,7 +126,7 @@ _pending_lock = threading.Lock()
 
 
 def _pkce() -> tuple[str, str]:
-    """Return (verifier, S256 challenge) for an authorization-code request."""
+    """返回用于 authorization code 请求的 (verifier, S256 challenge)。"""
     verifier = secrets.token_urlsafe(64)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
@@ -151,13 +150,12 @@ def begin_authorization(
     config_path: str | None = None,
     now: float | None = None,
 ) -> tuple[str, str]:
-    """Start an authorization: return ``(authorize_url, state)`` and stash PKCE.
+    """启动授权：返回 ``(authorize_url, state)`` 并暂存 PKCE 参数。
 
-    ``source`` tags the authorize link with the initiating surface
-    (``hermes-desktop`` / ``hermes-cli``) so the consent side can attribute
-    connects and vary behavior per surface. ``config_path`` is a home-relative
-    *display* string for the consent screen (never the absolute path); callers
-    pass the actual write path separately to ``complete_authorization``.
+    ``source`` 将发起界面（``hermes-desktop`` / ``hermes-cli``）标记到授权链接中，
+    以便授权端可追踪连接来源并按界面区分行为。``config_path`` 是用于授权界面
+    的主目录相对*显示*路径（而非绝对路径）；实际写入路径由调用方单独传给
+    ``complete_authorization``。
     """
     now = time.time() if now is None else now
     verifier, challenge = _pkce()

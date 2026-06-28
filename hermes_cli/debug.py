@@ -1,14 +1,14 @@
-"""``hermes debug`` debug tools for Hermes Agent.
+"""Hermes Agent 的 ``hermes debug`` 调试工具。
 
-Currently supports:
-    hermes debug share    Upload debug report (system info + logs) to a
-                          paste service and print a shareable URL.
-                          By default, log content is run through
-                          ``agent.redact.redact_sensitive_text`` with
-                          ``force=True`` before upload so credentials in
-                          ``~/.hermes/logs/*.log`` are not leaked into
-                          the public paste service. Pass ``--no-redact``
-                          to disable.
+当前支持：
+    hermes debug share    将调试报告（系统信息 + 日志）上传至粘贴服务
+                          并打印可分享的 URL。
+                          默认情况下，上传前会通过
+                          ``agent.redact.redact_sensitive_text`` 以
+                          ``force=True`` 模式对日志内容进行脱敏处理，
+                          以确保 ``~/.hermes/logs/*.log`` 中的凭据
+                          不会泄露到公共粘贴服务。可通过 ``--no-redact``
+                          禁用此功能。
 """
 
 import io

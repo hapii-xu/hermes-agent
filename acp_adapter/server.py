@@ -1,4 +1,4 @@
-"""ACP agent server — exposes Hermes Agent via the Agent Client Protocol."""
+"""ACP Agent 服务器 —— 通过 Agent Client Protocol 暴露 Hermes Agent。"""
 
 from __future__ import annotations
 
@@ -82,12 +82,12 @@ try:
 except Exception:
     HERMES_VERSION = "0.0.0"
 
-# Thread pool for running AIAgent (synchronous) in parallel.
+# 用于并行运行 AIAgent（同步）的线程池。
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="acp-agent")
 
-# Server-side page size for list_sessions. The ACP ListSessionsRequest schema
-# does not expose a client-side limit, so this is a fixed cap that clients
-# paginate against using `cursor` / `next_cursor`.
+# list_sessions 的服务端分页大小。ACP ListSessionsRequest schema
+# 未暴露客户端限制，因此这是一个固定上限，客户端使用
+# `cursor` / `next_cursor` 进行分页。
 _LIST_SESSIONS_PAGE_SIZE = 50
 _MAX_ACP_RESOURCE_BYTES = 512 * 1024
 _TEXT_RESOURCE_MIME_PREFIXES = ("text/",)

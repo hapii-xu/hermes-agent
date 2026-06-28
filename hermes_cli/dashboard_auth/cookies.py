@@ -1,58 +1,51 @@
-"""Cookie helpers for dashboard auth.
+"""Dashboard auth 的 Cookie 辅助函数。
 
-Three cookies in play:
-  - hermes_session_at:   the OAuth access token
-                         (HttpOnly, lifetime = token TTL, ~15 min)
-  - hermes_session_rt:   the OAuth refresh token
-                         (HttpOnly, lifetime = 24h, ROTATING + reuse-detected)
-                         Nous Portal issues a rotating refresh token for the
-                         dashboard auth-code grant (Portal NAS #293 / hermes
-                         #37247). ``set_session_cookies`` writes this cookie
-                         whenever the provider returns a non-empty
-                         ``refresh_token``; the middleware uses it to rotate a
-                         fresh access token transparently on AT expiry. A
-                         provider that omits the refresh token (empty string)
-                         degrades gracefully to access-token-only sessions —
-                         the RT cookie is simply not written.
-  - hermes_session_pkce: short-lived PKCE state + CSRF nonce + provider
-                         hint (HttpOnly, lifetime = 10 minutes)
+涉及三个 cookie：
+  - hermes_session_at:   OAuth access token
+                         （HttpOnly，生命周期 = token TTL，约 15 分钟）
+  - hermes_session_rt:   OAuth refresh token
+                         （HttpOnly，生命周期 = 24 小时，轮换 + 重用检测）
+                         Nous Portal 为 dashboard auth-code 授权发放轮换的
+                         refresh token（Portal NAS #293 / hermes #37247）。
+                         ``set_session_cookies`` 在提供者返回非空
+                         ``refresh_token`` 时写入此 cookie；中间件使用它
+                         在 AT 过期时透明地轮换获取新的 access token。
+                         省略 refresh token（空字符串）的提供者会优雅地
+                         降级为仅 access token 的 session——RT cookie
+                          simply 不会被写入。
+  - hermes_session_pkce: 短期 PKCE 状态 + CSRF nonce + 提供者提示
+                         （HttpOnly，生命周期 = 10 分钟）
 
-All three are ``SameSite=Lax`` (browser will send on cross-site GET
-top-level navigation, which we need for the IDP redirect back to
-``/auth/callback``) and live under the prefix's Path. ``Secure`` is set
-ONLY when the dashboard was reached over HTTPS — detected via the
-request URL scheme, which honours ``X-Forwarded-Proto`` upstream of
-Fly's TLS terminator when uvicorn is configured with
-``proxy_headers=True``. Loopback dev traffic is always HTTP so
-``Secure`` would lock the cookies out of the browser.
+三者均为 ``SameSite=Lax``（浏览器会在跨站 GET 顶级导航时发送，
+IDP 重定向回 ``/auth/callback`` 时需要此行为），并位于前缀的 Path 下。
+``Secure`` 仅在 dashboard 通过 HTTPS 访问时设置——通过请求 URL 的
+scheme 检测，当 uvicorn 配置了 ``proxy_headers=True`` 时会 honour
+Fly 的 TLS 终结器上游的 ``X-Forwarded-Proto``。回环开发流量始终为
+HTTP，因此设置 ``Secure`` 会导致 cookie 在浏览器中被锁定。
 
-Cookie prefix selection (browser hardening per
-https://datatracker.ietf.org/doc/html/draft-west-cookie-prefixes):
+Cookie 前缀选择（浏览器加固，参见
+https://datatracker.ietf.org/doc/html/draft-west-cookie-prefixes）：
 
-  * Loopback HTTP — bare name. ``__Host-`` / ``__Secure-`` require
-    ``Secure``, which is incompatible with HTTP.
-  * Gated HTTPS, direct deploy (Path=/) — ``__Host-`` prefix. Binds the
-    cookie to the exact origin (no Domain attribute) — strongest spec
-    guarantee.
-  * Gated HTTPS, behind a reverse-proxy prefix (Path=/hermes) —
-    ``__Secure-`` prefix. ``__Host-`` is disallowed when Path != "/";
-    ``__Secure-`` keeps the Secure-required hardening without the
-    Path constraint, and the explicit ``Path=/hermes`` covers
-    same-origin app isolation.
+  * 回环 HTTP — 裸名称。``__Host-`` / ``__Secure-`` 需要 ``Secure``，
+    与 HTTP 不兼容。
+  * 门控 HTTPS，直接部署（Path=/）— ``__Host-`` 前缀。将 cookie
+    绑定到确切源（无 Domain 属性）——最强的规范保证。
+  * 门控 HTTPS，反向代理前缀（Path=/hermes）— ``__Secure-`` 前缀。
+    ``__Host-`` 在 Path != "/" 时不允许使用；``__Secure-`` 保留了
+    Secure 要求的加固而没有 Path 约束，显式的 ``Path=/hermes``
+    覆盖了同源应用隔离。
 
-The setters and readers BOTH consult the active prefix because the
-cookie *name* changes — a reader that looked up the bare name when the
-setter wrote ``__Secure-hermes_session_at`` would never find the value.
+设置器和读取器都查询活动前缀，因为 cookie *名称* 会变化——
+如果设置器写入了 ``__Secure-hermes_session_at`` 而读取器查找裸名称，
+则永远找不到值。
 
-Refresh-token handling:
-   ``set_session_cookies`` accepts ``refresh_token=""`` (provider omitted
-   it) and silently skips writing the RT cookie in that case, so a
-   refresh-token-less provider degrades to access-token-only sessions.
-   ``clear_session_cookies`` always emits a Max-Age=0 deletion for the RT
-   cookie on logout / session expiry so a stale cookie from an earlier
-   deployment gets cleared. The transparent rotation flow ("expired AT +
-   live RT → rotate server-side, else 401 → /login") lives in
-   ``middleware._attempt_refresh``.
+Refresh token 处理：
+   ``set_session_cookies`` 接受 ``refresh_token=""``（提供者省略了它）
+   并静默跳过写入 RT cookie，因此无 refresh token 的提供者会降级为
+   仅 access token 的 session。``clear_session_cookies`` 在注销 / session
+   过期时始终为 RT cookie 发出 Max-Age=0 删除，以便清除早期部署留下的
+   过期 cookie。透明轮换流程（"过期 AT + 有效 RT → 服务端轮换，
+   否则 401 → /login"）位于 ``middleware._attempt_refresh``。
 """
 from __future__ import annotations
 
@@ -61,55 +54,50 @@ from typing import Optional, Tuple
 from fastapi import Request
 from fastapi.responses import Response
 
-# Bare cookie names — the request-scoped ``_resolved_name`` helper
-# decides whether to prepend ``__Host-`` / ``__Secure-`` based on the
-# request's HTTPS + prefix combination.
+# 裸 cookie 名称——请求作用域的 ``_resolved_name`` 辅助函数
+# 根据请求的 HTTPS + 前缀组合决定是否添加 ``__Host-`` / ``__Secure-`` 前缀。
 SESSION_AT_COOKIE = "hermes_session_at"
 SESSION_RT_COOKIE = "hermes_session_rt"
 PKCE_COOKIE = "hermes_session_pkce"
 
-# Possible name variants we may have to read back. Sorted so most-strict
-# wins on iteration when both happen to be present (shouldn't happen in
-# practice — a single request emits exactly one variant).
+# 可能需要回读的名称变体。排序使最严格的前缀在迭代时优先
+# （实践中不应同时存在多个变体——单个请求只发出一个变体）。
 _NAME_VARIANTS = ("__Host-", "__Secure-", "")
 
-# RT cookie Max-Age. Kept at 30 days as a generous upper bound on the cookie's
-# browser lifetime; Portal's actual refresh-token TTL (24h, rotating) is the
-# real authority — once the RT itself expires/rotates out, a refresh attempt
-# returns 400 → RefreshExpiredError → clean re-login, regardless of how long
-# the cookie lingers. (Not tightened to 24h here to avoid coupling the cookie
-# lifetime to a server-side TTL that can change independently; revisit if the
-# stale-cookie refresh churn ever matters.)
+# RT cookie Max-Age。设为 30 天作为 cookie 浏览器生命周期的宽松上限；
+# Portal 实际的 refresh token TTL（24 小时，轮换）才是权威依据——
+# 一旦 RT 本身过期/轮换掉，刷新尝试会返回 400 → RefreshExpiredError →
+# 干净重新登录，无论 cookie 存留多久。（此处不收紧到 24 小时，
+# 以避免将 cookie 生命周期耦合到可独立更改的服务端 TTL；
+# 如果过期 cookie 的刷新抖动成为问题再重新评估。）
 _RT_MAX_AGE = 30 * 24 * 60 * 60
 _PKCE_MAX_AGE = 10 * 60
 
 
 def _resolved_name(bare: str, *, use_https: bool, prefix: str) -> str:
-    """Pick the cookie-prefix variant for the active request shape.
+    """为活动请求形态选择 cookie 前缀变体。
 
-    See module docstring for the prefix selection rules. Mismatch
-    between setter and reader would silently break sessions, so this
-    function is the single source of truth for naming.
+    前缀选择规则见模块文档字符串。设置器与读取器之间的不匹配会
+    静默破坏 session，因此此函数是命名的唯一真实来源。
     """
     if not use_https:
         return bare
     if prefix:
-        # Path != "/" forbids __Host-; fall back to __Secure-.
+        # Path != "/" 禁止使用 __Host-；回退到 __Secure-。
         return f"__Secure-{bare}"
     return f"__Host-{bare}"
 
 
 def _cookie_path(prefix: str) -> str:
-    """Cookie ``Path`` attribute for the active deploy shape.
+    """活动部署形态的 cookie ``Path`` 属性。
 
-    Under ``X-Forwarded-Prefix: /hermes`` we want ``Path=/hermes`` so:
-      a) the browser sends the cookie back on requests under the prefix
-         (browsers omit the cookie if request path doesn't start with
-         Path);
-      b) the cookie doesn't leak to other apps on the same origin
-         (``mission-control.tilos.com/billing/...``).
+    在 ``X-Forwarded-Prefix: /hermes`` 下需要 ``Path=/hermes``，以便：
+      a) 浏览器在前缀下的请求上发送 cookie
+         （如果请求路径不以 Path 开头，浏览器会省略 cookie）；
+      b) cookie 不会泄露到同源的其他应用
+         （``mission-control.tilos.com/billing/...``）。
 
-    Direct-deploy (no proxy prefix) gets ``Path=/``.
+    直接部署（无代理前缀）使用 ``Path=/``。
     """
     return prefix if prefix else "/"
 
@@ -134,20 +122,20 @@ def set_session_cookies(
     use_https: bool,
     prefix: str = "",
 ) -> None:
-    """Set the session cookies on the response.
+    """在响应上设置 session cookie。
 
-    ``access_token_expires_in`` is in seconds. Use the provider's reported
-    TTL for the access token.
+    ``access_token_expires_in`` 以秒为单位。使用提供者报告的
+    access token TTL。
 
-    ``refresh_token`` is written as the RT cookie when non-empty. Nous Portal
-    issues a 24h rotating refresh token (hermes #37247); a provider that
-    omits it returns ``Session.refresh_token == ""`` and we simply don't
-    persist the RT cookie — the session then behaves as access-token-only
-    until the AT expires. No other branch changes between the two cases.
+    ``refresh_token`` 非空时写入 RT cookie。Nous Portal 发放
+    24 小时轮换的 refresh token（hermes #37247）；省略它的提供者
+    返回 ``Session.refresh_token == ""``，我们 simply 不持久化
+    RT cookie——session 随后表现为仅 access token，直到 AT 过期。
+    两种情况之间没有其他分支变化。
 
-    ``prefix`` is the normalised X-Forwarded-Prefix value (e.g. ``/hermes``)
-    or ``""`` for a direct deploy. It influences both the cookie name
-    (``__Host-`` vs ``__Secure-`` vs bare) and the ``Path`` attribute.
+    ``prefix`` 是规范化的 X-Forwarded-Prefix 值（例如 ``/hermes``）
+    或 ``""`` 表示直接部署。它同时影响 cookie 名称
+    （``__Host-`` vs ``__Secure-`` vs 裸名）和 ``Path`` 属性。
     """
     response.set_cookie(
         _resolved_name(SESSION_AT_COOKIE, use_https=use_https, prefix=prefix),
@@ -155,9 +143,8 @@ def set_session_cookies(
         max_age=access_token_expires_in,
         **_common_attrs(use_https=use_https, prefix=prefix),
     )
-    # Contract v1: empty refresh token means "don't persist RT cookie".
-    # Keeping a literal empty-value cookie around would be dead state at
-    # best, attack surface at worst.
+    # 契约 v1：空 refresh token 表示"不持久化 RT cookie"。
+    # 保留一个空值的 cookie 充其量是死状态，最坏情况是攻击面。
     if refresh_token:
         response.set_cookie(
             _resolved_name(SESSION_RT_COOKIE, use_https=use_https, prefix=prefix),
@@ -168,13 +155,12 @@ def set_session_cookies(
 
 
 def clear_session_cookies(response: Response, *, prefix: str = "") -> None:
-    """Emit Max-Age=0 deletions for both session cookies.
+    """为两个 session cookie 发出 Max-Age=0 删除。
 
-    To delete a cookie reliably the deletion's ``Path`` must match the
-    set path AND the cookie name must match the variant the setter used.
-    We don't know which variant was originally set (cookie prefix
-    depends on the request that set it), so we emit deletions for every
-    plausible variant under the active path.
+    要可靠地删除 cookie，删除的 ``Path`` 必须匹配设置时的路径，
+    且 cookie 名称必须匹配设置器使用的变体。我们不知道最初设置的是
+    哪个变体（cookie 前缀取决于设置它的请求），因此我们为活动路径下
+    所有可能的变体发出删除。
     """
     path = _cookie_path(prefix)
     for variant in _NAME_VARIANTS:
@@ -211,12 +197,11 @@ def clear_pkce_cookie(response: Response, *, prefix: str = "") -> None:
 def _read_with_fallback(
     request: Request, bare_name: str,
 ) -> Optional[str]:
-    """Read a cookie by checking every prefix variant in order.
+    """通过按顺序检查每个前缀变体来读取 cookie。
 
-    The setter chooses one variant based on the active request shape;
-    the reader doesn't know which one fired (the request that READS
-    the cookie may not be the same shape as the request that SET it
-    in pathological cases). Trying all three guarantees we find it.
+    设置器根据活动请求形态选择一个变体；读取器不知道哪个变体
+    生效了（读取 cookie 的请求在极端情况下可能与设置它的请求
+    形态不同）。尝试全部三个变体保证能找到它。
     """
     for variant in _NAME_VARIANTS:
         value = request.cookies.get(f"{variant}{bare_name}")
@@ -226,7 +211,7 @@ def _read_with_fallback(
 
 
 def read_session_cookies(request: Request) -> Tuple[Optional[str], Optional[str]]:
-    """Returns (access_token, refresh_token), either may be None."""
+    """返回 (access_token, refresh_token)，两者均可能为 None。"""
     at = _read_with_fallback(request, SESSION_AT_COOKIE)
     rt = _read_with_fallback(request, SESSION_RT_COOKIE)
     return at, rt
@@ -237,11 +222,10 @@ def read_pkce_cookie(request: Request) -> Optional[str]:
 
 
 def detect_https(request: Request) -> bool:
-    """Decide whether to set the ``Secure`` cookie flag.
+    """决定是否设置 ``Secure`` cookie 标志。
 
-    Reads ``request.url.scheme`` — under uvicorn's ``proxy_headers=True``
-    (which start_server enables when the gate is active), this honours
-    ``X-Forwarded-Proto`` from Fly's TLS terminator. Loopback traffic is
-    always HTTP so this returns False there.
+    读取 ``request.url.scheme``——在 uvicorn 的 ``proxy_headers=True``
+    下（当门控激活时 start_server 会启用），这会 honour Fly TLS 终结器
+    上游的 ``X-Forwarded-Proto``。回环流量始终为 HTTP，因此此处返回 False。
     """
     return request.url.scheme == "https"

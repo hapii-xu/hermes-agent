@@ -1,8 +1,8 @@
-"""Abstract backend interface for computer use.
+"""computer use 的抽象后端接口。
 
-Any implementation (cua-driver over MCP, pyautogui, noop, future Linux/Windows)
-must return the shape described below. All methods synchronous; async is
-handled inside the backend implementation if needed.
+任何实现（基于 MCP 的 cua-driver、pyautogui、noop、未来的 Linux/Windows
+实现）都必须返回下文描述的形状。所有方法均为同步；如需异步，由后端实现
+内部自行处理。
 """
 
 from __future__ import annotations
@@ -14,22 +14,21 @@ from typing import Any, Dict, List, Optional, Tuple
 
 @dataclass
 class UIElement:
-    """One interactable element on the current screen."""
+    """当前屏幕上的一个可交互元素。"""
 
-    index: int                       # 1-based SOM index
-    role: str                        # AX role (AXButton, AXTextField, ...)
-    label: str = ""                  # AXTitle / AXDescription / AXValue snippet
-    bounds: Tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, w, h (logical px)
-    app: str = ""                    # owning bundle ID or app name
-    pid: int = 0                     # owning process PID
-    window_id: int = 0               # SkyLight / CG window ID
+    index: int                       # 从 1 开始的 SOM 索引
+    role: str                        # AX 角色（AXButton、AXTextField……）
+    label: str = ""                  # AXTitle / AXDescription / AXValue 片段
+    bounds: Tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, w, h（逻辑像素）
+    app: str = ""                    # 所属的 bundle ID 或应用名
+    pid: int = 0                     # 所属进程的 PID
+    window_id: int = 0               # SkyLight / CG 窗口 ID
     attributes: Dict[str, Any] = field(default_factory=dict)
-    # Opaque per-snapshot element handle from cua-driver
-    # (trycua/cua#1961 — Surface 6 of NousResearch/hermes-agent#47072).
-    # When set, downstream calls can pass it alongside `index` for
-    # explicit stale-detection: a stale token returns an error from
-    # cua-driver rather than silently re-resolving to a different
-    # element. None for pre-#1961 drivers that didn't carry the field.
+    # 来自 cua-driver 的、针对单个快照的不透明元素句柄
+    # （trycua/cua#1961 —— NousResearch/hermes-agent#47072 的 Surface 6）。
+    # 设置后，下游调用可在传 `index` 的同时带上它，用于显式的过期检测：
+    # 过期的 token 会从 cua-driver 返回错误，而不是静默地重新解析到另一个
+    # 元素。对于早于 #1961、不携带该字段的驱动，此处为 None。
     element_token: Optional[str] = None
 
     def center(self) -> Tuple[int, int]:
@@ -39,50 +38,47 @@ class UIElement:
 
 @dataclass
 class CaptureResult:
-    """Result of a screen capture call.
+    """一次屏幕捕获调用的结果。
 
-    At least one of png_b64 / elements is populated depending on capture mode:
-      * mode="vision" → png_b64 only
-      * mode="ax"     → elements only
-      * mode="som"    → both (default): PNG already has numbered overlays
-                         drawn by the backend, and `elements` holds the
-                         matching index → element mapping.
+    根据捕获模式，png_b64 / elements 至少有一个会被填充：
+      * mode="vision" → 仅 png_b64
+      * mode="ax"     → 仅 elements
+      * mode="som"    → 两者皆有（默认）：PNG 已经由后端画上了编号覆盖层，
+                        且 `elements` 持有对应的 index → 元素映射。
     """
 
     mode: str
-    width: int                      # screenshot width (logical px, pre-Anthropic-scale)
+    width: int                      # 截图宽度（逻辑像素，Anthropic 缩放前）
     height: int
     png_b64: Optional[str] = None
     elements: List[UIElement] = field(default_factory=list)
-    # Optional: the target app/window the elements were captured for.
+    # 可选：这些元素被捕获时所针对的目标应用/窗口。
     app: str = ""
     window_title: str = ""
-    # Raw bytes we sent to Anthropic, for token estimation.
+    # 我们发给 Anthropic 的原始字节数，用于估算 token。
     png_bytes_len: int = 0
-    # Explicit MIME type for `png_b64` when the backend supplied it
-    # (cua-driver-rs emits `mimeType` on every image part as of
-    # trycua/cua#1961 — Surface 7 of NousResearch/hermes-agent#47072).
-    # When None, downstream consumers fall back to base64-prefix
-    # sniffing for back-compat with older drivers.
+    # 后端提供时，`png_b64` 的显式 MIME 类型
+    # （自 trycua/cua#1961 起，cua-driver-rs 在每个图片部分上都会输出
+    # `mimeType` —— NousResearch/hermes-agent#47072 的 Surface 7）。
+    # 为 None 时，下游消费者会回退到 base64 前缀嗅探，以兼容旧驱动。
     image_mime_type: Optional[str] = None
 
 
 @dataclass
 class ActionResult:
-    """Result of any action (click / type / scroll / drag / key / wait)."""
+    """任意动作（click / type / scroll / drag / key / wait）的结果。"""
 
     ok: bool
     action: str
-    message: str = ""                # human-readable summary
-    # Optional trailing screenshot — set when the caller asked for a
-    # post-action capture or the backend always returns one.
+    message: str = ""                # 人类可读的摘要
+    # 可选的尾随截图 —— 当调用方要求动作后捕获，或后端总是返回截图时设置。
     capture: Optional[CaptureResult] = None
-    # Arbitrary extra fields for debugging / telemetry.
+    # 用于调试 / 遥测的任意额外字段。
     meta: Dict[str, Any] = field(default_factory=dict)
 
 
 class ComputerUseBackend(ABC):
-    """Lifecycle: `start()` before first use, `stop()` at shutdown."""
+    """生命周期：首次使用前调用 `start()`，关闭时调用 `stop()`。"""
 
     @abstractmethod
     def start(self) -> None: ...
@@ -92,16 +88,16 @@ class ComputerUseBackend(ABC):
 
     @abstractmethod
     def is_available(self) -> bool:
-        """Return True if the backend can be used on this host right now.
+        """当后端在当前主机上立即可用时返回 True。
 
-        Used by check_fn gating and by the post-setup wizard.
+        供 check_fn 门禁与安装后向导使用。
         """
 
-    # ── Capture ─────────────────────────────────────────────────────
+    # ── 捕获 ─────────────────────────────────────────────────────
     @abstractmethod
     def capture(self, mode: str = "som", app: Optional[str] = None) -> CaptureResult: ...
 
-    # ── Pointer actions ─────────────────────────────────────────────
+    # ── 指针动作 ─────────────────────────────────────────────────
     @abstractmethod
     def click(
         self,
@@ -131,41 +127,41 @@ class ComputerUseBackend(ABC):
         self,
         *,
         direction: str,                 # up | down | left | right
-        amount: int = 3,                # wheel ticks
+        amount: int = 3,                # 滚轮刻度
         element: Optional[int] = None,
         x: Optional[int] = None,
         y: Optional[int] = None,
         modifiers: Optional[List[str]] = None,
     ) -> ActionResult: ...
 
-    # ── Keyboard ────────────────────────────────────────────────────
+    # ── 键盘 ────────────────────────────────────────────────────
     @abstractmethod
     def type_text(self, text: str) -> ActionResult: ...
 
     @abstractmethod
     def key(self, keys: str) -> ActionResult:
-        """Send a key combo, e.g. 'cmd+s', 'ctrl+alt+t', 'return'."""
+        """发送一个组合键，例如 'cmd+s'、'ctrl+alt+t'、'return'。"""
 
-    # ── Introspection ───────────────────────────────────────────────
+    # ── 自省 ───────────────────────────────────────────────────
     @abstractmethod
     def list_apps(self) -> List[Dict[str, Any]]:
-        """Return running apps with bundle IDs, PIDs, window counts."""
+        """返回正在运行的应用，包含 bundle ID、PID、窗口数量。"""
 
     @abstractmethod
     def focus_app(self, app: str, raise_window: bool = False) -> ActionResult:
-        """Route input to `app` (by name or bundle ID). Default: focus without raise."""
+        """把输入路由到 `app`（按名称或 bundle ID）。默认：聚焦但不前置。"""
 
-    # ── Native-value mutation ────────────────────────────────────────
+    # ── 原生值修改 ────────────────────────────────────────────────
     @abstractmethod
     def set_value(self, value: str, element: Optional[int] = None) -> ActionResult:
-        """Set a native value on an element (e.g. AXPopUpButton selection).
+        """在元素上设置一个原生值（例如 AXPopUpButton 的选择）。
 
-        `element` is the 1-based SOM index returned by a prior capture call.
+        `element` 是先前某次捕获调用返回的、从 1 开始的 SOM 索引。
         """
 
-    # ── Timing ──────────────────────────────────────────────────────
+    # ── 计时 ──────────────────────────────────────────────────────
     def wait(self, seconds: float) -> ActionResult:
-        """Default implementation: time.sleep."""
+        """默认实现：time.sleep。"""
         import time
         time.sleep(max(0.0, min(seconds, 30.0)))
         return ActionResult(ok=True, action="wait", message=f"waited {seconds:.2f}s")

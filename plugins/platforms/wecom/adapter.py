@@ -1,22 +1,22 @@
 """
-WeCom (Enterprise WeChat) platform adapter.
+WeCom（企业微信）平台适配器。
 
-Uses the WeCom AI Bot WebSocket gateway for inbound and outbound messages.
-The adapter focuses on the core gateway path:
+使用 WeCom AI Bot WebSocket 网关处理消息的收发。
+该适配器专注于核心网关路径：
 
-- authenticate via ``aibot_subscribe``
-- receive inbound ``aibot_msg_callback`` events
-- send outbound markdown messages via ``aibot_send_msg``
-- upload outbound media via ``aibot_upload_media_*`` and send native attachments
-- best-effort download of inbound image/file attachments for agent context
+- 通过 ``aibot_subscribe`` 进行认证
+- 接收入站 ``aibot_msg_callback`` 事件
+- 通过 ``aibot_send_msg`` 发送出站 markdown 消息
+- 通过 ``aibot_upload_media_*`` 上传出站媒体并发送原生附件
+- 尽最大努力下载入站图片/文件附件以供 agent 上下文使用
 
-Configuration in config.yaml:
+config.yaml 中的配置：
     platforms:
       wecom:
         enabled: true
         extra:
-          bot_id: "your-bot-id"          # or WECOM_BOT_ID env var
-          secret: "your-secret"          # or WECOM_SECRET env var
+          bot_id: "your-bot-id"          # 或 WECOM_BOT_ID 环境变量
+          secret: "your-secret"          # 或 WECOM_SECRET 环境变量
           websocket_url: "wss://openws.work.weixin.qq.com"
           dm_policy: "open"              # open | allowlist | disabled | pairing
           allow_from: ["user_id_1"]
@@ -107,12 +107,12 @@ VOICE_SUPPORTED_MIMES = {"audio/amr"}
 
 
 def check_wecom_requirements() -> bool:
-    """Check if WeCom runtime dependencies are available."""
+    """检查 WeCom 运行时依赖是否可用。"""
     return AIOHTTP_AVAILABLE and HTTPX_AVAILABLE
 
 
 def _coerce_list(value: Any) -> List[str]:
-    """Coerce config values into a trimmed string list."""
+    """将配置值转换为去除空格的字符串列表。"""
     if value is None:
         return []
     if isinstance(value, str):
@@ -123,7 +123,7 @@ def _coerce_list(value: Any) -> List[str]:
 
 
 def _normalize_entry(raw: str) -> str:
-    """Normalize allowlist entries such as ``wecom:user:foo``."""
+    """规范化 allowlist 条目，例如 ``wecom:user:foo``。"""
     value = str(raw).strip()
     value = re.sub(r"^wecom:", "", value, flags=re.IGNORECASE)
     value = re.sub(r"^(user|group):", "", value, flags=re.IGNORECASE)
@@ -131,7 +131,7 @@ def _normalize_entry(raw: str) -> str:
 
 
 def _entry_matches(entries: List[str], target: str) -> bool:
-    """Case-insensitive allowlist match with ``*`` support."""
+    """不区分大小写的 allowlist 匹配，支持 ``*`` 通配符。"""
     normalized_target = str(target).strip().lower()
     for entry in entries:
         normalized = _normalize_entry(entry).lower()
@@ -141,12 +141,12 @@ def _entry_matches(entries: List[str], target: str) -> bool:
 
 
 class WeComAdapter(BasePlatformAdapter):
-    """WeCom AI Bot adapter backed by a persistent WebSocket connection."""
+    """WeCom AI Bot 适配器，基于持久 WebSocket 连接。"""
 
     MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH
     SUPPORTS_MESSAGE_EDITING = False
-    # Threshold for detecting WeCom client-side message splits.
-    # When a chunk is near the 4000-char limit, a continuation is almost certain.
+    # 检测 WeCom 客户端消息拆分的阈值。
+    # 当分块接近 4000 字符限制时，几乎可以肯定会有后续分块。
     _SPLIT_THRESHOLD = 3900
 
     def __init__(self, config: PlatformConfig):
@@ -162,10 +162,10 @@ class WeComAdapter(BasePlatformAdapter):
         ).strip() or DEFAULT_WS_URL
 
         self._dm_policy = str(extra.get("dm_policy") or os.getenv("WECOM_DM_POLICY", "open")).strip().lower()
-        # dm_policy already honors WECOM_DM_POLICY, so the allowlist must honor
-        # WECOM_ALLOWED_USERS too. Without the env fallback an env-only setup
-        # (dm_policy=allowlist via env, no config extra) runs with an empty
-        # allowlist and drops every authorized DM at intake.
+        # dm_policy 已经支持 WECOM_DM_POLICY，因此 allowlist 也必须支持
+        # WECOM_ALLOWED_USERS。如果没有环境变量回退，一个仅使用环境变量的配置
+        # （通过环境变量设置 dm_policy=allowlist，没有 config extra）将会使用空的
+        # allowlist，导致在接收时丢弃每个已授权的私信。
         self._allow_from = _coerce_list(
             extra.get("allow_from")
             or extra.get("allowFrom")
@@ -185,8 +185,8 @@ class WeComAdapter(BasePlatformAdapter):
         self._dedup = MessageDeduplicator(max_size=DEDUP_MAX_SIZE)
         self._reply_req_ids: Dict[str, str] = {}
 
-        # Text batching: merge rapid successive messages (Telegram-style).
-        # WeCom clients split long messages around 4000 chars.
+        # 文本批量处理：合并快速连续的消息（Telegram 风格）。
+        # WeCom 客户端会在 4000 字符左右拆分长消息。
         self._text_batch_delay_seconds = env_float("HERMES_WECOM_TEXT_BATCH_DELAY_SECONDS", 0.6)
         self._text_batch_split_delay_seconds = env_float("HERMES_WECOM_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0)
         self._pending_text_batches: Dict[str, MessageEvent] = {}
@@ -195,11 +195,11 @@ class WeComAdapter(BasePlatformAdapter):
         self._last_chat_req_ids: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
-    # Connection lifecycle
+    # 连接生命周期
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Connect to the WeCom AI Bot gateway."""
+        """连接到 WeCom AI Bot 网关。"""
         if not AIOHTTP_AVAILABLE:
             message = "WeCom startup failed: aiohttp not installed"
             self._set_fatal_error("wecom_missing_dependency", message, retryable=True)
@@ -217,7 +217,7 @@ class WeComAdapter(BasePlatformAdapter):
             return False
 
         try:
-            # Tighter keepalive so idle CLOSE_WAIT drains promptly (#18451).
+            # 更严格的 keepalive 以便空闲的 CLOSE_WAIT 能够快速排空（#18451）。
             from gateway.platforms._http_client_limits import platform_httpx_limits
             self._http_client = httpx.AsyncClient(
                 timeout=30.0, follow_redirects=True, limits=platform_httpx_limits(),
@@ -239,7 +239,7 @@ class WeComAdapter(BasePlatformAdapter):
             return False
 
     async def disconnect(self) -> None:
-        """Disconnect from WeCom."""
+        """从 WeCom 断开连接。"""
         self._running = False
         self._mark_disconnected()
 
@@ -270,7 +270,7 @@ class WeComAdapter(BasePlatformAdapter):
         logger.info("[%s] Disconnected", self.name)
 
     async def _cleanup_ws(self) -> None:
-        """Close the live websocket/session, if any."""
+        """关闭当前的 websocket/session（如果存在）。"""
         if self._ws and not self._ws.closed:
             await self._ws.close()
         self._ws = None
@@ -280,7 +280,7 @@ class WeComAdapter(BasePlatformAdapter):
         self._session = None
 
     async def _open_connection(self) -> None:
-        """Open and authenticate a websocket connection."""
+        """打开并认证一个 websocket 连接。"""
         await self._cleanup_ws()
         self._session = aiohttp.ClientSession(trust_env=True)
         self._ws = await self._session.ws_connect(
@@ -309,7 +309,7 @@ class WeComAdapter(BasePlatformAdapter):
             raise RuntimeError(f"{errmsg} (errcode={errcode})")
 
     async def _wait_for_handshake(self, req_id: str) -> Dict[str, Any]:
-        """Wait for the subscribe acknowledgement."""
+        """等待 subscribe 确认。"""
         if not self._ws:
             raise RuntimeError("WebSocket not initialized")
 
@@ -333,7 +333,7 @@ class WeComAdapter(BasePlatformAdapter):
                 raise RuntimeError("WeCom websocket closed during authentication")
 
     async def _listen_loop(self) -> None:
-        """Read websocket events forever, reconnecting on errors."""
+        """持续读取 websocket 事件，出错时重新连接。"""
         backoff_idx = 0
         while self._running:
             try:
@@ -360,7 +360,7 @@ class WeComAdapter(BasePlatformAdapter):
                     logger.warning("[%s] Reconnect failed: %s", self.name, reconnect_exc)
 
     async def _read_events(self) -> None:
-        """Read websocket frames until the connection closes."""
+        """读取 websocket 帧直到连接关闭。"""
         if not self._ws:
             raise RuntimeError("WebSocket not connected")
 
@@ -374,7 +374,7 @@ class WeComAdapter(BasePlatformAdapter):
                 raise RuntimeError("WeCom websocket closed")
 
     async def _heartbeat_loop(self) -> None:
-        """Send lightweight application-level pings."""
+        """发送轻量级的应用层 ping。"""
         try:
             while self._running:
                 await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
@@ -394,7 +394,7 @@ class WeComAdapter(BasePlatformAdapter):
             pass
 
     async def _dispatch_payload(self, payload: Dict[str, Any]) -> None:
-        """Route inbound websocket payloads."""
+        """路由入站 websocket 负载。"""
         req_id = self._payload_req_id(payload)
         cmd = str(payload.get("cmd") or "")
 
@@ -413,20 +413,20 @@ class WeComAdapter(BasePlatformAdapter):
         logger.debug("[%s] Ignoring websocket payload: %s", self.name, cmd or payload)
 
     def _fail_pending_responses(self, exc: Exception) -> None:
-        """Fail all outstanding request futures."""
+        """使所有未完成的请求 future 失败。"""
         for req_id, future in list(self._pending_responses.items()):
             if not future.done():
                 future.set_exception(exc)
             self._pending_responses.pop(req_id, None)
 
     async def _send_json(self, payload: Dict[str, Any]) -> None:
-        """Send a raw JSON frame over the active websocket."""
+        """通过当前活跃的 websocket 发送原始 JSON 帧。"""
         if not self._ws or self._ws.closed:
             raise RuntimeError("WeCom websocket is not connected")
         await self._ws.send_json(payload)
 
     async def _send_request(self, cmd: str, body: Dict[str, Any], timeout: float = REQUEST_TIMEOUT_SECONDS) -> Dict[str, Any]:
-        """Send a JSON request and await the correlated response."""
+        """发送 JSON 请求并等待关联的响应。"""
         if not self._ws or self._ws.closed:
             raise RuntimeError("WeCom websocket is not connected")
 
@@ -447,7 +447,7 @@ class WeComAdapter(BasePlatformAdapter):
         cmd: str = APP_CMD_RESPONSE,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
     ) -> Dict[str, Any]:
-        """Send a reply frame correlated to an inbound callback req_id."""
+        """发送与入站回调 req_id 关联的回复帧。"""
         if not self._ws or self._ws.closed:
             raise RuntimeError("WeCom websocket is not connected")
 
@@ -487,11 +487,11 @@ class WeComAdapter(BasePlatformAdapter):
         return payload if isinstance(payload, dict) else None
 
     # ------------------------------------------------------------------
-    # Inbound message parsing
+    # 入站消息解析
     # ------------------------------------------------------------------
 
     async def _on_message(self, payload: Dict[str, Any]) -> None:
-        """Process an inbound WeCom message callback event."""
+        """处理入站 WeCom 消息回调事件。"""
         body = payload.get("body")
         if not isinstance(body, dict):
             return
@@ -518,15 +518,15 @@ class WeComAdapter(BasePlatformAdapter):
             logger.debug("[%s] DM sender %s blocked by policy", self.name, sender_id)
             return
 
-        # Cache the inbound req_id after policy checks so proactive sends to
-        # this chat can fall back to APP_CMD_RESPONSE (required for groups —
-        # WeCom AI Bots cannot initiate APP_CMD_SEND in group chats).
+        # 在策略检查之后缓存入站 req_id，以便向该聊天的主动发送
+        # 可以回退到 APP_CMD_RESPONSE（群聊中必需——
+        # WeCom AI Bot 无法在群聊中发起 APP_CMD_SEND）。
         self._remember_chat_req_id(chat_id, self._payload_req_id(payload))
 
         text, reply_text = self._extract_text(body)
-        # Strip leading @mention in group chats so slash commands like
-        # "@BotName /approve" are correctly recognized as "/approve".
-        # Mirrors what the Telegram adapter does (re.sub @botname).
+        # 去除群聊中开头的 @提及，以便像
+        # "@BotName /approve" 这样的斜杠命令能被正确识别为 "/approve"。
+        # 与 Telegram 适配器的处理方式一致（re.sub @botname）。
         if is_group and text:
             text = re.sub(r"^@\S+\s*", "", text).strip()
         media_urls, media_types = await self._extract_media(body)
@@ -560,19 +560,19 @@ class WeComAdapter(BasePlatformAdapter):
             timestamp=datetime.now(tz=timezone.utc),
         )
 
-        # Only batch plain text messages — commands, media, etc. dispatch
-        # immediately since they won't be split by the WeCom client.
+        # 仅对纯文本消息进行批量处理——命令、媒体等立即分发，
+        # 因为它们不会被 WeCom 客户端拆分。
         if message_type == MessageType.TEXT and self._text_batch_delay_seconds > 0:
             self._enqueue_text_event(event)
         else:
             await self.handle_message(event)
 
     # ------------------------------------------------------------------
-    # Text message aggregation (handles WeCom client-side splits)
+    # 文本消息聚合（处理 WeCom 客户端拆分）
     # ------------------------------------------------------------------
 
     def _text_batch_key(self, event: MessageEvent) -> str:
-        """Session-scoped key for text message batching."""
+        """用于文本消息批量处理的会话级别 key。"""
         from gateway.session import build_session_key
         return build_session_key(
             event.source,
@@ -581,11 +581,11 @@ class WeComAdapter(BasePlatformAdapter):
         )
 
     def _enqueue_text_event(self, event: MessageEvent) -> None:
-        """Buffer a text event and reset the flush timer.
+        """缓冲一个文本事件并重置刷新计时器。
 
-        When WeCom splits a long user message at 4000 chars, the chunks
-        arrive within a few hundred milliseconds.  This merges them into
-        a single event before dispatching.
+        当 WeCom 在 4000 字符处拆分用户的长消息时，各分块
+        会在几百毫秒内到达。此方法在分发前将它们合并为
+        单个事件。
         """
         key = self._text_batch_key(event)
         existing = self._pending_text_batches.get(key)
@@ -597,12 +597,12 @@ class WeComAdapter(BasePlatformAdapter):
             if event.text:
                 existing.text = f"{existing.text}\n{event.text}" if existing.text else event.text
             existing._last_chunk_len = chunk_len  # type: ignore[attr-defined]
-            # Merge any media that might be attached
+            # 合并可能附加的任何媒体
             if event.media_urls:
                 existing.media_urls.extend(event.media_urls)
                 existing.media_types.extend(event.media_types)
 
-        # Cancel any pending flush and restart the timer
+        # 取消任何待处理的刷新并重新启动计时器
         prior_task = self._pending_text_batch_tasks.get(key)
         if prior_task and not prior_task.done():
             prior_task.cancel()
@@ -611,10 +611,10 @@ class WeComAdapter(BasePlatformAdapter):
         )
 
     async def _flush_text_batch(self, key: str) -> None:
-        """Wait for the quiet period then dispatch the aggregated text.
+        """等待安静期后分发聚合的文本。
 
-        Uses a longer delay when the latest chunk is near WeCom's 4000-char
-        split point, since a continuation chunk is almost certain.
+        当最新分块接近 WeCom 的 4000 字符拆分点时，
+        使用更长的延迟，因为几乎可以确定会有后续分块。
         """
         current_task = asyncio.current_task()
         try:
@@ -625,16 +625,16 @@ class WeComAdapter(BasePlatformAdapter):
             else:
                 delay = self._text_batch_delay_seconds
             await asyncio.sleep(delay)
-            # Guard against the cancel-delivery race: when the sleep timer
-            # fires just before cancel() is called, CPython sets
-            # Task._must_cancel but cannot cancel the already-done sleep
-            # future, so CancelledError is delivered at the *next* await
-            # (handle_message) rather than here.  By that point this task
-            # has already popped the merged event, so the superseding task
-            # sees an empty batch and silently drops the message.
-            # This check is synchronous — no await between the sleep and
-            # the pop — so no other coroutine can modify the task registry
-            # in between.
+            # 防止取消-交付竞态：当 sleep 计时器
+            # 在 cancel() 调用前刚好触发时，CPython 会设置
+            # Task._must_cancel 但无法取消已完成的 sleep
+            # future，因此 CancelledError 会在*下一个* await
+            # （handle_message）处交付，而不是在这里。到那时
+            # 这个 task 已经弹出了合并的事件，所以替代的 task
+            # 会看到空的批次并静默丢弃消息。
+            # 这个检查是同步的——sleep 和 pop 之间没有
+            # await——因此没有其他协程可以在中间修改
+            # task 注册表。
             if self._pending_text_batch_tasks.get(key) is not current_task:
                 return
             event = self._pending_text_batches.pop(key, None)
@@ -651,7 +651,7 @@ class WeComAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _extract_text(body: Dict[str, Any]) -> Tuple[str, Optional[str]]:
-        """Extract plain text and quoted text from a callback payload."""
+        """从回调负载中提取纯文本和引用文本。"""
         text_parts: List[str] = []
         reply_text: Optional[str] = None
         msgtype = str(body.get("msgtype") or "").lower()
@@ -682,7 +682,7 @@ class WeComAdapter(BasePlatformAdapter):
                 if voice_text:
                     text_parts.append(voice_text)
 
-            # Extract appmsg title (filename) for WeCom AI Bot attachments
+            # 提取 appmsg 标题（文件名），用于 WeCom AI Bot 附件
             if msgtype == "appmsg":
                 appmsg = body.get("appmsg") if isinstance(body.get("appmsg"), dict) else {}
                 title = str(appmsg.get("title") or "").strip()
@@ -701,7 +701,7 @@ class WeComAdapter(BasePlatformAdapter):
         return "\n".join(part for part in text_parts if part).strip(), reply_text
 
     async def _extract_media(self, body: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-        """Best-effort extraction of inbound media to local cache paths."""
+        """尽最大努力将入站媒体提取到本地缓存路径。"""
         media_paths: List[str] = []
         media_types: List[str] = []
         refs: List[Tuple[str, Dict[str, Any]]] = []
@@ -723,7 +723,7 @@ class WeComAdapter(BasePlatformAdapter):
                 refs.append(("image", body["image"]))
             if msgtype == "file" and isinstance(body.get("file"), dict):
                 refs.append(("file", body["file"]))
-            # Handle appmsg (WeCom AI Bot attachments with PDF/Word/Excel)
+            # 处理 appmsg（带有 PDF/Word/Excel 的 WeCom AI Bot 附件）
             if msgtype == "appmsg" and isinstance(body.get("appmsg"), dict):
                 appmsg = body["appmsg"]
                 if isinstance(appmsg.get("file"), dict):
@@ -748,7 +748,7 @@ class WeComAdapter(BasePlatformAdapter):
         return media_paths, media_types
 
     async def _cache_media(self, kind: str, media: Dict[str, Any]) -> Optional[Tuple[str, str]]:
-        """Cache an inbound image/file/media reference to local storage."""
+        """将入站图片/文件/媒体引用缓存到本地存储。"""
         if "base64" in media and media.get("base64"):
             try:
                 raw = self._decode_base64(media["base64"])
@@ -843,7 +843,7 @@ class WeComAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _derive_message_type(body: Dict[str, Any], text: str, media_types: List[str]) -> MessageType:
-        """Choose the normalized inbound message type."""
+        """选择规范化的入站消息类型。"""
         if any(mtype.startswith(("application/", "text/")) for mtype in media_types):
             return MessageType.DOCUMENT
         if any(mtype.startswith("image/") for mtype in media_types):
@@ -853,12 +853,12 @@ class WeComAdapter(BasePlatformAdapter):
         return MessageType.TEXT
 
     # ------------------------------------------------------------------
-    # Policy helpers
+    # 策略辅助方法
     # ------------------------------------------------------------------
 
     @property
     def enforces_own_access_policy(self) -> bool:
-        """WeCom gates DM/group access at intake via dm_policy/group_policy."""
+        """WeCom 在接收时通过 dm_policy/group_policy 控制私信/群聊访问。"""
         return True
 
     def _is_dm_allowed(self, sender_id: str) -> bool:
@@ -902,13 +902,13 @@ class WeComAdapter(BasePlatformAdapter):
             self._reply_req_ids.pop(next(iter(self._reply_req_ids)))
 
     def _remember_chat_req_id(self, chat_id: str, req_id: str) -> None:
-        """Cache the most recent inbound req_id per chat.
+        """缓存每个聊天最近的入站 req_id。
 
-        Used as a fallback reply target when we need to send into a group
-        without an explicit ``reply_to`` — WeCom AI Bots are blocked from
-        APP_CMD_SEND in groups and must use APP_CMD_RESPONSE bound to some
-        prior req_id. Bounded like _reply_req_ids so long-running gateways
-        don't leak memory across many chats.
+        当我们需要向群聊发送消息但没有明确的 ``reply_to`` 时，
+        用作回复目标的回退——WeCom AI Bot 在群聊中被阻止使用
+        APP_CMD_SEND，必须使用绑定到某个先前 req_id 的
+        APP_CMD_RESPONSE。与 _reply_req_ids 一样有边界限制，
+        避免长时间运行的网关在多个聊天间泄漏内存。
         """
         normalized_chat_id = str(chat_id or "").strip()
         normalized_req_id = str(req_id or "").strip()
@@ -925,7 +925,7 @@ class WeComAdapter(BasePlatformAdapter):
         return self._reply_req_ids.get(normalized)
 
     # ------------------------------------------------------------------
-    # Outbound messaging
+    # 出站消息
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -1043,7 +1043,7 @@ class WeComAdapter(BasePlatformAdapter):
         if not aes_key:
             raise ValueError("aes_key is required")
 
-        # WeCom doesn't pad base64 keys; add padding if needed
+        # WeCom 不会对 base64 key 进行填充；如有需要则添加填充
         aes_key = aes_key + '=' * ((4 - len(aes_key) % 4) % 4)
         key = base64.b64decode(aes_key)
         if len(key) != 32:
@@ -1200,7 +1200,7 @@ class WeComAdapter(BasePlatformAdapter):
                 APP_CMD_UPLOAD_MEDIA_CHUNK,
                 {
                     "upload_id": upload_id,
-                    # Match the official SDK implementation, which currently uses 0-based chunk indexes.
+                    # 与官方 SDK 实现一致，目前使用从 0 开始的 chunk 索引。
                     "chunk_index": chunk_index,
                     "base64_data": base64.b64encode(chunk).decode("ascii"),
                 },
@@ -1366,7 +1366,7 @@ class WeComAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send markdown to a WeCom chat via proactive ``aibot_send_msg``."""
+        """通过主动 ``aibot_send_msg`` 向 WeCom 聊天发送 markdown。"""
         del metadata
 
         if not chat_id:
@@ -1495,11 +1495,11 @@ class WeComAdapter(BasePlatformAdapter):
         )
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
-        """WeCom does not expose typing indicators in this adapter."""
+        """WeCom 在此适配器中不暴露输入指示器。"""
         del chat_id, metadata
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Return minimal chat info."""
+        """返回最小的聊天信息。"""
         return {
             "name": chat_id,
             "type": "group" if chat_id and chat_id.lower().startswith("group") else "dm",
@@ -1507,32 +1507,32 @@ class WeComAdapter(BasePlatformAdapter):
 
 
 # ------------------------------------------------------------------
-# QR code scan flow for obtaining bot credentials
+# 用于获取 bot 凭据的二维码扫描流程
 # ------------------------------------------------------------------
 
 _QR_GENERATE_URL = "https://work.weixin.qq.com/ai/qc/generate"
 _QR_QUERY_URL = "https://work.weixin.qq.com/ai/qc/query_result"
 _QR_CODE_PAGE = "https://work.weixin.qq.com/ai/qc/gen?source=hermes&scode="
-_QR_POLL_INTERVAL = 3  # seconds
-_QR_POLL_TIMEOUT = 300  # 5 minutes
+_QR_POLL_INTERVAL = 3  # 秒
+_QR_POLL_TIMEOUT = 300  # 5 分钟
 
 
 def qr_scan_for_bot_info(
     *,
     timeout_seconds: int = _QR_POLL_TIMEOUT,
 ) -> Optional[Dict[str, str]]:
-    """Run the WeCom QR scan flow to obtain bot_id and secret.
+    """运行 WeCom 二维码扫描流程以获取 bot_id 和 secret。
 
-    Fetches a QR code from WeCom, renders it in the terminal, and polls
-    until the user scans it or the timeout expires.
+    从 WeCom 获取二维码，在终端中渲染，并轮询
+    直到用户扫描或超时。
 
-    Returns ``{"bot_id": ..., "secret": ...}`` on success, ``None`` on
-    failure or timeout.
+    成功时返回 ``{"bot_id": ..., "secret": ...}``，失败或超时
+    返回 ``None``。
 
-    Note: the ``work.weixin.qq.com/ai/qc/{generate,query_result}`` endpoints
-    used here are not part of WeCom's public developer API — they back the
-    admin-console web UI's bot-creation flow and may change without notice.
-    The same pattern is used by the feishu/dingtalk QR setup wizards.
+    注意：此处使用的 ``work.weixin.qq.com/ai/qc/{generate,query_result}``
+    端点不属于 WeCom 公开开发者 API——它们支撑管理控制台
+    Web UI 的 bot 创建流程，可能会在不通知的情况下更改。
+    feishu/dingtalk 二维码设置向导使用相同的模式。
     """
     try:
         import urllib.request
@@ -1543,7 +1543,7 @@ def qr_scan_for_bot_info(
 
     generate_url = f"{_QR_GENERATE_URL}?source=hermes"
 
-    # ── Step 1: Fetch QR code ──
+    # ── 步骤 1：获取二维码 ──
     print("  Connecting to WeCom...", end="", flush=True)
     try:
         req = urllib.request.Request(generate_url, headers={"User-Agent": "HermesAgent/1.0"})
@@ -1565,7 +1565,7 @@ def qr_scan_for_bot_info(
 
     print(" done.")
 
-    # ── Step 2: Render QR code in terminal ──
+    # ── 步骤 2：在终端中渲染二维码 ──
     print()
     qr_rendered = False
     try:
@@ -1589,7 +1589,7 @@ def qr_scan_for_bot_info(
     print()
     print("  Fetching configuration results...", end="", flush=True)
 
-    # ── Step 3: Poll for result ──
+    # ── 步骤 3：轮询结果 ──
     deadline = time.monotonic() + timeout_seconds
     query_url = f"{_QR_QUERY_URL}?scode={urllib.parse.quote(scode)}"
     poll_count = 0
@@ -1605,7 +1605,7 @@ def qr_scan_for_bot_info(
             continue
 
         poll_count += 1
-        # Print a dot on every poll so progress is visible within 3s.
+        # 每次轮询打印一个点，以便在 3 秒内可见进度。
         print(".", end="", flush=True)
 
         result_data = result.get("data") or {}
@@ -1637,16 +1637,17 @@ def qr_scan_for_bot_info(
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Plugin migration glue (#41112 / #3823)
+# 插件迁移胶水代码（#41112 / #3823）
 #
-# Added when the WeCom adapters (wecom + wecom_callback, sharing the
-# wecom_crypto satellite) moved from gateway/platforms/ into this bundled
-# plugin. register() exposes BOTH platforms via the registry, replacing the
-# Platform.WECOM / Platform.WECOM_CALLBACK elifs in gateway/run.py, the
-# _PLATFORM_CONNECTED_CHECKERS entries in gateway/config.py, the _setup_wecom
-# wizard + _PLATFORMS["wecom"] static dict in hermes_cli/gateway.py, and the
-# _send_wecom dispatch in tools/send_message_tool.py. Env→PlatformConfig
-# seeding stays in core, same as prior migrations.
+# 添加于 WeCom 适配器（wecom + wecom_callback，共享
+# wecom_crypto 卫星模块）从 gateway/platforms/ 迁移到此捆绑插件时。
+# register() 通过注册表暴露两个平台，替代了
+# gateway/run.py 中的 Platform.WECOM / Platform.WECOM_CALLBACK elif 分支、
+# gateway/config.py 中的 _PLATFORM_CONNECTED_CHECKERS 条目、
+# hermes_cli/gateway.py 中的 _setup_wecom 向导 +
+# _PLATFORMS["wecom"] 静态字典，以及
+# tools/send_message_tool.py 中的 _send_wecom 分发。
+# Env→PlatformConfig 种子保留在核心中，与之前的迁移相同。
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -1659,12 +1660,12 @@ async def _standalone_send(
     media_files=None,
     force_document=False,
 ):
-    """Out-of-process WeCom delivery via the adapter's WebSocket send pipeline.
+    """通过适配器的 WebSocket 发送管道进行进程外 WeCom 消息投递。
 
-    Implements the standalone_sender_fn contract so deliver=wecom cron jobs
-    succeed when cron runs separately from the gateway. Opens an ephemeral
-    WeComAdapter, connects, sends, and disconnects. Replaces the legacy
-    _send_wecom helper.
+    实现 standalone_sender_fn 契约，以便 deliver=wecom 的 cron 任务
+    在 cron 与网关分开运行时能够成功。打开一个临时的
+    WeComAdapter，连接，发送，然后断开。替代旧的
+    _send_wecom 辅助函数。
     """
     if not check_wecom_requirements():
         return {"error": "WeCom requirements not met. Need aiohttp + WECOM_BOT_ID/SECRET."}
@@ -1690,10 +1691,10 @@ async def _standalone_send(
 
 
 def interactive_setup() -> None:
-    """Interactive setup for WeCom — QR scan or manual credential input.
+    """WeCom 交互式设置——二维码扫描或手动输入凭据。
 
-    Replaces hermes_cli/gateway.py::_setup_wecom and the static
-    _PLATFORMS["wecom"] dict. CLI helpers are lazy-imported.
+    替代 hermes_cli/gateway.py 中的 _setup_wecom 和静态的
+    _PLATFORMS["wecom"] 字典。CLI 辅助函数延迟导入。
     """
     from hermes_cli.config import get_env_value, save_env_value
     from hermes_cli.setup import prompt_choice
@@ -1802,33 +1803,33 @@ def interactive_setup() -> None:
 
 
 def _is_connected(config) -> bool:
-    """WeCom (Smart Robot) is connected when a bot_id is configured. Mirrors the
-    legacy _PLATFORM_CONNECTED_CHECKERS[Platform.WECOM] entry."""
+    """当配置了 bot_id 时，WeCom（智能机器人）即为已连接。
+    镜像旧的 _PLATFORM_CONNECTED_CHECKERS[Platform.WECOM] 条目。"""
     extra = getattr(config, "extra", {}) or {}
     return bool(extra.get("bot_id"))
 
 
 def _callback_is_connected(config) -> bool:
-    """WeCom callback mode is connected when corp_id (or a multi-app `apps`
-    block) is configured. Mirrors the legacy
-    _PLATFORM_CONNECTED_CHECKERS[Platform.WECOM_CALLBACK] entry."""
+    """当配置了 corp_id（或多应用 `apps` 块）时，WeCom 回调模式
+    即为已连接。镜像旧的
+    _PLATFORM_CONNECTED_CHECKERS[Platform.WECOM_CALLBACK] 条目。"""
     extra = getattr(config, "extra", {}) or {}
     return bool(extra.get("corp_id") or extra.get("apps"))
 
 
 def _build_adapter(config):
-    """Factory wrapper that constructs WeComAdapter from a PlatformConfig."""
+    """工厂包装函数，从 PlatformConfig 构建 WeComAdapter。"""
     return WeComAdapter(config)
 
 
 def _build_callback_adapter(config):
-    """Factory wrapper that constructs WecomCallbackAdapter from a PlatformConfig."""
+    """工厂包装函数，从 PlatformConfig 构建 WecomCallbackAdapter。"""
     from plugins.platforms.wecom.callback_adapter import WecomCallbackAdapter
     return WecomCallbackAdapter(config)
 
 
 def register(ctx) -> None:
-    """Plugin entry point — registers both WeCom platforms."""
+    """插件入口——注册两个 WeCom 平台。"""
     ctx.register_platform(
         name="wecom",
         label="WeCom (Enterprise WeChat)",

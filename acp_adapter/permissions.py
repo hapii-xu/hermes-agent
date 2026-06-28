@@ -1,4 +1,4 @@
-"""ACP permission bridging for Hermes dangerous-command approvals."""
+"""Hermes 危险命令审批的 ACP 权限桥接。"""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from acp.schema import (
 
 logger = logging.getLogger(__name__)
 
-# Maps ACP permission option ids to Hermes approval result strings.
-# Option ids are stable across both the ``allow_permanent=True`` and
-# ``allow_permanent=False`` paths even though the option list differs.
+# 将 ACP 权限选项 ID 映射到 Hermes 审批结果字符串。
+# 即使选项列表不同，选项 ID 在 ``allow_permanent=True`` 和
+# ``allow_permanent=False`` 两条路径中都保持稳定。
 _OPTION_ID_TO_HERMES = {
     "allow_once": "once",
     "allow_session": "session",
@@ -30,7 +30,7 @@ _PERMISSION_REQUEST_IDS = count(1)
 
 
 def _permission_option_supports_kind(kind: str) -> bool:
-    """Return whether the installed ACP SDK accepts a permission option kind."""
+    """返回已安装的 ACP SDK 是否接受指定的权限选项类型。"""
     try:
         PermissionOption(option_id="__probe__", kind=kind, name="probe")
     except Exception:
@@ -39,13 +39,13 @@ def _permission_option_supports_kind(kind: str) -> bool:
 
 
 def _build_permission_options(*, allow_permanent: bool) -> list[PermissionOption]:
-    """Return ACP options that match Hermes approval semantics."""
+    """返回与 Hermes 审批语义匹配的 ACP 选项。"""
     options = [
         PermissionOption(option_id="allow_once", kind="allow_once", name="Allow once"),
         PermissionOption(
             option_id="allow_session",
-            # ACP has no session-scoped kind, so use the closest persistent
-            # hint while keeping Hermes semantics in the option id.
+            # ACP 没有会话级类型，因此使用最接近的持久化提示，
+            # 同时在选项 ID 中保留 Hermes 语义。
             kind="allow_always",
             name="Allow for session",
         ),
@@ -71,11 +71,11 @@ def _build_permission_options(*, allow_permanent: bool) -> list[PermissionOption
 
 
 def _build_permission_tool_call(command: str, description: str):
-    """Return the ACP tool-call update attached to a permission request.
+    """返回附加到权限请求的 ACP 工具调用更新。
 
-    ``request_permission`` expects a ``ToolCallUpdate`` payload — produced
-    by ``_acp.update_tool_call`` — not a ``ToolCallStart``. Each request
-    gets a unique ``perm-check-N`` id so concurrent requests don't collide.
+    ``request_permission`` 期望 ``ToolCallUpdate`` 载荷 — 由
+    ``_acp.update_tool_call`` 生成 — 而不是 ``ToolCallStart``。
+    每个请求获得唯一的 ``perm-check-N`` ID，这样并发请求不会冲突。
     """
     import acp as _acp
 
@@ -93,7 +93,7 @@ def _build_permission_tool_call(command: str, description: str):
 
 
 def _map_outcome_to_hermes(outcome: object, *, allowed_option_ids: set[str]) -> str:
-    """Map an ACP permission outcome into Hermes approval strings."""
+    """将 ACP 权限结果映射为 Hermes 审批字符串。"""
     if not isinstance(outcome, AllowedOutcome):
         return "deny"
 
@@ -111,17 +111,16 @@ def make_approval_callback(
     timeout: float = 60.0,
 ) -> Callable[..., str]:
     """
-    Return a Hermes-compatible approval callback that bridges to ACP.
+    返回桥接到 ACP 的 Hermes 兼容审批回调。
 
-    The callback accepts ``command`` and ``description`` plus optional
-    keyword arguments such as ``allow_permanent`` used by
-    ``tools.approval.prompt_dangerous_approval()``.
+    该回调接受 ``command`` 和 ``description`` 以及可选的关键字参数，
+    如 ``tools.approval.prompt_dangerous_approval()`` 使用的 ``allow_permanent``。
 
     Args:
-        request_permission_fn: The ACP connection's ``request_permission`` coroutine.
-        loop: The event loop on which the ACP connection lives.
-        session_id: Current ACP session id.
-        timeout: Seconds to wait for a response before auto-denying.
+        request_permission_fn: ACP 连接的 ``request_permission`` 协程。
+        loop: ACP 连接所在的事件循环。
+        session_id: 当前 ACP 会话 ID。
+        timeout: 自动拒绝前等待响应的秒数。
     """
 
     def _callback(

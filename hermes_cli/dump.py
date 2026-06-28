@@ -1,9 +1,9 @@
 """
-Dump command for hermes CLI.
+hermes CLI 的 dump 命令。
 
-Outputs a compact, plain-text summary of the user's Hermes setup
-that can be copy-pasted into Discord/GitHub/Telegram for support context.
-No ANSI colors, no checkmarks — just data.
+输出用户 Hermes 配置的紧凑纯文本摘要，
+可复制粘贴到 Discord/GitHub/Telegram 以提供上下文支持。
+无 ANSI 颜色，无勾选符号——只有数据。
 """
 
 import json
@@ -20,14 +20,14 @@ from agent.skill_utils import is_excluded_skill_path
 
 
 def _get_git_commit(project_root: Path) -> str:
-    """Return short git commit hash, or '(unknown)'.
+    """返回短 git commit 哈希，或 '(unknown)'。
 
-    Source installs and dev images resolve this live via ``git rev-parse``.
-    The published Docker image excludes ``.git`` from the build context, so
-    that lookup always fails — we fall back to the baked-in build SHA written
-    to ``<project_root>/.hermes_build_sha`` by the Dockerfile's
-    ``HERMES_GIT_SHA`` build-arg (see ``hermes_cli/build_info.py``).
-    The output format is identical regardless of source.
+    源码安装和开发镜像通过 ``git rev-parse`` 实时解析。
+    发布的 Docker 镜像在构建上下文中排除了 ``.git``，因此
+    该查找始终失败——我们回退到 Dockerfile 的
+    ``HERMES_GIT_SHA`` 构建参数写入 ``<project_root>/.hermes_build_sha``
+    的烘焙构建 SHA（参见 ``hermes_cli/build_info.py``）。
+    无论来源如何，输出格式相同。
     """
     try:
         result = subprocess.run(
@@ -42,9 +42,9 @@ def _get_git_commit(project_root: Path) -> str:
     except Exception:
         pass
 
-    # Fall back to the build-time baked SHA (populated in published Docker
-    # images, absent otherwise).  Defers the import so the dump module
-    # stays cheap on non-dump code paths.
+    # 回退到构建时烘焙的 SHA（在已发布的 Docker 镜像中存在，
+    # 其他情况下不存在）。延迟导入以使 dump 模块在非 dump
+    # 代码路径上保持轻量。
     try:
         from hermes_cli.build_info import get_build_sha
         baked = get_build_sha(short=8)
@@ -57,12 +57,11 @@ def _get_git_commit(project_root: Path) -> str:
 
 
 def _get_git_commit_date(project_root: Path) -> str:
-    """Return the date the HEAD commit was authored (YYYY-MM-DD), or ''.
+    """返回 HEAD 提交的编写日期（YYYY-MM-DD），或 ''。
 
-    Resolves live via ``git log`` on source installs.  The published Docker
-    image excludes ``.git``, so this returns '' there — the dump line simply
-    drops the date suffix in that case (the baked SHA still identifies the
-    build).
+    在源码安装中通过 ``git log`` 实时解析。发布的 Docker
+    镜像排除了 ``.git``，因此在此返回 ''——dump 行在这种情况下
+    会省略日期后缀（烘焙的 SHA 仍可标识构建版本）。
     """
     try:
         result = subprocess.run(
@@ -81,18 +80,18 @@ def _get_git_commit_date(project_root: Path) -> str:
 
 
 def _redact(value: str) -> str:
-    """Redact all but first 4 and last 4 chars.
+    """对除前 4 个和后 4 个字符外的所有字符进行脱敏。
 
-    Thin wrapper over :func:`agent.redact.mask_secret`. Returns ``""`` for
-    an empty value (matches the historical behavior of this helper —
-    ``hermes dump`` formats empty values as blank, not as ``"(not set)"``).
+    :func:`agent.redact.mask_secret` 的薄封装。对空值返回 ``""``
+    （与此辅助函数的历史行为一致——``hermes dump`` 将空值格式化为
+    空白，而非 ``"(not set)"``）。
     """
     from agent.redact import mask_secret
     return mask_secret(value)
 
 
 def _gateway_status() -> str:
-    """Return a short gateway status string."""
+    """返回简短的 gateway 状态字符串。"""
     try:
         from hermes_cli.gateway import get_gateway_runtime_snapshot
 
@@ -110,7 +109,7 @@ def _gateway_status() -> str:
 
 
 def _count_skills(hermes_home: Path) -> int:
-    """Count installed skills."""
+    """统计已安装的 skills 数量。"""
     skills_dir = hermes_home / "skills"
     if not skills_dir.is_dir():
         return 0
@@ -123,14 +122,14 @@ def _count_skills(hermes_home: Path) -> int:
 
 
 def _count_mcp_servers(config: dict) -> int:
-    """Count configured MCP servers."""
+    """统计已配置的 MCP 服务器数量。"""
     mcp = config.get("mcp", {})
     servers = mcp.get("servers", {})
     return len(servers)
 
 
 def _cron_summary(hermes_home: Path) -> str:
-    """Return cron jobs summary."""
+    """返回 cron 任务摘要。"""
     jobs_file = hermes_home / "cron" / "jobs.json"
     if not jobs_file.exists():
         return "0"
@@ -145,7 +144,7 @@ def _cron_summary(hermes_home: Path) -> str:
 
 
 def _configured_platforms() -> list[str]:
-    """Return list of configured messaging platform names."""
+    """返回已配置的消息平台名称列表。"""
     checks = {
         "telegram": "TELEGRAM_BOT_TOKEN",
         "discord": "DISCORD_BOT_TOKEN",
@@ -168,14 +167,14 @@ def _configured_platforms() -> list[str]:
 
 
 def _memory_provider(config: dict) -> str:
-    """Return the active memory provider name."""
+    """返回活跃的 memory provider 名称。"""
     mem = config.get("memory", {})
     provider = mem.get("provider", "")
     return provider if provider else "built-in"
 
 
 def _get_model_and_provider(config: dict) -> tuple[str, str]:
-    """Extract model and provider from config."""
+    """从配置中提取 model 和 provider。"""
     model_cfg = config.get("model", "")
     if isinstance(model_cfg, dict):
         model = model_cfg.get("default") or model_cfg.get("model") or model_cfg.get("name") or "(not set)"
@@ -190,15 +189,15 @@ def _get_model_and_provider(config: dict) -> tuple[str, str]:
 
 
 def _config_overrides(config: dict) -> dict[str, str]:
-    """Find non-default config values worth reporting.
-    
-    Returns a flat dict of dotpath -> value for interesting overrides.
+    """查找值得报告的非默认配置值。
+
+    返回一个扁平字典，键为 dotpath，值为有趣的覆盖项。
     """
     from hermes_cli.config import DEFAULT_CONFIG
 
     overrides = {}
 
-    # Sections with interesting user-facing overrides
+    # 包含有趣用户端覆盖的配置段
     interesting_paths = [
         ("agent", "max_turns"),
         ("agent", "gateway_timeout"),
@@ -226,13 +225,13 @@ def _config_overrides(config: dict) -> dict[str, str]:
         if user_val is not None and user_val != default_val:
             overrides[f"{section}.{key}"] = str(user_val)
 
-    # Toolsets (if different from default)
+    # Toolsets（如果与默认值不同）
     default_toolsets = DEFAULT_CONFIG.get("toolsets", [])
     user_toolsets = config.get("toolsets", [])
     if user_toolsets != default_toolsets:
         overrides["toolsets"] = str(user_toolsets)
 
-    # Fallback providers
+    # 回退 provider
     fallbacks = config.get("fallback_providers", [])
     if fallbacks:
         overrides["fallback_providers"] = str(fallbacks)
@@ -241,10 +240,10 @@ def _config_overrides(config: dict) -> dict[str, str]:
 
 
 def run_dump(args):
-    """Output a compact, copy-pasteable setup summary."""
+    """输出紧凑的、可复制粘贴的配置摘要。"""
     show_keys = getattr(args, "show_keys", False)
 
-    # Load env from .env file so key checks work
+    # 从 .env 文件加载环境变量，使 key 检查生效
     env_path = get_env_path()
     load_hermes_dotenv(
         hermes_home=env_path.parent,
@@ -269,21 +268,20 @@ def run_dump(args):
 
     model, provider = _get_model_and_provider(config)
 
-    # Profile
+    # Profile（配置文件）
     try:
         from hermes_cli.profiles import get_active_profile_name
         profile = get_active_profile_name() or "(default)"
     except Exception:
         profile = "(default)"
 
-    # Terminal backend — report the EFFECTIVE backend, not just config.yaml.
-    # ``terminal.backend`` in config.yaml is bridged to the TERMINAL_ENV env var,
-    # but a TERMINAL_ENV set directly in .env / the shell overrides config and is
-    # what terminal_tool actually uses (tools/terminal_tool.py reads TERMINAL_ENV).
-    # Reporting only the config value hides that override and sends users chasing
-    # the wrong cause when the agent runs in a docker/podman sandbox even though
-    # config says "local" (and vice-versa). run_dump() has already loaded .env,
-    # so os.environ reflects the real override here.
+    # Terminal backend——报告实际生效的 backend，而不仅是 config.yaml。
+    # config.yaml 中的 ``terminal.backend`` 会桥接到 TERMINAL_ENV 环境变量，
+    # 但在 .env / shell 中直接设置的 TERMINAL_ENV 会覆盖配置，也是
+    # terminal_tool 实际使用的值（tools/terminal_tool.py 读取 TERMINAL_ENV）。
+    # 仅报告配置值会隐藏该覆盖，并在 agent 运行于 docker/podman 沙箱时
+    # 误导用户排查方向（即使配置显示 "local"，反之亦然）。run_dump() 已
+    # 加载 .env，因此 os.environ 在此反映了真实的覆盖情况。
     terminal_cfg = config.get("terminal", {})
     config_backend = terminal_cfg.get("backend", "local")
     env_backend = (os.environ.get("TERMINAL_ENV") or "").strip().lower()
@@ -295,22 +293,22 @@ def run_dump(args):
     else:
         backend = config_backend
 
-    # OpenAI SDK version
+    # OpenAI SDK 版本
     try:
         import openai
         openai_ver = openai.__version__
     except ImportError:
         openai_ver = "not installed"
 
-    # OS info
+    # 操作系统信息
     os_info = f"{platform.system()} {platform.release()} {platform.machine()}"
 
     lines = []
     lines.append("--- hermes dump ---")
-    # Identify the build by commit + the date that commit was made, resolved
-    # live via git.  __release_date__ (the package release date) is
-    # intentionally NOT shown here — it reads like a wall-clock timestamp and
-    # confuses support triage.  The commit date is the real "as-of" date.
+    # 通过 commit 和该提交的日期标识构建版本，
+    # 通过 git 实时解析。此处故意不显示 __release_date__
+    # （包发布日期）——它看起来像挂钟时间戳，会混淆
+    # 支持分类。提交日期才是真正的"截至"日期。
     ver_str = f"{__version__}"
     ver_str += f" [{commit}]"
     if commit_date:
@@ -325,7 +323,7 @@ def run_dump(args):
     lines.append(f"provider:         {provider}")
     lines.append(f"terminal:         {backend}")
 
-    # API keys
+    # API 密钥
     lines.append("")
     lines.append("api_keys:")
     api_keys = [
@@ -361,9 +359,9 @@ def run_dump(args):
             display = _redact(val)
         else:
             display = "set" if val else "not set"
-        # A credential added via `hermes auth add openrouter` lives in the
-        # credential pool, not as an env var — surface it so the dump doesn't
-        # misleadingly read "not set" while `hermes auth list` shows it (#42130).
+        # 通过 `hermes auth add openrouter` 添加的凭据存储在
+        # 凭据池中，而非环境变量——在此处显示它，使 dump 不会
+        # 误导性地显示 "not set"，而 `hermes auth list` 却显示它（#42130）。
         if not val and label == "openrouter":
             try:
                 from agent.credential_pool import load_pool as _load_pool
@@ -374,7 +372,7 @@ def run_dump(args):
                 pass
         lines.append(f"  {label:<20} {display}")
 
-    # Features summary
+    # 功能摘要
     lines.append("")
     lines.append("features:")
 
@@ -389,7 +387,7 @@ def run_dump(args):
     lines.append(f"  cron_jobs:          {_cron_summary(hermes_home)}")
     lines.append(f"  skills:             {_count_skills(hermes_home)}")
 
-    # Config overrides (non-default values)
+    # 配置覆盖（非默认值）
     overrides = _config_overrides(config)
     if overrides:
         lines.append("")

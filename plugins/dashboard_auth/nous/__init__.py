@@ -1,70 +1,66 @@
-"""NousDashboardAuthProvider — Nous Portal OAuth (authorization-code + PKCE).
+"""NousDashboardAuthProvider — Nous Portal OAuth（授权码 + PKCE）。
 
-Implements ``nous-account-service/docs/agent-dashboard-oauth-contract.md``
-(PR #180). The plugin auto-loads (bundled, kind=backend) but only registers
-its provider when a client_id is configured — either via ``config.yaml`` or
-via the Portal-injected env var — so loopback / ``--insecure`` operators
-are unaffected.
+实现 ``nous-account-service/docs/agent-dashboard-oauth-contract.md``
+（PR #180）。此插件自动加载（内置，kind=backend），但仅在配置了 client_id
+时注册其 provider — 通过 ``config.yaml`` 或通过 Portal 注入的环境变量 —
+因此 loopback / ``--insecure`` 操作员不受影响。
 
-Configuration surfaces (env wins over config.yaml when set non-empty):
+配置入口（环境变量非空时优先于 config.yaml）：
 
-  ``config.yaml`` — canonical surface::
+  ``config.yaml`` — 规范入口::
 
       dashboard:
         oauth:
-          client_id: agent:{agent_instance_id}   # required
-          portal_url: https://portal.example     # optional
+          client_id: agent:{agent_instance_id}   # 必填
+          portal_url: https://portal.example     # 可选
 
-  Environment overrides — used by Fly.io's platform-secret injection so
-  per-deploy values don't need to bake into ``config.yaml``:
+  环境变量覆盖 — Fly.io 的平台密钥注入使用此方式，
+  使得每次部署的值不需要烘焙到 ``config.yaml`` 中：
 
-      HERMES_DASHBOARD_OAUTH_CLIENT_ID  — shape ``agent:{agent_instance_id}``
-      HERMES_DASHBOARD_PORTAL_URL       — defaults to
+      HERMES_DASHBOARD_OAUTH_CLIENT_ID  — 格式 ``agent:{agent_instance_id}``
+      HERMES_DASHBOARD_PORTAL_URL       — 默认为
                                           ``https://portal.nousresearch.com``
-                                          (production Portal). Override only
-                                          for staging (``portal.rewbs.uk``)
-                                          or a custom deployment.
+                                          （生产 Portal）。仅在对环境
+                                          （``portal.rewbs.uk``）或自定义部署时覆盖。
 
-Empty env var values are treated as unset so a provisioned-but-not-populated
-Fly secret can't shadow a valid config.yaml entry.
+空的环境变量值视为未设置，这样已预配但未填充的
+Fly secret 无法覆盖有效的 config.yaml 条目。
 
-Key contract points encoded here:
+此处编码的关键合约要点：
 
-  - client_id is per-instance (``agent:{instance_id}``); the suffix is also
-    cross-checked against the token's ``agent_instance_id`` claim as
-    defense-in-depth.
-  - scope is ``agent_dashboard:access`` only (no OIDC scopes).
-  - tokens are RS256 JWTs verified against ``/.well-known/jwks.json``;
-    JWKS is cached for 5 minutes.
-  - the dashboard auth-code grant issues a 24h rotating refresh token
-    (Portal NAS PR #293). ``refresh_session`` posts ``grant_type=refresh_token``
-    to rotate the access token; ``complete_login`` and ``refresh_session``
-    both populate ``Session.refresh_token`` with the (rotating) value the
-    middleware persists back to the HttpOnly cookie. On a dead/expired/
-    reuse-detected refresh token Portal returns 400 → ``RefreshExpiredError``
-    → middleware redirects to ``/auth/login``.
-  - audience claim is the bare ``client_id`` (no ``hermes-cli:`` prefix).
-  - tolerant ``oauth_contract_version`` check: missing → warn + proceed;
-    present and ``!= 1`` → refuse.
+  - client_id 是按实例的（``agent:{instance_id}``）；后缀还会
+    与 token 的 ``agent_instance_id`` 声明进行交叉验证，作为
+    纵深防御。
+  - scope 仅为 ``agent_dashboard:access``（无 OIDC scope）。
+  - token 是通过 ``/.well-known/jwks.json`` 验证的 RS256 JWT；
+    JWKS 缓存 5 分钟。
+  - dashboard 授权码授予签发 24 小时轮换 refresh token
+    （Portal NAS PR #293）。``refresh_session`` 发送 ``grant_type=refresh_token``
+    来轮换 access token；``complete_login`` 和 ``refresh_session``
+    都会用中间件回写到 HttpOnly cookie 的（轮换后的）值填充
+    ``Session.refresh_token``。当 refresh token 过期/失效/被检测到重用时，
+    Portal 返回 400 → ``RefreshExpiredError``
+    → 中间件重定向到 ``/auth/login``。
+  - audience 声明是裸 ``client_id``（无 ``hermes-cli:`` 前缀）。
+  - 宽容的 ``oauth_contract_version`` 检查：缺失 → 警告 + 继续；
+    存在且 ``!= 1`` → 拒绝。
 
-The cookie payload returned by ``start_login`` stashes the PKCE
-``code_verifier`` and the OAuth ``state`` parameter for the
-``/auth/callback`` handler to retrieve. The auth-route layer is the owner
-of cookie names; this provider just hands back ``{"code_verifier": …,
-"state": …}`` and the route serializes those into the ``hermes_session_pkce``
-cookie.
+``start_login`` 返回的 cookie payload 暂存 PKCE
+``code_verifier`` 和 OAuth ``state`` 参数，供
+``/auth/callback`` 处理器取用。auth-route 层拥有 cookie 名称；
+此 provider 仅返回 ``{"code_verifier": …, "state": …}``，
+路由层将这些序列化为 ``hermes_session_pkce`` cookie。
 
-Refresh-token rotation: Portal rotates the refresh token on every
-successful refresh and runs reuse-detection (replaying a rotated token
-outside Portal's 60s grace revokes the whole session). The host
-middleware therefore MUST persist the rotated ``Session.refresh_token``
-back to the cookie on every refresh.
+Refresh token 轮换：Portal 在每次成功刷新时轮换 refresh token，
+并运行重用检测（在 Portal 的 60 秒宽限期外重放已轮换的 token
+将撤销整个会话）。因此宿主中间件必须在每次刷新时将
+轮换后的 ``Session.refresh_token`` 回写到 cookie。
 
-Skip reasons:
-  The plugin exposes a module-level ``LAST_SKIP_REASON`` that the gate's
-  fail-closed branch reads to surface a useful operator error message
-  ("Set HERMES_DASHBOARD_OAUTH_CLIENT_ID …") instead of the bare "no
-  providers registered" the gate would otherwise emit.
+跳过原因：
+  此插件暴露一个模块级 ``LAST_SKIP_REASON``，网关的失败关闭分支
+  读取它以向操作员展示有用的错误信息
+  （"Set HERMES_DASHBOARD_OAUTH_CLIENT_ID …"），而非网关本身
+  发出的裸 "no providers registered"。
 """
 
 from __future__ import annotations
@@ -92,56 +88,55 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Defaults
+# 默认值
 # ---------------------------------------------------------------------------
 
-# Production Portal URL. Override via HERMES_DASHBOARD_PORTAL_URL for
-# staging (portal.rewbs.uk) or a custom deployment. Contract docs name
-# this as the production issuer.
+# 生产 Portal URL。通过 HERMES_DASHBOARD_PORTAL_URL 覆盖以用于
+# 测试环境（portal.rewbs.uk）或自定义部署。合约文档将此命名
+# 为生产 issuer。
 _DEFAULT_PORTAL_URL = "https://portal.nousresearch.com"
 
 
 # ---------------------------------------------------------------------------
-# Skip-reason channel for operator-friendly error messages
+# 跳过原因通道 — 用于操作员友好的错误信息
 # ---------------------------------------------------------------------------
 #
-# When the plugin loads but refuses to register (missing / malformed
-# env vars), the auth gate downstream just sees "zero providers" and
-# emits a generic "install a provider" error. That's misleading for the
-# common case where the provider IS installed but mis-configured. The
-# plugin writes the *specific* reason to this module-level slot; the
-# gate reads it back when building its fail-closed SystemExit message.
+# 当插件加载但拒绝注册时（缺失/格式错误的环境变量），
+# 下游的 auth 网关只会看到"零个 provider"并发出通用的
+# "安装一个 provider" 错误。这对于 provider 已安装但配置错误
+# 的常见情况具有误导性。插件将*具体*原因写入此模块级槽位；
+# 网关在构建失败关闭的 SystemExit 信息时读回。
 #
-# Cleared on every register() call so repeated dashboard starts in the
-# same process (tests, hot-reload) don't leak stale reasons.
+# 在每次 register() 调用时清除，这样同一进程中重复的 dashboard 启动
+# （测试、热重载）不会泄漏陈旧的原因。
 
 LAST_SKIP_REASON: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Contract constants
+# 合约常量
 # ---------------------------------------------------------------------------
 
-# Contract C3: scope name for the dashboard flow.
+# 合约 C3：dashboard 流程的 scope 名称。
 _SCOPE = "agent_dashboard:access"
 
-# Contract C11: emitted claim should equal 1; tolerant (warn) if missing.
+# 合约 C11：发出的声明应等于 1；缺失时宽容处理（警告）。
 _EXPECTED_CONTRACT_VERSION = 1
 
-# Contract C7: JWKS Cache-Control max-age=300.
+# 合约 C7：JWKS Cache-Control max-age=300。
 _JWKS_CACHE_SECONDS = 300
 
-# httpx timeout for the token endpoint POST.
+# token 端点 POST 的 httpx 超时。
 _TOKEN_ENDPOINT_TIMEOUT_SEC = 10.0
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _b64url_no_pad(raw: bytes) -> str:
-    """Base64url-encode without ``=`` padding (RFC 7636 §4)."""
+    """Base64url 编码，不带 ``=`` 填充（RFC 7636 §4）。"""
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
@@ -151,15 +146,15 @@ def _b64url_no_pad(raw: bytes) -> str:
 
 
 class NousDashboardAuthProvider(DashboardAuthProvider):
-    """Nous Portal OAuth via authorization-code + PKCE (S256)."""
+    """通过授权码 + PKCE (S256) 进行 Nous Portal OAuth。"""
 
     name = "nous"
     display_name = "Nous Research"
 
     def __init__(self, *, client_id: str, portal_url: str) -> None:
         if not client_id.startswith("agent:"):
-            # Defense-in-depth. The plugin entry point already filters, but
-            # the provider should never be constructible with a malformed id.
+            # 纵深防御。插件入口已经过滤，但
+            # provider 不应允许用格式错误的 id 构造。
             raise ValueError(
                 "client_id must match contract shape 'agent:{instance_id}', "
                 f"got {client_id!r}"
@@ -170,11 +165,11 @@ class NousDashboardAuthProvider(DashboardAuthProvider):
         self._jwks_url = f"{self._portal_url}/.well-known/jwks.json"
         self._authorize_url = f"{self._portal_url}/oauth/authorize"
         self._token_url = f"{self._portal_url}/api/oauth/token"
-        # PyJWKClient is lazily imported so plugin discovery doesn't pay the
-        # crypto-import cost when the provider isn't activated.
+        # PyJWKClient 延迟导入，这样插件发现时在未激活 provider 时
+        # 无需支付加密导入的成本。
         self._jwks_client: Any = None
 
-    # ---- public API (DashboardAuthProvider) -------------------------------
+    # ---- 公共 API (DashboardAuthProvider) -------------------------------
 
     def start_login(self, *, redirect_uri: str) -> LoginStart:
         self._validate_redirect_uri(redirect_uri)
@@ -195,10 +190,10 @@ class NousDashboardAuthProvider(DashboardAuthProvider):
             "code_challenge_method": "S256",
         }
         redirect_url = f"{self._authorize_url}?{urllib.parse.urlencode(params)}"
-        # The auth-route layer expects ``cookie_payload[\"hermes_session_pkce\"]``
-        # as a single semicolon-delimited string of ``key=value`` segments,
-        # matching the stub provider's shape. The route handler prepends
-        # ``provider=`` so the callback knows which plugin to dispatch to.
+        # auth-route 层期望 ``cookie_payload["hermes_session_pkce"]``
+        # 是一个由 ``key=value`` 段以分号分隔的单一字符串，
+        # 与 stub provider 的形状匹配。路由处理器在前面添加
+        # ``provider=``，以便回调知道分派到哪个插件。
         cookie_payload = {
             "hermes_session_pkce": f"state={state};verifier={code_verifier}",
         }
@@ -212,10 +207,10 @@ class NousDashboardAuthProvider(DashboardAuthProvider):
         code_verifier: str,
         redirect_uri: str,
     ) -> Session:
-        # ``state`` is verified by the auth-route layer before this call
-        # (it checks the cookie-stashed state matches the query-param state);
-        # we just receive it for symmetry with the protocol. Nous Portal
-        # doesn't re-check state at the token endpoint, so we ignore it here.
+        # ``state`` 由 auth-route 层在此调用前验证
+        # （它检查 cookie 暂存的 state 与查询参数 state 匹配）；
+        # 我们仅为了协议对称性接收它。Nous Portal
+        # 不在 token 端点重新检查 state，因此我们在此忽略它。
         _ = state
 
         try:
@@ -234,51 +229,51 @@ class NousDashboardAuthProvider(DashboardAuthProvider):
         except httpx.RequestError as exc:
             raise ProviderError(f"Portal token endpoint unreachable: {exc}") from exc
 
-        # The dashboard auth-code grant now issues a rotating refresh token
-        # (24h session, reuse-detected) — Portal NAS PR #293. A 400 here means
-        # the code/PKCE/redirect_uri failed, surfaced as InvalidCodeError.
+        # dashboard 授权码授予现在签发轮换的 refresh token
+        # （24h 会话，重用检测）— Portal NAS PR #293。此处 400 表示
+        # code/PKCE/redirect_uri 失败，以 InvalidCodeError 抛出。
         return self._token_response_to_session(
             response, bad_request_exc=InvalidCodeError
         )
 
     def refresh_session(self, *, refresh_token: str) -> Session:
-        """Rotate the access token using the refresh token.
+        """使用 refresh token 轮换 access token。
 
-        Posts ``grant_type=refresh_token`` to Portal's token endpoint. The
-        refresh token is sent in the ``X-Refresh-Token`` header (not the body)
-        so it never lands in Portal's request-body access logs — mirroring the
-        device-flow CLI convention; Portal reconciles header vs. body and
-        rejects conflicts.
+        向 Portal 的 token 端点发送 ``grant_type=refresh_token``。
+        refresh token 通过 ``X-Refresh-Token`` 头发送（而非请求体），
+        使其永不出现在 Portal 的请求体访问日志中 — 镜像
+        device-flow CLI 的约定；Portal 会协调头与请求体并
+        拒绝冲突。
 
-        Portal rotates the refresh token on every successful refresh, so the
-        returned ``Session.refresh_token`` is a NEW value the caller MUST
-        persist (replacing the old cookie). Failing to persist it means the
-        next refresh replays a rotated token and — outside Portal's 60s grace
-        — trips reuse-detection and revokes the whole session.
+        Portal 在每次成功刷新时轮换 refresh token，因此
+        返回的 ``Session.refresh_token`` 是一个新值，调用方必须
+        持久化（替换旧 cookie）。未能持久化意味着下次刷新
+        会重放已轮换的 token，并在 Portal 的 60 秒宽限期外
+        触发重用检测并撤销整个会话。
 
-        Raises ``RefreshExpiredError`` on a 400 (expired / revoked / reuse-
-        detected), so the middleware clears cookies and forces re-login.
-        Raises ``ProviderError`` if Portal is unreachable.
+        在 400 时抛出 ``RefreshExpiredError``（过期/撤销/检测到重用），
+        使中间件清除 cookie 并强制重新登录。
+        当 Portal 不可达时抛出 ``ProviderError``。
         """
         if not refresh_token:
-            # No RT to present — treat as a dead session so middleware
-            # forces a clean re-login rather than emitting a malformed POST.
+            # 没有 RT 可出示 — 视为会话已死，使中间件
+            # 强制干净的重新登录，而非发送格式错误的 POST。
             raise RefreshExpiredError("no refresh token present in session")
 
         try:
             response = httpx.post(
                 self._token_url,
-                # The refresh token goes in BOTH the body and the
-                # ``x-nous-refresh-token`` header. Portal's token endpoint
-                # requires ``refresh_token`` in the body (its request schema
-                # rejects a header-only request as ``invalid_request``), and
-                # additionally reconciles the header against the body — sending
-                # both lets Portal keep the value out of body-access-logs while
-                # still satisfying the schema. The header name must match
-                # Portal's ``REFRESH_TOKEN_HEADER`` exactly (``x-nous-refresh-
-                # token``); any other name is silently ignored. (Verified
-                # against the NAS #293 preview deploy: header-only → 400
-                # invalid_request; body → accepted.)
+                # refresh token 同时放在请求体和
+                # ``x-nous-refresh-token`` 头中。Portal 的 token 端点
+                # 要求请求体中包含 ``refresh_token``（其请求 schema
+                # 拒绝仅头的请求，报 ``invalid_request``），
+                # 并且还会将头与请求体进行协调 — 两者都发送
+                # 使 Portal 可以将该值从请求体访问日志中排除，
+                # 同时仍满足 schema。头名称必须精确匹配
+                # Portal 的 ``REFRESH_TOKEN_HEADER``
+                # （``x-nous-refresh-token``）；其他任何名称都会被
+                # 静默忽略。（已通过 NAS #293 预览部署验证：
+                # 仅头 → 400 invalid_request；请求体 → 接受。）
                 data={
                     "grant_type": "refresh_token",
                     "client_id": self._client_id,

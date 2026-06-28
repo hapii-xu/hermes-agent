@@ -1,8 +1,8 @@
-"""Helpers for rendering gateway message timestamps exactly once.
+"""用于只渲染一次 gateway 消息时间戳的辅助函数。
 
-Gateway messages need timestamps in the LLM context for temporal awareness, but
-persisted message content should stay clean so replay does not accumulate
-``[timestamp] [timestamp] ...`` prefixes across turns.
+gateway 消息在 LLM 上下文中需要时间戳以具备时间感知，但持久化的消息内容
+应当保持干净，这样重放时就不会在多个 turn 之间累积
+``[timestamp] [timestamp] ...`` 前缀。
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Optional, Tuple
 
 
-# Current gateway format: [Tue 2026-04-28 13:40:53 CEST]
+# 当前 gateway 格式：[Tue 2026-04-28 13:40:53 CEST]
 _HUMAN_TIMESTAMP_RE = re.compile(
     r"^\[(?P<dow>[A-Z][a-z]{2}) "
     r"(?P<date>\d{4}-\d{2}-\d{2}) "
@@ -20,18 +20,17 @@ _HUMAN_TIMESTAMP_RE = re.compile(
     r"(?: (?P<tz>[A-Za-z0-9_+\-/:]+))?\]\s*"
 )
 
-# Older gateway format: [2026-04-13T17:02:06+0200] or [+02:00]
+# 较早的 gateway 格式：[2026-04-13T17:02:06+0200] 或 [+02:00]
 _ISO_TIMESTAMP_RE = re.compile(
     r"^\[(?P<iso>\d{4}-\d{2}-\d{2}T[^\]]+)\]\s*"
 )
 
 
 def coerce_message_timestamp(ts_value: Any, tz=None) -> Optional[float]:
-    """Coerce a timestamp-like value to Unix epoch seconds.
+    """把类时间戳的值强制转换为 Unix epoch 秒。
 
-    Accepts Unix epoch numbers, datetime objects, ISO strings, and the gateway's
-    bracketed human-readable timestamp format. Returns ``None`` when the value
-    cannot be interpreted.
+    接受 Unix epoch 数字、datetime 对象、ISO 字符串，以及 gateway 的方括号
+    包裹的人类可读时间戳格式。当值无法被解析时返回 ``None``。
     """
     if ts_value is None:
         return None
@@ -74,7 +73,7 @@ def coerce_message_timestamp(ts_value: Any, tz=None) -> Optional[float]:
 
 
 def format_message_timestamp(ts_value: Any, tz=None) -> str:
-    """Format a timestamp value as ``[Tue 2026-04-28 13:40:53 CEST]``."""
+    """把时间戳值格式化为 ``[Tue 2026-04-28 13:40:53 CEST]``。"""
     epoch = coerce_message_timestamp(ts_value, tz=tz)
     if epoch is None:
         return ""
@@ -86,12 +85,12 @@ def format_message_timestamp(ts_value: Any, tz=None) -> str:
 
 
 def strip_leading_message_timestamps(content: str, tz=None) -> Tuple[str, Optional[float]]:
-    """Strip one or more leading gateway timestamp prefixes from ``content``.
+    """从 ``content`` 中剥离一个或多个前导的 gateway 时间戳前缀。
 
-    Returns ``(clean_content, embedded_epoch)``.  If multiple timestamp prefixes
-    are present, the timestamp closest to the actual message text wins.  That
-    preserves the original platform-send time for legacy contaminated rows like
-    ``[processing time] [platform time] [sender] message``.
+    返回 ``(clean_content, embedded_epoch)``。如果存在多个时间戳前缀，
+    最接近实际消息文本的那个时间戳胜出。这样可以为历史遗留的受污染行
+    （如 ``[processing time] [platform time] [sender] message``）
+    保留原始的平台发送时间。
     """
     if not isinstance(content, str) or not content:
         return content, None
@@ -112,12 +111,11 @@ def strip_leading_message_timestamps(content: str, tz=None) -> Tuple[str, Option
 
 
 def render_user_content_with_timestamp(content: str, ts_value: Any = None, tz=None) -> str:
-    """Render a user message for LLM context with exactly one timestamp prefix.
+    """为 LLM 上下文渲染用户消息，并附带恰好一个时间戳前缀。
 
-    Existing leading timestamp prefixes are removed first.  If such a prefix was
-    present, its parsed time wins over ``ts_value``; otherwise ``ts_value`` is
-    formatted and prepended.  If no timestamp is available, the cleaned content is
-    returned unchanged.
+    首先移除已有的前导时间戳前缀。如果存在这样的前缀，其解析出的时间
+    优先于 ``ts_value``；否则格式化 ``ts_value`` 并前置。如果没有可用
+    的时间戳，则原样返回清理后的内容。
     """
     clean_content, embedded_epoch = strip_leading_message_timestamps(content, tz=tz)
     effective_ts = embedded_epoch if embedded_epoch is not None else ts_value

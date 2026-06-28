@@ -1,7 +1,8 @@
-"""Preventive SSL CA certificate checks for Hermes Agent.
+"""Hermes Agent 的 SSL CA 证书预防性检查。
 
-This module catches broken CA bundle paths before OpenAI/httpx turns them into
-opaque ``FileNotFoundError: [Errno 2] No such file or directory`` failures.
+本模块在 OpenAI/httpx 将证书包路径错误转化为晦涩的
+``FileNotFoundError: [Errno 2] No such file or directory`` 异常之前，
+提前捕获损坏的 CA 证书包路径。
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ def _repair_hint() -> str:
 
 
 def _ssl_err(message: str) -> SSLConfigurationError:
-    """Create a consistent, user-actionable SSL configuration error."""
+    """创建一个一致的、用户可操作的 SSL 配置错误。"""
     return SSLConfigurationError(f"{message}\n{_repair_hint()}")
 
 
@@ -59,12 +60,11 @@ def _validate_bundle_path(label: str, value: str, *, require_substantial: bool =
 
 
 def verify_ca_bundle() -> None:
-    """Verify configured and bundled CA certificates are present and loadable.
+    """验证已配置和内置的 CA 证书是否存在且可加载。
 
     Raises:
-        SSLConfigurationError: If an explicit CA-bundle environment variable
-            points at a bad path, or if certifi's bundled ``cacert.pem`` is
-            missing/corrupt.
+        SSLConfigurationError: 若显式 CA 证书包环境变量指向无效路径，
+            或 certifi 内置的 ``cacert.pem`` 缺失/损坏时抛出。
     """
     if _skip_ssl_guard_enabled():
         logger.debug("SSL CA bundle guard skipped via HERMES_SKIP_SSL_GUARD")
@@ -85,10 +85,10 @@ def verify_ca_bundle() -> None:
 
 
 def verify_ca_bundle_with_fallback() -> None:
-    """Backward-compatible wrapper for older call sites.
+    """旧调用点的向后兼容封装。
 
-    The old PR name mentioned a platform fallback, but allowing startup with a
-    broken certifi bundle still leaves httpx/OpenAI and requests call sites
-    failing later. Keep the wrapper name but enforce the same check.
+    旧 PR 名称提到了平台回退，但允许在 certifi 证书包损坏的情况下启动，
+    仍会导致 httpx/OpenAI 和 requests 调用点在后续失败。
+    保留封装函数名，但执行相同的检查。
     """
     verify_ca_bundle()

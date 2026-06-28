@@ -1,35 +1,29 @@
-"""Structured streaming events — the agent→gateway delivery contract.
+"""结构化流式事件 —— agent→gateway 的投递契约。
 
-Historically the agent drove gateway delivery through a fan of loosely-typed
-callbacks (``stream_delta_callback(text)``, ``tool_progress_callback(event_type,
-tool_name, preview, args)``, ``interim_assistant_callback(text)`` …) and each
-gateway callback decided *both* what to render and how to send it.  That
-coupling is why tool-progress bubbles and the streaming draft raced each other
-on Telegram, and why tool-call formatting lived agent-side even though only the
-gateway knows what a given platform can render.
+历史上，agent 通过一组弱类型回调来驱动 gateway 投递（``stream_delta_callback(text)``、
+``tool_progress_callback(event_type, tool_name, preview, args)``、
+``interim_assistant_callback(text)``……），每个 gateway 回调都*同时*决定渲染什么
+以及如何发送。正是这种耦合导致 tool-progress 气泡与流式 draft 在 Telegram 上互相
+竞争，也导致工具调用格式化停留在 agent 侧 —— 尽管只有 gateway 才知道某个平台能
+渲染什么。
 
-This module defines a small, typed event vocabulary that names *what happened*
-without prescribing *how it is delivered*.  The gateway's stream consumer
-(``GatewayStreamConsumer``) is the single sink; the platform adapter decides how
-to render each event (Telegram can stream a MarkdownV2 ```bash``` block as a
-native draft; iMessage has no rich formatting and may collapse or drop tool
-chrome).  Separation of concerns: smart agent emits structured data, smart
-gateway decides delivery.
+本模块定义了一组小而类型化的事件词汇，只描述*发生了什么*，而不规定*如何投递*。
+gateway 的 stream consumer（``GatewayStreamConsumer``）是唯一的 sink；平台 adapter
+决定如何渲染每个事件（Telegram 可以把一个 MarkdownV2 ```bash``` 块作为原生 draft
+流式发送；iMessage 没有富格式，可能折叠或丢弃 tool chrome）。关注点分离：聪明的
+agent 发出结构化数据，聪明的 gateway 决定投递方式。
 
-These are intentionally plain frozen dataclasses — no behavior, no platform
-knowledge, no I/O.  They are cheap to construct on the agent's worker thread and
-safe to hand across the thread/async boundary into the consumer queue.
+这些都是刻意为之的纯 frozen dataclass —— 没有行为，没有平台知识，没有 I/O。它们
+在 agent 的工作线程上构造代价很低，并且可以安全地跨线程/异步边界传递到 consumer
+队列。
 
-Design constraints (see hermes-agent-dev skill — message-flow + cache
-invariants):
-  * Events describe *transport*, never *context*.  Nothing here is persisted to
-    conversation history; what the gateway chooses to "eat" (e.g. tool chrome on
-    a platform that can't render it) must never diverge from the bytes stored in
-    the agent's message history.  History is owned by the agent; these events are
-    a presentation-layer stream only.
-  * Backward compatible by construction.  The gateway adapts its existing
-    callbacks into these events at the boundary; adapters that don't opt into
-    event-native rendering get identical behavior via the base-class default.
+设计约束（见 hermes-agent-dev skill —— message-flow + cache invariants）：
+  * 事件描述的是 *transport*，绝不是 *context*。这里没有任何内容会被持久化到对话
+    历史；gateway 选择"吃掉"的内容（例如某个无法渲染 tool chrome 的平台上的 tool
+    chrome）绝不能与 agent 消息历史中存储的字节产生分歧。历史由 agent 拥有；这些
+    事件只是表示层的流。
+  * 构造上向后兼容。gateway 在边界处把现有回调适配为这些事件；未选择事件原生渲染的
+    adapter 通过基类默认实现获得完全相同的行为。
 """
 
 from __future__ import annotations
@@ -38,77 +32,71 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
 
-# ── Message (assistant text) events ──────────────────────────────────────────
+# ── 消息（assistant 文本）事件 ───────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class MessageChunk:
-    """A delta of streamed assistant text.
+    """一段流式 assistant 文本的增量。
 
-    ``text`` is the incremental content as it arrives from the model.  The
-    consumer accumulates chunks and progressively renders them (native draft on
-    Telegram DMs, edit-in-place elsewhere).  Reasoning/think-block content is
-    filtered upstream and never arrives as a MessageChunk.
+    ``text`` 是从模型到达的增量内容。consumer 会累积这些 chunk 并渐进式地渲染
+    （Telegram DM 用原生 draft，其他平台就地编辑）。推理/think-block 内容已在
+    上游过滤，永远不会作为 MessageChunk 到达。
     """
     text: str
 
 
 @dataclass(frozen=True)
 class MessageStop:
-    """The current assistant message segment is complete.
+    """当前的 assistant 消息分段已完成。
 
-    Emitted when a contiguous run of assistant text ends — either the whole
-    response finished, or a tool boundary interrupts the text so the next
-    segment should render as a fresh message *below* any tool chrome.
+    当一段连续的 assistant 文本结束时触发 —— 可能是整个响应结束，也可能是工具边界
+    打断了文本，因此下一段应在所有 tool chrome *下方* 渲染为一条新消息。
 
-    ``final`` is True only for the terminal stop of the whole turn; an
-    intermediate stop (text → tool call → more text) carries ``final=False`` so
-    the consumer finalizes the current bubble and prepares a new segment without
-    treating the turn as done.
+    ``final`` 仅在整个 turn 的最后一次终止时为 True；中间的终止（文本 → 工具调用
+    → 更多文本）携带 ``final=False``，以便 consumer 完成当前气泡并准备新分段，而
+    不把 turn 当作已结束。
     """
     final: bool = False
 
 
 @dataclass(frozen=True)
 class Commentary:
-    """A complete interim assistant message emitted between tool iterations.
+    """在工具迭代之间发出的一条完整的过渡性 assistant 消息。
 
-    Example: the model says "I'll inspect the repo first." before issuing a tool
-    call.  Unlike a MessageChunk this is already-complete text (not a delta); the
-    consumer renders it as its own message so it reads as a distinct beat.
+    例如：模型在发出工具调用前说"我先检查一下仓库。"。与 MessageChunk 不同，这是
+    已完成的文本（不是增量）；consumer 把它渲染为单独的消息，使其读起来是一个独立
+    的节拍。
     """
     text: str
 
 
-# ── Tool-call events ─────────────────────────────────────────────────────────
+# ── 工具调用事件 ─────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class ToolCallChunk:
-    """A tool invocation has started (or its in-progress state changed).
+    """一个工具调用已开始（或其进行中状态发生了变化）。
 
-    Carries the raw facts about the call — name, a short argument ``preview``,
-    and the full ``args`` dict — and lets the *gateway* decide presentation
-    (emoji, truncation, verbose vs compact, or eat it entirely on platforms that
-    don't show tool chrome).  Previously the agent's gateway callback baked the
-    emoji + preview formatting in; that decision now belongs to the adapter.
+    携带该调用的原始事实 —— 名称、简短的参数 ``preview``，以及完整的 ``args``
+    字典 —— 并让 *gateway* 决定呈现方式（emoji、截断、verbose 还是 compact，或在
+    不显示 tool chrome 的平台上直接吃掉它）。此前 agent 的 gateway 回调把 emoji +
+    preview 的格式化硬编码在里面；该决定现在归属 adapter。
     """
     tool_name: str
     preview: Optional[str] = None
     args: Optional[Dict[str, Any]] = None
-    # Monotonic per-turn index, so the consumer can correlate a finish with its
-    # start and so "new"-mode dedup (only report when the tool changes) works
-    # without the consumer tracking call order itself.
+    # 单调递增的 per-turn 序号，使 consumer 能把完成事件与起始事件关联，并让
+    # "new" 模式去重（仅在工具变化时上报）生效，而无需 consumer 自行跟踪调用顺序。
     index: int = 0
 
 
 @dataclass(frozen=True)
 class ToolCallFinished:
-    """A tool invocation completed.
+    """一个工具调用已完成。
 
-    ``duration`` is wall-clock seconds.  ``ok`` reflects whether the tool
-    returned without raising.  The gateway uses this to clear/settle a progress
-    bubble and to drive one-time onboarding hints (e.g. suggest /verbose after a
-    long tool run).  No tool *output* travels here — output is the agent's
-    concern and is persisted to history, not streamed as presentation.
+    ``duration`` 是墙上时钟秒数。``ok`` 反映该工具是否无异常地返回。gateway 用它来
+    清除/收尾进度气泡，并驱动一次性的上手提示（例如在一次长时间工具运行后建议
+    /verbose）。没有工具 *输出* 在此传播 —— 输出是 agent 的关注点，会持久化到历史，
+    而不作为呈现层流式发送。
     """
     tool_name: str
     duration: float = 0.0
@@ -116,16 +104,14 @@ class ToolCallFinished:
     index: int = 0
 
 
-# ── Gateway control / lifecycle events ───────────────────────────────────────
+# ── gateway 控制 / 生命周期事件 ──────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class LongToolHint:
-    """One-shot onboarding nudge when a tool runs longer than the threshold.
+    """当工具运行时间超过阈值时的一次性上手提示。
 
-    The gateway gates this on platform capability (the /verbose command must be
-    usable) and on the user not having seen the hint before.  Modeled as an
-    event so the *gateway* owns the "should I surface this here?" decision rather
-    than the agent.
+    gateway 会根据平台能力（/verbose 命令必须可用）以及用户是否已见过该提示来门控。
+    将其建模为事件，使 *gateway* 而非 agent 拥有"我是否应在此处展示？"的决定权。
     """
     tool_name: str = ""
     duration: float = 0.0
@@ -133,21 +119,19 @@ class LongToolHint:
 
 @dataclass(frozen=True)
 class GatewayNotice:
-    """A gateway-originated control message (restart, online, long-run notice).
+    """由 gateway 发起的控制消息（重启、上线、长运行通知）。
 
-    ``kind`` is a stable string the adapter can switch on
-    (``"restart"`` / ``"online"`` / ``"long_run"`` / …).  ``text`` is the
-    human-readable default the base class renders when an adapter has no
-    platform-specific treatment.
+    ``kind`` 是 adapter 可用于 switch 的稳定字符串（``"restart"`` / ``"online"`` /
+    ``"long_run"`` / ……）。``text`` 是基类在 adapter 没有平台特定处理时渲染的
+    人类可读默认值。
     """
     kind: str
     text: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
-# Union of every event the consumer's dispatcher accepts.  Kept explicit (rather
-# than a marker base class) so a missing ``case`` in an exhaustive match is a
-# visible type error rather than a silent fall-through.
+# consumer 的 dispatcher 接受的所有事件的联合类型。刻意写全（而不是用一个标记基类），
+# 这样在穷举 match 中漏写某个 ``case`` 会是明显的类型错误，而不是静默 fall-through。
 StreamEvent = Union[
     MessageChunk,
     MessageStop,

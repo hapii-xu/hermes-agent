@@ -1,12 +1,12 @@
-"""CLI commands for the google_meet plugin.
+"""google_meet 插件的 CLI 命令。
 
-Wires ``hermes meet <subcommand>``:
-  setup       — preflight playwright, chromium, auth file, print fixes
-  auth        — open a browser to sign into Google, save storage state
-  join <url>  — join a Meet URL synchronously (also callable from the agent)
-  status      — print current bot state
-  transcript  — print the transcript
-  stop        — leave the current meeting
+连接 ``hermes meet <subcommand>``：
+  setup       — 预检 playwright、chromium、auth 文件，打印修复建议
+  auth        — 打开浏览器登录 Google，保存存储状态
+  join <url>  — 同步加入 Meet URL（也可从 agent 调用）
+  status      — 打印当前 bot 状态
+  transcript  — 打印转录内容
+  stop        — 离开当前会议
 """
 
 from __future__ import annotations
@@ -28,13 +28,13 @@ def _auth_state_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# argparse wiring
+# argparse 配置
 # ---------------------------------------------------------------------------
 
 def register_cli(subparser: argparse.ArgumentParser) -> None:
-    """Build the ``hermes meet`` argparse tree.
+    """构建 ``hermes meet`` argparse 树。
 
-    Called by :func:`_register_cli_commands` at plugin load time.
+    在插件加载时由 :func:`_register_cli_commands` 调用。
     """
     subs = subparser.add_subparsers(dest="meet_command")
 
@@ -80,7 +80,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
 
     subs.add_parser("stop", help="Leave the current meeting")
 
-    # v3: remote node host management.
+    # v3：远程节点主机管理。
     node_p = subs.add_parser(
         "node",
         help="Manage remote meet node hosts (run/list/approve/remove/status/ping)",
@@ -88,10 +88,9 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     try:
         from plugins.google_meet.node.cli import register_cli as _register_node_cli
         _register_node_cli(node_p)
-    except Exception as e:  # pragma: no cover — defensive
-        # If the node module fails to import for any reason (optional dep
-        # missing at import time etc.), leave the subparser present but
-        # flag it. The argparse dispatch will surface a clear error.
+    except Exception as e:  # pragma: no cover — 防御性
+        # 如果 node 模块因任何原因导入失败（可选依赖在导入时缺失等），
+        # 保留子解析器但标记它。argparse 分发将显示清晰的错误。
         def _node_unavailable(args):
             print(f"hermes meet node: module unavailable ({e})")
             return 1
@@ -101,7 +100,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# 分发
 # ---------------------------------------------------------------------------
 
 def meet_command(args: argparse.Namespace) -> int:
@@ -148,7 +147,7 @@ def meet_command(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Subcommand handlers
+# 子命令处理器
 # ---------------------------------------------------------------------------
 
 def _cmd_setup() -> int:
@@ -212,18 +211,17 @@ def _cmd_setup() -> int:
 
 
 def _cmd_install(*, realtime: bool, assume_yes: bool) -> int:
-    """Install the plugin's prerequisites.
+    """安装插件的依赖项。
 
-    Always: pip install playwright + websockets, then
-    ``python -m playwright install chromium``.
+    始终执行：pip install playwright + websockets，然后
+    ``python -m playwright install chromium``。
 
-    With ``--realtime``: also install the platform audio bridge deps.
+    使用 ``--realtime`` 时：同时安装平台音频桥依赖：
       Linux : ``sudo apt-get install -y pulseaudio-utils``
-      macOS : ``brew install blackhole-2ch ffmpeg``  (+ remind the user
-              to select BlackHole as the default input device manually)
+      macOS : ``brew install blackhole-2ch ffmpeg``（并提醒用户手动选择 BlackHole 为默认输入设备）
 
-    Prompts before every package-manager invocation unless ``--yes``.
-    Refuses to run on Windows.
+    每次调用包管理器前都会提示，除非指定 ``--yes``。
+    拒绝在 Windows 上运行。
     """
     import platform as _p
     import shutil as _shutil
@@ -246,7 +244,7 @@ def _cmd_install(*, realtime: bool, assume_yes: bool) -> int:
     print("google_meet install")
     print("-------------------")
 
-    # 1) pip deps — always safe, venv-scoped.
+    # 1) pip 依赖 — 始终安全，venv 范围内。
     pip_pkgs = ["playwright", "websockets"]
     print(f"\n[1/3] pip install: {' '.join(pip_pkgs)}")
     try:
@@ -261,7 +259,7 @@ def _cmd_install(*, realtime: bool, assume_yes: bool) -> int:
         print(f"  pip install failed: {e}")
         return 1
 
-    # 2) Playwright browsers — pulls chromium (~300MB first run).
+    # 2) Playwright 浏览器 — 首次运行时拉取 chromium（约 300MB）。
     print("\n[2/3] python -m playwright install chromium")
     try:
         res = _sp.run(
@@ -274,7 +272,7 @@ def _cmd_install(*, realtime: bool, assume_yes: bool) -> int:
         print(f"  playwright install failed: {e}")
         return 1
 
-    # 3) Platform audio deps for realtime mode.
+    # 3) 实时模式的平台音频依赖。
     if realtime:
         print("\n[3/3] realtime audio deps")
         if system == "Linux":
@@ -334,7 +332,7 @@ def _cmd_install(*, realtime: bool, assume_yes: bool) -> int:
 
 
 def _cmd_auth() -> int:
-    """Open a headed Chromium, let the user sign in, save storage_state."""
+    """打开有界面的 Chromium，让用户登录，保存 storage_state。"""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -381,7 +379,7 @@ def _cmd_join(
         print(f"refusing: not a meet.google.com URL: {url}")
         return 2
     if node:
-        # Remote: go through NodeClient.
+        # 远程：通过 NodeClient 处理。
         try:
             from plugins.google_meet.node.registry import NodeRegistry
             from plugins.google_meet.node.client import NodeClient

@@ -1,12 +1,12 @@
-"""Voice Mode -- Push-to-talk audio recording and playback for the CLI.
+"""Voice Mode -- CLI 的按键即说（push-to-talk）录音与回放。
 
-Provides audio capture via sounddevice, WAV encoding via stdlib wave,
-STT dispatch via tools.transcription_tools, and TTS playback via
-sounddevice or system audio players.
+通过 sounddevice 进行音频采集，通过标准库 wave 进行 WAV 编码，
+通过 tools.transcription_tools 分派 STT，通过 sounddevice 或系统
+音频播放器进行 TTS 回放。
 
-Dependencies (optional):
+依赖（可选）：
     pip install sounddevice numpy
-    or: pip install hermes-agent[voice]
+    或：pip install hermes-agent[voice]
 """
 
 import logging
@@ -25,15 +25,15 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy audio imports -- never imported at module level to avoid crashing
-# in headless environments (SSH, Docker, WSL, no PortAudio).
+# 懒加载音频导入 —— 绝不在模块级别导入，以免在无头环境
+# （SSH、Docker、WSL、无 PortAudio）下崩溃。
 # ---------------------------------------------------------------------------
 
 def _import_audio():
-    """Lazy-import sounddevice and numpy.  Returns (sd, np).
+    """懒加载 sounddevice 和 numpy。返回 (sd, np)。
 
-    Raises ImportError or OSError if the libraries are not available
-    (e.g. PortAudio missing on headless servers).
+    若库不可用（例如无头服务器上缺少 PortAudio），抛出
+    ImportError 或 OSError。
     """
     import sounddevice as sd
     import numpy as np
@@ -41,7 +41,7 @@ def _import_audio():
 
 
 def _audio_available() -> bool:
-    """Return True if audio libraries can be imported."""
+    """若音频库可导入则返回 True。"""
     try:
         _import_audio()
         return True
@@ -87,14 +87,13 @@ def _termux_voice_capture_available() -> bool:
 
 
 def _pulse_socket_reachable() -> bool:
-    """Return True if a PulseAudio/PipeWire socket is reachable on disk.
+    """若磁盘上存在可达的 PulseAudio/PipeWire 套接字则返回 True。
 
-    Covers the common case where a sound server runs locally (e.g. on a
-    remote SSH host) without ``PULSE_SERVER``/``PIPEWIRE_REMOTE`` being set --
-    the client just connects to the default socket under the runtime dir.
-    We look at ``PULSE_SERVER`` unix paths, ``PULSE_RUNTIME_PATH``, and
-    ``XDG_RUNTIME_DIR`` for a ``pulse/native`` or ``pipewire-0`` socket
-    (issue #35622).
+    覆盖了声音服务器在本地运行（例如在远程 SSH 主机上）却未设置
+    ``PULSE_SERVER``/``PIPEWIRE_REMOTE`` 的常见场景 —— 客户端会直接
+    连接运行时目录下的默认套接字。我们会在 ``PULSE_SERVER`` 的 unix
+    路径、``PULSE_RUNTIME_PATH`` 以及 ``XDG_RUNTIME_DIR`` 下查找
+    ``pulse/native`` 或 ``pipewire-0`` 套接字（issue #35622）。
     """
     import socket
     import stat
@@ -102,7 +101,7 @@ def _pulse_socket_reachable() -> bool:
     candidates: List[str] = []
 
     pulse_server = os.environ.get('PULSE_SERVER', '')
-    # PULSE_SERVER may be "unix:/path", "unix:/path;..." or a bare path.
+    # PULSE_SERVER 可能是 "unix:/path"、"unix:/path;..." 或一个裸路径。
     for part in pulse_server.split(';'):
         part = part.strip()
         if part.startswith('unix:'):
@@ -125,8 +124,8 @@ def _pulse_socket_reachable() -> bool:
                 continue
         except OSError:
             continue
-        # Confirm the socket actually accepts a connection -- a stale socket
-        # file left by a dead server should not count as reachable.
+        # 确认套接字确实能接受连接 —— 已死服务器留下的陈旧套接字
+        # 文件不应算作可达。
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             sock.settimeout(0.5)
@@ -140,14 +139,14 @@ def _pulse_socket_reachable() -> bool:
 
 
 def detect_audio_environment() -> dict:
-    """Detect if the current environment supports audio I/O.
+    """检测当前环境是否支持音频输入输出。
 
-    Returns dict with 'available' (bool), 'warnings' (list of hard-fail
-    reasons that block voice mode), and 'notices' (list of informational
-    messages that do NOT block voice mode).
+    返回的 dict 包含 'available'（bool）、'warnings'（会阻断语音模式
+    的硬失败原因列表）以及 'notices'（不会阻断语音模式的信息性消息
+    列表）。
     """
-    warnings = []   # hard-fail: these block voice mode
-    notices = []     # informational: logged but don't block
+    warnings = []   # 硬失败：这些会阻断语音模式
+    notices = []     # 信息性：仅记录日志，不阻断
     termux_mic_cmd = _termux_microphone_command()
     termux_app_installed = _termux_api_app_installed()
     termux_capture = bool(termux_mic_cmd and termux_app_installed)
@@ -157,9 +156,9 @@ def detect_audio_environment() -> dict:
         or _pulse_socket_reachable()
     )
 
-    # SSH detection -- normally no audio devices, but honor a reachable
-    # sound server (PulseAudio/PipeWire socket or forwarding env vars), which
-    # works fine over SSH (issue #35622).
+    # SSH 检测 —— 通常没有音频设备，但尊重可达的声音服务器
+    # （PulseAudio/PipeWire 套接字或转发环境变量），它在 SSH 下也能
+    # 正常工作（issue #35622）。
     if any(os.environ.get(v) for v in ('SSH_CLIENT', 'SSH_TTY', 'SSH_CONNECTION')):
         if has_forwarded_audio:
             notices.append("Running over SSH with a reachable PulseAudio/PipeWire sound server")
@@ -172,10 +171,10 @@ def detect_audio_environment() -> dict:
                 "    # or: export PULSE_SERVER=unix:$XDG_RUNTIME_DIR/pulse/native"
             )
 
-    # Docker/Podman container detection — honor host audio forwarding.
-    # When the user mounts a PulseAudio/PipeWire socket into the container
-    # and points PULSE_SERVER / PIPEWIRE_REMOTE at it, audio works fine
-    # (issue #21203).  Only block when no forwarding is configured.
+    # Docker/Podman 容器检测 —— 尊重宿主音频转发。当用户把
+    # PulseAudio/PipeWire 套接字挂载进容器并把 PULSE_SERVER /
+    # PIPEWIRE_REMOTE 指向它时，音频可正常工作（issue #21203）。
+    # 仅在未配置转发时才阻断。
     from hermes_constants import is_container
     if is_container():
         if has_forwarded_audio:
@@ -190,8 +189,8 @@ def detect_audio_environment() -> dict:
                 "    PipeWire:    -e PIPEWIRE_REMOTE=$XDG_RUNTIME_DIR/pipewire-0"
             )
 
-    # WSL detection — PulseAudio bridge makes audio work in WSL.
-    # Only block if PULSE_SERVER is not configured.
+    # WSL 检测 —— PulseAudio 桥接让 WSL 中也能用音频。
+    # 仅在未配置 PULSE_SERVER 时才阻断。
     try:
         with open('/proc/version', 'r', encoding="utf-8") as f:
             if 'microsoft' in f.read().lower():
@@ -207,7 +206,7 @@ def detect_audio_environment() -> dict:
     except (FileNotFoundError, PermissionError, OSError):
         pass
 
-    # Check audio libraries
+    # 检查音频库
     try:
         sd, _ = _import_audio()
         try:
@@ -222,9 +221,8 @@ def detect_audio_environment() -> dict:
                 else:
                     warnings.append("No audio input/output devices detected")
         except Exception:
-            # In WSL with PulseAudio, device queries can fail even though
-            # recording/playback works fine. Don't block if host audio
-            # forwarding is configured.
+            # 在配了 PulseAudio 的 WSL 中，即便录音/回放正常，设备查询
+            # 也可能失败。若配置了宿主音频转发，则不阻断。
             if has_forwarded_audio:
                 notices.append(
                     "Audio device query failed but host audio forwarding is configured -- continuing"
@@ -270,45 +268,45 @@ def detect_audio_environment() -> dict:
     }
 
 # ---------------------------------------------------------------------------
-# Recording parameters
+# 录音参数
 # ---------------------------------------------------------------------------
-SAMPLE_RATE = 16000  # Whisper native rate
-CHANNELS = 1  # Mono
-DTYPE = "int16"  # 16-bit PCM
-SAMPLE_WIDTH = 2  # bytes per sample (int16)
+SAMPLE_RATE = 16000  # Whisper 原生采样率
+CHANNELS = 1  # 单声道
+DTYPE = "int16"  # 16 位 PCM
+SAMPLE_WIDTH = 2  # 每个采样的字节数（int16）
 
-# Silence detection defaults
-SILENCE_RMS_THRESHOLD = 200  # RMS below this = silence (int16 range 0-32767)
-SILENCE_DURATION_SECONDS = 3.0  # Seconds of continuous silence before auto-stop
+# 静音检测默认值
+SILENCE_RMS_THRESHOLD = 200  # RMS 低于此值视为静音（int16 范围 0-32767）
+SILENCE_DURATION_SECONDS = 3.0  # 连续静音达到多少秒后自动停止
 
-# Temp directory for voice recordings
+# 语音录音的临时目录
 _TEMP_DIR = os.path.join(tempfile.gettempdir(), "hermes_voice")
 
 
 # ============================================================================
-# Audio cues (beep tones)
+# 音频提示音（蜂鸣）
 # ============================================================================
 def play_beep(frequency: int = 880, duration: float = 0.12, count: int = 1) -> None:
-    """Play a short beep tone using numpy + sounddevice.
+    """使用 numpy + sounddevice 播放一段短促的提示音。
 
-    Args:
-        frequency: Tone frequency in Hz (default 880 = A5).
-        duration: Duration of each beep in seconds.
-        count: Number of beeps to play (with short gap between).
+    参数：
+        frequency: 音调频率，单位 Hz（默认 880 = A5）。
+        duration: 每声蜂鸣的持续时长，单位秒。
+        count: 蜂鸣次数（各声之间有短暂间隔）。
     """
     try:
         sd, np = _import_audio()
     except (ImportError, OSError):
         return
     try:
-        gap = 0.06  # seconds between beeps
+        gap = 0.06  # 各声蜂鸣之间的间隔秒数
         samples_per_beep = int(SAMPLE_RATE * duration)
         samples_per_gap = int(SAMPLE_RATE * gap)
 
         parts = []
         for i in range(count):
             t = np.linspace(0, duration, samples_per_beep, endpoint=False)
-            # Apply fade in/out to avoid click artifacts
+            # 应用淡入淡出以避免咔哒声伪影
             tone = np.sin(2 * np.pi * frequency * t)
             fade_len = min(int(SAMPLE_RATE * 0.01), samples_per_beep // 4)
             tone[:fade_len] *= np.linspace(0, 1, fade_len)
@@ -319,8 +317,8 @@ def play_beep(frequency: int = 880, duration: float = 0.12, count: int = 1) -> N
 
         audio = np.concatenate(parts)
         sd.play(audio, samplerate=SAMPLE_RATE)
-        # sd.wait() calls Event.wait() without timeout — hangs forever if the
-        # audio device stalls.  Poll with a 2s ceiling and force-stop.
+        # sd.wait() 调用 Event.wait() 且无超时 —— 若音频设备卡死会
+        # 永久挂起。改为带 2 秒上限轮询，到点强制停止。
         deadline = time.monotonic() + 2.0
         while sd.get_stream() and sd.get_stream().active and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -330,10 +328,10 @@ def play_beep(frequency: int = 880, duration: float = 0.12, count: int = 1) -> N
 
 
 # ============================================================================
-# Termux Audio Recorder
+# Termux 录音器
 # ============================================================================
 class TermuxAudioRecorder:
-    """Recorder backend that uses Termux:API microphone capture commands."""
+    """使用 Termux:API 麦克风采集命令的录音后端。"""
 
     supports_silence_autostop = False
 
@@ -359,7 +357,7 @@ class TermuxAudioRecorder:
         return self._current_rms
 
     def start(self, on_silence_stop=None) -> None:
-        del on_silence_stop  # Termux:API does not expose live silence callbacks.
+        del on_silence_stop  # Termux:API 不提供实时静音回调。
         mic_cmd = _termux_microphone_command()
         if not mic_cmd:
             raise RuntimeError(
@@ -461,19 +459,19 @@ class TermuxAudioRecorder:
 # AudioRecorder
 # ============================================================================
 class AudioRecorder:
-    """Thread-safe audio recorder using sounddevice.InputStream.
+    """使用 sounddevice.InputStream 的线程安全录音器。
 
-    Usage::
+    用法::
 
         recorder = AudioRecorder()
         recorder.start(on_silence_stop=my_callback)
-        # ... user speaks ...
-        wav_path = recorder.stop()   # returns path to WAV file
-        # or
-        recorder.cancel()            # discard without saving
+        # ... 用户说话 ...
+        wav_path = recorder.stop()   # 返回 WAV 文件路径
+        # 或
+        recorder.cancel()            # 丢弃，不保存
 
-    If ``on_silence_stop`` is provided, recording automatically stops when
-    the user is silent for ``silence_duration`` seconds and calls the callback.
+    若提供了 ``on_silence_stop``，当用户静默 ``silence_duration``
+    秒后会自动停止录音并调用该回调。
     """
 
     supports_silence_autostop = True
@@ -484,25 +482,25 @@ class AudioRecorder:
         self._frames: List[Any] = []
         self._recording = False
         self._start_time: float = 0.0
-        # Silence detection state
+        # 静音检测状态
         self._has_spoken = False
-        self._speech_start: float = 0.0  # When speech attempt began
-        self._dip_start: float = 0.0  # When current below-threshold dip began
-        self._min_speech_duration: float = 0.3  # Seconds of speech needed to confirm
-        self._max_dip_tolerance: float = 0.3  # Max dip duration before resetting speech
+        self._speech_start: float = 0.0  # 语音尝试开始时刻
+        self._dip_start: float = 0.0  # 当前低于阈值下陷开始时刻
+        self._min_speech_duration: float = 0.3  # 确认语音所需秒数
+        self._max_dip_tolerance: float = 0.3  # 重置语音前的最大下陷时长
         self._silence_start: float = 0.0
-        self._resume_start: float = 0.0  # Tracks sustained speech after silence starts
-        self._resume_dip_start: float = 0.0  # Dip tolerance tracker for resume detection
+        self._resume_start: float = 0.0  # 静音开始后跟踪持续语音
+        self._resume_dip_start: float = 0.0  # 恢复检测的下陷容忍跟踪器
         self._on_silence_stop = None
         self._silence_threshold: int = SILENCE_RMS_THRESHOLD
         self._silence_duration: float = SILENCE_DURATION_SECONDS
-        self._max_wait: float = 15.0  # Max seconds to wait for speech before auto-stop
-        # Peak RMS seen during recording (for speech presence check in stop())
+        self._max_wait: float = 15.0  # 等待语音的最长秒数，到点自动停止
+        # 录音期间出现的峰值 RMS（用于 stop() 中的语音存在性判断）
         self._peak_rms: int = 0
-        # Live audio level (read by UI for visual feedback)
+        # 实时音频电平（供 UI 读取以做可视化反馈）
         self._current_rms: int = 0
 
-    # -- public properties ---------------------------------------------------
+    # -- 公开属性 ---------------------------------------------------
 
     @property
     def elapsed_seconds(self) -> float:
@@ -512,101 +510,101 @@ class AudioRecorder:
 
     @property
     def current_rms(self) -> int:
-        """Current audio input RMS level (0-32767). Updated each audio chunk."""
+        """当前音频输入 RMS 电平（0-32767）。每个音频块更新一次。"""
         return self._current_rms
 
     @property
     def is_recording(self) -> bool:
-        """Whether audio recording is currently active."""
+        """当前是否正在进行音频录制。"""
         return self._recording
 
-    # -- public methods ------------------------------------------------------
+    # -- 公开方法 --------------------------------------------------
 
     def _ensure_stream(self) -> None:
-        """Create the audio InputStream once and keep it alive.
+        """一次性创建音频 InputStream 并保持其常驻。
 
-        The stream stays open for the lifetime of the recorder.  Between
-        recordings the callback simply discards audio chunks (``_recording``
-        is ``False``).  This avoids the CoreAudio bug where closing and
-        re-opening an ``InputStream`` hangs indefinitely on macOS.
+        流在录音器的整个生命周期内保持打开。两次录音之间，回调
+        仅丢弃音频块（此时 ``_recording`` 为 ``False``）。这样做是为
+        了规避 CoreAudio 在 macOS 上反复关闭又重新打开
+        ``InputStream`` 会无限挂起的 bug。
         """
         if self._stream is not None:
-            return  # already alive
+            return  # 已在运行
 
         sd, np = _import_audio()
 
         def _callback(indata, frames, time_info, status):  # noqa: ARG001
             if status:
                 logger.debug("sounddevice status: %s", status)
-            # When not recording the stream is idle — discard audio.
+            # 不在录音时流处于空闲 —— 丢弃音频。
             if not self._recording:
                 return
             self._frames.append(indata.copy())
 
-            # Compute RMS for level display and silence detection
+            # 计算 RMS，用于电平显示和静音检测
             rms = int(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
             self._current_rms = rms
             self._peak_rms = max(self._peak_rms, rms)
 
-            # Silence detection
+            # 静音检测
             if self._on_silence_stop is not None:
                 now = time.monotonic()
                 elapsed = now - self._start_time
 
                 if rms > self._silence_threshold:
-                    # Audio is above threshold -- this is speech (or noise).
-                    self._dip_start = 0.0  # Reset dip tracker
+                    # 音频高于阈值 —— 这是语音（或噪声）。
+                    self._dip_start = 0.0  # 重置下陷跟踪器
                     if self._speech_start == 0.0:
                         self._speech_start = now
                     elif not self._has_spoken and now - self._speech_start >= self._min_speech_duration:
                         self._has_spoken = True
                         logger.debug("Speech confirmed (%.2fs above threshold)",
                                      now - self._speech_start)
-                    # After speech is confirmed, only reset silence timer if
-                    # speech is sustained (>0.3s above threshold).  Brief
-                    # spikes from ambient noise should NOT reset the timer.
+                    # 语音确认后，仅当语音持续（高于阈值超过 0.3 秒）
+                    # 时才重置静音计时器。环境噪声的短暂尖峰不应重置
+                    # 计时器。
                     if not self._has_spoken:
                         self._silence_start = 0.0
                     else:
-                        # Track resumed speech with dip tolerance.
-                        # Brief dips below threshold are normal during speech,
-                        # so we mirror the initial speech detection pattern:
-                        # start tracking, tolerate short dips, confirm after 0.3s.
-                        self._resume_dip_start = 0.0  # Above threshold — no dip
+                        # 跟踪恢复的语音，并容忍下陷。
+                        # 语音期间短暂跌破阈值是正常现象，因此我们
+                        # 复刻初始语音检测的模式：开始跟踪、容忍短促
+                        # 下陷、0.3 秒后确认。
+                        self._resume_dip_start = 0.0  # 高于阈值 —— 无下陷
                         if self._resume_start == 0.0:
                             self._resume_start = now
                         elif now - self._resume_start >= self._min_speech_duration:
                             self._silence_start = 0.0
                             self._resume_start = 0.0
                 elif self._has_spoken:
-                    # Below threshold after speech confirmed.
-                    # Use dip tolerance before resetting resume tracker —
-                    # natural speech has brief dips below threshold.
+                    # 语音确认后又跌破阈值。
+                    # 重置恢复跟踪器前使用下陷容忍 —— 自然语音在
+                    # 阈值下方会有短暂下陷。
                     if self._resume_start > 0:
                         if self._resume_dip_start == 0.0:
                             self._resume_dip_start = now
                         elif now - self._resume_dip_start >= self._max_dip_tolerance:
-                            # Sustained dip — user actually stopped speaking
+                            # 持续下陷 —— 用户确实停止说话了
                             self._resume_start = 0.0
                             self._resume_dip_start = 0.0
                 elif self._speech_start > 0:
-                    # We were in a speech attempt but RMS dipped.
-                    # Tolerate brief dips (micro-pauses between syllables).
+                    # 曾处于语音尝试中，但 RMS 下陷了。
+                    # 容忍短暂下陷（音节之间的微停顿）。
                     if self._dip_start == 0.0:
                         self._dip_start = now
                     elif now - self._dip_start >= self._max_dip_tolerance:
-                        # Dip lasted too long -- genuine silence, reset
+                        # 下陷持续过久 —— 确为静音，重置
                         logger.debug("Speech attempt reset (dip lasted %.2fs)",
                                      now - self._dip_start)
                         self._speech_start = 0.0
                         self._dip_start = 0.0
 
-                # Fire silence callback when:
-                # 1. User spoke then went silent for silence_duration, OR
-                # 2. No speech detected at all for max_wait seconds
+                # 满足下列条件时触发静音回调：
+                # 1. 用户说过话后静默了 silence_duration 秒，或
+                # 2. max_wait 秒内完全未检测到语音
                 should_fire = False
                 if self._has_spoken and rms <= self._silence_threshold:
-                    # User was speaking and now is silent
+                    # 用户曾在说话，现在安静了
                     if self._silence_start == 0.0:
                         self._silence_start = now
                     elif now - self._silence_start >= self._silence_duration:
@@ -621,7 +619,7 @@ class AudioRecorder:
                 if should_fire:
                     with self._lock:
                         cb = self._on_silence_stop
-                        self._on_silence_stop = None  # fire only once
+                        self._on_silence_stop = None  # 只触发一次
                     if cb:
                         def _safe_cb():
                             try:
@@ -630,7 +628,7 @@ class AudioRecorder:
                                 logger.error("Silence callback failed: %s", e, exc_info=True)
                         threading.Thread(target=_safe_cb, daemon=True).start()
 
-        # Create stream — may block on CoreAudio (first call only).
+        # 创建流 —— 可能因 CoreAudio 而阻塞（仅首次调用）。
         stream = None
         try:
             stream = sd.InputStream(
@@ -653,19 +651,18 @@ class AudioRecorder:
         self._stream = stream
 
     def start(self, on_silence_stop=None) -> None:
-        """Start capturing audio from the default input device.
+        """从默认输入设备开始采集音频。
 
-        The underlying InputStream is created once and kept alive across
-        recordings.  Subsequent calls simply reset detection state and
-        toggle frame collection via ``_recording``.
+        底层 InputStream 只创建一次并跨多次录音保持常驻。后续调用
+        仅重置检测状态，并通过 ``_recording`` 切换帧收集。
 
-        Args:
-            on_silence_stop: Optional callback invoked (in a daemon thread) when
-                silence is detected after speech. The callback receives no arguments.
-                Use this to auto-stop recording and trigger transcription.
+        参数：
+            on_silence_stop: 可选回调，在语音后检测到静音时（在守护
+                线程中）调用。回调不接收任何参数。可用它来自动停止
+                录音并触发转写。
 
-        Raises ``RuntimeError`` if sounddevice/numpy are not installed
-        or if a recording is already in progress.
+        当 sounddevice/numpy 未安装，或已有录音正在进行时，抛出
+        ``RuntimeError``。
         """
         try:
             _import_audio()
@@ -677,7 +674,7 @@ class AudioRecorder:
 
         with self._lock:
             if self._recording:
-                return  # already recording
+                return  # 已在录音
 
             self._frames = []
             self._start_time = time.monotonic()
@@ -691,7 +688,7 @@ class AudioRecorder:
             self._current_rms = 0
             self._on_silence_stop = on_silence_stop
 
-        # Ensure the persistent stream is alive (no-op after first call).
+        # 确保常驻流存活（首次调用后为空操作）。
         self._ensure_stream()
 
         with self._lock:
@@ -699,7 +696,7 @@ class AudioRecorder:
         logger.info("Voice recording started (rate=%d, channels=%d)", SAMPLE_RATE, CHANNELS)
 
     def _close_stream_with_timeout(self, timeout: float = 3.0) -> None:
-        """Close the audio stream with a timeout to prevent CoreAudio hangs."""
+        """关闭音频流并带超时，以防止 CoreAudio 卡死。"""
         if self._stream is None:
             return
 
@@ -715,7 +712,7 @@ class AudioRecorder:
 
         t = threading.Thread(target=_do_close, daemon=True)
         t.start()
-        # Poll in short intervals so Ctrl+C is not blocked
+        # 以短间隔轮询，使 Ctrl+C 不被阻塞
         deadline = __import__("time").monotonic() + timeout
         while t.is_alive() and __import__("time").monotonic() < deadline:
             t.join(timeout=0.1)
@@ -723,13 +720,12 @@ class AudioRecorder:
             logger.warning("Audio stream close timed out after %.1fs — forcing ahead", timeout)
 
     def stop(self) -> Optional[str]:
-        """Stop recording and write captured audio to a WAV file.
+        """停止录音并把采集到的音频写入 WAV 文件。
 
-        The underlying stream is kept alive for reuse — only frame
-        collection is stopped.
+        底层流保持存活以便复用 —— 仅停止帧收集。
 
-        Returns:
-            Path to the WAV file, or ``None`` if no audio was captured.
+        返回：
+            WAV 文件路径；若未采集到音频则返回 ``None``。
         """
         with self._lock:
             if not self._recording:
@@ -737,12 +733,12 @@ class AudioRecorder:
 
             self._recording = False
             self._current_rms = 0
-            # Stream stays alive — no close needed.
+            # 流保持存活 —— 无需关闭。
 
             if not self._frames:
                 return None
 
-            # Concatenate frames and write WAV
+            # 拼接帧并写入 WAV
             _, np = _import_audio()
             audio_data = np.concatenate(self._frames, axis=0)
             self._frames = []
@@ -750,14 +746,14 @@ class AudioRecorder:
             elapsed = time.monotonic() - self._start_time
             logger.info("Voice recording stopped (%.1fs, %d samples)", elapsed, len(audio_data))
 
-            # Skip very short recordings (< 0.3s of audio)
+            # 跳过过短的录音（音频不足 0.3 秒）
             min_samples = int(SAMPLE_RATE * 0.3)
             if len(audio_data) < min_samples:
                 logger.debug("Recording too short (%d samples), discarding", len(audio_data))
                 return None
 
-            # Skip silent recordings using peak RMS (not overall average, which
-            # gets diluted by silence at the end of the recording).
+            # 用峰值 RMS 跳过静音录音（而非整体均值，因为均值会被
+            # 录音末尾的静音稀释）。
             if self._peak_rms < SILENCE_RMS_THRESHOLD:
                 logger.info("Recording too quiet (peak RMS=%d < %d), discarding",
                             self._peak_rms, SILENCE_RMS_THRESHOLD)
@@ -766,9 +762,9 @@ class AudioRecorder:
             return self._write_wav(audio_data)
 
     def cancel(self) -> None:
-        """Stop recording and discard all captured audio.
+        """停止录音并丢弃所有已采集音频。
 
-        The underlying stream is kept alive for reuse.
+        底层流保持存活以便复用。
         """
         with self._lock:
             self._recording = False
@@ -778,22 +774,22 @@ class AudioRecorder:
         logger.info("Voice recording cancelled")
 
     def shutdown(self) -> None:
-        """Release the audio stream.  Call when voice mode is disabled."""
+        """释放音频流。在禁用语音模式时调用。"""
         with self._lock:
             self._recording = False
             self._frames = []
             self._on_silence_stop = None
-        # Close stream OUTSIDE the lock to avoid deadlock with audio callback
+        # 在锁之外关闭流，避免与音频回调死锁
         self._close_stream_with_timeout()
         logger.info("AudioRecorder shut down")
 
-    # -- private helpers -----------------------------------------------------
+    # -- 私有辅助 --------------------------------------------------
 
     @staticmethod
     def _write_wav(audio_data) -> str:
-        """Write numpy int16 audio data to a WAV file.
+        """把 numpy int16 音频数据写入 WAV 文件。
 
-        Returns the file path.
+        返回文件路径。
         """
         os.makedirs(_TEMP_DIR, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -811,16 +807,16 @@ class AudioRecorder:
 
 
 def create_audio_recorder() -> AudioRecorder | TermuxAudioRecorder:
-    """Return the best recorder backend for the current environment."""
+    """为当前环境返回最合适的录音后端。"""
     if _termux_voice_capture_available():
         return TermuxAudioRecorder()
     return AudioRecorder()
 
 
 # ============================================================================
-# Whisper hallucination filter
+# Whisper 幻觉过滤器
 # ============================================================================
-# Whisper commonly hallucinates these phrases on silent/near-silent audio.
+# Whisper 在静音/近静音音频上常会幻觉出这些短语。
 WHISPER_HALLUCINATIONS = {
     "thank you.",
     "thank you",
@@ -839,7 +835,7 @@ WHISPER_HALLUCINATIONS = {
     "you",
     "the end.",
     "the end",
-    # Non-English hallucinations (common on silence)
+    # 非英文幻觉（静音时常见）
     "продолжение следует",
     "продолжение следует...",
     "sous-titres",
@@ -851,7 +847,7 @@ WHISPER_HALLUCINATIONS = {
     "ご視聴ありがとうございました",
 }
 
-# Regex patterns for repetitive hallucinations (e.g. "Thank you. Thank you. Thank you.")
+# 重复性幻觉的正则模式（例如 "Thank you. Thank you. Thank you."）
 _HALLUCINATION_REPEAT_RE = re.compile(
     r'^(?:thank you|thanks|bye|you|ok|okay|the end|\.|\s|,|!)+$',
     flags=re.IGNORECASE,
@@ -859,34 +855,34 @@ _HALLUCINATION_REPEAT_RE = re.compile(
 
 
 def is_whisper_hallucination(transcript: str) -> bool:
-    """Check if a transcript is a known Whisper hallucination on silence."""
+    """检查一段转写文本是否为静音上的已知 Whisper 幻觉。"""
     cleaned = transcript.strip().lower()
     if not cleaned:
         return True
-    # Exact match against known phrases
+    # 与已知短语精确匹配
     if cleaned.rstrip('.!') in WHISPER_HALLUCINATIONS or cleaned in WHISPER_HALLUCINATIONS:
         return True
-    # Repetitive patterns (e.g. "Thank you. Thank you. Thank you. you")
+    # 重复性模式（例如 "Thank you. Thank you. Thank you. you"）
     if _HALLUCINATION_REPEAT_RE.match(cleaned):
         return True
     return False
 
 
 # ============================================================================
-# STT dispatch
+# STT 分派
 # ============================================================================
 def transcribe_recording(wav_path: str, model: Optional[str] = None) -> Dict[str, Any]:
-    """Transcribe a WAV recording using the existing Whisper pipeline.
+    """使用既有的 Whisper 流水线对一段 WAV 录音进行转写。
 
-    Delegates to ``tools.transcription_tools.transcribe_audio()``.
-    Filters out known Whisper hallucinations on silent audio.
+    委托给 ``tools.transcription_tools.transcribe_audio()``。
+    过滤掉静音音频上的已知 Whisper 幻觉。
 
-    Args:
-        wav_path: Path to the WAV file.
-        model: Whisper model name (default: from config or ``whisper-1``).
+    参数：
+        wav_path: WAV 文件路径。
+        model: Whisper 模型名（默认：取自配置或 ``whisper-1``）。
 
-    Returns:
-        Dict with ``success``, ``transcript``, and optionally ``error``.
+    返回：
+        含 ``success``、``transcript`` 以及可选 ``error`` 的 dict。
     """
     from tools.transcription_tools import MAX_FILE_SIZE, transcribe_audio
 
@@ -895,7 +891,7 @@ def transcribe_recording(wav_path: str, model: Optional[str] = None) -> Dict[str
     else:
         result = transcribe_audio(wav_path, model=model)
 
-    # Filter out Whisper hallucinations (common on silent/near-silent audio)
+    # 过滤 Whisper 幻觉（静音/近静音音频上常见）
     if result.get("success") and is_whisper_hallucination(result.get("transcript", "")):
         logger.info("Filtered Whisper hallucination: %r", result["transcript"])
         return {"success": True, "transcript": "", "filtered": True}
@@ -904,7 +900,7 @@ def transcribe_recording(wav_path: str, model: Optional[str] = None) -> Dict[str
 
 
 def _should_chunk_for_transcription(file_path: str, max_file_size: int) -> bool:
-    """Return whether a CLI WAV recording needs to be split before STT."""
+    """判断一段 CLI WAV 录音在送入 STT 前是否需要切分。"""
     if not file_path.lower().endswith(".wav"):
         return False
     try:
@@ -919,7 +915,7 @@ def _transcribe_wav_in_chunks(
     model: Optional[str],
     max_file_size: int,
 ) -> Dict[str, Any]:
-    """Split an oversized WAV into provider-sized chunks and join transcripts."""
+    """把超大 WAV 切成符合 provider 大小限制的块，并拼接转写结果。"""
     from tools.transcription_tools import transcribe_audio
 
     chunk_paths: List[str] = []
@@ -964,7 +960,7 @@ def _transcribe_wav_in_chunks(
 
 
 def _split_wav_for_transcription(wav_path: str, *, max_file_size: int) -> List[str]:
-    """Write WAV chunks small enough to pass the shared STT file-size gate."""
+    """写出足够小、能通过共享 STT 文件大小关卡的 WAV 块。"""
     os.makedirs(_TEMP_DIR, exist_ok=True)
     chunk_paths: List[str] = []
     header_reserve = 64 * 1024
@@ -1012,16 +1008,16 @@ def _split_wav_for_transcription(wav_path: str, *, max_file_size: int) -> List[s
 
 
 # ============================================================================
-# Audio playback (interruptable)
+# 音频回放（可打断）
 # ============================================================================
 
-# Global reference to the active playback process so it can be interrupted.
+# 对当前回放进程的全局引用，以便能被打断。
 _active_playback: Optional[subprocess.Popen] = None
 _playback_lock = threading.Lock()
 
 
 def stop_playback() -> None:
-    """Interrupt the currently playing audio (if any)."""
+    """打断当前正在回放的音频（若有）。"""
     global _active_playback
     with _playback_lock:
         proc = _active_playback
@@ -1032,7 +1028,7 @@ def stop_playback() -> None:
             logger.info("Audio playback interrupted")
         except Exception:
             pass
-    # Also stop sounddevice playback if active
+    # 若 sounddevice 正在回放，也一并停止
     try:
         sd, _ = _import_audio()
         sd.stop()
@@ -1041,17 +1037,17 @@ def stop_playback() -> None:
 
 
 def play_audio_file(file_path: str) -> bool:
-    """Play an audio file through the default output device.
+    """通过默认输出设备回放一个音频文件。
 
-    Strategy:
-    1. WAV files via ``sounddevice.play()`` when available.
-    2. System commands: ``afplay`` (macOS), ``ffplay`` (cross-platform),
-       ``aplay`` (Linux ALSA).
+    策略：
+    1. 可用时通过 ``sounddevice.play()`` 回放 WAV 文件。
+    2. 系统命令：``afplay``（macOS）、``ffplay``（跨平台）、
+       ``aplay``（Linux ALSA）。
 
-    Playback can be interrupted by calling ``stop_playback()``.
+    可通过调用 ``stop_playback()`` 打断回放。
 
-    Returns:
-        ``True`` if playback succeeded, ``False`` otherwise.
+    返回：
+        回放成功返回 ``True``，否则返回 ``False``。
     """
     global _active_playback
 
@@ -1059,7 +1055,7 @@ def play_audio_file(file_path: str) -> bool:
         logger.warning("Audio file not found: %s", file_path)
         return False
 
-    # Try sounddevice for WAV files
+    # 对 WAV 文件优先尝试 sounddevice
     if file_path.endswith(".wav"):
         try:
             sd, np = _import_audio()
@@ -1069,8 +1065,8 @@ def play_audio_file(file_path: str) -> bool:
                 sample_rate = wf.getframerate()
 
             sd.play(audio_data, samplerate=sample_rate)
-            # sd.wait() calls Event.wait() without timeout — hangs forever if
-            # the audio device stalls.  Poll with a ceiling and force-stop.
+            # sd.wait() 调用 Event.wait() 且无超时 —— 若音频设备卡死
+            # 会永久挂起。改为带上限轮询，到点强制停止。
             duration_secs = len(audio_data) / sample_rate
             deadline = time.monotonic() + duration_secs + 2.0
             while sd.get_stream() and sd.get_stream().active and time.monotonic() < deadline:
@@ -1078,11 +1074,11 @@ def play_audio_file(file_path: str) -> bool:
             sd.stop()
             return True
         except (ImportError, OSError):
-            pass  # audio libs not available, fall through to system players
+            pass  # 音频库不可用，回落到系统播放器
         except Exception as e:
             logger.debug("sounddevice playback failed: %s", e)
 
-    # Fall back to system audio players (using Popen for interruptability)
+    # 回落到系统音频播放器（用 Popen 以便可打断）
     system = platform.system()
     players = []
 
@@ -1119,16 +1115,16 @@ def play_audio_file(file_path: str) -> bool:
 
 
 # ============================================================================
-# Requirements check
+# 依赖检查
 # ============================================================================
 def check_voice_requirements() -> Dict[str, Any]:
-    """Check if all voice mode requirements are met.
+    """检查是否满足语音模式的全部依赖。
 
-    Returns:
-        Dict with ``available``, ``audio_available``, ``stt_available``,
-        ``missing_packages``, and ``details``.
+    返回：
+        含 ``available``、``audio_available``、``stt_available``、
+        ``missing_packages`` 和 ``details`` 的 dict。
     """
-    # Determine STT provider availability
+    # 判定 STT provider 是否可用
     from tools.transcription_tools import _get_provider, _load_stt_config, is_stt_enabled
     stt_config = _load_stt_config()
     stt_enabled = is_stt_enabled(stt_config)
@@ -1142,7 +1138,7 @@ def check_voice_requirements() -> Dict[str, Any]:
     if not has_audio:
         missing.extend(["sounddevice", "numpy"])
 
-    # Environment detection
+    # 环境检测
     env_check = detect_audio_environment()
 
     available = has_audio and stt_available and env_check["available"]
@@ -1186,16 +1182,16 @@ def check_voice_requirements() -> Dict[str, Any]:
 
 
 # ============================================================================
-# Temp file cleanup
+# 临时文件清理
 # ============================================================================
 def cleanup_temp_recordings(max_age_seconds: int = 3600) -> int:
-    """Remove old temporary voice recording files.
+    """移除陈旧的临时语音录音文件。
 
-    Args:
-        max_age_seconds: Delete files older than this (default: 1 hour).
+    参数：
+        max_age_seconds: 删除超过此时长的文件（默认：1 小时）。
 
-    Returns:
-        Number of files deleted.
+    返回：
+        已删除的文件数。
     """
     if not os.path.isdir(_TEMP_DIR):
         return 0

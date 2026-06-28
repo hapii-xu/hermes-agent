@@ -1,41 +1,41 @@
 # comparison-matrix
 
-Grid-based multi-factor comparison across multiple items.
+基于网格的多因素、多项目对比。
 
-## Structure
+## 结构
 
-- Table/grid layout
-- Rows: items being compared
-- Columns: comparison criteria
-- Cells: scores, checks, or values
-- Header row and column clearly marked
+- 表格/网格布局
+- 行：被对比的项目
+- 列：对比标准
+- 单元格：评分、勾选或取值
+- 表头行和列标注清晰
 
-## Best For
+## 最适用于
 
-- Product feature comparisons
-- Tool/software evaluations
-- Multi-criteria decisions
-- Specification sheets
-- Rating comparisons
+- 产品特性对比
+- 工具/软件评估
+- 多标准决策
+- 规格表
+- 评分对比
 
-## Visual Elements
+## 视觉元素
 
-- Clear grid lines or cell boundaries
-- Checkmarks, X marks, or scores in cells
-- Color coding for quick scanning
-- Icons for criteria categories
-- Highlight for recommended option
+- 清晰的网格线或单元格边界
+- 单元格内用勾号、叉号或分数
+- 颜色编码便于快速扫读
+- 标准类别配图标
+- 推荐选项高亮
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Item names in first column
-- Criteria in header row
-- Brief values in cells
-- Legend if using symbols
+- 标题置于顶部
+- 第一列为项目名称
+- 表头行为标准
+- 单元格内放简短取值
+- 若使用符号则配图例
 
-## Recommended Pairings
+## 推荐搭配
 
-- `corporate-memphis`: Business tool comparisons
-- `ui-wireframe`: Technical feature matrices
-- `blueprint`: Specification comparisons
+- `corporate-memphis`：商业工具对比
+- `ui-wireframe`：技术特性矩阵
+- `blueprint`：规格对比

@@ -1,6 +1,6 @@
 ---
 name: simplify-code
-description: "Parallel 3-agent cleanup of recent code changes."
+description: "用 3 个并行 agent 对最近的代码改动做清理。"
 version: 1.0.0
 author: Hermes Agent (inspired by Claude Code /simplify)
 license: MIT
@@ -11,202 +11,108 @@ metadata:
     related_skills: [requesting-code-review, test-driven-development, plan]
 ---
 
-# Simplify Code — Parallel Review & Cleanup
+# Simplify Code —— 并行审查与清理
 
-Review your recent code changes with three focused reviewers running in
-parallel, aggregate their findings, and apply the fixes worth applying.
+用三个聚焦的审查者并行审查你最近的代码改动，汇总它们的发现，并应用值得应用的修复。
 
-**Core principle:** Three narrow reviewers beat one broad reviewer. Each one
-deeply searches the codebase for a single class of problem — reuse, quality,
-efficiency — without diluting its attention across all three. They run
-concurrently, so you pay the latency of one review, not three.
+**核心原则：** 三个窄域审查者胜过一个宽域审查者。每一个都在代码库里深度搜索单一类问题 —— 复用、质量、效率 —— 而不会把注意力稀释到三者之间。它们并发运行，所以你付的是一次审查的延迟，而不是三次。
 
-## When to Use
+## 何时使用
 
-Trigger this skill when the user says any of:
+当用户说出以下任何内容时触发本 skill：
 
 - "simplify" / "simplify my changes" / "simplify these changes"
 - "review my code" / "review my recent changes" / "clean up my changes"
-- "/simplify" (if they're carrying the Claude Code habit over)
+- "/simplify"（如果他们把 Claude Code 的习惯带了过来）
 
-Optional modifiers the user may add — honor them:
+用户可能加上的可选修饰词 —— 照办：
 
-- **Focus:** "simplify focus on efficiency" → run only the efficiency reviewer
-  (or weight the aggregation toward it). Recognized focuses: `reuse`,
-  `quality`, `efficiency`.
-- **Dry run:** "simplify but don't change anything" / "just report" → run the
-  three reviewers, present findings, apply NOTHING. Ask before applying.
-- **Scope:** "simplify the last commit" / "simplify staged" / "simplify
-  src/foo.py" → narrow the diff source accordingly (see Phase 1).
+- **聚焦：** "simplify focus on efficiency" → 只跑 efficiency 审查者（或在汇总时向它倾斜）。认可的聚焦项：`reuse`、`quality`、`efficiency`。
+- **试运行（dry run）：** "simplify but don't change anything" / "just report" → 跑三个审查者，呈现发现，什么都不应用。应用前先问。
+- **范围：** "simplify the last commit" / "simplify staged" / "simplify src/foo.py" → 相应缩小 diff 来源（见第 1 阶段）。
 
-Do NOT auto-run this after every edit. It costs three subagents' worth of
-tokens — invoke it only when the user explicitly asks.
+不要在每次编辑后自动跑本 skill。它花费三个 subagent 的 token —— 只在用户明确要求时调用。
 
-## The Process
+## 流程
 
-### Phase 1 — Identify the changes
+### 第 1 阶段 —— 识别改动
 
-Capture the diff to review. Pick the source by what the user asked for, in
-this default order:
+抓取要审查的 diff。按用户的请求选择来源，默认顺序如下：
 
 ```bash
-# 1. Default: uncommitted working-tree changes (tracked files)
+# 1. 默认：未提交的工作区改动（受跟踪文件）
 git diff
 
-# 2. If that's empty, include staged changes
+# 2. 如果为空，把暂存的改动也包含进来
 git diff HEAD
 
-# 3. Scoped variants the user may request:
+# 3. 用户可能请求的范围变体：
 git diff --staged                 # "staged changes"
 git diff HEAD~1                    # "the last commit"
 git diff main...HEAD              # "this branch" / "my PR"
-git diff -- src/foo.py            # specific file(s)
+git diff -- src/foo.py            # 指定文件
 ```
 
-If `git diff` and `git diff HEAD` are both empty and there's no git repo or no
-changes, fall back to the files the user explicitly named or that were
-recently created/edited in this session. If you genuinely can't find any
-changed code, say so and stop — there's nothing to simplify.
+如果 `git diff` 和 `git diff HEAD` 都为空，并且没有 git 仓库或没有改动，则退回到用户明确点名的文件，或本会话中最近创建/编辑过的文件。如果你确实找不到任何改动过的代码，就说明情况并停止 —— 没什么可简化的。
 
-Capture the full diff text. Note its size: if it's very large (say >2000
-changed lines), warn the user that three subagents each carrying the full diff
-will be token-heavy, and offer to scope it down (per-directory, per-commit)
-before proceeding.
+抓取完整的 diff 文本。注意它的大小：如果非常大（比如 >2000 行改动），警告用户三个 subagent 各自携带完整 diff 会很费 token，并提议先缩小范围（按目录、按提交）再继续。
 
-### Phase 2 — Launch three reviewers in parallel
+### 第 2 阶段 —— 并行启动三个审查者
 
-Use `delegate_task` **batch mode** — pass all three tasks in one `tasks`
-array so they run concurrently. Three is the right fan-out for this pattern;
-it's well within the `delegation.max_concurrent_children` budget on any
-default install.
+用 `delegate_task` 的 **batch 模式** —— 把三个任务放在同一个 `tasks` 数组里让它们并发执行。对于这个模式，三个是合适的扇出度；在任何默认安装下都远在 `delegation.max_concurrent_children` 预算之内。
 
-Give **every** reviewer the **complete diff** (not fragments — cross-file
-issues hide in the gaps) plus the absolute repo path so they can search the
-wider codebase. Each reviewer gets `terminal`, `file`, and `search`
-toolsets (so they can `git`, `read_file`, and `search_files`/grep).
+给**每个**审查者**完整的 diff**（不要分片 —— 跨文件的问题就藏在缝隙里），加上仓库的绝对路径，以便它们搜索更广的代码库。每个审查者获得 `terminal`、`file` 和 `search` 工具集（这样它们能 `git`、`read_file` 和 `search_files`/grep）。
 
-Tell each reviewer to:
-- Search the existing codebase for evidence (don't reason from the diff alone).
-- **Apply Chesterton's Fence:** before flagging anything for removal, run
-  `git blame` on the line to understand why it exists. If you can't determine
-  the original purpose, mark it `confidence: low` — don't guess.
-- Report findings as structured output with confidence and risk:
+告诉每个审查者：
+- 在现有代码库里搜索证据（不要只凭 diff 推理）。
+- **应用 Chesterton's Fence（切斯特顿栅栏）原则：** 在标记任何东西要删除之前，先对该行跑 `git blame` 以理解它为何存在。如果你无法确定原始意图，就标为 `confidence: low` —— 不要猜。
+- 以带置信度和风险的结构化输出汇报发现：
   ```
   file:line → problem → suggested fix | confidence: high/medium/low | risk: SAFE/CAREFUL/RISKY
   ```
-  - **SAFE** = proven not to affect behavior (unused imports, commented-out
-    code, pass-through wrappers). Auto-apply these.
-  - **CAREFUL** = improves without changing semantics (rename local variable,
-    flatten nested ternary, extract helper). Apply with test verification.
-  - **RISKY** = may change behavior or breaks public contracts (N+1
-    restructuring, public API rename, memory lifecycle change). Flag for
-    human review — do NOT auto-apply.
-- Skip nits and style-only churn. Only flag things that materially improve
-  the code.
+  - **SAFE** = 已证明不影响行为（未使用的 import、被注释掉的代码、直通的包装函数）。自动应用这些。
+  - **CAREFUL** = 改善但不改语义（重命名局部变量、拍平嵌套三元、抽取辅助函数）。带测试验证地应用。
+  - **RISKY** = 可能改变行为或破坏公开契约（N+1 重构、公开 API 重命名、内存生命周期改动）。标记给人工审查 —— **不要**自动应用。
+- 跳过吹毛求疵和纯样式 churn。只标记能实质性改善代码的东西。
 
-Pass these three goals (drop any the user's focus excludes):
+传递这三个目标（用户聚焦项排除掉的可以丢弃）：
 
-**Reviewer 1 — Code Reuse**
-> Review this diff for code that duplicates functionality already in the
-> codebase. Search utility modules, shared helpers, and adjacent files
-> (use search_files / grep) for existing functions, constants, or patterns
-> the new code could call instead of reimplementing. Flag: new functions
-> that duplicate existing ones; hand-rolled logic that an existing utility
-> already does (manual string/path manipulation, custom env checks, ad-hoc
-> type guards, re-implemented parsing). For each, name the existing thing to
-> use and where it lives.
+**审查者 1 —— 代码复用（Code Reuse）**
+> 审查这份 diff 中是否复刻了代码库里已有的功能。搜索工具模块、共享 helper 和邻近文件（用 search_files / grep），找出已有的函数、常量或模式，让新代码可以直接调用，而不是重新实现。标记：与已有函数重复的新函数；已有工具已经做过的手工逻辑（手工字符串/路径处理、自定义环境检查、临时类型守卫、重复实现的解析）。对每一项，点名要使用的已有东西以及它在哪里。
 
-**Reviewer 2 — Code Quality**
-> Review this diff for quality problems. Look for: redundant state (values
-> that duplicate or could be derived from existing state; caches that don't
-> need to exist); parameter sprawl (new params bolted on where the function
-> should have been restructured); copy-paste-with-variation (near-duplicate
-> blocks that should share an abstraction); leaky abstractions (exposing
-> internals, breaking an existing encapsulation boundary); stringly-typed
-> code (raw strings where a constant/enum/registry already exists — check the
-> canonical registries before flagging); AI-generated slop patterns (extra
-> comments restating obvious code like `// increment counter` above `count++`;
-> unnecessary defensive null-checks on already-validated inputs; `as any`
-> casts that bypass the type system; patterns inconsistent with the rest of
-> the file). For each, give the concrete refactor.
+**审查者 2 —— 代码质量（Code Quality）**
+> 审查这份 diff 中的质量问题。寻找：冗余状态（与已有状态重复或可从中推导的值；本不需要存在的缓存）；参数膨胀（本应重构函数却硬塞新参数）；带变体的复制粘贴（本应共享抽象的近似重复块）；抽象泄漏（暴露内部细节、打破已有的封装边界）；字符串化代码（已有常量/枚举/注册表却用裸字符串 —— 标记前先检查规范注册表）；AI 生成的冗余模式（重述显而易见代码的多余注释，比如在 `count++` 上方写 `// increment counter`；对已校验输入的不必要防御性 null 检查；绕过类型系统的 `as any` 转型；与本文件其余部分不一致的模式）。对每一项，给出具体的重构方法。
 
-**Reviewer 3 — Efficiency**
-> Review this diff for efficiency problems. Look for: unnecessary work
-> (redundant computation, repeated file reads, duplicate API calls, N+1
-> access patterns); missed concurrency (independent ops run sequentially);
-> hot-path bloat (heavy/blocking work on startup or per-request paths);
-> TOCTOU anti-patterns (existence pre-checks before an op instead of doing
-> the op and handling the error); memory issues (unbounded growth, missing
-> cleanup, listener/handle leaks); overly broad reads (loading whole files
-> when a slice would do); silent failures (empty catch blocks, ignored error
-> returns, `except: pass`, `.catch(() => {})` with no handling, error
-> propagation gaps — these hide bugs and should at minimum log before
-> swallowing). For each, give the concrete fix and why it's faster or safer.
+**审查者 3 —— 效率（Efficiency）**
+> 审查这份 diff 中的效率问题。寻找：不必要的工作（冗余计算、重复读文件、重复 API 调用、N+1 访问模式）；错失的并发（独立操作串行执行）；热路径膨胀（在启动或每请求路径上做重/阻塞工作）；TOCTOU 反模式（操作前做存在性预检查，而不是直接做操作并处理错误）；内存问题（无界增长、缺失清理、监听器/句柄泄漏）；过度宽泛的读取（本可只读切片却整文件加载）；静默失败（空 catch 块、被忽略的错误返回、`except: pass`、无任何处理的 `.catch(() => {})`、错误传播缺口 —— 这些会掩盖 bug，至少应该在吞掉之前记日志）。对每一项，给出具体的修复以及为什么更快或更安全。
 
-### Phase 3 — Aggregate and apply
+### 第 3 阶段 —— 汇总并应用
 
-Wait for all three to return (batch mode returns them together).
+等三者全部返回（batch 模式会一起返回）。
 
-1. **Merge** the findings into one list, deduping where reviewers overlap.
-2. **Discard false positives** — you have the most context; you don't have to
-   argue with a reviewer, just drop weak or wrong suggestions silently.
-3. **Resolve conflicts.** Reviewers can disagree (Reviewer 1: "use existing
-   util X"; Reviewer 3: "X is slow, inline it"). Default resolution order:
-   **correctness > the user's stated focus > readability/reuse > micro-perf.**
-   Don't apply a perf "fix" that hurts clarity unless the path is genuinely
-   hot. When two suggestions are mutually exclusive and both defensible, pick
-   the one that touches less code and note the alternative.
-4. **Apply in risk-tier order:**
-   - **SAFE first** (auto-apply): unused imports, commented-out code,
-     pass-through wrappers, redundant type assertions. Run tests after.
-   - **CAREFUL next** (apply with verification, one file at a time): rename
-     locals, flatten ternaries, extract helpers, consolidate dupes. Run tests
-     after each file. Revert any that break.
-   - **RISKY last** (flag for review — do NOT auto-apply): N+1 restructuring,
-     public API changes, concurrency fixes, error-handling changes. Present
-     each with risk description and test coverage status.
-   If the user opted for a dry run, present all three tiers and apply nothing.
-5. **Verify** you didn't break anything: run the project's targeted tests for
-   the touched files (not the full suite), and re-run any linter/type check the
-   repo uses. If a fix breaks a test, revert that one fix and report it.
-6. **Summarize** what you changed: a short list of applied fixes grouped by
-   reviewer category and risk tier, plus any findings you deliberately skipped
-   and why.
+1. **合并**发现到一份列表，审查者重叠处去重。
+2. **丢弃误报** —— 你拥有最多上下文；你不必和审查者争辩，默默丢掉弱项或错误的建议即可。
+3. **解决冲突。** 审查者可能意见相左（审查者 1：「用已有的工具 X」；审查者 3：「X 慢，内联它」）。默认的解决顺序：**正确性 > 用户声明的聚焦项 > 可读性/复用 > 微性能。** 不要应用伤害清晰度的性能「修复」，除非该路径确实是热点。当两条建议互斥且都站得住脚时，选改动代码更少的那条，并注明另一条。
+4. **按风险分级顺序应用：**
+   - **先 SAFE**（自动应用）：未使用的 import、被注释的代码、直通包装、冗余的类型断言。之后跑测试。
+   - **再 CAREFUL**（带验证地应用，一次一个文件）：重命名局部变量、拍平三元、抽取 helper、合并重复。每个文件后跑测试。任何破坏测试的回滚。
+   - **最后 RISKY**（标记给审查 —— **不要**自动应用）：N+1 重构、公开 API 改动、并发修复、错误处理改动。逐条呈现风险描述和测试覆盖状态。
+   如果用户选择试运行，呈现全部三个分级但什么都不应用。
+5. **验证**你没有破坏任何东西：针对改动文件跑项目的定向测试（不是全套），并重新跑仓库使用的任何 linter/类型检查。如果某个修复破坏了测试，回滚那一项修复并报告。
+6. **总结**你做的改动：按审查者类别和风险分级分组的应用修复清单，加上你刻意跳过的发现及原因。
 
-## Pitfalls
+## 陷阱
 
-- **Don't fan out wider than ~3.** More reviewers means more cost and more
-  conflicting suggestions to reconcile, not better coverage. Three categories
-  cover the space.
-- **Give the WHOLE diff to each reviewer.** Splitting the diff across reviewers
-  defeats the design — cross-file duplication and N+1s only show up with the
-  full picture.
-- **Reviewers search, they don't guess.** A reuse finding with no pointer to
-  the existing utility ("there's probably a helper for this") is noise. Require
-  `file:line` evidence; drop findings that lack it.
-- **Apply ≠ rewrite.** This is cleanup of the user's recent changes, not a
-  license to refactor the whole module. Keep edits scoped to what the diff
-  touched plus the minimal surrounding change a fix requires.
-- **Respect project conventions.** If the repo has AGENTS.md / CLAUDE.md /
-  HERMES.md or a linter config, fold those rules into the reviewer prompts so
-  suggestions match house style instead of fighting it.
-- **Large diffs blow context.** If the diff is huge, scope it down before
-  delegating — three subagents each carrying a 5000-line diff is expensive and
-  may truncate.
-- **Over-trusting dead code tools.** `knip`, `ts-prune`, and `depcheck` flag
-  exports that ARE used dynamically (string-based imports, reflection). Always
-  grep for the symbol name before removing — a clean tool report is not proof.
-- **Renaming without checking public contracts.** Export names, API route
-  paths, DB column names, and config keys are contracts — even if the name is
-  bad, renaming breaks consumers. Tag public-contract changes as RISKY; never
-  auto-rename them.
-- **Removing "unnecessary" error handling.** An empty catch block or ignored
-  error might be intentional — the error is expected and benign in that
-  context. Flag it, don't remove it; let the human decide.
+- **扇出不要超过约 3 个。** 更多审查者意味着更高成本和更多需要调和的冲突建议，而不是更好的覆盖。三个类别已经覆盖了这个空间。
+- **给每个审查者完整 diff。** 把 diff 拆分给各审查者会破坏设计意图 —— 跨文件重复和 N+1 只有在完整图景下才显现。
+- **审查者要搜索，不是猜。** 一条没有指向已有工具的复用发现（「这里大概有个 helper」）是噪声。要求 `file:line` 证据；丢弃缺乏证据的发现。
+- **应用 ≠ 重写。** 这是对用户近期改动的清理，不是重构整个模块的许可。把编辑限制在 diff 触及的部分加上修复所需的最小周边改动。
+- **尊重项目约定。** 如果仓库有 AGENTS.md / CLAUDE.md / HERMES.md 或 linter 配置，把这些规则折进审查者提示，让建议贴合内部风格而不是与之对抗。
+- **大 diff 会撑爆上下文。** 如果 diff 很大，在委派前先缩小范围 —— 三个 subagent 各自携带 5000 行 diff 很贵，并且可能被截断。
+- **过度信任死代码工具。** `knip`、`ts-prune` 和 `depcheck` 会标记那些**确实**被动态使用的导出（基于字符串的 import、反射）。删除前一定要先 grep 符号名 —— 工具报告干净并不构成证据。
+- **不检查公开契约就重命名。** 导出名、API 路由路径、DB 列名和配置键都是契约 —— 即便名字很糟，重命名也会破坏消费方。把公开契约改动标为 RISKY；绝不自动重命名。
+- **删除「不必要」的错误处理。** 一个空 catch 块或被忽略的错误可能是有意为之 —— 在那个上下文里该错误是预期且无害的。标记它，而不是删除它；让人来决定。
 
-## Related
+## 相关
 
-If your install has the `subagent-driven-development` skill (optional), it
-covers the complementary case: parallel review *during* implementation, per
-task. This skill is the standalone *after-the-fact* cleanup pass. Use
-`requesting-code-review` for the pre-commit security/quality gate.
+如果你的安装里有 `subagent-driven-development` skill（可选），它覆盖的是互补的场景：在实现*过程中*、按任务进行并行审查。本 skill 是独立的、*事后*清理 pass。用 `requesting-code-review` 做提交前的安全/质量门。

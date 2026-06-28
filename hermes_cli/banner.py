@@ -1,6 +1,6 @@
-"""Welcome banner, ASCII art, skills summary, and update check for the CLI.
+"""CLI 的欢迎横幅、ASCII 艺术、技能摘要和更新检查。
 
-Pure display functions with no HermesCLI state dependency.
+纯显示函数，不依赖 HermesCLI 状态。
 """
 
 import json
@@ -15,12 +15,12 @@ from urllib.parse import urlparse
 from hermes_constants import get_hermes_home
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-# rich and prompt_toolkit are imported lazily (inside the functions that use
-# them) rather than at module level.  Importing this module is on the TUI
-# gateway's critical startup path purely to reach the lightweight update-check
-# helpers (``prefetch_update_check``); pulling rich.console + prompt_toolkit
-# eagerly added ~50ms of wasted imports before ``gateway.ready`` could fire.
-# Keep the type-only reference available to checkers without the runtime cost.
+# rich 和 prompt_toolkit 采用延迟导入（在使用它们的函数内部导入），
+# 而不是在模块级别导入。导入此模块仅用于访问轻量级的更新检查
+# 辅助函数（``prefetch_update_check``），它位于 TUI 网关的关键启动路径上；
+# 急切地导入 rich.console + prompt_toolkit 会在 ``gateway.ready`` 触发前
+# 增加约 50 毫秒的无用导入开销。
+# 保留仅类型引用以供检查器使用，不产生运行时开销。
 if TYPE_CHECKING:
     from rich.console import Console
 
@@ -28,35 +28,35 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================================
-# ANSI building blocks for conversation display
+# 会话显示的 ANSI 构建块
 # =========================================================================
 
-_GOLD = "\033[1;38;2;255;215;0m"  # True-color #FFD700 bold
+_GOLD = "\033[1;38;2;255;215;0m"  # 真彩色 #FFD700 粗体
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 _RST = "\033[0m"
 
 
 def cprint(text: str):
-    """Print ANSI-colored text through prompt_toolkit's renderer."""
+    """通过 prompt_toolkit 的渲染器打印 ANSI 彩色文本。"""
     from prompt_toolkit import print_formatted_text as _pt_print
     from prompt_toolkit.formatted_text import ANSI as _PT_ANSI
     _pt_print(_PT_ANSI(text))
 
 
 # =========================================================================
-# Skin-aware color helpers
+# 皮肤感知的颜色辅助函数
 # =========================================================================
 
 def _skin_color(key: str, fallback: str) -> str:
-    """Get a color from the active skin, or return fallback."""
+    """从当前激活的皮肤获取颜色，失败则返回回退值。"""
     try:
         from hermes_cli.skin_engine import get_active_skin
         return get_active_skin().get_color(key, fallback)
     except Exception:
         return fallback
 # =========================================================================
-# ASCII Art & Branding
+# ASCII 艺术与品牌标识
 # =========================================================================
 
 from hermes_cli import __version__ as VERSION, __release_date__ as RELEASE_DATE
@@ -87,15 +87,15 @@ HERMES_CADUCEUS = """[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀�
 
 
 # =========================================================================
-# Skills scanning
+# 技能扫描
 # =========================================================================
 
 def get_available_skills() -> Dict[str, List[str]]:
-    """Return skills grouped by category, filtered by platform and disabled state.
+    """返回按类别分组的技能，按平台和禁用状态过滤。
 
-    Delegates to ``_find_all_skills()`` from ``tools/skills_tool`` which already
-    handles platform gating (``platforms:`` frontmatter) and respects the
-    user's ``skills.disabled`` config list.
+    委托给 ``tools/skills_tool`` 中的 ``_find_all_skills()``，该函数已经
+    处理平台门控（``platforms:`` frontmatter）并遵守用户的
+    ``skills.disabled`` 配置列表。
     """
     try:
         from tools.skills_tool import _find_all_skills
@@ -111,14 +111,14 @@ def get_available_skills() -> Dict[str, List[str]]:
 
 
 # =========================================================================
-# Update check
+# 更新检查
 # =========================================================================
 
-# Cache update check results for 6 hours to avoid repeated git fetches
+# 缓存更新检查结果 6 小时，避免重复的 git fetch
 _UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
 
-# Sentinel returned when we know an update exists but can't count commits
-# (e.g. nix-built hermes — no local git history to count against).
+# 当已知存在更新但无法计算提交数时返回的哨兵值
+# （例如 nix 构建的 hermes — 没有本地 git 历史可用于比较）。
 UPDATE_AVAILABLE_NO_COUNT = -1
 
 _UPSTREAM_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
@@ -126,7 +126,7 @@ _OFFICIAL_REPO_CANONICAL = "github.com/nousresearch/hermes-agent"
 
 
 def _canonical_github_remote(url: str | None) -> str:
-    """Return ``host/owner/repo`` for common GitHub remote URL forms."""
+    """为常见 GitHub remote URL 格式返回 ``host/owner/repo``。"""
     if not url:
         return ""
     value = url.strip()
@@ -172,10 +172,10 @@ def _git_stdout(args: list[str], *, cwd: Path, timeout: int = 5) -> Optional[str
 
 
 def _check_via_rev(local_rev: str) -> Optional[int]:
-    """Compare an embedded git revision to upstream main via ls-remote.
+    """通过 ls-remote 将嵌入的 git 修订版与上游 main 进行比较。
 
-    Returns 0 if up-to-date, ``UPDATE_AVAILABLE_NO_COUNT`` if behind,
-    or ``None`` on failure.
+    返回 0 表示已是最新，``UPDATE_AVAILABLE_NO_COUNT`` 表示落后，
+    失败时返回 ``None``。
     """
     try:
         result = subprocess.run(
@@ -193,20 +193,19 @@ def _check_via_rev(local_rev: str) -> Optional[int]:
 
 
 def _check_via_local_git(repo_dir: Path) -> Optional[int]:
-    """Count commits behind origin/main in a local checkout."""
+    """计算本地检出中落后 origin/main 的提交数。"""
     origin_url = _git_stdout(["remote", "get-url", "origin"], cwd=repo_dir)
     if _is_official_ssh_remote(origin_url):
         head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
         return _check_via_rev(head_rev) if head_rev else None
 
-    # Installer checkouts are shallow (`git clone --depth 1`). On a shallow
-    # clone the history stops at a single commit, so a plain `git fetch` would
-    # unshallow the repo (dragging in the whole history) and
-    # `rev-list --count HEAD..origin/main` would report a huge bogus "behind"
-    # number (e.g. "12492 commits behind"). Detect shallow up front: fetch with
-    # --depth 1 to preserve the boundary and compare tip SHAs instead of
-    # counting. Full clones (developers, Docker dev images) keep the exact
-    # count path unchanged. Mirrors the desktop fix in apps/desktop/electron/main.cjs.
+    # 安装程序的检出是浅克隆（`git clone --depth 1`）。在浅克隆中，
+    # 历史只有一个提交，因此普通的 `git fetch` 会取消浅克隆（拉入全部历史），
+    # 而 `rev-list --count HEAD..origin/main` 会报告一个巨大的虚假"落后"
+    # 数字（例如"12492 commits behind"）。提前检测浅克隆：使用
+    # --depth 1 进行 fetch 以保持边界，并比较尖端 SHA 而不是计数。
+    # 完整克隆（开发者、Docker 开发镜像）保持精确的计数路径不变。
+    # 与 apps/desktop/electron/main.cjs 中的桌面端修复一致。
     shallow = _git_stdout(["rev-parse", "--is-shallow-repository"], cwd=repo_dir)
     is_shallow = shallow == "true"
 
@@ -221,12 +220,12 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
             cwd=str(repo_dir),
         )
     except Exception:
-        pass  # Offline or timeout — use stale refs, that's fine
+        pass  # 离线或超时 — 使用过期的引用，这没关系
 
     if is_shallow:
-        # No history to count across the shallow boundary. `origin/main` may not
-        # be a tracking ref in a `clone --depth 1`, so prefer FETCH_HEAD (just
-        # updated by the fetch above) and fall back to origin/main.
+        # 在浅克隆边界之间没有历史可计数。`origin/main` 在
+        # `clone --depth 1` 中可能不是跟踪引用，因此优先使用 FETCH_HEAD
+        # （刚刚由上面的 fetch 更新），回退到 origin/main。
         head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
         target_rev = (
             _git_stdout(["rev-parse", "FETCH_HEAD"], cwd=repo_dir)
@@ -250,7 +249,7 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
 
 
 def _version_tuple(v: str) -> tuple[int, ...]:
-    """Parse '0.13.0' into (0, 13, 0) for comparison. Non-numeric segments become 0."""
+    """将 '0.13.0' 解析为 (0, 13, 0) 以便比较。非数字段变为 0。"""
     parts = []
     for segment in v.split("."):
         try:
@@ -261,7 +260,7 @@ def _version_tuple(v: str) -> tuple[int, ...]:
 
 
 def _fetch_pypi_latest(package: str = "hermes-agent") -> Optional[str]:
-    """Fetch the latest version of a package from PyPI. Returns None on failure."""
+    """从 PyPI 获取包的最新版本。失败时返回 None。"""
     try:
         import urllib.request
         url = f"https://pypi.org/pypi/{package}/json"
@@ -274,9 +273,9 @@ def _fetch_pypi_latest(package: str = "hermes-agent") -> Optional[str]:
 
 
 def check_via_pypi() -> Optional[int]:
-    """Compare installed version against PyPI latest.
+    """将已安装版本与 PyPI 最新版本进行比较。
 
-    Returns 0 if up-to-date, 1 if behind, None on failure.
+    返回 0 表示已是最新，1 表示落后，None 表示失败。
     """
     latest = _fetch_pypi_latest()
     if latest is None:
@@ -292,32 +291,30 @@ def check_via_pypi() -> Optional[int]:
 
 
 def check_for_updates() -> Optional[int]:
-    """Check whether a Hermes update is available.
+    """检查是否有可用的 Hermes 更新。
 
-    Two paths: if ``HERMES_REVISION`` is set (nix builds embed it), compare
-    it to upstream main via ``git ls-remote``. Otherwise look for a local
-    git checkout and count commits behind ``origin/main``.
+    两条路径：如果设置了 ``HERMES_REVISION``（nix 构建会嵌入它），
+    通过 ``git ls-remote`` 与上游 main 进行比较。否则查找本地
+    git 检出并计算落后 ``origin/main`` 的提交数。
 
-    Returns the number of commits behind, ``UPDATE_AVAILABLE_NO_COUNT`` (-1)
-    if behind but the count is unknown, ``0`` if up-to-date, or ``None`` if
-    the check failed or doesn't apply. Cached for 6 hours.
+    返回落后的提交数，如果落后但数量未知则返回 ``UPDATE_AVAILABLE_NO_COUNT`` (-1)，
+    如果已是最新则返回 ``0``，如果检查失败或不适用则返回 ``None``。
+    结果缓存 6 小时。
     """
     hermes_home = get_hermes_home()
     cache_file = hermes_home / ".update_check"
     embedded_rev = os.environ.get("HERMES_REVISION") or None
 
-    # Docker images have no working tree to count commits against — the
-    # published image excludes `.git` (see .dockerignore) and sets no
-    # HERMES_REVISION (that's nix-only). Without this guard the checks below
-    # fall through to `check_via_pypi()`, whose PyPI-version mismatch flag (1)
-    # then gets rendered by the CLI banner and the TUI badge as a phantom
-    # "1 commit behind" — even though no git repo or commit math is involved,
-    # and `hermes update` correctly refuses to run in-place inside the
-    # container anyway. The dashboard's REST `/api/hermes/update/check`
-    # endpoint already short-circuits docker the same way (web_server.py);
-    # mirror that here so the banner/TUI surfaces agree. Returning None makes
-    # both the Rich banner (build_welcome_banner) and the Ink badge
-    # (branding.tsx, guarded on `typeof === 'number' && > 0`) show nothing.
+    # Docker 镜像没有工作树可供计算提交数 — 发布的镜像排除了
+    # `.git`（参见 .dockerignore）且不设置 HERMES_REVISION（那是 nix 专属的）。
+    # 没有此保护措施，下面的检查会落到 `check_via_pypi()`，其 PyPI 版本
+    # 不匹配标志 (1) 会被 CLI 横幅和 TUI 徽章渲染为虚假的"1 commit behind"
+    # — 即使根本不涉及 git 仓库或提交计算，而且 `hermes update` 在容器内
+    # 原地运行时会正确地拒绝执行。dashboard 的 REST `/api/hermes/update/check`
+    # 端点已经以相同方式短路 docker（web_server.py）；在此处镜像该行为
+    # 以使横幅/TUI 显示一致。返回 None 使 Rich 横幅（build_welcome_banner）
+    # 和 Ink 徽章（branding.tsx，受 `typeof === 'number' && > 0` 保护）
+    # 都不显示任何内容。
     try:
         from hermes_cli.config import detect_install_method
         if detect_install_method() == "docker":
@@ -325,11 +322,11 @@ def check_for_updates() -> Optional[int]:
     except Exception:
         pass
 
-    # Read cache — invalidate if the embedded rev OR installed version has
-    # changed since the last check. The version guard matters for pip installs:
-    # `check_via_pypi()` compares against VERSION, so a `pip install --upgrade`
-    # changes VERSION but leaves rev unchanged (both None), and without this
-    # the stale "behind" count would survive the upgrade for up to 6h. See #34491.
+    # 读取缓存 — 如果嵌入的修订版或已安装版本自上次检查以来
+    # 发生了变化则使缓存失效。版本保护对 pip 安装很重要：
+    # `check_via_pypi()` 与 VERSION 比较，因此 `pip install --upgrade`
+    # 会更改 VERSION 但 rev 保持不变（都是 None），没有此保护，
+    # 过期的"落后"计数会在升级后继续存活长达 6 小时。参见 #34491。
     now = time.time()
     try:
         if cache_file.exists():
@@ -346,9 +343,9 @@ def check_for_updates() -> Optional[int]:
     if embedded_rev:
         behind = _check_via_rev(embedded_rev)
     else:
-        # Prefer the running code's location over the profile-scoped path.
-        # $HERMES_HOME/hermes-agent/ may be a stale copy from --clone-all;
-        # Path(__file__) always resolves to the actual installed checkout.
+        # 优先使用运行代码的位置而非 profile 范围的路径。
+        # $HERMES_HOME/hermes-agent/ 可能是 --clone-all 遗留的过时副本；
+        # Path(__file__) 始终解析为实际安装的检出目录。
         repo_dir = Path(__file__).parent.parent.resolve()
         if not (repo_dir / ".git").exists():
             repo_dir = hermes_home / "hermes-agent"
@@ -368,11 +365,11 @@ def check_for_updates() -> Optional[int]:
 
 
 def _resolve_repo_dir() -> Optional[Path]:
-    """Return the active Hermes git checkout, or None if this isn't a git install.
+    """返回活跃的 Hermes git 检出路径，如果不是 git 安装则返回 None。
 
-    Prefers the running code's location over the profile-scoped path
-    because ``$HERMES_HOME/hermes-agent/`` may be a stale copy carried
-    over by ``--clone-all``.
+    优先使用运行代码的位置而非 profile 范围的路径，
+    因为 ``$HERMES_HOME/hermes-agent/`` 可能是 ``--clone-all``
+    携带的过时副本。
     """
     repo_dir = Path(__file__).parent.parent.resolve()
     if not (repo_dir / ".git").exists():
@@ -382,7 +379,7 @@ def _resolve_repo_dir() -> Optional[Path]:
 
 
 def _git_short_hash(repo_dir: Path, rev: str) -> Optional[str]:
-    """Resolve a git revision to an 8-character short hash."""
+    """将 git 修订版解析为 8 字符的短哈希。"""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short=8", rev],

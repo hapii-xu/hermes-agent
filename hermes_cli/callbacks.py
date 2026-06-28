@@ -1,9 +1,8 @@
-"""Interactive prompt callbacks for terminal_tool integration.
+"""terminal_tool 集成的交互式提示回调函数。
 
-These bridge terminal_tool's interactive prompts (clarify, sudo, approval)
-into prompt_toolkit's event loop. Each function takes the HermesCLI instance
-as its first argument and uses its state (queues, app reference) to coordinate
-with the TUI.
+这些函数将 terminal_tool 的交互式提示（clarify、sudo、approval）
+桥接到 prompt_toolkit 的事件循环中。每个函数以 HermesCLI 实例
+作为第一个参数，并使用其状态（队列、app 引用）与 TUI 协调。
 """
 
 import queue
@@ -16,10 +15,10 @@ from hermes_constants import display_hermes_home
 
 
 def clarify_callback(cli, question, choices):
-    """Prompt for clarifying question through the TUI.
+    """通过 TUI 提示澄清问题。
 
-    Sets up the interactive selection UI, then blocks until the user
-    responds. Returns the user's choice or a timeout message.
+    设置交互式选择界面，然后阻塞等待用户响应。
+    返回用户的选择或超时消息。
     """
     from cli import CLI_CONFIG
 
@@ -64,10 +63,10 @@ def clarify_callback(cli, question, choices):
 
 
 def prompt_for_secret(cli, var_name: str, prompt: str, metadata=None) -> dict:
-    """Prompt for a secret value through the TUI (e.g. API keys for skills).
+    """通过 TUI 提示输入密钥（例如技能所需的 API key）。
 
-    Returns a dict with keys: success, stored_as, validated, skipped, message.
-    The secret is stored in ~/.hermes/.env and never exposed to the model.
+    返回包含以下键的字典：success、stored_as、validated、skipped、message。
+    密钥存储在 ~/.hermes/.env 中，绝不会暴露给模型。
     """
     if not getattr(cli, "_app", None):
         if not hasattr(cli, "_secret_state"):
@@ -184,14 +183,14 @@ def prompt_for_secret(cli, var_name: str, prompt: str, metadata=None) -> dict:
 
 
 def approval_callback(cli, command: str, description: str) -> str:
-    """Prompt for dangerous command approval through the TUI.
+    """通过 TUI 提示对危险命令进行审批。
 
-    Shows a selection UI with choices: once / session / always / deny.
-    When the command is longer than 70 characters, a "view" option is
-    included so the user can reveal the full text before deciding.
+    显示包含以下选项的选择界面：once / session / always / deny。
+    当命令长度超过 70 个字符时，还会显示 "view" 选项，
+    让用户在决策前查看完整命令内容。
 
-    Uses cli._approval_lock to serialize concurrent requests (e.g. from
-    parallel delegation subtasks) so each prompt gets its own turn.
+    使用 cli._approval_lock 对并发请求（例如来自并行委托子任务）
+    进行串行化，确保每个提示依次获得响应机会。
     """
     lock = getattr(cli, "_approval_lock", None)
     if lock is None:

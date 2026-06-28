@@ -1,32 +1,30 @@
-"""Profile distributions — shareable, packaged Hermes profiles via git.
+"""Profile distribution — 通过 git 共享、打包的 Hermes profile。
 
-A distribution is a Hermes profile published as a git repository (or
-installed from a local directory for development). Install with one command
-from a git URL, update in place, and keep your local memories / sessions /
-credentials untouched.
+Distribution 是以 git 仓库形式发布的 Hermes profile（也可从
+本地目录安装以便开发）。一条命令从 git URL 安装，就地更新，
+并保留本地 memories / sessions / credentials 不受影响。
 
-Where this fits relative to the existing pieces:
+与现有组件的关系：
 
-* ``hermes profile export/import`` — local backup / restore for a profile
-  on your own machine. NOT a distribution format. Stays as-is.
-* ``hermes skills install <url>`` — the URL install pattern we're mirroring,
-  but at the profile granularity.
+* ``hermes profile export/import`` — 本机 profile 的本地备份/恢复。
+  不是 distribution 格式。保持原样。
+* ``hermes skills install <url>`` — 我们参照的 URL 安装模式，
+  但粒度为 profile 级别。
 
-Subcommands (all live under ``hermes profile``, not a parallel tree):
+子命令（均位于 ``hermes profile`` 下，而非独立的命令树）：
 
     hermes profile install <source> [--name N] [--alias] [--force] [--yes]
     hermes profile update  <name>  [--force-config] [--yes]
     hermes profile info    <name>
 
-``<source>`` is one of:
+``<source>`` 为以下之一：
 
-* A git URL (``github.com/user/repo``, ``https://github.com/...``, ``git@...``,
-  ``ssh://``, ``git://``), optionally with ``#<ref>`` to pin a tag / branch /
-  commit SHA.
-* A local directory that already contains ``distribution.yaml`` — used
-  during profile development before the first push.
+* git URL（``github.com/user/repo``、``https://github.com/...``、``git@...``、
+  ``ssh://``、``git://``），可选 ``#<ref>`` 固定 tag / branch / commit SHA。
+* 已包含 ``distribution.yaml`` 的本地目录 — 用于首次推送前的
+  profile 开发阶段。
 
-Manifest format (``distribution.yaml`` at the profile root)::
+清单格式（``distribution.yaml`` 位于 profile 根目录）::
 
     name: telemetry
     version: 0.1.0
@@ -42,21 +40,21 @@ Manifest format (``distribution.yaml`` at the profile root)::
         description: "Memory graph URL"
         required: false
         default: "http://127.0.0.1:8000/sse"
-    distribution_owned:      # optional; sensible defaults apply
+    distribution_owned:      # 可选；有合理默认值
       - SOUL.md
       - skills/
       - cron/
       - mcp.json
 
-Update semantics:
+更新语义：
 
-* Distribution-owned paths (SOUL.md, mcp.json, skills/, cron/,
-  distribution.yaml) are replaced from the new source.
-* ``config.yaml`` is distribution-owned but preserved on update unless
-  ``--force-config`` is passed (user overrides typically live here).
-* User-owned paths (memories/, sessions/, state.db, auth.json, .env,
-  logs/, workspace/, home/, plans/, *_cache/, and anything under
-  ``local/``) are never touched.
+* Distribution 拥有的路径（SOUL.md、mcp.json、skills/、cron/、
+  distribution.yaml）从新源替换。
+* ``config.yaml`` 属于 distribution，但更新时默认保留，除非
+  传入 ``--force-config``（用户覆盖通常存放于此）。
+* 用户拥有的路径（memories/、sessions/、state.db、auth.json、.env、
+  logs/、workspace/、home/、plans/、*_cache/ 以及 ``local/`` 下的
+  所有内容）永远不会被修改。
 """
 
 from __future__ import annotations
@@ -74,16 +72,16 @@ from agent.skill_utils import is_excluded_skill_path
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 MANIFEST_FILENAME = "distribution.yaml"
 ENV_TEMPLATE_FILENAME = ".env.template"
 ENV_EXAMPLE_FILENAME = ".env.EXAMPLE"
 
-# Default distribution-owned paths (relative to profile root).  Authors may
-# override via ``distribution_owned:`` in the manifest.  config.yaml is
-# distribution-owned but treated specially on update (see _is_config_like).
+# 默认 distribution 拥有的路径（相对于 profile 根目录）。作者可通过
+# 清单中的 ``distribution_owned:`` 覆盖。config.yaml 属于 distribution
+# 但在更新时特殊处理（见 _is_config_like）。
 DEFAULT_DIST_OWNED: Tuple[str, ...] = (
     "SOUL.md",
     "config.yaml",
@@ -93,43 +91,42 @@ DEFAULT_DIST_OWNED: Tuple[str, ...] = (
     MANIFEST_FILENAME,
 )
 
-# Paths that are NEVER part of a distribution. These are user-owned and are
-# protected on update. Must stay consistent with
-# ``profiles.py::_DEFAULT_EXPORT_EXCLUDE_ROOT`` plus the ``local/``
-# convention for user customizations.
+# 永不属于 distribution 的路径。这些归用户所有，更新时受保护。
+# 必须与 ``profiles.py::_DEFAULT_EXPORT_EXCLUDE_ROOT`` 以及
+# 用户自定义的 ``local/`` 约定保持一致。
 USER_OWNED_EXCLUDE: frozenset = frozenset({
-    # Credentials & runtime secrets
+    # 凭证与运行时密钥
     "auth.json", ".env",
-    # Databases & runtime state
+    # 数据库与运行时状态
     "state.db", "state.db-shm", "state.db-wal",
     "hermes_state.db", "response_store.db",
     "response_store.db-shm", "response_store.db-wal",
     "gateway.pid", "gateway_state.json", "processes.json",
     "auth.lock", "active_profile", ".update_check",
     "errors.log", ".hermes_history",
-    # User data
+    # 用户数据
     "memories", "sessions", "logs", "plans", "workspace", "home",
     "image_cache", "audio_cache", "document_cache",
     "browser_screenshots", "checkpoints", "sandboxes",
     "backups", "cache",
-    # Infrastructure
+    # 基础设施
     "hermes-agent", ".worktrees", "profiles", "bin", "node_modules",
-    # User customization namespace
+    # 用户自定义命名空间
     "local",
 })
 
 
 # ---------------------------------------------------------------------------
-# Errors
+# 错误
 # ---------------------------------------------------------------------------
 
 
 class DistributionError(Exception):
-    """Raised for distribution install/update failures."""
+    """distribution 安装/更新失败时抛出。"""
 
 
 # ---------------------------------------------------------------------------
-# Manifest
+# 清单
 # ---------------------------------------------------------------------------
 
 
@@ -175,11 +172,11 @@ class DistributionManifest:
     license: str = ""
     env_requires: List[EnvRequirement] = field(default_factory=list)
     distribution_owned: List[str] = field(default_factory=list)
-    # Tracked after install — where we pulled from, so ``update`` can re-pull.
+    # 安装后跟踪 — 记录来源，以便 ``update`` 可以重新拉取。
     source: str = ""
-    # ISO-8601 UTC timestamp written on install / update, so ``info`` and
-    # ``list`` can show when a distribution landed on disk.  Empty for
-    # manifests that ship in a repo (authors don't populate this).
+    # ISO-8601 UTC 时间戳，在安装/更新时写入，以便 ``info`` 和
+    # ``list`` 显示 distribution 何时落地到磁盘。对于仓库中自带的
+    # 清单为空（作者不填写此字段）。
     installed_at: str = ""
 
     @classmethod
@@ -236,7 +233,7 @@ class DistributionManifest:
         return out
 
     def owned_paths(self) -> List[str]:
-        """Resolve which paths count as distribution-owned."""
+        """解析哪些路径属于 distribution 所有。"""
         if self.distribution_owned:
             return list(self.distribution_owned)
         return list(DEFAULT_DIST_OWNED)
@@ -245,7 +242,7 @@ class DistributionManifest:
 def _load_yaml(text: str) -> Any:
     try:
         import yaml
-    except ImportError as exc:  # pragma: no cover — pyyaml is a hard dep
+    except ImportError as exc:  # pragma: no cover — pyyaml 是硬依赖
         raise DistributionError("PyYAML is required for distribution manifests") from exc
     return yaml.safe_load(text)
 
@@ -257,7 +254,7 @@ def _dump_yaml(data: Any) -> str:
 
 
 def read_manifest(profile_dir: Path) -> Optional[DistributionManifest]:
-    """Return the manifest for *profile_dir*, or None if it isn't a distribution."""
+    """返回 *profile_dir* 的清单，如果不是 distribution 则返回 None。"""
     mf_path = profile_dir / MANIFEST_FILENAME
     if not mf_path.is_file():
         return None
@@ -275,7 +272,7 @@ def write_manifest(profile_dir: Path, manifest: DistributionManifest) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Version check
+# 版本检查
 # ---------------------------------------------------------------------------
 
 
@@ -283,9 +280,9 @@ _VERSION_OP_RE = re.compile(r"^\s*(>=|<=|==|!=|>|<)\s*(.+?)\s*$")
 
 
 def _parse_semver(v: str) -> Tuple[int, int, int]:
-    """Very small semver parser — major.minor.patch only.  Extra labels stripped."""
+    """极简 semver 解析器 — 仅 major.minor.patch。额外标签会被去除。"""
     s = str(v).strip().lstrip("v")
-    # Strip any pre-release / build metadata (e.g. "0.12.0-rc1+abc")
+    # 去除任何预发布/构建元数据（例如 "0.12.0-rc1+abc"）
     s = re.split(r"[-+]", s, 1)[0]
     parts = s.split(".")
     while len(parts) < 3:
@@ -297,16 +294,16 @@ def _parse_semver(v: str) -> Tuple[int, int, int]:
 
 
 def check_hermes_requires(spec: str, current_version: str) -> None:
-    """Raise DistributionError if ``current_version`` does not satisfy ``spec``.
+    """当 ``current_version`` 不满足 ``spec`` 时抛出 DistributionError。
 
-    ``spec`` accepts a single comparator (``>=0.12.0``, ``==0.12.0``, etc.).
-    Empty or blank spec is a no-op — no requirement.
+    ``spec`` 接受单个比较符（``>=0.12.0``、``==0.12.0`` 等）。
+    空或空白的 spec 为无操作 — 即无版本要求。
     """
     if not spec or not spec.strip():
         return
     m = _VERSION_OP_RE.match(spec)
     if not m:
-        # Bare version → treat as ``>=``
+        # 裸版本号 → 视为 ``>=``
         op, target = ">=", spec.strip()
     else:
         op, target = m.group(1), m.group(2)
@@ -328,12 +325,12 @@ def check_hermes_requires(spec: str, current_version: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Env var template helper
+# 环境变量模板辅助
 # ---------------------------------------------------------------------------
 
 
 def _env_template_from_manifest(manifest: DistributionManifest) -> str:
-    """Generate a ``.env.template`` body from env_requires."""
+    """从 env_requires 生成 ``.env.template`` 内容。"""
     lines = [
         "# Environment variables required by this Hermes distribution.",
         "# Copy to `.env` and fill in your own values before running.",
@@ -352,7 +349,7 @@ def _env_template_from_manifest(manifest: DistributionManifest) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Source staging — git clone or local directory
+# 源暂存 — git clone 或本地目录
 # ---------------------------------------------------------------------------
 
 
@@ -363,17 +360,17 @@ def _looks_like_git_url(s: str) -> bool:
     if s.startswith(("git@", "ssh://", "git://")):
         return True
     if s.startswith(("http://", "https://")):
-        # Any http(s) URL is treated as a git repo.  We no longer accept
-        # tar.gz URLs — git is the only remote transport.
+        # 任何 http(s) URL 都视为 git 仓库。我们不再接受
+        # tar.gz URL — git 是唯一的远程传输方式。
         return True
-    # Bare github.com/user/repo shorthand
+    # github.com/user/repo 简写形式
     if re.match(r"^github\.com/[\w.-]+/[\w.-]+/?$", s):
         return True
     return False
 
 
 def _git_clone(url: str, dest: Path) -> None:
-    # Normalize github.com/user/repo shorthand
+    # 规范化 github.com/user/repo 简写形式
     if re.match(r"^github\.com/[\w.-]+/[\w.-]+/?$", url):
         url = f"https://{url.rstrip('/')}"
     try:
@@ -390,24 +387,24 @@ def _git_clone(url: str, dest: Path) -> None:
 
 
 def _stage_source(source: str, workdir: Path) -> Tuple[Path, str]:
-    """Resolve *source* to a local directory containing distribution.yaml.
+    """将 *source* 解析为包含 distribution.yaml 的本地目录。
 
-    Returns ``(staged_dir, provenance)`` where ``provenance`` is stored in the
-    installed manifest's ``source:`` field so ``hermes profile update`` can
-    re-pull from the same place.
+    返回 ``(staged_dir, provenance)``，其中 ``provenance`` 存储在
+    已安装清单的 ``source:`` 字段中，以便 ``hermes profile update``
+    可以从同一位置重新拉取。
 
-    Accepts:
-      * A git URL (https / ssh / git@ / bare github.com shorthand) — cloned
-        into a temp directory; ``.git`` removed after clone.
-      * A local directory already containing ``distribution.yaml``.
+    接受：
+      * git URL（https / ssh / git@ / github.com 简写）— 克隆到
+        临时目录；克隆后移除 ``.git``。
+      * 已包含 ``distribution.yaml`` 的本地目录。
     """
     src_str = source.strip()
 
-    # Git URL
+    # git URL
     if _looks_like_git_url(src_str):
         cloned = workdir / "clone"
         _git_clone(src_str, cloned)
-        # Remove .git to keep the staged tree clean
+        # 移除 .git 以保持暂存目录树整洁
         shutil.rmtree(cloned / ".git", ignore_errors=True)
         if not (cloned / MANIFEST_FILENAME).is_file():
             raise DistributionError(
@@ -416,7 +413,7 @@ def _stage_source(source: str, workdir: Path) -> Tuple[Path, str]:
             )
         return cloned, src_str
 
-    # Local directory
+    # 本地目录
     path_guess = Path(src_str).expanduser()
     if path_guess.is_dir():
         if not (path_guess / MANIFEST_FILENAME).is_file():
@@ -433,7 +430,7 @@ def _stage_source(source: str, workdir: Path) -> Tuple[Path, str]:
 
 
 def _reject_distribution_symlinks(staged: Path) -> None:
-    """Reject symlinks before reading or copying distribution files."""
+    """在读取或复制 distribution 文件之前拒绝符号链接。"""
     for entry in staged.rglob("*"):
         if not entry.is_symlink():
             continue
@@ -447,13 +444,13 @@ def _reject_distribution_symlinks(staged: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Install
+# 安装
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class InstallPlan:
-    """Summary of what an install will do, surfaced for user confirmation."""
+    """安装将执行的操作摘要，用于用户确认。"""
     manifest: DistributionManifest
     staged_dir: Path
     provenance: str
@@ -489,7 +486,7 @@ def plan_install(
     workdir: Path,
     override_name: Optional[str] = None,
 ) -> InstallPlan:
-    """Stage *source* and produce a plan describing what install would do."""
+    """暂存 *source* 并生成描述安装将执行操作的计划。"""
     from hermes_cli.profiles import (
         get_profile_dir,
         normalize_profile_name,
@@ -506,10 +503,10 @@ def plan_install(
             "this source is not a Hermes distribution."
         )
 
-    # Version check up-front so we fail fast
+    # 提前进行版本检查以便快速失败
     check_hermes_requires(manifest.hermes_requires, hermes_version)
 
-    # Resolve target profile name
+    # 解析目标 profile 名称
     target_name = override_name or manifest.name
     canon = normalize_profile_name(target_name)
     validate_profile_name(canon)
@@ -521,8 +518,8 @@ def plan_install(
         )
     manifest.name = canon
     manifest.source = provenance
-    # Stamped once here so plan_install() callers (both fresh install and
-    # update) propagate a freshly-minted timestamp through _copy_dist_payload.
+    # 在此处盖上时间戳，以便 plan_install() 的调用者（全新安装和
+    # 更新）通过 _copy_dist_payload 传递新生成的时间戳。
     manifest.installed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     target_dir = get_profile_dir(canon)
@@ -548,12 +545,12 @@ def _copy_dist_payload(
     manifest: DistributionManifest,
     preserve_config: bool,
 ) -> None:
-    """Copy distribution-owned files from *staged* into *target*.
+    """将 distribution 拥有的文件从 *staged* 复制到 *target*。
 
-    User-owned paths are never touched.  ``config.yaml`` is replaced only when
-    ``preserve_config`` is False (fresh install or ``--force-config`` update).
-    ``.env.template`` is renamed to ``.env.EXAMPLE`` in the target to avoid
-    shadowing a real ``.env``.
+    用户拥有的路径永远不会被修改。``config.yaml`` 仅在
+    ``preserve_config`` 为 False 时替换（全新安装或 ``--force-config``
+    更新）。``.env.template`` 在目标中重命名为 ``.env.EXAMPLE``
+    以避免遮蔽真实的 ``.env``。
     """
     target.mkdir(parents=True, exist_ok=True)
 
@@ -566,7 +563,7 @@ def _copy_dist_payload(
             shutil.copy2(entry, target / ENV_EXAMPLE_FILENAME)
             continue
         if name == "config.yaml" and preserve_config and (target / "config.yaml").exists():
-            # Leave user's config.yaml alone on update
+            # 更新时保留用户的 config.yaml
             continue
 
         dest = target / name
@@ -586,18 +583,18 @@ def _copy_dist_payload(
         else:
             shutil.copy2(entry, dest)
 
-    # Emit .env.EXAMPLE from manifest if the staged tree didn't ship one
+    # 如果暂存目录未自带 .env.template，则从清单生成 .env.EXAMPLE
     if manifest.env_requires and not (target / ENV_EXAMPLE_FILENAME).exists():
         (target / ENV_EXAMPLE_FILENAME).write_text(
             _env_template_from_manifest(manifest), encoding="utf-8"
         )
 
-    # Make sure the manifest on disk reflects resolved name + source
+    # 确保磁盘上的清单反映已解析的 name + source
     write_manifest(target, manifest)
 
 
 def _bootstrap_user_dirs(target: Path) -> None:
-    """Create the bootstrap dirs a fresh profile expects."""
+    """创建全新 profile 所需的引导目录。"""
     for d in ("memories", "sessions", "skills", "skins", "logs",
               "plans", "workspace", "cron", "home"):
         (target / d).mkdir(parents=True, exist_ok=True)
@@ -609,10 +606,10 @@ def install_distribution(
     force: bool = False,
     create_alias: bool = False,
 ) -> InstallPlan:
-    """Install a distribution from *source* into a new profile.
+    """从 *source* 安装 distribution 到新 profile。
 
-    Returns the resolved :class:`InstallPlan`.  Use :func:`plan_install`
-    first if you want to preview + prompt the user before calling this.
+    返回已解析的 :class:`InstallPlan`。如果需要在调用前预览并
+    提示用户，请先使用 :func:`plan_install`。
     """
     from hermes_cli.profiles import (
         check_alias_collision,
@@ -629,7 +626,7 @@ def install_distribution(
                 "or pass --force to overwrite."
             )
 
-        # Fresh install: config.yaml comes from the distribution.
+        # 全新安装：config.yaml 来自 distribution。
         _bootstrap_user_dirs(plan.target_dir)
         _copy_dist_payload(
             plan.staged_dir,
@@ -650,12 +647,12 @@ def update_distribution(
     profile_name: str,
     force_config: bool = False,
 ) -> InstallPlan:
-    """Re-pull the distribution for an existing profile and apply updates.
+    """重新拉取现有 profile 的 distribution 并应用更新。
 
-    The source is read from the installed profile's ``distribution.yaml``
-    ``source:`` field.  Distribution-owned files are overwritten; user-owned
-    data (memories, sessions, auth) is never touched.  ``config.yaml`` is
-    preserved unless ``force_config`` is True.
+    来源从已安装 profile 的 ``distribution.yaml`` 的 ``source:`` 字段读取。
+    Distribution 拥有的文件会被覆盖；用户拥有的数据（memories、sessions、
+    auth）永远不会被修改。``config.yaml`` 默认保留，除非 ``force_config``
+    为 True。
     """
     from hermes_cli.profiles import (
         get_profile_dir,
@@ -699,15 +696,15 @@ def update_distribution(
 
 
 # ---------------------------------------------------------------------------
-# Info — render a manifest summary
+# 信息 — 渲染清单摘要
 # ---------------------------------------------------------------------------
 
 
 def describe_distribution(profile_name: str) -> Dict[str, Any]:
-    """Return a structured view of a profile's distribution metadata.
+    """返回 profile 的 distribution 元数据的结构化视图。
 
-    Returns an empty dict if the profile exists but has no manifest.
-    Raises DistributionError if the profile itself doesn't exist.
+    如果 profile 存在但没有清单则返回空字典。
+    如果 profile 本身不存在则抛出 DistributionError。
     """
     from hermes_cli.profiles import (
         get_profile_dir,

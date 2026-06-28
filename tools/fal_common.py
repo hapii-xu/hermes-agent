@@ -1,27 +1,24 @@
-"""Shared FAL.ai SDK plumbing.
+"""共享的 FAL.ai SDK 基础设施。
 
-Holds the stateless atoms that every FAL-backed tool needs:
+存放每个基于 FAL 的工具都需要的无状态原子组件：
 
-* :func:`import_fal_client` — lazy import + ``lazy_deps`` integration so
-  ``fal_client`` isn't pulled at cold start (it added ~64 ms per CLI
-  invocation when imported eagerly).
-* :class:`_ManagedFalSyncClient` — wrapper that drives a Nous-managed
-  fal-queue gateway through the standard ``fal_client.SyncClient``
-  primitives.
-* :func:`_normalize_fal_queue_url_format`, :func:`_extract_http_status`
-  — small helpers used by both the managed client wrapper and
-  ``_submit_fal_request``.
+* :func:`import_fal_client` —— 延迟导入 + ``lazy_deps`` 集成，
+  这样 ``fal_client`` 不会在冷启动时被拉入（急切导入时
+  每次 CLI 调用会增加约 64 ms）。
+* :class:`_ManagedFalSyncClient` —— 通过标准的 ``fal_client.SyncClient``
+  原语驱动 Nous 托管的 fal-queue 网关的包装器。
+* :func:`_normalize_fal_queue_url_format`、:func:`_extract_http_status`
+  —— 托管客户端包装器和 ``_submit_fal_request`` 共用的小工具函数。
 
-Stateful pieces (cache globals, ``_managed_fal_client*`` selectors,
-``_submit_fal_request``) intentionally stay on
-:mod:`tools.image_generation_tool`. That module is the patch target for
-existing test suites (``tests/tools/test_image_generation.py``,
-``tests/tools/test_managed_media_gateways.py``) and for the
-``plugins/image_gen/fal/`` plugin's ``_it`` indirection — moving the
-caches here would silently defeat ``monkeypatch.setattr(image_tool,
-"_managed_fal_client", None)`` because the lookups would go against
-``fal_common``'s namespace instead. See the per-rule walkthrough at
-issue #26241 for details.
+有状态的部件（缓存全局变量、``_managed_fal_client*`` 选择器、
+``_submit_fal_request``）刻意保留在
+:mod:`tools.image_generation_tool` 上。该模块是现有测试套件
+（``tests/tools/test_image_generation.py``、
+``tests/tools/test_managed_media_gateways.py``）以及
+``plugins/image_gen/fal/`` 插件 ``_it`` 间接层的 patch 目标 —— 把缓存
+移到这里会悄悄使 ``monkeypatch.setattr(image_tool,
+"_managed_fal_client", None)`` 失效，因为查找会改走
+``fal_common`` 的命名空间。详见 issue #26241 中逐规则的说明。
 """
 
 from __future__ import annotations
@@ -31,24 +28,23 @@ from urllib.parse import urlencode
 
 
 def import_fal_client() -> Any:
-    """Import ``fal_client`` (via ``lazy_deps`` when available) and return
-    the module reference.
+    """导入 ``fal_client``（可用时通过 ``lazy_deps``）并返回
+    模块引用。
 
-    Callers are responsible for caching the result on their own module
-    global — keeping per-module globals lets tests monkey-patch the
-    target module's ``fal_client`` attribute and have the patched value
-    stick for that module's call sites.
+    调用方负责把结果缓存到自己的模块全局变量上 —— 保持按模块的全局变量
+    让测试可以 monkey-patch 目标模块的 ``fal_client`` 属性，
+    并使该 patched 值对该模块的调用点持续生效。
 
-    Raises :class:`ImportError` if the package is genuinely unavailable.
+    当该包确实不可用时抛出 :class:`ImportError`。
     """
     try:
         from tools.lazy_deps import ensure as _lazy_ensure
         _lazy_ensure("image.fal", prompt=False)
     except ImportError:
         pass
-    except Exception as exc:  # noqa: BLE001 — lazy_deps surfaces install hints
+    except Exception as exc:  # noqa: BLE001 —— lazy_deps 会透出安装提示
         raise ImportError(str(exc))
-    import fal_client  # type: ignore  # noqa: WPS433 — intentionally lazy
+    import fal_client  # type: ignore  # noqa: WPS433 —— 刻意延迟
     return fal_client
 
 
@@ -60,11 +56,11 @@ def _normalize_fal_queue_url_format(queue_run_origin: str) -> str:
 
 
 def _extract_http_status(exc: BaseException) -> Optional[int]:
-    """Return an HTTP status code from httpx/fal exceptions, else None.
+    """从 httpx/fal 异常中返回 HTTP 状态码，否则返回 None。
 
-    Defensive across exception shapes — httpx.HTTPStatusError exposes
-    ``.response.status_code`` while fal_client wrappers may expose
-    ``.status_code`` directly.
+    对各种异常形态做防御式处理 —— httpx.HTTPStatusError 暴露
+    ``.response.status_code``，而 fal_client 包装器可能直接暴露
+    ``.status_code``。
     """
     response = getattr(exc, "response", None)
     if response is not None:
@@ -78,13 +74,12 @@ def _extract_http_status(exc: BaseException) -> Optional[int]:
 
 
 class _ManagedFalSyncClient:
-    """Small per-instance wrapper around ``fal_client.SyncClient`` for
-    managed queue hosts.
+    """针对托管队列主机的、基于 ``fal_client.SyncClient`` 的
+    轻量按实例包装器。
 
-    The wrapper carries its own ``fal_client`` module reference instead
-    of reaching into a module global, so callers stay in control of
-    which module's ``fal_client`` is in scope (matters for the test
-    patches that swap the legacy module's ``fal_client`` attribute).
+    该包装器自带 ``fal_client`` 模块引用，而不是去取模块全局变量，
+    因此调用方仍能控制使用哪个模块作用域内的 ``fal_client``
+    （这对那些替换 legacy 模块 ``fal_client`` 属性的测试 patch 很重要）。
     """
 
     def __init__(self, fal_client: Any, *, key: str, queue_run_origin: str):

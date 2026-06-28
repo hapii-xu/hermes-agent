@@ -1,8 +1,8 @@
 """
-Cron job management tools for Hermes Agent.
+Hermes Agent 的定时任务（cron job）管理工具。
 
-Expose a single compressed action-oriented tool to avoid schema/context bloat.
-Compatibility wrappers remain for direct Python callers and legacy tests.
+暴露一个压缩的、面向动作的工具，以避免 schema/上下文膨胀。
+为直接 Python 调用者和遗留测试保留了兼容性包装。
 """
 
 import json
@@ -16,7 +16,7 @@ from hermes_constants import display_hermes_home
 
 logger = logging.getLogger(__name__)
 
-# Import from cron module (will be available when properly installed)
+# 从 cron 模块导入（正确安装后即可用）
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cron.jobs import (
@@ -36,8 +36,8 @@ from cron.jobs import (
 
 
 def _notify_provider_jobs_changed_safe() -> None:
-    """Tell the active cron scheduler provider the job set changed (no-op for
-    the built-in). Best-effort — never lets a provider error break the tool."""
+    """告知活跃的 cron 调度器 provider 任务集合已变更（对内置 provider 是
+    no-op）。尽力而为——绝不让 provider 错误打断工具。"""
     try:
         from cron.scheduler import _notify_provider_jobs_changed
         _notify_provider_jobs_changed()
@@ -46,36 +46,35 @@ def _notify_provider_jobs_changed_safe() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cron prompt scanning
+# Cron 提示词扫描
 # ---------------------------------------------------------------------------
 #
-# Two threat surfaces, two scanners:
+# 两个威胁面，两个扫描器：
 #
-#   1. User-supplied cron prompt (small, written as a directive).
-#      Strict scanning is appropriate — a legit cron prompt has no business
-#      saying "cat ~/.hermes/.env" or "rm -rf /". `_scan_cron_prompt()` runs
-#      against this at create/update time and as a runtime defense-in-depth.
+#   1. 用户提供的 cron 提示词（小，作为指令书写）。
+#      严格扫描是合适的——一个合法的 cron 提示词没理由
+#      说 "cat ~/.hermes/.env" 或 "rm -rf /"。`_scan_cron_prompt()` 在
+#      创建/更新时以及作为运行时纵深防御对此运行。
 #
-#   2. Assembled prompt that includes loaded skill content (large markdown
-#      bodies, often security docs, postmortems, runbooks discussing attack
-#      patterns in PROSE). Reusing the strict patterns here false-positives
-#      every time a skill *describes* a command — see #3968 follow-up: the
-#      `hermes-agent-dev` skill contains a security postmortem mentioning
-#      `cat ~/.hermes/.env`, which tripped `read_secrets` and silently
-#      killed all PR-scout jobs.
+#   2. 包含已加载 skill 内容的组装提示词（大型 markdown
+#      正文，常常是安全文档、事后总结、以散文形式讨论攻击
+#      模式的 runbook）。在这里复用严格模式会对每次 skill *描述*
+#      某个命令都误报——见 #3968 后续：`hermes-agent-dev`
+#      skill 包含一篇提到 `cat ~/.hermes/.env` 的安全事后总结，
+#      这触发了 `read_secrets` 并静默杀死了所有 PR-scout 任务。
 #
-#      Skill bodies are user-curated and scanned at install time by
-#      `skills_guard.py`. The runtime cron scan only needs to catch the
-#      patterns whose phrasing does NOT survive normal English prose:
-#      classic prompt-injection directives ("ignore previous instructions",
-#      "disregard your rules"), deception directives, and invisible
-#      unicode. `_scan_cron_skill_assembled()` runs against the assembled
-#      prompt with this tighter pattern set.
+#      Skill 正文由用户精选，并在安装时由
+#      `skills_guard.py` 扫描。运行时 cron 扫描只需捕获
+#      那些措辞无法在正常英文散文中存活的模式：
+#      经典的提示词注入指令（"ignore previous instructions"、
+#      "disregard your rules"）、欺骗指令和不可见
+#      unicode。`_scan_cron_skill_assembled()` 用这个更收紧的模式集
+#      对组装后的提示词运行。
 #
-# Both scanners share the invisible-unicode check and the GitHub Authorization
-# header exemption.
+# 两个扫描器共享不可见 unicode 检查和 GitHub Authorization
+# 头豁免。
 
-# Strict patterns — applied to the user prompt only.
+# 严格模式——仅应用于用户提示词。
 _CRON_THREAT_PATTERNS = [
     (r'ignore\s+(?:\w+\s+)*(?:previous|all|above|prior)\s+(?:\w+\s+)*instructions', "prompt_injection"),
     (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
@@ -87,13 +86,12 @@ _CRON_THREAT_PATTERNS = [
     (r'rm\s+-rf\s+/', "destructive_root_rm"),
 ]
 
-# Looser pattern set — applied to the assembled prompt when skills are
-# attached. Only patterns whose phrasing is unambiguous in any context;
-# command-shape patterns are dropped because they false-positive on prose
-# in security docs / postmortems. Skill bodies are scanned at install time
-# by `skills_guard.py`, so the runtime cron scan is purely a tripwire for
-# obvious injection directives surviving a malicious skill that slipped
-# through install.
+# 更宽松的模式集——当 skill 被附加时应用于组装后的提示词。
+# 仅包含在任何上下文中措辞都不含歧义的模式；
+# 命令形状的模式被丢弃，因为它们会在安全文档/事后总结的
+# 散文上误报。Skill 正文在安装时由
+# `skills_guard.py` 扫描，因此运行时 cron 扫描纯粹是一个绊线，
+# 用于捕获溜过安装的恶意 skill 中存活的明显注入指令。
 _CRON_SKILL_ASSEMBLED_PATTERNS = [
     (r'ignore\s+(?:\w+\s+)*(?:previous|all|above|prior)\s+(?:\w+\s+)*instructions', "prompt_injection"),
     (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
@@ -103,11 +101,10 @@ _CRON_SKILL_ASSEMBLED_PATTERNS = [
 
 _CRON_SECRET_VAR_RE = r'\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)\w*\}?'
 _CRON_EXFIL_COMMAND_PATTERNS = [
-    # Tighten exfil detection to obvious leak paths: embedding a secret
-    # directly in the destination URL, sending it in POST/FORM payloads,
-    # or shipping it via Authorization headers to arbitrary hosts. The
-    # only intended allowlist exception today is the bundled GitHub skill
-    # pattern that talks to api.github.com.
+    # 把外泄检测收紧到明显的泄露路径：把密钥直接嵌入
+    # 目标 URL、通过 POST/FORM 载荷发送，或通过 Authorization 头发送到
+    # 任意主机。今天唯一预期的白名单例外是与 api.github.com 通信的
+    # 内置 GitHub skill 模式。
     (rf'curl\s+[^\n]*https?://[^\s"\'`]*{_CRON_SECRET_VAR_RE}', "exfil_curl_url"),
     (rf'wget\s+[^\n]*https?://[^\s"\'`]*{_CRON_SECRET_VAR_RE}', "exfil_wget_url"),
     (rf'curl\s+[^\n]*(?:--data(?:-raw|-binary|-urlencode)?|-d|--form|-F)\s+[^\n]*{_CRON_SECRET_VAR_RE}', "exfil_curl_data"),
@@ -120,10 +117,10 @@ _CRON_INVISIBLE_CHARS = {
     '\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
 }
 
-# U+200D Zero-Width Joiner is also a legitimate, required part of many
-# Unicode emoji sequences (for example 👨‍👩‍👧, 🏳️‍🌈, ❤️‍🩹, 🧑‍💻).
-# We should still block ZWJ when it is hiding between plain text characters,
-# but not when it is clearly part of an emoji grapheme cluster.
+# U+200D Zero-Width Joiner（零宽连接符）也是许多 Unicode emoji 序列中合法、
+# 必需的一部分（例如 👨‍👩‍👧、🏳️‍🌈、❤️‍🩹、🧑‍💻）。
+# 我们仍应在 ZWJ 隐藏在纯文本字符之间时阻止它，
+# 但在它明显是 emoji 字素簇的一部分时不阻止。
 _EMOJI_NEIGHBOUR_CP_RANGES = (
     (0x1F000, 0x1FFFF),
     (0x2600, 0x27BF),
@@ -139,7 +136,7 @@ def _is_emoji_cp(cp: int) -> bool:
 
 
 def _zwj_has_emoji_neighbour(text: str, idx: int) -> bool:
-    """Return True when the ZWJ at text[idx] appears inside an emoji sequence."""
+    """当 text[idx] 处的 ZWJ 出现在 emoji 序列内部时返回 True。"""
     left = idx - 1
     while left >= 0 and ord(text[left]) == _VARIATION_SELECTOR_CP:
         left -= 1
@@ -165,11 +162,11 @@ def _strip_legitimate_emoji_zwj(prompt: str) -> str:
 
 
 def _strip_cron_safe_constructs(prompt: str) -> str:
-    """Strip the GitHub `Authorization: token $GITHUB_TOKEN` auth-header
-    pattern so it doesn't trip the broader curl-auth-header exfil rule.
+    """剥离 GitHub 的 `Authorization: token $GITHUB_TOKEN` 认证头
+    模式，使其不会触发更宽泛的 curl 认证头外泄规则。
 
-    Allows the bundled GitHub skill fallback without opening a blanket
-    exemption for arbitrary Authorization-header exfiltration.
+    允许内置 GitHub skill 回退，而不为任意 Authorization 头
+    外泄打开一刀切的豁免。
     """
     github_auth_header = re.search(
         rf'curl\s+[^\n]*(?:-H|--header)\s+["\']Authorization:\s*token\s+{_CRON_SECRET_VAR_RE}["\']'
@@ -183,8 +180,8 @@ def _strip_cron_safe_constructs(prompt: str) -> str:
 
 
 def _check_invisible_unicode(prompt: str) -> str:
-    """Return an error string if the prompt contains invisible-unicode
-    injection markers (ZWJ inside legitimate emoji sequences is allowed).
+    """若提示词包含不可见 unicode 注入标记则返回错误字符串
+    （合法 emoji 序列内的 ZWJ 被允许）。
     """
     prompt_for_invisible_scan = _strip_legitimate_emoji_zwj(prompt)
     for char in _CRON_INVISIBLE_CHARS:
@@ -194,27 +191,26 @@ def _check_invisible_unicode(prompt: str) -> str:
 
 
 def _strip_invisible_unicode(prompt: str) -> tuple[str, list[str]]:
-    """Strip invisible-unicode characters from *prompt*, preserving the ZWJ
-    that lives inside legitimate emoji sequences.
+    """从 *prompt* 中剥离不可见 unicode 字符，保留位于
+    合法 emoji 序列内的 ZWJ。
 
-    Returns ``(cleaned_prompt, removed_codepoints)`` where ``removed_codepoints``
-    is the sorted list of ``U+XXXX`` labels that were stripped (empty when the
-    prompt was already clean). Used by the skills-attached cron path, where the
-    skill body is already vetted at install time by ``skills_guard.py`` — a
-    stray zero-width space in a code example should be sanitized, not turned
-    into a hard block that permanently kills the job.
+    返回 ``(cleaned_prompt, removed_codepoints)``，其中 ``removed_codepoints``
+    是被剥离的 ``U+XXXX`` 标签排序列表（提示词本来就很干净时为空）。
+    供 skill 附加的 cron 路径使用——skill 正文已在安装时由
+    ``skills_guard.py`` 审查——代码示例中一个零宽空格应被净化，
+    而不是变成永久杀死任务的硬性阻止。
     """
     if not prompt:
         return prompt, []
-    # Keep emoji-ZWJ: temporarily remove the legitimate joiners, scan/strip the
-    # rest, then the legitimate joiners survive because we operate on the
-    # original string and only drop chars that are NOT part of an emoji cluster.
+    # 保留 emoji-ZWJ：临时移除合法的连接符，扫描/剥离
+    # 其余部分，然后合法连接符存活，因为我们操作的是
+    # 原始字符串，只丢弃不属于 emoji 簇的字符。
     removed: set[str] = set()
     cleaned: list[str] = []
     for idx, ch in enumerate(prompt):
         if ch in _CRON_INVISIBLE_CHARS:
             if ch == '\u200d' and _zwj_has_emoji_neighbour(prompt, idx):
-                cleaned.append(ch)  # legitimate emoji joiner — keep
+                cleaned.append(ch)  # 合法的 emoji 连接符——保留
                 continue
             removed.add(f"U+{ord(ch):04X}")
             continue
@@ -223,13 +219,12 @@ def _strip_invisible_unicode(prompt: str) -> tuple[str, list[str]]:
 
 
 def _scan_cron_prompt(prompt: str) -> str:
-    """Scan the USER-SUPPLIED cron prompt for critical threats.
+    """扫描用户提供（USER-SUPPLIED）的 cron 提示词的关键威胁。
 
-    Strict pattern set — used at job create/update time and as a runtime
-    defense-in-depth for prompts authored before the scanner existed.
-    The user prompt is small and directive; bare `cat .env` or `rm -rf /`
-    there is a smoking gun, not prose. Returns an error string when
-    blocked, else empty string.
+    严格模式集——在任务创建/更新时以及作为运行时
+    纵深防御（针对扫描器出现之前编写的提示词）使用。
+    用户提示词小且是指令式的；其中的裸 `cat .env` 或 `rm -rf /`
+    是铁证，而非散文。被阻止时返回错误字符串，否则返回空字符串。
     """
     prompt_to_scan = _strip_cron_safe_constructs(prompt)
     invisible_err = _check_invisible_unicode(prompt_to_scan)
@@ -245,24 +240,24 @@ def _scan_cron_prompt(prompt: str) -> str:
 
 
 def _scan_cron_skill_assembled(assembled: str) -> tuple[str, str]:
-    """Scan an ASSEMBLED cron prompt that includes loaded skill content.
+    """扫描包含已加载 skill 内容的已组装（ASSEMBLED）cron 提示词。
 
-    Looser pattern set — only catches unambiguous prompt-injection
-    directives. Drops command-shape patterns (cat .env, rm -rf /,
-    authorized_keys, /etc/sudoers) because they false-positive on
-    legitimate skill markdown that *describes* attack commands in
-    security postmortems and runbooks.
+    更宽松的模式集——仅捕获不含歧义的提示词注入
+    指令。丢弃命令形状的模式（cat .env、rm -rf /、
+    authorized_keys、/etc/sudoers），因为它们会在以散文
+    形式*描述*攻击命令的合法 skill markdown（安全事后总结和
+    runbook）上误报。
 
-    Invisible unicode is SANITIZED, not blocked. Skill bodies are
-    user-curated and already scanned at install time by
-    ``skills_guard.py``; a stray zero-width space in a code example
-    (common in copy-pasted unicode docs) should not permanently kill the
-    job. The offending codepoints are stripped and logged, the cleaned
-    prompt is returned. The hard block remains for raw user prompts via
-    ``_scan_cron_prompt`` — that path is the actual injection surface.
+    不可见 unicode 被净化，而非阻止。Skill 正文由用户
+    精选，并在安装时已由 ``skills_guard.py`` 扫描；代码示例
+    中一个零宽空格（复制粘贴的 unicode 文档中常见）不应
+    永久杀死任务。违规的码位被剥离并记录，返回净化后的
+    提示词。硬性阻止仍保留给通过
+    ``_scan_cron_prompt`` 的原始用户提示词——那条路径才是
+    真正的注入面。
 
-    Returns ``(cleaned_prompt, error)``; ``error`` is empty when the
-    prompt passed (after sanitization).
+    返回 ``(cleaned_prompt, error)``；提示词通过（净化后）时
+    ``error`` 为空。
     """
     cleaned, removed = _strip_invisible_unicode(assembled)
     if removed:
@@ -294,42 +289,42 @@ def _origin_from_env() -> Optional[Dict[str, str]]:
             "chat_id": origin_chat_id,
             "chat_name": get_session_env("HERMES_SESSION_CHAT_NAME") or None,
             "thread_id": thread_id,
-            # Captured so an opt-in delivery mirror (cron.mirror_delivery /
-            # attach_to_session) can resolve the exact participant's session in
-            # per-user-isolated group chats — parity with interactive
-            # send_message, which passes HERMES_SESSION_USER_ID to
-            # gateway.mirror.mirror_to_session. Harmless for DMs/shared sessions.
+            # 捕获这些以便一个可选的投递镜像（cron.mirror_delivery /
+            # attach_to_session）能在按用户隔离的群聊中解析出确切的
+            # 参与者会话——与交互式
+            # send_message 对等，后者把 HERMES_SESSION_USER_ID 传给
+            # gateway.mirror.mirror_to_session。对 DM/共享会话无害。
             "user_id": get_session_env("HERMES_SESSION_USER_ID") or None,
         }
     return None
 
 
 def _local_delivery_notice(job: Dict[str, Any], user_deliver: Optional[str]) -> Optional[str]:
-    """Return an informational notice when a created job won't deliver anywhere.
+    """当一个创建的任务不会投递到任何地方时返回一条信息性通知。
 
-    TUI/CLI sessions cannot be captured as a cron ``origin`` (no
-    ``HERMES_SESSION_PLATFORM``/``CHAT_ID`` is set for them), so a
-    ``deliver="origin"`` request — or an omitted ``deliver`` that defaults to
-    origin-or-local — produces a job that runs and saves output to
-    ``last_output`` but is never delivered back into the session. This is by
-    design (there is no live-delivery channel for local sessions), but silently
-    dropping the user's "tell me when it runs" intent is the trap reported in
-    #51568. Surface it at create time so the agent can relay it instead of
-    promising a delivery that never happens.
+    TUI/CLI 会话无法被捕获为 cron ``origin``（没有为它们设置
+    ``HERMES_SESSION_PLATFORM``/``CHAT_ID``），因此一个
+    ``deliver="origin"`` 请求——或省略 ``deliver`` 而默认为
+    origin-or-local——会产生一个运行并把输出保存到
+    ``last_output`` 但永不投递回会话的任务。这是设计使然
+    （本地会话没有实时投递通道），但静默
+    丢弃用户的"运行时告诉我"意图正是 #51568 报告的陷阱。
+    在创建时浮现它，以便 agent 可以转达，而不是
+    承诺一个永不发生的投递。
 
-    Returns ``None`` when the user explicitly asked for ``local`` (no surprise),
-    or when the job resolves to a real delivery target.
+    当用户显式要求 ``local``（无意外）时返回 ``None``，
+    或当任务解析到一个真实的投递目标时返回 ``None``。
     """
-    # An explicit local request is exactly what the user asked for — no notice.
+    # 一个显式的 local 请求正是用户想要的——无需通知。
     if (user_deliver or "").strip().lower() == "local":
         return None
     try:
         from cron.scheduler import _resolve_delivery_targets
 
         if _resolve_delivery_targets(job):
-            return None  # Will actually deliver somewhere — nothing to flag.
+            return None  # 确实会投递到某处——没什么可标记的。
     except Exception:
-        # If resolution can't be evaluated, fall back to the origin signal.
+        # 若无法评估解析，则回退到 origin 信号。
         if job.get("origin"):
             return None
     return (
@@ -370,27 +365,27 @@ def _canonical_skills(skill: Optional[str] = None, skills: Optional[Any] = None)
 
 
 def _resolve_model_override(model_obj: Optional[Dict[str, Any]]) -> tuple:
-    """Resolve a model override object into (provider, model) for job storage.
+    """把一个模型覆盖对象解析为用于任务存储的 (provider, model)。
 
-    If provider is omitted, pins the current main provider from config so the
-    job doesn't drift when the user later changes their default via hermes model.
+    如果省略 provider，则固定配置中的当前主 provider，以便
+    用户随后通过 hermes model 更改默认值时任务不会漂移。
 
-    Returns (provider_str_or_none, model_str_or_none).
+    返回 (provider_str_or_none, model_str_or_none)。
     """
     if not model_obj or not isinstance(model_obj, dict):
         return (None, None)
     model_name = (model_obj.get("model") or "").strip() or None
     provider_name = (model_obj.get("provider") or "").strip() or None
-    # Bare "custom" is usually an incomplete spec — the canonical form is
-    # "custom:<name>" matching a custom_providers entry, and LLMs frequently
-    # supply the bare type because the schema does not advertise the
-    # ":<name>" suffix. It is only a problem when it can't resolve at runtime:
-    # a user may literally name a ``providers.custom`` (or custom_providers
-    # "custom") entry, in which case the job should keep ``provider="custom"``
-    # and run against that endpoint. Only when no such entry exists do we treat
-    # the bare value as "no provider supplied" and pin the current main
-    # provider below — otherwise pinning to ``model.provider`` (e.g. codex)
-    # silently hijacks a job that meant to use the configured custom endpoint.
+    # 裸 "custom" 通常是一个不完整的规格——规范形式是
+    # 匹配某个 custom_providers 条目的 "custom:<name>"，而 LLM 经常
+    # 供应裸类型，因为 schema 不广告
+    # ":<name>" 后缀。它只在运行时无法解析时才是问题：
+    # 用户可能字面上命名一个 ``providers.custom``（或 custom_providers
+    # "custom"）条目，此时任务应保留 ``provider="custom"``
+    # 并针对该端点运行。仅当不存在这样的条目时，我们才把
+    # 裸值视为"未供应 provider"并在下方固定当前主
+    # provider——否则固定到 ``model.provider``（例如 codex）
+    # 会静默劫持一个本意是使用配置的自定义端点的任务。
     if provider_name == "custom":
         try:
             from hermes_cli.runtime_provider import has_named_custom_provider
@@ -399,7 +394,7 @@ def _resolve_model_override(model_obj: Optional[Dict[str, Any]]) -> tuple:
         except Exception:
             provider_name = None
     if model_name and not provider_name:
-        # Pin to the current main provider so the job is stable
+        # 固定到当前主 provider 以便任务稳定
         try:
             from hermes_cli.config import load_config
             cfg = load_config()
@@ -407,7 +402,7 @@ def _resolve_model_override(model_obj: Optional[Dict[str, Any]]) -> tuple:
             if isinstance(model_cfg, dict):
                 provider_name = model_cfg.get("provider") or None
         except Exception:
-            pass  # Best-effort; provider stays None
+            pass  # 尽力而为；provider 保持 None
     return (provider_name, model_name)
 
 
@@ -421,16 +416,16 @@ def _normalize_optional_job_value(value: Optional[Any], *, strip_trailing_slash:
 
 
 def _normalize_deliver_param(value: Any) -> Optional[str]:
-    """Normalize a user-supplied ``deliver`` value to the canonical string form.
+    """把用户提供的 ``deliver`` 值规范化为规范字符串形式。
 
-    The cron schema documents ``deliver`` as a string (``"local"``, ``"origin"``,
-    ``"telegram"``, ``"telegram:chat_id[:thread_id]"``, or comma-separated combos).
-    Some callers — MCP clients passing arrays, scripts building the payload as a
-    list — supply ``["telegram"]``.  ``create_job``/``update_job`` store it as-is,
-    and the scheduler's ``str(deliver).split(",")`` then serializes the list to
-    the literal ``"['telegram']"`` which is not a known platform.  Flatten lists
-    / tuples at the API boundary so storage is always a string.  Returns ``None``
-    for ``None``/empty so callers can treat it as "not supplied".
+    cron schema 把 ``deliver`` 记录为字符串（``"local"``、``"origin"``、
+    ``"telegram"``、``"telegram:chat_id[:thread_id]"``，或逗号分隔的组合）。
+    一些调用者——传数组的 MCP 客户端、把载荷构建为
+    列表的脚本——会供应 ``["telegram"]``。``create_job``/``update_job`` 原样存储，
+    而调度器的 ``str(deliver).split(",")`` 随后把列表序列化为
+    字面量 ``"['telegram']"``，这不是一个已知的平台。在 API 边界
+    处展平列表/元组，以便存储始终是字符串。对 ``None``/空返回 ``None``
+    以便调用者可以将其视为"未供应"。
     """
     if value is None:
         return None
@@ -442,23 +437,23 @@ def _normalize_deliver_param(value: Any) -> Optional[str]:
 
 
 def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
-    """Validate a cron job script path at the API boundary.
+    """在 API 边界验证一个 cron 任务脚本路径。
 
-    Scripts must be relative paths that resolve within HERMES_HOME/scripts/.
-    Absolute paths and ~ expansion are rejected to prevent arbitrary script
-    execution via prompt injection.
+    脚本必须是能解析到 HERMES_HOME/scripts/ 内的相对路径。
+    绝对路径和 ~ 展开被拒绝，以防止通过提示词注入
+    执行任意脚本。
 
-    Returns an error string if blocked, else None (valid).
+    若被阻止则返回错误字符串，否则返回 None（有效）。
     """
     if not script or not script.strip():
-        return None  # empty/None = clearing the field, always OK
+        return None  # 空/None = 清空该字段，始终 OK
 
     from hermes_constants import get_hermes_home
 
     raw = script.strip()
 
-    # Reject absolute paths and ~ expansion at the API boundary.
-    # Only relative paths within ~/.hermes/scripts/ are allowed.
+    # 在 API 边界拒绝绝对路径和 ~ 展开。
+    # 仅允许 ~/.hermes/scripts/ 内的相对路径。
     if raw.startswith(("/", "~")) or (len(raw) >= 2 and raw[1] == ":"):
         return (
             f"Script path must be relative to ~/.hermes/scripts/. "
@@ -466,7 +461,7 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
             f"Place scripts in ~/.hermes/scripts/ and use just the filename."
         )
 
-    # Validate containment after resolution
+    # 解析后验证包含关系
     from tools.path_security import validate_within_dir
 
     scripts_dir = get_hermes_home() / "scripts"
@@ -518,32 +513,32 @@ def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _execute_job_now(job: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a cron job immediately, outside the scheduler tick.
+    """立即执行一个 cron 任务，在调度器 tick 之外。
 
-    Atomically claims the job first via ``claim_job_for_fire`` — the same
-    at-most-once CAS the scheduler/external-provider fire path uses — so a
-    concurrently-running gateway ticker cannot also fire it (the claim both
-    blocks a duplicate fire and advances ``next_run_at`` for recurring jobs).
-    If the claim is lost (another fire is in flight), this is a no-op.
+    先通过 ``claim_job_for_fire`` 原子地认领任务——与
+    调度器/外部 provider 触发路径使用的相同 at-most-once CAS——这样
+    一个并发运行的 gateway ticker 就无法也触发它（认领既
+    阻止重复触发，又为周期性任务推进 ``next_run_at``）。
+    如果认领失败（另一次触发正在进行），这是 no-op。
 
-    The actual firing is delegated to ``run_one_job`` — the single shared
-    execute→save→deliver→mark body the ticker and external providers use — so
-    failure delivery, ``[SILENT]`` handling, and live-adapter delivery stay
-    identical across paths and can't drift.
+    实际触发委托给 ``run_one_job``——ticker 和外部 provider 使用的
+    单一共享 execute→save→deliver→mark 主体——因此
+    失败投递、``[SILENT]`` 处理和实时 adapter 投递在各路径间保持
+    一致，不会漂移。
 
-    Returns {"claimed": bool, "success": bool, "error": str|None}.
+    返回 {"claimed": bool, "success": bool, "error": str|None}。
     """
     job_id = job["id"]
     try:
         from cron.scheduler import run_one_job
 
-        # At-most-once claim: bail without running if a tick/other fire owns it.
+        # At-most-once 认领：若一个 tick/其他触发已拥有它，则不运行直接退出。
         if not claim_job_for_fire(job_id):
             return {"claimed": False, "success": False,
                     "error": "Job is already being fired by the scheduler; not run again."}
 
-        # run_one_job records last_run_at/last_status via mark_job_run (which
-        # also clears the fire claim) and returns True iff it processed the job.
+        # run_one_job 通过 mark_job_run 记录 last_run_at/last_status（它
+        # 还清除触发认领），并仅在它处理了任务时返回 True。
         processed = run_one_job(job)
         refreshed = get_job(job_id) or {}
         ok = refreshed.get("last_status") == "ok"
@@ -585,8 +580,8 @@ def cronjob(
     attach_to_session: Optional[bool] = None,
     task_id: str = None,
 ) -> str:
-    """Unified cron job management tool."""
-    del task_id  # unused but kept for handler signature compatibility
+    """统一的 cron 任务管理工具。"""
+    del task_id  # 未使用但保留以兼容 handler 签名
 
     try:
         normalized = (action or "").strip().lower()
@@ -596,11 +591,11 @@ def cronjob(
                 return tool_error("schedule is required for create", success=False)
             canonical_skills = _canonical_skills(skill, skills)
             _no_agent = bool(no_agent)
-            # Job-shape validation differs by mode:
-            #   - no_agent=True → script is the job; prompt/skills are optional
-            #     (and irrelevant to execution).
-            #   - no_agent=False (default) → at least one of prompt/skills must
-            #     be set, same as before.
+            # 任务形状验证按模式不同：
+            #   - no_agent=True → script 就是任务；prompt/skills 可选
+            #     （且与执行无关）。
+            #   - no_agent=False（默认）→ prompt/skills 至少需设置其一，
+            #     与之前相同。
             if _no_agent:
                 if not script:
                     return tool_error(
@@ -615,13 +610,13 @@ def cronjob(
                 if scan_error:
                     return tool_error(scan_error, success=False)
 
-            # Validate script path before storing
+            # 存储前验证脚本路径
             if script:
                 script_error = _validate_cron_script_path(script)
                 if script_error:
                     return tool_error(script_error, success=False)
 
-            # Validate context_from references existing jobs
+            # 验证 context_from 引用了已存在的任务
             if context_from:
                 from cron.jobs import get_job as _get_job
                 refs = [context_from] if isinstance(context_from, str) else context_from
@@ -704,7 +699,7 @@ def cronjob(
                 {"success": False, "error": f"Job with ID or name '{job_id}' not found. Use cronjob(action='list') to inspect jobs."},
                 indent=2,
             )
-        # Resolve to canonical ID (supports name-based lookup)
+        # 解析为规范 ID（支持基于名称的查找）
         job_id = job["id"]
 
         if normalized == "remove":
@@ -736,13 +731,13 @@ def cronjob(
             return json.dumps({"success": True, "job": _format_job(updated)}, indent=2)
 
         if normalized in {"run", "run_now", "trigger"}:
-            # Execute the job immediately rather than only scheduling it for the
-            # next scheduler tick — a manual `run` should actually run, even when
-            # no gateway/ticker is active (the #41037 case). The claim inside
-            # _execute_job_now advances next_run_at and blocks a concurrent tick
-            # from double-firing.
+            # 立即执行任务，而不是仅仅把它排到下一个
+            # 调度器 tick——一个手动的 `run` 应当真正运行，即便
+            # 没有活跃的 gateway/ticker（#41037 的情况）。_execute_job_now 内的
+            # 认领会推进 next_run_at 并阻止一个并发 tick
+            # 双重触发。
             exec_result = _execute_job_now(job)
-            # Re-read so the response reflects the post-run last_run_at/last_status.
+            # 重新读取，以便响应反映运行后的 last_run_at/last_status。
             result = _format_job(get_job(job_id) or {"id": job_id})
             result["executed"] = exec_result.get("claimed", False)
             result["execution_success"] = exec_result.get("success", False)
@@ -776,16 +771,16 @@ def cronjob(
             if base_url is not None:
                 updates["base_url"] = _normalize_optional_job_value(base_url, strip_trailing_slash=True)
             if script is not None:
-                # Pass empty string to clear an existing script
+                # 传空字符串以清空已有脚本
                 if script:
                     script_error = _validate_cron_script_path(script)
                     if script_error:
                         return tool_error(script_error, success=False)
                 updates["script"] = _normalize_optional_job_value(script) if script else None
             if context_from is not None:
-                # Empty string / empty list clears the field; otherwise validate
-                # each referenced job exists before storing. Normalized to a list
-                # (or None) to match the shape stored by create_job().
+                # 空字符串/空列表清空该字段；否则验证
+                # 每个被引用任务存在后再存储。规范化为列表
+                # （或 None）以匹配 create_job() 存储的形状。
                 if isinstance(context_from, str):
                     refs = [context_from.strip()] if context_from.strip() else []
                 else:
@@ -805,13 +800,13 @@ def cronjob(
             if attach_to_session is not None:
                 updates["attach_to_session"] = bool(attach_to_session)
             if workdir is not None:
-                # Empty string clears the field (restores old behaviour);
-                # otherwise pass raw — update_job() validates / normalizes.
+                # 空字符串清空该字段（恢复旧行为）；
+                # 否则原样传入——update_job() 会验证/规范化。
                 updates["workdir"] = _normalize_optional_job_value(workdir) or None
             if no_agent is not None:
-                # Toggling no_agent on/off at update time. If flipping to True,
-                # we need a script to already exist on the job (or be part of
-                # the same update) — otherwise the next tick would error out.
+                # 在更新时切换 no_agent 开/关。若切到 True，
+                # 我们需要任务上已存在一个脚本（或是同一次
+                # 更新的一部分）——否则下一个 tick 会报错。
                 target_no_agent = bool(no_agent)
                 if target_no_agent:
                     effective_script = updates.get("script") if "script" in updates else job.get("script")
@@ -823,7 +818,7 @@ def cronjob(
                         )
                 updates["no_agent"] = target_no_agent
             if repeat is not None:
-                # Normalize: treat 0 or negative as None (infinite)
+                # 规范化：把 0 或负数视为 None（无限）
                 normalized_repeat = None if repeat <= 0 else repeat
                 repeat_state = dict(job.get("repeat") or {})
                 repeat_state["times"] = normalized_repeat
@@ -974,16 +969,16 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
 
 def check_cronjob_requirements() -> bool:
     """
-    Check if cronjob tools can be used.
+    检查 cronjob 工具是否可用。
 
-    Available in interactive CLI mode and gateway/messaging platforms.
-    The cron system is internal (JSON file-based scheduler ticked by the gateway),
-    so no external crontab executable is required.
+    在交互式 CLI 模式和 gateway/消息平台中可用。
+    cron 系统是内部的（基于 JSON 文件、由 gateway 驱动的调度器），
+    因此不需要外部 crontab 可执行文件。
 
-    Session env vars must hold an explicit truthy string (``1``, ``true``,
-    ``yes``, ``on``) — false-like values (``0``, ``false``, ``no``, ``off``)
-    leave the tool disabled. Uses the shared ``env_var_enabled`` helper so
-    every consumer of these flags agrees on the truthy set.
+    会话环境变量必须持有一个显式的真值字符串（``1``、``true``、
+    ``yes``、``on``）——假值（``0``、``false``、``no``、``off``）
+    会让工具保持禁用。使用共享的 ``env_var_enabled`` 辅助函数，以便
+    这些标志的每个消费者对真值集合达成一致。
     """
     from utils import env_var_enabled
 
@@ -994,7 +989,7 @@ def check_cronjob_requirements() -> bool:
     )
 
 
-# --- Registry ---
+# --- 注册表 ---
 from tools.registry import registry, tool_error
 
 registry.register(

@@ -1,22 +1,21 @@
-"""`hermes checkpoints` CLI subcommand.
+"""`hermes checkpoints` CLI 子命令。
 
-Gives users direct visibility and control over the filesystem checkpoint
-store at ``~/.hermes/checkpoints/``.  Actions:
+让用户直接查看和控制位于 ``~/.hermes/checkpoints/`` 的文件系统检查点存储。操作包括：
 
-    hermes checkpoints               # same as `status`
-    hermes checkpoints status        # total size, project count, breakdown
-    hermes checkpoints list          # per-project checkpoint counts + workdir
-    hermes checkpoints prune [opts]  # force a sweep (ignores the 24h marker)
-    hermes checkpoints clear [-f]    # nuke the entire base (asks first)
-    hermes checkpoints clear-legacy  # delete just the legacy-* archives
+    hermes checkpoints               # 等同于 `status`
+    hermes checkpoints status        # 总大小、项目数量、详细分类
+    hermes checkpoints list          # 每个项目的检查点数量和工作目录
+    hermes checkpoints prune [opts]  # 强制清理（忽略 24h 标记）
+    hermes checkpoints clear [-f]    # 清空整个存储（会先询问确认）
+    hermes checkpoints clear-legacy  # 仅删除 legacy-* 归档
 
-Examples::
+示例::
 
     hermes checkpoints
     hermes checkpoints prune --retention-days 3 --max-size-mb 200
     hermes checkpoints clear -f
 
-None of these require the agent to be running.  Safe to call any time.
+以上命令不需要 agent 运行中，随时可安全调用。
 """
 
 from __future__ import annotations
@@ -104,7 +103,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    # `list` is just a terser status — already covered.
+    # `list` 只是更简洁的 status — 已涵盖。
     return cmd_status(args)
 
 
@@ -195,8 +194,8 @@ def cmd_clear_legacy(args: argparse.Namespace) -> int:
 
 
 def register_cli(parser: argparse.ArgumentParser) -> None:
-    """Wire subcommands onto the ``hermes checkpoints`` parser."""
-    parser.set_defaults(func=cmd_status)  # bare `hermes checkpoints` → status
+    """将子命令挂载到 ``hermes checkpoints`` 解析器上。"""
+    parser.set_defaults(func=cmd_status)  # 裸 `hermes checkpoints` → status
     subs = parser.add_subparsers(dest="checkpoints_command", metavar="COMMAND")
 
     p_status = subs.add_parser(

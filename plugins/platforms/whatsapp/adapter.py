@@ -1,18 +1,17 @@
 """
-WhatsApp platform adapter.
+WhatsApp 平台适配器。
 
-WhatsApp integration is more complex than Telegram/Discord because:
-- No official bot API for personal accounts
-- Business API requires Meta Business verification
-- Most solutions use web-based automation
+WhatsApp 集成比 Telegram/Discord 更复杂，原因如下：
+- 个人账户没有官方 bot API
+- Business API 需要 Meta Business 认证
+- 大多数解决方案使用基于 Web 的自动化
 
-This adapter supports multiple backends:
-1. WhatsApp Business API (requires Meta verification)
-2. whatsapp-web.js (via Node.js subprocess) - for personal accounts
-3. Baileys (via Node.js subprocess) - alternative for personal accounts
+本适配器支持多种后端：
+1. WhatsApp Business API（需要 Meta 认证）
+2. whatsapp-web.js（通过 Node.js 子进程）- 用于个人账户
+3. Baileys（通过 Node.js 子进程）- 个人账户的替代方案
 
-For simplicity, we'll implement a generic interface that can work
-with different backends via a bridge pattern.
+为简化起见，我们实现一个通用接口，通过桥接模式与不同后端配合工作。
 """
 
 import asyncio
@@ -37,14 +36,13 @@ logger = logging.getLogger(__name__)
 
 
 def _listener_pids_on_port(port: int) -> list:
-    """PIDs of processes *listening* on ``port`` (POSIX) — never clients.
+    """返回在 ``port`` 上 *监听* 的进程 PID（POSIX）— 绝不包含客户端。
 
-    This must match only LISTEN sockets. A bare ``lsof -i :PORT`` (or
-    ``fuser PORT/tcp``) also returns *clients* whose connection merely involves
-    that port number — e.g. a browser with a tab open on a local dev server
-    sharing the port. SIGTERMing those closed the user's browser at irregular
-    intervals. Restricting to LISTEN state frees the port for a new bridge
-    without ever touching an unrelated client.
+    这必须仅匹配 LISTEN 状态的 socket。直接使用 ``lsof -i :PORT``（或
+    ``fuser PORT/tcp``）还会返回 *客户端*，它们的连接只是恰好涉及
+    该端口号——例如浏览器打开了一个本地开发服务器的标签页，
+    共享该端口。向这些进程发送 SIGTERM 会不规则地关闭用户的浏览器。
+    限制为 LISTEN 状态可以为新的桥接释放端口，而不会影响无关的客户端。
     """
     pids: list = []
     try:
@@ -60,8 +58,8 @@ def _listener_pids_on_port(port: int) -> list:
         if pids:
             return pids
     except FileNotFoundError:
-        pass  # lsof not installed — fall through to ss
-    # Fallback: ss (iproute2, present on virtually every modern Linux).
+        pass  # lsof 未安装 — 回退到 ss
+    # 回退方案：ss（iproute2，几乎每个现代 Linux 都有）
     try:
         result = subprocess.run(
             ["ss", "-ltnHp", f"sport = :{port}"],
@@ -75,10 +73,10 @@ def _listener_pids_on_port(port: int) -> list:
 
 
 def _kill_port_process(port: int) -> None:
-    """Kill any process *listening* on the given TCP port (a stale bridge)."""
+    """杀死在给定 TCP 端口上 *监听* 的任何进程（一个过期的桥接）。"""
     try:
         if _IS_WINDOWS:
-            # Use netstat to find the PID bound to this port, then taskkill
+            # 使用 netstat 查找绑定到此端口的 PID，然后用 taskkill 结束
             result = subprocess.run(
                 ["netstat", "-ano", "-p", "TCP"],
                 capture_output=True, text=True, timeout=5,
@@ -96,9 +94,9 @@ def _kill_port_process(port: int) -> None:
                         except subprocess.SubprocessError:
                             pass
         else:
-            # POSIX: only ever signal a process LISTENING on the port. A client
-            # whose connection happens to involve this port number (a browser
-            # tab on a local dev server, etc.) must never be killed.
+            # POSIX：仅向在此端口上 LISTENING 的进程发送信号。连接恰好
+            # 涉及此端口号的客户端（如本地开发服务器上的浏览器标签页）
+            # 绝不能被杀死。
             for pid in _listener_pids_on_port(port):
                 try:
                     os.kill(pid, signal.SIGTERM)
@@ -109,29 +107,27 @@ def _kill_port_process(port: int) -> None:
 
 
 def _bridge_pid_is_ours(pid: int, session_path: Path, expected_start) -> bool:
-    """True only if ``pid`` is alive AND still our node bridge for this session.
+    """仅当 ``pid`` 存活且仍然是此会话的 node 桥接时返回 True。
 
-    The PID is read from a file written by a previous run.  Once that process
-    exits and is reaped the kernel can recycle the number onto an unrelated
-    process — observed in the wild landing on a desktop browser's main process,
-    which a bare-liveness ``os.kill`` then SIGTERMed, closing the whole browser
-    at irregular intervals (every time the flapping bridge restarted).
+    PID 是从之前运行写入的文件中读取的。该进程退出并被内核回收后，
+    该数字可能被回收分配给无关进程——实际观察中发现它落在了桌面浏览器
+    的主进程上，裸存活检查 ``os.kill`` 随后发送 SIGTERM，不规则地关闭
+    整个浏览器（每次桥接抖动重启时都会发生）。
 
-    Identity is confirmed two ways: the kernel start time captured when we wrote
-    the pidfile (definitive), and — for legacy pidfiles with no baseline — the
-    command line, which must contain ``node`` and this session's unique path.
-    A recycled PID (different start time / different cmdline) is never ours.
+    身份通过两种方式确认：写入 pidfile 时记录的内核启动时间（确定的），
+    以及——对于没有基线的旧版 pidfile——命令行必须包含 ``node`` 和此
+    会话的唯一路径。回收的 PID（不同的启动时间/不同的 cmdline）绝不是我们的。
     """
     from gateway.status import _pid_exists
     if not _pid_exists(pid):
         return False
     if expected_start is not None:
         from gateway.status import get_process_start_time
-        # A matching (pid, start time) pair uniquely identifies the process.
+        # 匹配的 (pid, 启动时间) 对唯一标识一个进程。
         return get_process_start_time(pid) == expected_start
-    # Legacy pidfile (no recorded start time): fall back to a command-line
-    # signature so a recycled PID is still never signalled.  If we cannot read
-    # the cmdline we refuse to kill rather than risk a stranger.
+    # 旧版 pidfile（没有记录的启动时间）：回退到命令行签名，
+    # 这样回收的 PID 仍然不会被发送信号。如果我们无法读取
+    # cmdline，我们拒绝杀死而不是冒误杀陌生进程的风险。
     from gateway.status import _read_process_cmdline
     cmdline = _read_process_cmdline(pid)
     if not cmdline:
@@ -140,15 +136,15 @@ def _bridge_pid_is_ours(pid: int, session_path: Path, expected_start) -> bool:
 
 
 def _kill_stale_bridge_by_pidfile(session_path: Path) -> None:
-    """Kill a bridge process recorded in a PID file from a previous run.
+    """杀死在之前运行的 PID 文件中记录的桥接进程。
 
-    The bridge writes ``bridge.pid`` into the session directory when it
-    starts.  If the gateway crashed without a clean shutdown the old bridge
-    process becomes orphaned — this helper finds and kills it.
+    桥接启动时将 ``bridge.pid`` 写入会话目录。如果网关在没有
+    干净关闭的情况下崩溃，旧的桥接进程就会变成孤儿——此辅助函数
+    会找到并杀死它。
 
-    Critically, the recorded PID is re-validated against the live process
-    (:func:`_bridge_pid_is_ours`) before any signal, so a recycled PID that now
-    names an unrelated process (e.g. the user's browser) is never killed.
+    关键是，在任何信号发送之前，记录的 PID 都会针对实际进程重新验证
+    （:func:`_bridge_pid_is_ours`），因此现在指向无关进程（如用户的
+    浏览器）的回收 PID 永远不会被杀死。
     """
     pid_file = session_path / "bridge.pid"
     if not pid_file.exists():
@@ -156,8 +152,8 @@ def _kill_stale_bridge_by_pidfile(session_path: Path) -> None:
     pid = None
     recorded_start = None
     try:
-        # Format: line 1 = pid, optional line 2 = kernel start time. Legacy
-        # files written before the guard existed have only the pid.
+        # 格式：第 1 行 = pid，可选第 2 行 = 内核启动时间。在此
+        # 保护机制存在之前写入的旧文件只有 pid。
         lines = pid_file.read_text().split("\n")
         pid = int(lines[0].strip())
         if len(lines) > 1 and lines[1].strip():
@@ -189,11 +185,11 @@ def _kill_stale_bridge_by_pidfile(session_path: Path) -> None:
 
 
 def _write_bridge_pidfile(session_path: Path, pid: int) -> None:
-    """Write the bridge PID (and its kernel start time) for later cleanup.
+    """写入桥接 PID（及其内核启动时间）以供后续清理。
 
-    The start time on line 2 lets a future run prove the PID still names this
-    exact process before signalling it, so a recycled PID can never be killed
-    as a "stale bridge". Older single-line files remain readable.
+    第 2 行的启动时间让未来的运行可以在发送信号前证明 PID 仍然指向
+    这个确切的进程，这样回收的 PID 就不会被当作"过期桥接"杀死。
+    旧的单行文件仍然可以读取。
     """
     try:
         from gateway.status import get_process_start_time
@@ -205,7 +201,7 @@ def _write_bridge_pidfile(session_path: Path, pid: int) -> None:
 
 
 def _terminate_bridge_process(proc, *, force: bool = False) -> None:
-    """Terminate the bridge process using process-tree semantics where possible."""
+    """尽可能使用进程树语义终止桥接进程。"""
     if _IS_WINDOWS:
         cmd = ["taskkill", "/PID", str(proc.pid), "/T"]
         if force:
@@ -269,13 +265,12 @@ from utils import env_int
 
 
 def _file_content_hash(path: Path) -> str:
-    """Return the first 16 hex chars of the SHA-256 of *path*'s contents.
+    """返回 *path* 内容的 SHA-256 的前 16 个十六进制字符。
 
-    Used for the bridge staleness handshake: bridge.js reports its own
-    source hash in ``/health`` (``scriptHash``), and the adapter compares
-    it against the hash of bridge.js currently on disk.  A mismatch means
-    a long-lived bridge process is serving code from before an update.
-    Returns ``""`` when the file can't be read.
+    用于桥接过期握手：bridge.js 在 ``/health`` 中报告其自身的
+    源代码哈希（``scriptHash``），适配器将其与磁盘上当前 bridge.js
+    的哈希进行比较。不匹配意味着长期运行的桥接进程正在提供
+    更新之前的代码。当文件无法读取时返回 ``""``。
     """
     import hashlib
     try:
@@ -286,12 +281,12 @@ def _file_content_hash(path: Path) -> str:
 
 def check_whatsapp_requirements() -> bool:
     """
-    Check if WhatsApp dependencies are available.
-    
-    WhatsApp requires a Node.js bridge for most implementations.
+    检查 WhatsApp 依赖是否可用。
+
+    WhatsApp 大多数实现需要 Node.js 桥接。
     """
-    # Prefer Hermes-managed Node/npm so Windows installs are not broken by a
-    # bad or elevation-triggering system Node on PATH.
+    # 优先使用 Hermes 管理的 Node/npm，这样 Windows 安装不会被 PATH 上
+    # 有问题的或需要提权的系统 Node 破坏。
     _node = find_node_executable("node")
     if not _node:
         return False
@@ -309,39 +304,38 @@ def check_whatsapp_requirements() -> bool:
 
 class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
     """
-    WhatsApp adapter.
-    
-    This implementation uses a simple HTTP bridge pattern where:
-    1. A Node.js process runs the WhatsApp Web client
-    2. Messages are forwarded via HTTP/IPC to this Python adapter
-    3. Responses are sent back through the bridge
-    
-    The actual Node.js bridge implementation can vary:
-    - whatsapp-web.js based
-    - Baileys based
-    - Business API based
-    
-    Configuration:
-    - bridge_script: Path to the Node.js bridge script
-    - bridge_port: Port for HTTP communication (default: 3000)
-    - session_path: Path to store WhatsApp session data
-    - dm_policy: "open" | "allowlist" | "disabled" — how DMs are handled (default: "open")
-    - allow_from: List of sender IDs allowed in DMs (when dm_policy="allowlist")
-    - group_policy: "open" | "allowlist" | "disabled" — which groups are processed (default: "open")
-    - group_allow_from: List of group JIDs allowed (when group_policy="allowlist")
+    WhatsApp 适配器。
 
-    Behavior (gating, mention parsing, markdown conversion, chunking) is
-    provided by ``WhatsAppBehaviorMixin`` so the Cloud API adapter can
-    share it. Only transport-specific code lives here.
+    此实现使用简单的 HTTP 桥接模式：
+    1. Node.js 进程运行 WhatsApp Web 客户端
+    2. 消息通过 HTTP/IPC 转发到此 Python 适配器
+    3. 响应通过桥接发回
+
+    实际的 Node.js 桥接实现可以是：
+    - 基于 whatsapp-web.js
+    - 基于 Baileys
+    - 基于 Business API
+
+    配置项：
+    - bridge_script: Node.js 桥接脚本的路径
+    - bridge_port: HTTP 通信端口（默认：3000）
+    - session_path: 存储 WhatsApp 会话数据的路径
+    - dm_policy: "open" | "allowlist" | "disabled" — 私信处理方式（默认："open"）
+    - allow_from: 私信中允许的发送者 ID 列表（当 dm_policy="allowlist" 时）
+    - group_policy: "open" | "allowlist" | "disabled" — 处理哪些群组（默认："open"）
+    - group_allow_from: 允许的群组 JID 列表（当 group_policy="allowlist" 时）
+
+    行为（门控、提及解析、markdown 转换、分块）由 ``WhatsAppBehaviorMixin``
+    提供，以便 Cloud API 适配器可以共享。此处只包含传输特定的代码。
     """
 
-    # Default bridge location resolved via shared helper
-    _DEFAULT_BRIDGE_DIR = None  # resolved in __init__
-    splits_long_messages = True  # send() chunks via truncate_message()
+    # 默认桥接位置，通过共享辅助函数解析
+    _DEFAULT_BRIDGE_DIR = None  # 在 __init__ 中解析
+    splits_long_messages = True  # send() 通过 truncate_message() 进行分块
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.WHATSAPP)
-        # Use shared helper for bridge directory resolution (handles read-only install tree)
+        # 使用共享辅助函数解析桥接目录（处理只读安装树）
         if WhatsAppAdapter._DEFAULT_BRIDGE_DIR is None:
             from gateway.platforms.whatsapp_common import resolve_whatsapp_bridge_dir
             WhatsAppAdapter._DEFAULT_BRIDGE_DIR = resolve_whatsapp_bridge_dir()
@@ -366,23 +360,21 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         self._bridge_log: Optional[Path] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._http_session: Optional["aiohttp.ClientSession"] = None
-        # Set to True by disconnect() before we SIGTERM our child bridge so
-        # _check_managed_bridge_exit() can distinguish an intentional
-        # shutdown-time exit (returncode -15 / -2 / 0) from a real crash.
-        # Without this, every graceful gateway shutdown/restart would log
-        # "Fatal whatsapp adapter error" plus dispatch a fatal-error
-        # notification before the normal "✓ whatsapp disconnected" fires.
+        # 在 disconnect() 发送 SIGTERM 给我们的子桥接之前设为 True，
+        # 以便 _check_managed_bridge_exit() 可以区分故意的关闭时退出
+        # （returncode -15 / -2 / 0）和真正的崩溃。
+        # 没有这个，每次网关优雅关闭/重启都会记录
+        # "Fatal whatsapp adapter error" 并在正常的 "✓ whatsapp disconnected"
+        # 触发之前发送致命错误通知。
         self._shutting_down: bool = False
 
-        # Text debounce batching (mirrors Telegram adapter pattern).
-        # WhatsApp often delivers multiple messages in rapid succession
-        # (e.g. forwarded batches, paste-splits) — without debounce each
-        # message triggers a separate agent invocation, wasting tokens and
-        # flooding the user with reply fragments.  Default 5s delay /
-        # 10s split delay are conservative for WhatsApp's delivery cadence.
-        # Tunable via config.yaml under
+        # 文本防抖批处理（与 Telegram 适配器模式一致）。
+        # WhatsApp 经常快速连续发送多条消息（例如转发批次、粘贴分割）
+        # ——没有防抖的话，每条消息都会触发单独的 agent 调用，浪费 token
+        # 并以回复片段轰炸用户。默认 5 秒延迟 / 10 秒分割延迟对于
+        # WhatsApp 的发送节奏来说比较保守。可通过 config.yaml 中的
         # ``gateway.platforms.whatsapp.extra.text_batch_delay_seconds`` /
-        # ``text_batch_split_delay_seconds``.
+        # ``text_batch_split_delay_seconds`` 调整。
         self._text_batch_delay_seconds = self._coerce_float_extra(
             "text_batch_delay_seconds", 5.0
         )
@@ -393,10 +385,10 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         self._pending_text_batch_tasks: Dict[str, asyncio.Task] = {}
 
     def _coerce_float_extra(self, key: str, default: float) -> float:
-        """Read a float from ``config.extra``, guarding against bad/non-finite values.
+        """从 ``config.extra`` 读取浮点数，防止错误/非有限值。
 
-        The result is fed directly to ``asyncio.sleep()``, so NaN/Inf and
-        unparseable values fall back to ``default``.
+        结果直接传给 ``asyncio.sleep()``，因此 NaN/Inf 和无法解析的值
+        会回退到 ``default``。
         """
         import math
 
@@ -413,9 +405,9 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     async def connect(self) -> bool:
         """
-        Start the WhatsApp bridge.
-        
-        This launches the Node.js bridge process and waits for it to be ready.
+        启动 WhatsApp 桥接。
+
+        这会启动 Node.js 桥接进程并等待其准备就绪。
         """
         if not check_whatsapp_requirements():
             logger.warning("[%s] Node.js not found. WhatsApp requires Node.js.", self.name)

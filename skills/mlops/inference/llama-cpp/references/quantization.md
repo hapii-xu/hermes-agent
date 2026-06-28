@@ -1,68 +1,68 @@
-# GGUF Quantization Guide
+# GGUF 量化指南
 
-Complete guide to GGUF quantization formats and model conversion.
+GGUF 量化格式与模型转换的完整指南。
 
-## Hub-first quant selection
+## Hub 优先的量化选择
 
-Before using generic tables, open the model repo with:
+在使用通用表格之前，先用以下地址打开模型仓库：
 
 ```text
 https://huggingface.co/<repo>?local-app=llama.cpp
 ```
 
-Prefer the exact quant labels and sizes shown in the `Hardware compatibility` section of the fetched `?local-app=llama.cpp` page text or HTML. Then confirm the matching filenames in:
+优先使用抓取的 `?local-app=llama.cpp` 页面文本或 HTML 中 `Hardware compatibility` 部分显示的精确量化标签和大小。然后在以下地址确认匹配的文件名：
 
 ```text
 https://huggingface.co/api/models/<repo>/tree/main?recursive=true
 ```
 
-Use the Hub page first, and only fall back to the generic heuristics below when the repo page does not expose a clear recommendation.
+先看 Hub 页面，只有当仓库页面未给出明确推荐时，才回退到下面的通用启发式规则。
 
-## Quantization Overview
+## 量化概述
 
-**GGUF** (GPT-Generated Unified Format) - Standard format for llama.cpp models.
+**GGUF**（GPT-Generated Unified Format）- llama.cpp 模型的标准格式。
 
-### Format Comparison
+### 格式对比
 
-| Format | Perplexity | Size (7B) | Tokens/sec | Notes |
+| 格式 | 困惑度 | 大小（7B） | Tokens/秒 | 说明 |
 |--------|------------|-----------|------------|-------|
-| FP16 | 5.9565 (baseline) | 13.0 GB | 15 tok/s | Original quality |
-| Q8_0 | 5.9584 (+0.03%) | 7.0 GB | 25 tok/s | Nearly lossless |
-| **Q6_K** | 5.9642 (+0.13%) | 5.5 GB | 30 tok/s | Best quality/size |
-| **Q5_K_M** | 5.9796 (+0.39%) | 4.8 GB | 35 tok/s | Balanced |
-| **Q4_K_M** | 6.0565 (+1.68%) | 4.1 GB | 40 tok/s | **Recommended** |
-| Q4_K_S | 6.1125 (+2.62%) | 3.9 GB | 42 tok/s | Faster, lower quality |
-| Q3_K_M | 6.3184 (+6.07%) | 3.3 GB | 45 tok/s | Small models only |
-| Q2_K | 6.8673 (+15.3%) | 2.7 GB | 50 tok/s | Not recommended |
+| FP16 | 5.9565（基线） | 13.0 GB | 15 tok/s | 原始质量 |
+| Q8_0 | 5.9584（+0.03%） | 7.0 GB | 25 tok/s | 几乎无损 |
+| **Q6_K** | 5.9642（+0.13%） | 5.5 GB | 30 tok/s | 最佳质量/大小比 |
+| **Q5_K_M** | 5.9796（+0.39%） | 4.8 GB | 35 tok/s | 均衡 |
+| **Q4_K_M** | 6.0565（+1.68%） | 4.1 GB | 40 tok/s | **推荐** |
+| Q4_K_S | 6.1125（+2.62%） | 3.9 GB | 42 tok/s | 更快，质量更低 |
+| Q3_K_M | 6.3184（+6.07%） | 3.3 GB | 45 tok/s | 仅用于小模型 |
+| Q2_K | 6.8673（+15.3%） | 2.7 GB | 50 tok/s | 不推荐 |
 
-**Recommendation**: Use **Q4_K_M** for best balance of quality and speed.
+**建议**：使用 **Q4_K_M** 以获得质量与速度的最佳平衡。
 
-## Converting Models
+## 转换模型
 
-### Hugging Face to GGUF
+### 从 Hugging Face 到 GGUF
 
 ```bash
-# 1. Download Hugging Face model
+# 1. 下载 Hugging Face 模型
 hf download meta-llama/Llama-2-7b-chat-hf \
     --local-dir models/llama-2-7b-chat/
 
-# 2. Convert to FP16 GGUF
+# 2. 转换为 FP16 GGUF
 python convert_hf_to_gguf.py \
     models/llama-2-7b-chat/ \
     --outtype f16 \
     --outfile models/llama-2-7b-chat-f16.gguf
 
-# 3. Quantize to Q4_K_M
+# 3. 量化为 Q4_K_M
 ./llama-quantize \
     models/llama-2-7b-chat-f16.gguf \
     models/llama-2-7b-chat-Q4_K_M.gguf \
     Q4_K_M
 ```
 
-### Batch quantization
+### 批量量化
 
 ```bash
-# Quantize to multiple formats
+# 量化为多种格式
 for quant in Q4_K_M Q5_K_M Q6_K Q8_0; do
     ./llama-quantize \
         model-f16.gguf \
@@ -71,71 +71,71 @@ for quant in Q4_K_M Q5_K_M Q6_K Q8_0; do
 done
 ```
 
-## K-Quantization Methods
+## K 量化方法
 
-**K-quants** use mixed precision for better quality:
-- Attention weights: Higher precision
-- Feed-forward weights: Lower precision
+**K-quants** 使用混合精度以获得更高质量：
+- 注意力权重：更高精度
+- 前馈权重：更低精度
 
-**Variants**:
-- `_S` (Small): Faster, lower quality
-- `_M` (Medium): Balanced (recommended)
-- `_L` (Large): Better quality, larger size
+**变体**：
+- `_S`（Small，小）：更快，质量更低
+- `_M`（Medium，中）：均衡（推荐）
+- `_L`（Large，大）：更高质量，更大体积
 
-**Example**: `Q4_K_M`
-- `Q4`: 4-bit quantization
-- `K`: Mixed precision method
-- `M`: Medium quality
+**示例**：`Q4_K_M`
+- `Q4`：4 比特量化
+- `K`：混合精度方法
+- `M`：中等质量
 
-## Quality Testing
+## 质量测试
 
 ```bash
-# Calculate perplexity (quality metric)
+# 计算困惑度（质量指标）
 ./llama-perplexity \
     -m model.gguf \
     -f wikitext-2-raw/wiki.test.raw \
     -c 512
 
-# Lower perplexity = better quality
-# Baseline (FP16): ~5.96
-# Q4_K_M: ~6.06 (+1.7%)
-# Q2_K: ~6.87 (+15.3% - too much degradation)
+# 困惑度越低 = 质量越好
+# 基线（FP16）：~5.96
+# Q4_K_M：~6.06（+1.7%）
+# Q2_K：~6.87（+15.3% - 退化太多）
 ```
 
-## Use Case Guide
+## 使用场景指南
 
-### General purpose (chatbots, assistants)
+### 通用场景（聊天机器人、助手）
 ```
-Q4_K_M - Best balance
-Q5_K_M - If you have extra RAM
-```
-
-### Code generation
-```
-Q5_K_M or Q6_K - Higher precision helps with code
+Q4_K_M - 最佳平衡
+Q5_K_M - 如果你有额外 RAM
 ```
 
-### Creative writing
+### 代码生成
 ```
-Q4_K_M - Sufficient quality
-Q3_K_M - Acceptable for draft generation
-```
-
-### Technical/medical
-```
-Q6_K or Q8_0 - Maximum accuracy
+Q5_K_M 或 Q6_K - 更高精度对代码有帮助
 ```
 
-### Edge devices (Raspberry Pi)
+### 创意写作
 ```
-Q2_K or Q3_K_S - Fit in limited RAM
+Q4_K_M - 质量足够
+Q3_K_M - 可用于草稿生成
 ```
 
-## Model Size Scaling
+### 技术/医学
+```
+Q6_K 或 Q8_0 - 最高准确度
+```
 
-### 7B parameter models
+### 边缘设备（Raspberry Pi）
+```
+Q2_K 或 Q3_K_S - 适配有限 RAM
+```
 
-| Format | Size | RAM needed |
+## 模型大小扩展
+
+### 7B 参数模型
+
+| 格式 | 大小 | 所需 RAM |
 |--------|------|------------|
 | Q2_K | 2.7 GB | 5 GB |
 | Q3_K_M | 3.3 GB | 6 GB |
@@ -144,9 +144,9 @@ Q2_K or Q3_K_S - Fit in limited RAM
 | Q6_K | 5.5 GB | 9 GB |
 | Q8_0 | 7.0 GB | 11 GB |
 
-### 13B parameter models
+### 13B 参数模型
 
-| Format | Size | RAM needed |
+| 格式 | 大小 | 所需 RAM |
 |--------|------|------------|
 | Q2_K | 5.1 GB | 8 GB |
 | Q3_K_M | 6.2 GB | 10 GB |
@@ -154,9 +154,9 @@ Q2_K or Q3_K_S - Fit in limited RAM
 | Q5_K_M | 9.2 GB | 14 GB |
 | Q6_K | 10.7 GB | 16 GB |
 
-### 70B parameter models
+### 70B 参数模型
 
-| Format | Size | RAM needed |
+| 格式 | 大小 | 所需 RAM |
 |--------|------|------------|
 | Q2_K | 26 GB | 32 GB |
 | Q3_K_M | 32 GB | 40 GB |
@@ -164,11 +164,11 @@ Q2_K or Q3_K_S - Fit in limited RAM
 | Q4_K_S | 39 GB | 46 GB |
 | Q5_K_M | 48 GB | 56 GB |
 
-**Recommendation for 70B**: Use Q3_K_M or Q4_K_S to fit in consumer hardware.
+**70B 的建议**：使用 Q3_K_M 或 Q4_K_S 以适配消费级硬件。
 
-## Finding Pre-Quantized Models
+## 查找已预量化的模型
 
-Use the Hub search with the llama.cpp app filter:
+使用带 llama.cpp 应用过滤器的 Hub 搜索：
 
 ```text
 https://huggingface.co/models?apps=llama.cpp&sort=trending
@@ -176,43 +176,43 @@ https://huggingface.co/models?search=<term>&apps=llama.cpp&sort=trending
 https://huggingface.co/models?search=<term>&apps=llama.cpp&num_parameters=min:0,max:24B&sort=trending
 ```
 
-For a specific repo, open:
+对于特定仓库，打开：
 
 ```text
 https://huggingface.co/<repo>?local-app=llama.cpp
 https://huggingface.co/api/models/<repo>/tree/main?recursive=true
 ```
 
-Then launch directly from the Hub without extra Hub tooling:
+然后无需额外的 Hub 工具，直接从 Hub 启动：
 
 ```bash
 llama-cli -hf <repo>:Q4_K_M
 llama-server -hf <repo>:Q4_K_M
 ```
 
-If you need the exact file name from the tree API:
+如果你需要从 tree API 获取精确文件名：
 
 ```bash
 llama-server --hf-repo <repo> --hf-file <filename.gguf>
 ```
 
-## Importance Matrices (imatrix)
+## 重要性矩阵（imatrix）
 
-**What**: Calibration data to improve quantization quality.
+**是什么**：用于提升量化质量的校准数据。
 
-**Benefits**:
-- 10-20% perplexity improvement with Q4
-- Essential for Q3 and below
+**好处**：
+- 对 Q4 带来 10-20% 的困惑度改善
+- 对 Q3 及更低量化必不可少
 
-**Usage**:
+**用法**：
 ```bash
-# 1. Generate importance matrix
+# 1. 生成重要性矩阵
 ./llama-imatrix \
     -m model-f16.gguf \
     -f calibration-data.txt \
     -o model.imatrix
 
-# 2. Quantize with imatrix
+# 2. 带 imatrix 量化
 ./llama-quantize \
     --imatrix model.imatrix \
     model-f16.gguf \
@@ -220,24 +220,24 @@ llama-server --hf-repo <repo> --hf-file <filename.gguf>
     Q4_K_M
 ```
 
-**Calibration data**:
-- Use domain-specific text (e.g., code for code models)
-- ~100MB of representative text
-- Higher quality data = better quantization
+**校准数据**：
+- 使用领域特定文本（例如对代码模型用代码）
+- 约 100MB 有代表性的文本
+- 数据质量越高 = 量化越好
 
-## Troubleshooting
+## 故障排查
 
-**Model outputs gibberish**:
-- Quantization too aggressive (Q2_K)
-- Try Q4_K_M or Q5_K_M
-- Verify model converted correctly
+**模型输出乱码**：
+- 量化过于激进（Q2_K）
+- 尝试 Q4_K_M 或 Q5_K_M
+- 验证模型是否正确转换
 
-**Out of memory**:
-- Use lower quantization (Q4_K_S instead of Q5_K_M)
-- Offload fewer layers to GPU (`-ngl`)
-- Use smaller context (`-c 2048`)
+**内存不足**：
+- 使用更低量化（用 Q4_K_S 代替 Q5_K_M）
+- 减少卸载到 GPU 的层数（`-ngl`）
+- 使用更小的上下文（`-c 2048`）
 
-**Slow inference**:
-- Higher quantization uses more compute
-- Q8_0 much slower than Q4_K_M
-- Consider speed vs quality trade-off
+**推理缓慢**：
+- 更高量化使用更多算力
+- Q8_0 比 Q4_K_M 慢得多
+- 考虑速度与质量的权衡

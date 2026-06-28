@@ -1,8 +1,8 @@
 import { Box, Text } from '@hermes/ink'
 import { memo } from 'react'
 
-// A cell is [tr,tg,tb,ta, br,bg,bb,ba] — the top + bottom pixel of one
-// half-block, as produced by the `pet.cells` gateway RPC.
+// 一个 cell 是 [tr,tg,tb,ta, br,bg,bb,ba] —— 一个 half-block 的顶部和底部像素,
+// 由 `pet.cells` gateway RPC 生成。
 export type PetCell = number[]
 export type PetGrid = PetCell[][]
 

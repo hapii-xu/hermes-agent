@@ -1,207 +1,207 @@
-# Design System: SpaceX
+# 设计系统：SpaceX
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代方案：
+> - **主字体：** `Inter` | **等宽字体：** `system monospace stack`
+> - **字体栈 (CSS)：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-SpaceX's website is a full-screen cinematic experience that treats aerospace engineering like a film — every section is a scene, every photograph is a frame, and the interface disappears entirely behind the imagery. The design is pure black (`#000000`) with photography of rockets, space, and planets occupying 100% of the viewport. Text overlays sit directly on these photographs with no background panels, cards, or containers — just type on image, bold and unapologetic.
+SpaceX 的网站是一种全屏电影体验，把航天工程当作电影来对待——每个区块都是一个场景，每张照片都是一帧画面，界面完全消失在影像背后。设计是纯黑（`#000000`），火箭、太空和星球的照片占据 100% 的视口。文字叠加直接位于这些照片之上，没有背景面板、卡片或容器——只有文字压在图片上，大胆而毫不妥协。
 
-The typography system uses D-DIN, an industrial geometric typeface with DIN heritage (the German industrial standard). The defining characteristic is that virtually ALL text is uppercase with positive letter-spacing (0.96px–1.17px), creating a military/aerospace labeling system where every word feels stenciled onto a spacecraft hull. D-DIN-Bold at 48px with uppercase and 0.96px tracking for the hero creates headlines that feel like mission briefing titles. Even body text at 16px maintains the uppercase/tracked treatment at smaller scales.
+排版系统使用 D-DIN，一种具有 DIN 血统（德国工业标准）的工业几何字体。定义性特征是几乎所有文字都是大写，带正字间距（0.96px–1.17px），创造了一种军事/航天标签系统，每个词都感觉像模板印在航天器船体上。D-DIN-Bold 48px 配大写和 0.96px 字距的英雄区创造了感觉像任务简报标题的标题。即便 16px 的正文也以较小尺度维持大写/字距处理。
 
-What makes SpaceX distinctive is its radical minimalism: no shadows, no borders (except one ghost button border at `rgba(240,240,250,0.35)`), no color (only black and a spectral near-white `#f0f0fa`), no cards, no grids. The only visual element is photography + text. The ghost button with `rgba(240,240,250,0.1)` background and 32px radius is the sole interactive element — barely visible, floating over the imagery like a heads-up display. This isn't a design system in the traditional sense — it's a photographic exhibition with a type system and a single button.
+SpaceX 的独特之处在于其激进的极简主义：无阴影、无边框（除一个幽灵按钮边框在 `rgba(240,240,250,0.35)`）、无颜色（只有黑色和一种光谱近白 `#f0f0fa`）、无卡片、无网格。唯一的视觉元素是摄影 + 文字。带 `rgba(240,240,250,0.1)` 背景和 32px 圆角的幽灵按钮是唯一的交互元素——几乎不可见，漂浮在影像之上，像平视显示器。这在传统意义上不是一个设计系统——它是一个摄影展览，配一个字体系统和单个按钮。
 
-**Key Characteristics:**
-- Pure black canvas with full-viewport cinematic photography — the interface is invisible
-- D-DIN / D-DIN-Bold — industrial DIN-heritage typeface
-- Universal uppercase + positive letter-spacing (0.96px–1.17px) — aerospace stencil aesthetic
-- Near-white spectral text (`#f0f0fa`) — not pure white, a slight blue-violet tint
-- Zero shadows, zero cards, zero containers — text on image only
-- Single ghost button: `rgba(240,240,250,0.1)` background with spectral border
-- Full-viewport sections — each section is a cinematic "scene"
-- No decorative elements — every pixel serves the photography
+**关键特征：**
+- 纯黑画布，配全视口电影感摄影——界面是隐形的
+- D-DIN / D-DIN-Bold——具有 DIN 血统的工业字体
+- 通用大写 + 正字间距（0.96px–1.17px）——航天模板美学
+- 近白光谱文字（`#f0f0fa`）——非纯白，带轻微的蓝紫调
+- 零阴影、零卡片、零容器——仅文字压图
+- 单一幽灵按钮：`rgba(240,240,250,0.1)` 背景配光谱边框
+- 全视口区块——每个区块都是一个电影"场景"
+- 无装饰元素——每个像素都服务于摄影
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary
-- **Space Black** (`#000000`): Page background, the void of space — at 50% opacity for overlay gradient
-- **Spectral White** (`#f0f0fa`): Text color — not pure white, a slight blue-violet tint that mimics starlight
+### 主色
+- **太空黑**（`#000000`）：页面背景，太空虚空——50% 不透明度用于覆盖层渐变
+- **光谱白**（`#f0f0fa`）：文字颜色——非纯白，一种轻微的蓝紫调，模仿星光
 
-### Interactive
-- **Ghost Surface** (`rgba(240, 240, 250, 0.1)`): Button background — nearly invisible, 10% opacity
-- **Ghost Border** (`rgba(240, 240, 250, 0.35)`): Button border — spectral, 35% opacity
-- **Hover White** (`var(--white-100)`): Link hover state — full spectral white
+### 交互色
+- **幽灵表面**（`rgba(240, 240, 250, 0.1)`）：按钮背景——几乎不可见，10% 不透明度
+- **幽灵边框**（`rgba(240, 240, 250, 0.35)`）：按钮边框——光谱的，35% 不透明度
+- **悬停白**（`var(--white-100)`）：链接悬停状态——完整光谱白
 
-### Gradient
-- **Dark Overlay** (`rgba(0, 0, 0, 0.5)`): Gradient overlay on photographs to ensure text legibility
+### 渐变
+- **深色覆盖**（`rgba(0, 0, 0, 0.5)`）：照片上的渐变覆盖，确保文字清晰度
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Families
-- **Display**: `D-DIN-Bold` — bold industrial geometric
-- **Body / UI**: `D-DIN`, fallbacks: `Arial, Verdana`
+### 字体族
+- **展示**：`D-DIN-Bold`——粗体工业几何
+- **正文 / UI**：`D-DIN`，回退：`Arial, Verdana`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 说明 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Hero | D-DIN-Bold | 48px (3.00rem) | 700 | 1.00 (tight) | 0.96px | `text-transform: uppercase` |
-| Body | D-DIN | 16px (1.00rem) | 400 | 1.50–1.70 | normal | Standard reading text |
-| Nav Link Bold | D-DIN | 13px (0.81rem) | 700 | 0.94 (tight) | 1.17px | `text-transform: uppercase` |
-| Nav Link | D-DIN | 12px (0.75rem) | 400 | 2.00 (relaxed) | normal | `text-transform: uppercase` |
-| Caption Bold | D-DIN | 13px (0.81rem) | 700 | 0.94 (tight) | 1.17px | `text-transform: uppercase` |
-| Caption | D-DIN | 12px (0.75rem) | 400 | 1.00 (tight) | normal | `text-transform: uppercase` |
-| Micro | D-DIN | 10px (0.63rem) | 400 | 0.94 (tight) | 1px | `text-transform: uppercase` |
+| 展示英雄 | D-DIN-Bold | 48px (3.00rem) | 700 | 1.00 (紧凑) | 0.96px | `text-transform: uppercase` |
+| 正文 | D-DIN | 16px (1.00rem) | 400 | 1.50–1.70 | normal | 标准阅读文字 |
+| 导航链接粗 | D-DIN | 13px (0.81rem) | 700 | 0.94 (紧凑) | 1.17px | `text-transform: uppercase` |
+| 导航链接 | D-DIN | 12px (0.75rem) | 400 | 2.00 (宽松) | normal | `text-transform: uppercase` |
+| 说明粗 | D-DIN | 13px (0.81rem) | 700 | 0.94 (紧凑) | 1.17px | `text-transform: uppercase` |
+| 说明 | D-DIN | 12px (0.75rem) | 400 | 1.00 (紧凑) | normal | `text-transform: uppercase` |
+| 微型 | D-DIN | 10px (0.63rem) | 400 | 0.94 (紧凑) | 1px | `text-transform: uppercase` |
 
-### Principles
-- **Universal uppercase**: Nearly every text element uses `text-transform: uppercase`. This creates a systematic military/aerospace voice where all communication feels like official documentation.
-- **Positive letter-spacing as identity**: 0.96px on display, 1.17px on nav — the wide tracking creates the stenciled, industrial feel that connects to DIN's heritage as a German engineering standard.
-- **Two weights, strict hierarchy**: D-DIN-Bold (700) for headlines and nav emphasis, D-DIN (400) for body. No medium or semibold weights exist in the system.
-- **Tight line-heights**: 0.94–1.00 across most text — compressed, efficient, mission-critical communication.
+### 原则
+- **通用大写**：几乎每个文字元素都使用 `text-transform: uppercase`。这创造了一种系统化的军事/航天声音，所有交流都感觉像官方文档。
+- **正字间距作为标识**：展示 0.96px，导航 1.17px——宽字距创造了模板印制、工业的感觉，连接到 DIN 作为德国工程标准的历史。
+- **两个字重，严格层级**：D-DIN-Bold（700）用于标题和导航强调，D-DIN（400）用于正文。系统中不存在中等或半粗字重。
+- **紧凑行高**：大多数文字 0.94–1.00——压缩、高效、任务关键的交流。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Ghost Button**
-- Background: `rgba(240, 240, 250, 0.1)` (barely visible)
-- Text: Spectral White (`#f0f0fa`)
-- Padding: 18px
-- Radius: 32px
-- Border: `1px solid rgba(240, 240, 250, 0.35)`
-- Hover: background brightens, text to `var(--white-100)`
-- Use: The only button variant — "LEARN MORE" CTAs on photography
+**幽灵按钮**
+- 背景：`rgba(240, 240, 250, 0.1)`（几乎不可见）
+- 文字：光谱白（`#f0f0fa`）
+- 内边距：18px
+- 圆角：32px
+- 边框：`1px solid rgba(240, 240, 250, 0.35)`
+- 悬停：背景变亮，文字变为 `var(--white-100)`
+- 用途：唯一的按钮变体——摄影上的"LEARN MORE" CTA
 
-### Cards & Containers
-- **None.** SpaceX does not use cards, panels, or containers. All content is text directly on full-viewport photographs. The absence of containers IS the design.
+### 卡片与容器
+- **无。** SpaceX 不使用卡片、面板或容器。所有内容都是直接位于全视口照片上的文字。容器的缺失即是设计。
 
-### Inputs & Forms
-- Not present on the homepage. The site is purely presentational.
+### 输入与表单
+- 首页上不存在。网站纯粹是展示性的。
 
-### Navigation
-- Transparent overlay nav on photography
-- D-DIN 13px weight 700, uppercase, 1.17px tracking
-- Spectral white text on dark imagery
-- Logo: SpaceX wordmark at 147x19px
-- Mobile: hamburger collapse
+### 导航
+- 摄影上的透明覆盖导航
+- D-DIN 13px 字重 700，大写，1.17px 字距
+- 深色影像上的光谱白文字
+- Logo：SpaceX 文字商标，147x19px
+- 移动端：汉堡折叠
 
-### Image Treatment
-- Full-viewport (100vh) photography sections
-- Professional aerospace photography: rockets, Mars, space
-- Dark gradient overlays (`rgba(0,0,0,0.5)`) for text legibility
-- Each section = one full-screen photograph with text overlay
-- No border radius, no frames — edge-to-edge imagery
+### 图片处理
+- 全视口（100vh）摄影区块
+- 专业航天摄影：火箭、火星、太空
+- 深色渐变覆盖（`rgba(0,0,0,0.5)`）用于文字清晰度
+- 每个区块 = 一张全屏照片配文字叠加
+- 无圆角、无画框——边到边的影像
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 3px, 5px, 12px, 15px, 18px, 20px, 24px, 30px
-- Minimal scale — spacing is not the organizing principle; photography is
+### 间距系统
+- 基础单位：8px
+- 阶梯：3px, 5px, 12px, 15px, 18px, 20px, 24px, 30px
+- 极简阶梯——间距不是组织原则；摄影才是
 
-### Grid & Container
-- No traditional grid — each section is a full-viewport cinematic frame
-- Text is positioned absolutely or with generous padding over imagery
-- Left-aligned text blocks on photography backgrounds
-- No max-width container — content bleeds to viewport edges
+### 网格与容器
+- 无传统网格——每个区块是一个全视口的电影画框
+- 文字在影像上方绝对定位或配慷慨内边距定位
+- 摄影背景上的左对齐文字块
+- 无最大宽度容器——内容渗到视口边缘
 
-### Whitespace Philosophy
-- **Photography IS the whitespace**: Empty space in the design is never empty — it's filled with the dark expanse of space, the curve of a planet, or the flame of a rocket engine. Traditional whitespace concepts don't apply.
-- **Vertical pacing through viewport**: Each section is exactly one viewport tall, creating a rhythmic scroll where each "page" reveals a new scene.
+### 留白哲学
+- **摄影即是留白**：设计中的空白空间从不真正空——它填满了太空的黑暗广袤、行星的弧线或火箭引擎的火焰。传统留白概念不适用。
+- **通过视口的垂直节奏**：每个区块恰好一个视口高，创造有节奏的滚动，每个"页面"揭示一个新场景。
 
-### Border Radius Scale
-- Sharp (4px): Small dividers, utility elements
-- Button (32px): Ghost buttons — the only rounded element
+### 圆角阶梯
+- 尖角（4px）：小分隔符、实用元素
+- 按钮（32px）：幽灵按钮——唯一圆角的元素
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-| Level | Treatment | Use |
+| 级别 | 处理 | 用途 |
 |-------|-----------|-----|
-| Photography (Level 0) | Full-viewport imagery | Background layer — always present |
-| Overlay (Level 1) | `rgba(0, 0, 0, 0.5)` gradient | Text legibility layer over photography |
-| Text (Level 2) | Spectral white text, no shadow | Content layer — text floats directly on image |
-| Ghost (Level 3) | `rgba(240, 240, 250, 0.1)` surface | Barely-visible interactive layer |
+| 摄影（级别 0） | 全视口影像 | 背景层——始终存在 |
+| 覆盖层（级别 1） | `rgba(0, 0, 0, 0.5)` 渐变 | 摄影上的文字清晰层 |
+| 文字（级别 2） | 光谱白文字，无阴影 | 内容层——文字直接浮在图上 |
+| 幽灵（级别 3） | `rgba(240, 240, 250, 0.1)` 表面 | 几乎不可见的交互层 |
 
-**Shadow Philosophy**: SpaceX uses ZERO shadows. In a design built entirely on photography, shadows are meaningless — every surface is already a photograph with natural lighting. Depth comes from the photographic content itself: the receding curvature of Earth, the diminishing trail of a rocket, the atmospheric haze around Mars.
+**阴影哲学**：SpaceX 使用零阴影。在一个完全建立在摄影之上的设计中，阴影毫无意义——每个表面都已经是带有自然光线的照片。深度来自摄影内容本身：地球后退的弧度、火箭消逝的轨迹、火星周围的大气雾霭。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use full-viewport photography as the primary design element — every section is a scene
-- Apply uppercase + positive letter-spacing to ALL text — the aerospace stencil voice
-- Use D-DIN exclusively — no other fonts exist in the system
-- Keep the color palette to black + spectral white (`#f0f0fa`) only
-- Use ghost buttons (`rgba(240,240,250,0.1)`) as the sole interactive element
-- Apply dark gradient overlays for text legibility on photographs
-- Let photography carry the emotional weight — the type system is functional, not expressive
+### 宜
+- 使用全视口摄影作为主要设计元素——每个区块都是一个场景
+- 对所有文字应用大写 + 正字间距——航天模板声音
+- 专门使用 D-DIN——系统中不存在其他字体
+- 保持调色板仅黑 + 光谱白（`#f0f0fa`）
+- 使用幽灵按钮（`rgba(240,240,250,0.1)`）作为唯一交互元素
+- 应用深色渐变覆盖以确保照片上的文字清晰度
+- 让摄影承载情感重量——字体系统是功能性的，非表现性的
 
-### Don't
-- Don't add cards, panels, or containers — text sits directly on photography
-- Don't use shadows — they have no meaning in a photographic context
-- Don't introduce colors — the palette is strictly achromatic with spectral tint
-- Don't use sentence case — everything is uppercase
-- Don't use negative letter-spacing — all tracking is positive (0.96px–1.17px)
-- Don't reduce photography to thumbnails — every image is full-viewport
-- Don't add decorative elements (icons, badges, dividers) — the design is photography + type + one button
+### 忌
+- 不要添加卡片、面板或容器——文字直接位于摄影上
+- 不要使用阴影——它们在摄影上下文中没有意义
+- 不要引入颜色——调色板严格是无彩色带光谱调
+- 不要使用句首大写——一切都是大写
+- 不要使用负字间距——所有字距都是正的（0.96px–1.17px）
+- 不要把摄影缩成缩略图——每张图片都是全视口
+- 不要添加装饰元素（图标、徽章、分隔符）——设计是摄影 + 字体 + 一个按钮
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <600px | Stacked, reduced padding, smaller type |
-| Tablet Small | 600–960px | Adjusted layout |
-| Tablet | 960–1280px | Standard scaling |
-| Desktop | 1280–1350px | Full layout |
-| Large Desktop | 1350–1500px | Expanded |
-| Ultra-wide | >1500px | Maximum viewport |
+| 移动 | <600px | 堆叠，减少内边距，较小字号 |
+| 小型平板 | 600–960px | 调整布局 |
+| 平板 | 960–1280px | 标准缩放 |
+| 桌面 | 1280–1350px | 完整布局 |
+| 大型桌面 | 1350–1500px | 扩展 |
+| 超宽 | >1500px | 最大视口 |
 
-### Touch Targets
-- Ghost buttons: 18px padding provides adequate touch area
-- Navigation links: uppercase with generous letter-spacing aids readability
+### 触控目标
+- 幽灵按钮：18px 内边距提供充足的触控区域
+- 导航链接：大写配慷慨字间距有助于可读性
 
-### Collapsing Strategy
-- Photography: maintains full-viewport at all sizes, content reposition
-- Hero text: 48px → scales down proportionally
-- Navigation: horizontal → hamburger
-- Text blocks: reposition but maintain overlay-on-photography pattern
-- Full-viewport sections maintained on mobile
+### 折叠策略
+- 摄影：所有尺寸下保持全视口，内容重新定位
+- 英雄文字：48px → 按比例缩小
+- 导航：横向 → 汉堡
+- 文字块：重新定位但保持摄影上叠加的模式
+- 移动端保持全视口区块
 
-### Image Behavior
-- Edge-to-edge photography at all viewport sizes
-- Background-size: cover with center focus
-- Dark overlay gradients adapt to content position
-- No art direction changes — same photographs, responsive positioning
+### 图片行为
+- 所有视口尺寸下边到边的摄影
+- background-size: cover，中心聚焦
+- 深色覆盖渐变适应内容位置
+- 无艺术指导变化——相同照片，响应式定位
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Background: Space Black (`#000000`)
-- Text: Spectral White (`#f0f0fa`)
-- Button background: Ghost (`rgba(240, 240, 250, 0.1)`)
-- Button border: Ghost Border (`rgba(240, 240, 250, 0.35)`)
-- Overlay: `rgba(0, 0, 0, 0.5)`
+### 快速颜色参考
+- 背景：太空黑（`#000000`）
+- 文字：光谱白（`#f0f0fa`）
+- 按钮背景：幽灵（`rgba(240, 240, 250, 0.1)`）
+- 按钮边框：幽灵边框（`rgba(240, 240, 250, 0.35)`）
+- 覆盖层：`rgba(0, 0, 0, 0.5)`
 
-### Example Component Prompts
-- "Create a full-viewport hero: background-image covering 100vh, dark gradient overlay rgba(0,0,0,0.5). Headline at 48px D-DIN-Bold, uppercase, letter-spacing 0.96px, spectral white (#f0f0fa) text. Ghost CTA button: rgba(240,240,250,0.1) bg, 1px solid rgba(240,240,250,0.35) border, 32px radius, 18px padding."
-- "Design a navigation: transparent over photography. D-DIN 13px weight 700, uppercase, letter-spacing 1.17px, spectral white text. SpaceX wordmark left-aligned."
-- "Build a content section: full-viewport height, background photography with dark overlay. Left-aligned text block with 48px D-DIN-Bold uppercase heading, 16px D-DIN body text, and ghost button below."
-- "Create a micro label: D-DIN 10px, uppercase, letter-spacing 1px, spectral white, line-height 0.94."
+### 示例组件提示
+- "创建全视口英雄区：background-image 覆盖 100vh，深色渐变覆盖 rgba(0,0,0,0.5)。标题 48px D-DIN-Bold，大写，字间距 0.96px，光谱白（#f0f0fa）文字。幽灵 CTA 按钮：rgba(240,240,250,0.1) 背景，1px solid rgba(240,240,250,0.35) 边框，32px 圆角，18px 内边距。"
+- "设计导航：摄影上的透明覆盖。D-DIN 13px 字重 700，大写，字间距 1.17px，光谱白文字。SpaceX 文字商标左对齐。"
+- "构建内容区块：全视口高度，背景摄影配深色覆盖。左对齐文字块，含 48px D-DIN-Bold 大写标题、16px D-DIN 正文，以及下方幽灵按钮。"
+- "创建微型标签：D-DIN 10px，大写，字间距 1px，光谱白，行高 0.94。"
 
-### Iteration Guide
-1. Start with photography — the image IS the design
-2. All text is uppercase with positive letter-spacing — no exceptions
-3. Only two colors: black and spectral white (#f0f0fa)
-4. Ghost buttons are the only interactive element — transparent, spectral-bordered
-5. Zero shadows, zero cards, zero decorative elements
-6. Every section is full-viewport (100vh) — cinematic pacing
+### 迭代指南
+1. 从摄影开始——图片即是设计
+2. 所有文字大写配正字间距——无例外
+3. 仅两种颜色：黑色和光谱白（#f0f0fa）
+4. 幽灵按钮是唯一交互元素——透明、光谱边框
+5. 零阴影、零卡片、零装饰元素
+6. 每个区块都是全视口（100vh）——电影般的节奏

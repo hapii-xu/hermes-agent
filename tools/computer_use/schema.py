@@ -1,9 +1,9 @@
-"""Schema for the generic `computer_use` tool.
+"""通用 `computer_use` 工具的 schema。
 
-Model-agnostic. Any tool-calling model can drive this. Vision-capable models
-should prefer `capture(mode='som')` then `click(element=N)` — much more
-reliable than pixel coordinates. Pixel coordinates remain supported for
-models that were trained on them (e.g. Claude's computer-use RL).
+与具体模型无关。任何支持工具调用的模型都可以驱动它。具备视觉能力的模型
+应优先使用 `capture(mode='som')` 再 `click(element=N)`——比像素坐标可靠
+得多。像素坐标仍然支持，供那些在像素坐标上训练过的模型使用（例如 Claude
+的 computer-use 强化学习）。
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-# One consolidated tool with an `action` discriminator. Keeps the schema
-# compact and the per-turn token cost low.
+# 采用单一整合工具，以 `action` 字段做区分。这样能保持 schema 紧凑，
+# 并降低每轮的 token 开销。
 COMPUTER_USE_SCHEMA: Dict[str, Any] = {
     "name": "computer_use",
     "description": (
@@ -218,5 +218,5 @@ COMPUTER_USE_SCHEMA: Dict[str, Any] = {
 
 
 def get_computer_use_schema() -> Dict[str, Any]:
-    """Return the generic OpenAI function-calling schema."""
+    """返回通用的 OpenAI function-calling schema。"""
     return COMPUTER_USE_SCHEMA

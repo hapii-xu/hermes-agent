@@ -1,4 +1,4 @@
-"""Helpers for the temporary psutil-on-Android compatibility installer."""
+"""临时 psutil Android 兼容性安装器的辅助模块。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import shutil
 import tarfile
 from pathlib import Path, PurePosixPath
 
-# Pin a version we know patches cleanly. Update when a newer psutil
-# changes the marker line shape and we need to follow upstream.
+# 固定一个已知可以干净打补丁的版本。当更新的 psutil
+# 更改了标记行格式且我们需要跟随上游时再更新。
 PSUTIL_URL = (
     "https://files.pythonhosted.org/packages/aa/c6/"
     "d1ddf4abb55e93cebc4f2ed8b5d6dbad109ecb8d63748dd2b20ab5e57ebe/"

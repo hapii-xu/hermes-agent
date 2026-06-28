@@ -1,20 +1,19 @@
-"""Holographic Reduced Representations (HRR) with phase encoding.
+"""基于相位编码的全息缩减表示（HRR）。
 
-HRRs are a vector symbolic architecture for encoding compositional structure
-into fixed-width distributed representations. This module uses *phase vectors*:
-each concept is a vector of angles in [0, 2π). The algebraic operations are:
+HRR 是一种向量符号架构，用于将组合结构编码为固定宽度的分布式表示。
+本模块使用*相位向量*：每个概念是一个 [0, 2π) 范围内的角度向量。
+其代数运算包括：
 
-  bind   — circular convolution (phase addition)  — associates two concepts
-  unbind — circular correlation (phase subtraction) — retrieves a bound value
-  bundle — superposition (circular mean)           — merges multiple concepts
+  bind   — 循环卷积（相位相加）— 关联两个概念
+  unbind — 循环相关（相位相减）— 检索已绑定的值
+  bundle — 叠加（圆周平均）  — 合并多个概念
 
-Phase encoding is numerically stable, avoids the magnitude collapse of
-traditional complex-number HRRs, and maps cleanly to cosine similarity.
+相位编码具有数值稳定性，避免了传统复数 HRR 的幅值衰减问题，
+并且能自然地映射到余弦相似度。
 
-Atoms are generated deterministically from SHA-256 so representations are
-identical across processes, machines, and language versions.
+原子通过 SHA-256 确定性生成，因此表示在不同进程、机器和语言版本间完全一致。
 
-References:
+参考文献：
   Plate (1995) — Holographic Reduced Representations
   Gayler (2004) — Vector Symbolic Architectures answer Jackendoff's challenges
 """
@@ -41,20 +40,20 @@ def _require_numpy() -> None:
 
 
 def encode_atom(word: str, dim: int = 1024) -> "np.ndarray":
-    """Deterministic phase vector via SHA-256 counter blocks.
+    """通过 SHA-256 计数器块生成确定性相位向量。
 
-    Uses hashlib (not numpy RNG) for cross-platform reproducibility.
+    使用 hashlib（而非 numpy RNG）以实现跨平台可复现性。
 
-    Algorithm:
-    - Generate enough SHA-256 blocks by hashing f"{word}:{i}" for i=0,1,2,...
-    - Concatenate digests, interpret as uint16 values via struct.unpack
-    - Scale to [0, 2π): phases = values * (2π / 65536)
-    - Truncate to dim elements
-    - Returns np.float64 array of shape (dim,)
+    算法：
+    - 通过对 f"{word}:{i}"（i=0,1,2,...）进行哈希，生成足够多的 SHA-256 块
+    - 拼接摘要，通过 struct.unpack 解释为 uint16 值
+    - 缩放到 [0, 2π)：phases = values * (2π / 65536)
+    - 截断至 dim 个元素
+    - 返回形状为 (dim,) 的 np.float64 数组
     """
     _require_numpy()
 
-    # Each SHA-256 digest is 32 bytes = 16 uint16 values.
+    # 每个 SHA-256 摘要为 32 字节 = 16 个 uint16 值。
     values_per_block = 16
     blocks_needed = math.ceil(dim / values_per_block)
 
@@ -68,30 +67,30 @@ def encode_atom(word: str, dim: int = 1024) -> "np.ndarray":
 
 
 def bind(a: "np.ndarray", b: "np.ndarray") -> "np.ndarray":
-    """Circular convolution = element-wise phase addition.
+    """循环卷积 = 逐元素相位相加。
 
-    Binding associates two concepts into a single composite vector.
-    The result is dissimilar to both inputs (quasi-orthogonal).
+    绑定（bind）将两个概念关联为一个复合向量。
+    结果与两个输入均不相似（准正交）。
     """
     _require_numpy()
     return (a + b) % _TWO_PI
 
 
 def unbind(memory: "np.ndarray", key: "np.ndarray") -> "np.ndarray":
-    """Circular correlation = element-wise phase subtraction.
+    """循环相关 = 逐元素相位相减。
 
-    Unbinding retrieves the value associated with a key from a memory vector.
-    unbind(bind(a, b), a) ≈ b  (up to superposition noise)
+    解绑（unbind）从记忆向量中检索与键关联的值。
+    unbind(bind(a, b), a) ≈ b （存在叠加噪声）
     """
     _require_numpy()
     return (memory - key) % _TWO_PI
 
 
 def bundle(*vectors: "np.ndarray") -> "np.ndarray":
-    """Superposition via circular mean of complex exponentials.
+    """通过复指数的圆周平均实现叠加。
 
-    Bundling merges multiple vectors into one that is similar to each input.
-    The result can hold O(sqrt(dim)) items before similarity degrades.
+    捆绑（bundle）将多个向量合并为一个与每个输入都相似的新向量。
+    在相似度退化之前，结果可容纳 O(sqrt(dim)) 个项目。
     """
     _require_numpy()
     complex_sum = np.sum([np.exp(1j * v) for v in vectors], axis=0)
@@ -99,23 +98,23 @@ def bundle(*vectors: "np.ndarray") -> "np.ndarray":
 
 
 def similarity(a: "np.ndarray", b: "np.ndarray") -> float:
-    """Phase cosine similarity. Range [-1, 1].
+    """相位余弦相似度。范围 [-1, 1]。
 
-    Returns 1.0 for identical vectors, near 0.0 for random (unrelated) vectors,
-    and -1.0 for perfectly anti-correlated vectors.
+    相同向量返回 1.0，随机（无关）向量返回接近 0.0，
+    完全反相关向量返回 -1.0。
     """
     _require_numpy()
     return float(np.mean(np.cos(a - b)))
 
 
 def encode_text(text: str, dim: int = 1024) -> "np.ndarray":
-    """Bag-of-words: bundle of atom vectors for each token.
+    """词袋模型：将每个 token 的原子向量进行捆绑（bundle）。
 
-    Tokenizes by lowercasing, splitting on whitespace, and stripping
-    leading/trailing punctuation from each token.
+    分词方式：转为小写，按空白字符分割，并去除每个 token
+    首尾的标点符号。
 
-    Returns bundle of all token atom vectors.
-    If text is empty or produces no tokens, returns encode_atom("__hrr_empty__", dim).
+    返回所有 token 原子向量的 bundle 结果。
+    如果文本为空或未产生任何 token，则返回 encode_atom("__hrr_empty__", dim)。
     """
     _require_numpy()
 
@@ -133,16 +132,16 @@ def encode_text(text: str, dim: int = 1024) -> "np.ndarray":
 
 
 def encode_fact(content: str, entities: list[str], dim: int = 1024) -> "np.ndarray":
-    """Structured encoding: content bound to ROLE_CONTENT, each entity bound to ROLE_ENTITY, all bundled.
+    """结构化编码：内容绑定到 ROLE_CONTENT，每个实体绑定到 ROLE_ENTITY，全部捆绑。
 
-    Role vectors are reserved atoms: "__hrr_role_content__", "__hrr_role_entity__"
+    角色向量为保留原子："__hrr_role_content__"、"__hrr_role_entity__"
 
-    Components:
+    组成部分：
     1. bind(encode_text(content, dim), encode_atom("__hrr_role_content__", dim))
-    2. For each entity: bind(encode_atom(entity.lower(), dim), encode_atom("__hrr_role_entity__", dim))
-    3. bundle all components together
+    2. 对每个实体：bind(encode_atom(entity.lower(), dim), encode_atom("__hrr_role_entity__", dim))
+    3. 将所有组成部分 bundle 在一起
 
-    This enables algebraic extraction:
+    这支持代数提取：
         unbind(fact, bind(entity, ROLE_ENTITY)) ≈ content_vector
     """
     _require_numpy()
@@ -161,28 +160,28 @@ def encode_fact(content: str, entities: list[str], dim: int = 1024) -> "np.ndarr
 
 
 def phases_to_bytes(phases: "np.ndarray") -> bytes:
-    """Serialize phase vector to bytes. float64 tobytes — 8 KB at dim=1024."""
+    """将相位向量序列化为字节。float64 tobytes — dim=1024 时为 8 KB。"""
     _require_numpy()
     return phases.tobytes()
 
 
 def bytes_to_phases(data: bytes) -> "np.ndarray":
-    """Deserialize bytes back to phase vector. Inverse of phases_to_bytes.
+    """将字节反序列化为相位向量。phases_to_bytes 的逆操作。
 
-    The .copy() call is required because frombuffer returns a read-only view
-    backed by the bytes object; callers expect a mutable array.
+    .copy() 调用是必需的，因为 frombuffer 返回的是由 bytes 对象
+    支撑的只读视图；调用者期望得到可变数组。
     """
     _require_numpy()
     return np.frombuffer(data, dtype=np.float64).copy()
 
 
 def snr_estimate(dim: int, n_items: int) -> float:
-    """Signal-to-noise ratio estimate for holographic storage.
+    """全息存储的信噪比估计。
 
-    SNR = sqrt(dim / n_items) when n_items > 0, else inf.
+    SNR = sqrt(dim / n_items)（n_items > 0 时），否则为 inf。
 
-    The SNR falls below 2.0 when n_items > dim / 4, meaning retrieval
-    errors become likely. Logs a warning when this threshold is crossed.
+    当 n_items > dim / 4 时，SNR 降至 2.0 以下，此时检索
+    错误的可能性增大。超过此阈值时记录警告日志。
     """
     _require_numpy()
 

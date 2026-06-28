@@ -1,4 +1,4 @@
-"""Reusable Microsoft Graph REST client helpers."""
+"""可复用的 Microsoft Graph REST 客户端辅助工具。"""
 
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ DEFAULT_GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 
 
 class MicrosoftGraphClientError(RuntimeError):
-    """Base class for Graph client failures."""
+    """Graph 客户端失败的基类。"""
 
 
 class MicrosoftGraphAPIError(MicrosoftGraphClientError):
-    """Raised when a Graph API request fails."""
+    """当 Graph API 请求失败时抛出。"""
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class MicrosoftGraphAPIError(MicrosoftGraphClientError):
 
 
 class MicrosoftGraphClient:
-    """Minimal async Microsoft Graph client with retries and pagination."""
+    """支持重试和分页的最小异步 Microsoft Graph 客户端。"""
 
     def __init__(
         self,
@@ -160,11 +160,10 @@ class MicrosoftGraphClient:
         headers: dict[str, str] | None = None,
         chunk_size: int = 65536,
     ) -> dict[str, Any]:
-        """Download a Graph resource to disk, streaming the response body.
+        """将 Graph 资源下载到磁盘，以流式方式传输响应体。
 
-        The body is written chunk-by-chunk via ``response.aiter_bytes`` with
-        the ``httpx.AsyncClient`` kept open for the duration of the iteration,
-        so recordings and other large artifacts do not need to fit in memory.
+        响应体通过 ``response.aiter_bytes`` 分块写入，``httpx.AsyncClient``
+        在整个迭代过程中保持打开状态，因此录音和其他大型文件无需全部载入内存。
         """
         url = self._resolve_url(path)
         target = Path(destination)
@@ -197,8 +196,8 @@ class MicrosoftGraphClient:
                         headers=request_headers,
                     ) as response:
                         if response.status_code >= 400:
-                            # Materialize error body so we can surface a meaningful
-                            # message; error bodies are small.
+                            # 物化错误响应体以便展示有意义的错误信息；
+                            # 错误响应体通常很小。
                             await response.aread()
                             api_error = self._build_api_error("GET", url, response)
                             last_error = api_error

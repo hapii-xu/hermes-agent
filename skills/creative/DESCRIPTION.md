@@ -1,3 +1,3 @@
 ---
-description: Creative content generation — ASCII art, hand-drawn style diagrams, and visual design tools.
+description: 创意内容生成 —— ASCII 艺术图、手绘风格示意图以及可视化设计工具。
 ---

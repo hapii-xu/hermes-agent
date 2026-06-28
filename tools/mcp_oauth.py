@@ -1,35 +1,34 @@
 #!/usr/bin/env python3
 """
-MCP OAuth 2.1 Client Support
+MCP OAuth 2.1 客户端支持
 
-Implements the browser-based OAuth 2.1 authorization code flow with PKCE
-for MCP servers that require OAuth authentication instead of static bearer
-tokens.
+为需要 OAuth 认证（而非静态 bearer token）的 MCP 服务器实现基于浏览器的
+OAuth 2.1 授权码流程（带 PKCE）。
 
-Uses the MCP Python SDK's ``OAuthClientProvider`` (an ``httpx.Auth`` subclass)
-which handles discovery, dynamic client registration, PKCE, token exchange,
-refresh, and step-up authorization automatically.
+使用 MCP Python SDK 的 ``OAuthClientProvider``（一个 ``httpx.Auth`` 子类），
+它会自动处理服务发现、动态客户端注册、PKCE、token 交换、刷新以及
+提升授权（step-up authorization）。
 
-This module provides the glue:
-    - ``HermesTokenStorage``: persists tokens/client-info to disk so they
-      survive across process restarts.
-    - Callback server: ephemeral localhost HTTP server to capture the OAuth
-      redirect with the authorization code.
-    - ``build_oauth_auth()``: entry point called by ``mcp_tool.py`` that wires
-      everything together and returns the ``httpx.Auth`` object.
+本模块提供以下粘合代码：
+    - ``HermesTokenStorage``：将 token/客户端信息持久化到磁盘，使其在
+      进程重启后仍然保留。
+    - 回调服务器：临时的 localhost HTTP 服务器，用于捕获携带授权码的
+      OAuth 重定向。
+    - ``build_oauth_auth()``：由 ``mcp_tool.py`` 调用的入口函数，把上述
+      组件装配到一起并返回 ``httpx.Auth`` 对象。
 
-Configuration in config.yaml::
+config.yaml 中的配置示例::
 
     mcp_servers:
       my_server:
         url: "https://mcp.example.com/mcp"
         auth: oauth
-        oauth:                                  # all fields optional
-          client_id: "pre-registered-id"        # skip dynamic registration
-          client_secret: "secret"               # confidential clients only
-          scope: "read write"                   # default: server-provided
-          redirect_port: 0                      # 0 = auto-pick free port
-          client_name: "My Custom Client"       # default: "Hermes Agent"
+        oauth:                                  # 所有字段均为可选
+          client_id: "pre-registered-id"        # 跳过动态注册
+          client_secret: "secret"               # 仅机密客户端使用
+          scope: "read write"                   # 默认：由服务器提供
+          redirect_port: 0                      # 0 = 自动选取空闲端口
+          client_name: "My Custom Client"       # 默认："Hermes Agent"
 """
 
 import asyncio
@@ -53,7 +52,7 @@ from hermes_constants import secure_parent_dir
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy imports -- MCP SDK with OAuth support is optional
+# 懒加载导入 —— 带 OAuth 支持的 MCP SDK 是可选依赖
 # ---------------------------------------------------------------------------
 
 _OAUTH_AVAILABLE=False
@@ -77,43 +76,43 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Exceptions
+# 异常
 # ---------------------------------------------------------------------------
 
 
 class OAuthNonInteractiveError(RuntimeError):
-    """Raised when OAuth requires browser interaction in a non-interactive env."""
+    """当 OAuth 在非交互式环境中需要浏览器交互时抛出。"""
 
 
 # ---------------------------------------------------------------------------
-# Module-level state
+# 模块级状态
 # ---------------------------------------------------------------------------
 
-# Port used by the most recent build_oauth_auth() call.  Exposed so that
-# tests can verify the callback server and the redirect_uri share a port.
+# 最近一次 build_oauth_auth() 调用所使用的端口。暴露出来是为了让
+# 测试可以校验回调服务器和 redirect_uri 使用的是同一个端口。
 _oauth_port: int | None = None
 
 
-# Skip tokens accepted at the paste prompt — exit OAuth without auth.
+# 在粘贴提示处接受的跳过令牌 —— 退出 OAuth 且不进行认证。
 _SKIP_TOKENS = frozenset({"skip", "cancel", "s", "n", "no", "q", "quit"})
 
-# Sentinel value written to result["error"] when the user skipped via stdin.
-# _wait_for_callback maps this to OAuthNonInteractiveError ("user_skipped")
-# so the MCP setup path treats it as a non-fatal "continue without this
-# server" rather than a hard failure.
+# 当用户通过 stdin 跳过时写入 result["error"] 的哨兵值。
+# _wait_for_callback 会将其映射为 OAuthNonInteractiveError（"user_skipped"），
+# 从而让 MCP 的安装流程将其视为非致命的「不带此服务器继续」，
+# 而不是一次硬性失败。
 _USER_SKIPPED_SENTINEL = "__hermes_user_skipped__"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _get_token_dir() -> Path:
-    """Return the directory for MCP OAuth token files.
+    """返回 MCP OAuth token 文件所在目录。
 
-    Uses HERMES_HOME so each profile gets its own OAuth tokens.
-    Layout: ``HERMES_HOME/mcp-tokens/``
+    使用 HERMES_HOME，使每个 profile 拥有各自的 OAuth token。
+    布局：``HERMES_HOME/mcp-tokens/``
     """
     try:
         from hermes_constants import get_hermes_home
@@ -124,19 +123,19 @@ def _get_token_dir() -> Path:
 
 
 def _safe_filename(name: str) -> str:
-    """Sanitize a server name for use as a filename (no path separators)."""
+    """将服务器名净化为可作为文件名的字符串（不含路径分隔符）。"""
     return re.sub(r"[^\w\-]", "_", name).strip("_")[:128] or "default"
 
 
 def _find_free_port() -> int:
-    """Find an available TCP port on localhost."""
+    """在 localhost 上查找一个可用的 TCP 端口。"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
 
 def _is_interactive() -> bool:
-    """Return True if we can reasonably expect to interact with a user."""
+    """当我们可以合理预期与用户交互时返回 True。"""
     try:
         return sys.stdin.isatty()
     except (AttributeError, ValueError):
@@ -144,11 +143,11 @@ def _is_interactive() -> bool:
 
 
 def _can_open_browser() -> bool:
-    """Return True if opening a browser is likely to work."""
-    # Explicit SSH session → no local display
+    """当打开浏览器大致可行时返回 True。"""
+    # 明确的 SSH 会话 → 没有本地显示
     if os.environ.get("SSH_CLIENT") or os.environ.get("SSH_TTY"):
         return False
-    # macOS and Windows usually have a display
+    # macOS 和 Windows 通常有显示
     if os.name == "nt":
         return True
     try:
@@ -156,14 +155,14 @@ def _can_open_browser() -> bool:
             return True
     except AttributeError:
         pass
-    # Linux/other posix: need DISPLAY or WAYLAND_DISPLAY
+    # Linux/其他 posix：需要 DISPLAY 或 WAYLAND_DISPLAY
     if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
         return True
     return False
 
 
 def _read_json(path: Path) -> dict | None:
-    """Read a JSON file, returning None if it doesn't exist or is invalid."""
+    """读取一个 JSON 文件，若文件不存在或内容无效则返回 None。"""
     if not path.exists():
         return None
     try:
@@ -174,22 +173,22 @@ def _read_json(path: Path) -> dict | None:
 
 
 def _write_json(path: Path, data: dict) -> None:
-    """Write a dict as JSON with restricted permissions (0o600).
+    """将 dict 以 JSON 写入，并施加受限权限（0o600）。
 
-    Uses ``os.open`` with ``O_EXCL`` and an explicit mode so the file is
-    created atomically at 0o600. The previous ``write_text`` + post-write
-    ``chmod`` opened a TOCTOU window where the temp file briefly inherited
-    the process umask (commonly 0o644 = world-readable), exposing OAuth
-    tokens to other local users between create and chmod. Mirrors the fix
-    in ``agent/google_oauth.py`` (#19673).
+    使用带 ``O_EXCL`` 和显式 mode 的 ``os.open``，使文件在创建时即原子地
+    设为 0o600。早先的 ``write_text`` + 写后 ``chmod`` 方案会留下一个
+    TOCTOU（time-of-check/time-of-use）窗口：临时文件在那段时间会继承
+    进程的 umask（通常是 0o644 = 对所有用户可读），在创建与 chmod 之间
+    把 OAuth token 暴露给其他本地用户。此处镜像了
+    ``agent/google_oauth.py`` 中的修复（#19673）。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Tighten parent dir to 0o700 so siblings can't traverse to the creds.
-    # No-op on Windows (POSIX mode bits aren't enforced); ignore failures.
-    # secure_parent_dir refuses to chmod / or top-level dirs (#25821).
+    # 将父目录权限收紧为 0o700，使同级目录无法遍历到凭据。
+    # 在 Windows 上是空操作（POSIX 权限位不被强制执行）；忽略失败。
+    # secure_parent_dir 会拒绝 chmod 根目录或顶层目录（#25821）。
     secure_parent_dir(path)
-    # Per-process random suffix avoids collisions between concurrent
-    # writers and stale leftovers from a prior crashed write.
+    # 每进程随机后缀，避免并发写入者之间相互碰撞，
+    # 也避免上一次崩溃写入留下的残留文件。
     tmp = path.with_suffix(f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
     try:
         fd = os.open(
@@ -211,18 +210,18 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# HermesTokenStorage -- persistent token/client-info on disk
+# HermesTokenStorage —— 将 token/客户端信息持久化到磁盘
 # ---------------------------------------------------------------------------
 
 
 class HermesTokenStorage:
-    """Persist OAuth tokens and client registration to JSON files.
+    """将 OAuth token 和客户端注册信息持久化为 JSON 文件。
 
-    File layout::
+    文件布局::
 
-        HERMES_HOME/mcp-tokens/<server_name>.json         -- tokens
-        HERMES_HOME/mcp-tokens/<server_name>.client.json   -- client info
-        HERMES_HOME/mcp-tokens/<server_name>.meta.json     -- oauth server metadata
+        HERMES_HOME/mcp-tokens/<server_name>.json         -- token
+        HERMES_HOME/mcp-tokens/<server_name>.client.json   -- 客户端信息
+        HERMES_HOME/mcp-tokens/<server_name>.meta.json     -- OAuth 服务器元数据
     """
 
     def __init__(self, server_name: str):
@@ -243,21 +242,19 @@ class HermesTokenStorage:
         data = _read_json(self._tokens_path())
         if data is None:
             return None
-        # Hermes records an absolute wall-clock ``expires_at`` alongside the
-        # SDK's serialized token (see ``set_tokens``). On read we rewrite
-        # ``expires_in`` to the remaining seconds so the SDK's downstream
-        # ``update_token_expiry`` computes the correct absolute time and
-        # ``is_token_valid()`` correctly reports False for tokens that
-        # expired while the process was down.
+        # Hermes 在 SDK 序列化后的 token 旁边记录了一个绝对的挂钟时间
+        # ``expires_at``（见 ``set_tokens``）。读取时我们把 ``expires_in``
+        # 改写为剩余秒数，使 SDK 下游的 ``update_token_expiry`` 能计算出
+        # 正确的绝对时间，并让 ``is_token_valid()`` 对那些在进程停机
+        # 期间过期的 token 正确返回 False。
         #
-        # Legacy token files (pre-Fix-A) have ``expires_in`` but no
-        # ``expires_at``. We fall back to the file's mtime as a best-effort
-        # wall-clock proxy for when the token was written: if (mtime +
-        # expires_in) is in the past, clamp ``expires_in`` to zero so the
-        # SDK refreshes before the first request. This self-heals one-time
-        # on the next successful ``set_tokens``, which writes the new
-        # ``expires_at`` field. The stored ``expires_at`` is stripped before
-        # model_validate because it's not part of the SDK's OAuthToken schema.
+        # 旧版 token 文件（Fix-A 之前）只有 ``expires_in`` 而没有
+        # ``expires_at``。此时我们退而使用文件 mtime 作为「token 写入时间」
+        # 的尽力而为的挂钟代理：若 (mtime + expires_in) 已是过去时间，
+        # 则将 ``expires_in`` 钳为零，让 SDK 在第一次请求前先刷新。
+        # 这会在下一次成功的 ``set_tokens``（写入新的 ``expires_at``
+        # 字段）时自我修复一次。存储的 ``expires_at`` 在 model_validate
+        # 之前会被剥离，因为它不属于 SDK 的 OAuthToken schema。
         absolute_expiry = data.pop("expires_at", None)
         if absolute_expiry is not None:
             data["expires_in"] = int(max(absolute_expiry - time.time(), 0))
@@ -280,20 +277,20 @@ class HermesTokenStorage:
 
     async def set_tokens(self, tokens: "OAuthToken") -> None:
         payload = tokens.model_dump(mode="json", exclude_none=True)
-        # Persist an absolute ``expires_at`` so a process restart can
-        # reconstruct the correct remaining TTL. Without this the MCP SDK's
-        # ``_initialize`` reloads a relative ``expires_in`` which has no
-        # wall-clock reference, leaving ``context.token_expiry_time=None``
-        # and ``is_token_valid()`` falsely reporting True. See Fix A in
-        # ``mcp-oauth-token-diagnosis`` skill + Claude Code's
-        # ``OAuthTokens.expiresAt`` persistence (auth.ts ~180).
+        # 持久化一个绝对的 ``expires_at``，使进程重启后能够重建正确的
+        # 剩余 TTL。若不这样做，MCP SDK 的 ``_initialize`` 会重新加载一个
+        # 相对的 ``expires_in``，而它没有挂钟参照，导致
+        # ``context.token_expiry_time=None``，``is_token_valid()`` 会
+        # 错误地返回 True。参见 ``mcp-oauth-token-diagnosis`` 技能中的
+        # Fix A，以及 Claude Code 的 ``OAuthTokens.expiresAt`` 持久化
+        # （auth.ts ~180 行）。
         expires_in = payload.get("expires_in")
         if expires_in is not None:
             try:
                 payload["expires_at"] = time.time() + int(expires_in)
             except (TypeError, ValueError):
-                # Mock tokens or unusual shapes: skip the expires_at write
-                # rather than fail persistence.
+                # 模拟 token 或异常结构：跳过 expires_at 的写入，
+                # 而不是让持久化失败。
                 pass
         _write_json(self._tokens_path(), payload)
         logger.debug("OAuth tokens saved for %s", self._server_name)
@@ -315,12 +312,11 @@ class HermesTokenStorage:
         logger.debug("OAuth client info saved for %s", self._server_name)
 
     # -- oauth server metadata --------------------------------------------
-    # The MCP SDK keeps discovered ``OAuthMetadata`` (token endpoint URL,
-    # etc.) in memory only. Persisting it here lets a restarted process
-    # refresh tokens without re-running metadata discovery. Without this,
-    # cold-start refresh requests fall back to the SDK's guessed
-    # ``{server_url}/token`` which returns 404 on most real providers and
-    # forces a full browser re-authorization.
+    # MCP SDK 仅在内存中保存已发现的 ``OAuthMetadata``（token 端点 URL 等）。
+    # 在此持久化它，可以让重启后的进程在刷新 token 时无需重新跑一遍元数据
+    # 发现。否则冷启动刷新请求会退回到 SDK 猜测的 ``{server_url}/token``，
+    # 这在大多数真实 provider 上会返回 404，并迫使用户重新走一遍完整的
+    # 浏览器授权。
 
     def save_oauth_metadata(self, metadata: "OAuthMetadata") -> None:
         _write_json(self._meta_path(), metadata.model_dump(exclude_none=True, mode="json"))
@@ -339,27 +335,27 @@ class HermesTokenStorage:
     # -- cleanup -----------------------------------------------------------
 
     def remove(self) -> None:
-        """Delete all stored OAuth state for this server."""
+        """删除该服务器存储的全部 OAuth 状态。"""
         for p in (self._tokens_path(), self._client_info_path(), self._meta_path()):
             p.unlink(missing_ok=True)
 
     def has_cached_tokens(self) -> bool:
-        """Return True if we have tokens on disk (may be expired)."""
+        """当磁盘上存有 token（可能已过期）时返回 True。"""
         return self._tokens_path().exists()
 
 
 # ---------------------------------------------------------------------------
-# Callback handler factory -- each invocation gets its own result dict
+# 回调处理器工厂 —— 每次调用都会得到自己的 result dict
 # ---------------------------------------------------------------------------
 
 
 def _make_callback_handler() -> tuple[type, dict]:
-    """Create a per-flow callback HTTP handler class with its own result dict.
+    """创建一个带独立 result dict 的、按流程隔离的回调 HTTP handler 类。
 
-    Returns ``(HandlerClass, result_dict)`` where *result_dict* is a mutable
-    dict that the handler writes ``auth_code`` and ``state`` into when the
-    OAuth redirect arrives.  Each call returns a fresh pair so concurrent
-    flows don't stomp on each other.
+    返回 ``(HandlerClass, result_dict)``，其中 *result_dict* 是一个可变
+    dict，handler 会在 OAuth 重定向到达时把 ``auth_code`` 和 ``state``
+    写入其中。每次调用都返回一个全新的配对，因此并发流程之间不会
+    互相踩踏。
     """
     result: dict[str, Any] = {"auth_code": None, "state": None, "error": None}
 
@@ -393,15 +389,15 @@ def _make_callback_handler() -> tuple[type, dict]:
 
 
 # ---------------------------------------------------------------------------
-# Async redirect + callback handlers for OAuthClientProvider
+# 供 OAuthClientProvider 使用的异步重定向 + 回调处理器
 # ---------------------------------------------------------------------------
 
 
 async def _redirect_handler(authorization_url: str) -> None:
-    """Show the authorization URL to the user.
+    """向用户展示授权 URL。
 
-    Opens the browser automatically when possible; always prints the URL
-    as a fallback for headless/SSH/gateway environments.
+    在可能的情况下自动打开浏览器；对于无头/SSH/gateway 环境，始终打印
+    URL 作为兜底。
     """
     msg = (
         f"\n  MCP OAuth: authorization required.\n"
@@ -410,12 +406,12 @@ async def _redirect_handler(authorization_url: str) -> None:
     )
     print(msg, file=sys.stderr)
 
-    # On a remote SSH session the OAuth provider redirects to
-    # http://127.0.0.1:<port>/callback, which reaches the callback server on
-    # the *remote* machine — not the user's local machine where the browser
-    # opened.  Two ways out: paste the redirect URL back (default fallback,
-    # offered by _wait_for_callback on interactive TTYs), or set up an SSH
-    # port forward so the redirect tunnels through.
+    # 在远程 SSH 会话中，OAuth provider 会重定向到
+    # http://127.0.0.1:<port>/callback，该地址到达的是*远程*机器上的
+    # 回调服务器 —— 而不是用户浏览器所在的本地机器。有两条出路：
+    # 把重定向 URL 粘贴回来（交互式 TTY 下的默认兜底，由
+    # _wait_for_callback 提供），或设置一个 SSH 端口转发，让重定向
+    # 能通过隧道送达。
     if _oauth_port and (os.getenv("SSH_CLIENT") or os.getenv("SSH_TTY")):
         print(
             f"  Remote session detected. After you authorize, the provider redirects to\n"
@@ -449,24 +445,21 @@ async def _redirect_handler(authorization_url: str) -> None:
 
 
 async def _wait_for_callback() -> tuple[str, str | None]:
-    """Wait for the OAuth callback to arrive on the local callback server.
+    """等待 OAuth 回调到达本地回调服务器。
 
-    Uses the module-level ``_oauth_port`` which is set by ``build_oauth_auth``
-    before this is ever called.  Polls for the result without blocking the
-    event loop.
+    使用模块级的 ``_oauth_port``，它由 ``build_oauth_auth`` 在本函数被
+    调用之前设置好。在不阻塞事件循环的前提下轮询结果。
 
-    On an interactive TTY, races the HTTP listener against a stdin paste
-    fallback so users without an SSH tunnel can copy the redirect URL (or
-    just the ``code=...&state=...`` query string) from a browser on another
-    machine and paste it back. The HTTP listener wins when the redirect
-    reaches it first; the paste fallback wins when it doesn't.
+    在交互式 TTY 上，让 HTTP 监听器与一个 stdin 粘贴兜底竞争，这样
+    没有 SSH 隧道的用户也能从另一台机器的浏览器里复制重定向 URL
+    （或仅复制 ``code=...&state=...`` 查询串）粘贴回来。当重定向先
+    到达 HTTP 监听器时它获胜；否则粘贴兜底获胜。
 
     Raises:
-        OAuthNonInteractiveError: If the callback times out (no user present
-            to complete the browser auth).
-        RuntimeError: If ``_oauth_port`` has not been set, which would indicate
-            that ``build_oauth_auth`` was skipped — the asserting form below
-            was a silent bug when running Python with ``-O``/``-OO``.
+        OAuthNonInteractiveError: 回调超时（没有用户在场完成浏览器授权）。
+        RuntimeError: ``_oauth_port`` 尚未被设置，这表明
+            ``build_oauth_auth`` 被跳过了 —— 在以 ``-O``/``-OO`` 运行
+            Python 时，断言形式曾是一个静默 bug。
     """
     if _oauth_port is None:
         raise RuntimeError(
@@ -474,16 +467,16 @@ async def _wait_for_callback() -> tuple[str, str | None]:
             "before _wait_for_oauth_callback"
         )
 
-    # The callback server is already running (started in build_oauth_auth).
-    # We just need to poll for the result.
+    # 回调服务器已在运行（在 build_oauth_auth 中启动）。
+    # 我们只需轮询结果。
     handler_cls, result = _make_callback_handler()
 
-    # Start a temporary server on the known port
+    # 在已知端口上启动一个临时服务器
     try:
         server = HTTPServer(("127.0.0.1", _oauth_port), handler_cls)
     except OSError:
-        # Port already in use — the server from build_oauth_auth is running.
-        # Fall back to polling the server started by build_oauth_auth.
+        # 端口已被占用 —— build_oauth_auth 启动的服务器仍在运行。
+        # 退回轮询 build_oauth_auth 启动的那个服务器。
         raise OAuthNonInteractiveError(
             "OAuth callback timed out — could not bind callback port. "
             "Complete the authorization in a browser first, then retry."
@@ -492,10 +485,9 @@ async def _wait_for_callback() -> tuple[str, str | None]:
     server_thread = threading.Thread(target=server.handle_request, daemon=True)
     server_thread.start()
 
-    # Optional paste-fallback thread: only on interactive TTYs. Reads one
-    # line from stdin and writes the parsed code/state into the shared
-    # result dict. The HTTP listener and this thread race for the result;
-    # whichever fills it first wins.
+    # 可选的粘贴兜底线程：仅在交互式 TTY 上启用。从 stdin 读取一行，
+    # 解析出 code/state 并写入共享的 result dict。HTTP 监听器与本线程
+    # 竞争结果；谁先填上谁获胜。
     paste_thread: threading.Thread | None = None
     if _is_interactive():
         print(
@@ -536,19 +528,19 @@ async def _wait_for_callback() -> tuple[str, str | None]:
 
 
 def _paste_callback_reader(result: dict) -> None:
-    """Read one line from stdin, parse it as an OAuth redirect, write to result.
+    """从 stdin 读取一行，按 OAuth 重定向解析，并写入 result。
 
-    Accepts any of:
-      - Full redirect URL: ``http://127.0.0.1:37949/callback?code=...&state=...``
-      - The provider's own callback URL: ``https://mcp.example.com/callback?code=...&state=...``
-      - Just the query string: ``?code=...&state=...`` or ``code=...&state=...``
-      - A skip token (``skip``, ``cancel``, ``s``, ``n``, ``no``, ``q``, ``quit``)
-        — exits the OAuth flow cleanly without auth. Caller raises
-        :class:`OAuthNonInteractiveError` so MCP connection setup treats this
-        as a non-fatal "user opted out" and continues without that server.
+    接受以下任一形式：
+      - 完整的重定向 URL：``http://127.0.0.1:37949/callback?code=...&state=...``
+      - provider 自己的回调 URL：``https://mcp.example.com/callback?code=...&state=...``
+      - 仅查询串：``?code=...&state=...`` 或 ``code=...&state=...``
+      - 跳过令牌（``skip``、``cancel``、``s``、``n``、``no``、``q``、``quit``）
+        —— 干净地退出 OAuth 流程且不进行认证。调用方会抛出
+        :class:`OAuthNonInteractiveError`，使 MCP 连接设置将其视为
+        非致命的「用户主动放弃」并继续运行而不加载该服务器。
 
-    Failures to parse, EOF, or interrupts are swallowed — this is best-effort
-    fallback alongside the HTTP listener, which remains the primary path.
+    解析失败、EOF 或中断都会被吞掉 —— 这是与 HTTP 监听器（仍是主路径）
+    并行的尽力而为兜底。
     """
     try:
         line = sys.stdin.readline()
@@ -560,14 +552,13 @@ def _paste_callback_reader(result: dict) -> None:
     if not line:
         return
 
-    # Skip if HTTP listener already won.
+    # 若 HTTP 监听器已先获胜则跳过。
     if result.get("auth_code") is not None or result.get("error") is not None:
         return
 
-    # Skip token: user explicitly opted out of authorization. Mark the
-    # result with a sentinel error string that _wait_for_callback maps
-    # to OAuthNonInteractiveError (already handled by mcp_tool.py as a
-    # non-fatal "skip this server and continue startup" path).
+    # 跳过令牌：用户明确放弃授权。用一个哨兵错误字符串标记 result，
+    # _wait_for_callback 会将其映射为 OAuthNonInteractiveError
+    # （mcp_tool.py 已将其作为非致命的「跳过该服务器并继续启动」路径处理）。
     if line.lower() in _SKIP_TOKENS:
         if result.get("auth_code") is not None or result.get("error") is not None:
             return
@@ -580,10 +571,10 @@ def _paste_callback_reader(result: dict) -> None:
         )
         return
 
-    # Strip a leading "?" if user pasted just a query string.
+    # 若用户只粘贴了查询串，去掉开头的 "?"。
     query = line
     if "?" in line:
-        # Either a full URL or "?code=...". Take everything after the first "?".
+        # 可能是完整 URL，也可能是 "?code=..."。取第一个 "?" 之后的所有内容。
         query = line.split("?", 1)[1]
     if query.startswith("?"):
         query = query[1:]
@@ -608,7 +599,7 @@ def _paste_callback_reader(result: dict) -> None:
         )
         return
 
-    # One more race-check before writing.
+    # 写入前再做一次竞争检查。
     if result.get("auth_code") is not None or result.get("error") is not None:
         return
 
@@ -620,52 +611,50 @@ def _paste_callback_reader(result: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# 公共 API
 # ---------------------------------------------------------------------------
 
 
 def remove_oauth_tokens(server_name: str) -> None:
-    """Delete stored OAuth tokens and client info for a server."""
+    """删除某个服务器存储的 OAuth token 和客户端信息。"""
     storage = HermesTokenStorage(server_name)
     storage.remove()
     logger.info("OAuth tokens removed for '%s'", server_name)
 
 
 # ---------------------------------------------------------------------------
-# Extracted helpers (Task 3 of MCP OAuth consolidation)
+# 抽取出的辅助函数（MCP OAuth 合并工作的 Task 3）
 #
-# These compose into ``build_oauth_auth`` below, and are also used by
-# ``tools.mcp_oauth_manager.MCPOAuthManager._build_provider`` so the two
-# construction paths share one implementation.
+# 它们组合进下方的 ``build_oauth_auth``，同时也被
+# ``tools.mcp_oauth_manager.MCPOAuthManager._build_provider`` 使用，
+# 从而让两条构造路径共用同一套实现。
 # ---------------------------------------------------------------------------
 
 
 def _configure_callback_port(cfg: dict) -> int:
-    """Pick or validate the OAuth callback port.
+    """选取或校验 OAuth 回调端口。
 
-    Stores the resolved port into ``cfg['_resolved_port']`` so sibling
-    helpers (and the manager) can read it from the same dict. Returns the
-    resolved port.
+    将解析出的端口存入 ``cfg['_resolved_port']``，使兄弟辅助函数
+    （以及 manager）能从同一个 dict 中读取。返回解析出的端口。
 
-    NOTE: also sets the legacy module-level ``_oauth_port`` so existing
-    calls to ``_wait_for_callback`` keep working. The legacy global is
-    the root cause of issue #5344 (port collision on concurrent OAuth
-    flows); replacing it with a ContextVar is out of scope for this
-    consolidation PR.
+    说明：同时设置了遗留的模块级 ``_oauth_port``，使对
+    ``_wait_for_callback`` 的现有调用继续可用。该遗留全局变量正是
+    issue #5344（并发 OAuth 流程上的端口冲突）的根因；用 ContextVar
+    替换它不在本次合并 PR 的范围内。
     """
     global _oauth_port
     requested = int(cfg.get("redirect_port", 0))
     port = _find_free_port() if requested == 0 else requested
     cfg["_resolved_port"] = port
-    _oauth_port = port  # legacy consumer: _wait_for_callback reads this
+    _oauth_port = port  # 遗留消费者：_wait_for_callback 读取此值
     return port
 
 
 def _build_client_metadata(cfg: dict) -> "OAuthClientMetadata":
-    """Build OAuthClientMetadata from the oauth config dict.
+    """根据 oauth 配置 dict 构建 OAuthClientMetadata。
 
-    Requires ``cfg['_resolved_port']`` to have been populated by
-    :func:`_configure_callback_port` first.
+    要求 ``cfg['_resolved_port']`` 已由 :func:`_configure_callback_port`
+    预先填好。
     """
     port = cfg.get("_resolved_port")
     if port is None:
@@ -696,7 +685,7 @@ def _maybe_preregister_client(
     cfg: dict,
     client_metadata: "OAuthClientMetadata",
 ) -> None:
-    """If cfg has a pre-registered client_id, persist it to storage."""
+    """若 cfg 中带有预注册的 client_id，则将其持久化到 storage。"""
     client_id = cfg.get("client_id")
     if not client_id:
         return
@@ -727,20 +716,20 @@ def build_oauth_auth(
     server_url: str,
     oauth_config: dict | None = None,
 ) -> "OAuthClientProvider | None":
-    """Build an ``httpx.Auth``-compatible OAuth handler for an MCP server.
+    """为某个 MCP 服务器构建一个与 ``httpx.Auth`` 兼容的 OAuth handler。
 
-    Public API preserved for backwards compatibility. New code should use
-    :func:`tools.mcp_oauth_manager.get_manager` so OAuth state is shared
-    across config-time, runtime, and reconnect paths.
+    为向后兼容而保留的公共 API。新代码应改用
+    :func:`tools.mcp_oauth_manager.get_manager`，以便在配置时、运行时
+    以及重连路径之间共享 OAuth 状态。
 
     Args:
-        server_name: Server key in mcp_servers config (used for storage).
-        server_url: MCP server endpoint URL.
-        oauth_config: Optional dict from the ``oauth:`` block in config.yaml.
+        server_name: mcp_servers 配置中的服务器键名（用于存储）。
+        server_url: MCP 服务器端点 URL。
+        oauth_config: 可选的 dict，来自 config.yaml 中的 ``oauth:`` 块。
 
     Returns:
-        An ``OAuthClientProvider`` instance, or None if the MCP SDK lacks
-        OAuth support.
+        一个 ``OAuthClientProvider`` 实例；若 MCP SDK 缺少 OAuth 支持
+        则返回 None。
     """
     if not _OAUTH_AVAILABLE:
         logger.warning(
@@ -750,7 +739,7 @@ def build_oauth_auth(
         )
         return None
 
-    cfg = dict(oauth_config or {})  # copy — we mutate _resolved_port
+    cfg = dict(oauth_config or {})  # 拷贝 —— 我们会改写 _resolved_port
     storage = HermesTokenStorage(server_name)
 
     if not _is_interactive() and not storage.has_cached_tokens():

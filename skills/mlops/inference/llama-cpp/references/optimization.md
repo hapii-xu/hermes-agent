@@ -1,89 +1,89 @@
-# Performance Optimization Guide
+# 性能优化指南
 
-Maximize llama.cpp inference speed and efficiency.
+最大化 llama.cpp 的推理速度和效率。
 
-## CPU Optimization
+## CPU 优化
 
-### Thread tuning
+### 线程调优
 ```bash
-# Set threads (default: physical cores)
+# 设置线程数（默认：物理核心数）
 ./llama-cli -m model.gguf -t 8
 
-# For AMD Ryzen 9 7950X (16 cores, 32 threads)
--t 16  # Best: physical cores
+# 对于 AMD Ryzen 9 7950X（16 核，32 线程）
+-t 16  # 最佳：物理核心数
 
-# Avoid hyperthreading (slower for matrix ops)
+# 避免使用超线程（对矩阵运算更慢）
 ```
 
-### BLAS acceleration
+### BLAS 加速
 ```bash
-# OpenBLAS (faster matrix ops)
+# OpenBLAS（更快的矩阵运算）
 make LLAMA_OPENBLAS=1
 
-# BLAS gives 2-3× speedup
+# BLAS 带来 2-3 倍加速
 ```
 
-## GPU Offloading
+## GPU 卸载
 
-### Layer offloading
+### 层卸载
 ```bash
-# Offload 35 layers to GPU (hybrid mode)
+# 将 35 层卸载到 GPU（混合模式）
 ./llama-cli -m model.gguf -ngl 35
 
-# Offload all layers
+# 卸载所有层
 ./llama-cli -m model.gguf -ngl 999
 
-# Find optimal value:
-# Start with -ngl 999
-# If OOM, reduce by 5 until fits
+# 寻找最优值：
+# 从 -ngl 999 开始
+# 如果 OOM，每次减少 5，直到能放下
 ```
 
-### Memory usage
+### 内存使用
 ```bash
-# Check VRAM usage
+# 检查 VRAM 使用
 nvidia-smi dmon
 
-# Reduce context if needed
-./llama-cli -m model.gguf -c 2048  # 2K context instead of 4K
+# 如有需要，减少上下文
+./llama-cli -m model.gguf -c 2048  # 用 2K 上下文代替 4K
 ```
 
-## Batch Processing
+## 批处理
 
 ```bash
-# Increase batch size for throughput
-./llama-cli -m model.gguf -b 512  # Default: 512
+# 增大批处理量以提高吞吐
+./llama-cli -m model.gguf -b 512  # 默认：512
 
-# Physical batch (GPU)
---ubatch 128  # Process 128 tokens at once
+# 物理批量（GPU）
+--ubatch 128  # 一次处理 128 个 token
 ```
 
-## Context Management
+## 上下文管理
 
 ```bash
-# Default context (512 tokens)
+# 默认上下文（512 个 token）
 -c 512
 
-# Longer context (slower, more memory)
+# 更长上下文（更慢，更多内存）
 -c 4096
 
-# Very long context (if model supports)
+# 超长上下文（如果模型支持）
 -c 32768
 ```
 
-## Benchmarks
+## 基准测试
 
-### CPU Performance (Llama 2-7B Q4_K_M)
+### CPU 性能（Llama 2-7B Q4_K_M）
 
-| Setup | Speed | Notes |
+| 配置 | 速度 | 说明 |
 |-------|-------|-------|
-| Apple M3 Max | 50 tok/s | Metal acceleration |
-| AMD 7950X (16c) | 35 tok/s | OpenBLAS |
+| Apple M3 Max | 50 tok/s | Metal 加速 |
+| AMD 7950X（16c） | 35 tok/s | OpenBLAS |
 | Intel i9-13900K | 30 tok/s | AVX2 |
 
-### GPU Offloading (RTX 4090)
+### GPU 卸载（RTX 4090）
 
-| Layers GPU | Speed | VRAM |
+| GPU 层数 | 速度 | VRAM |
 |------------|-------|------|
-| 0 (CPU only) | 30 tok/s | 0 GB |
-| 20 (hybrid) | 80 tok/s | 8 GB |
-| 35 (all) | 120 tok/s | 12 GB |
+| 0（仅 CPU） | 30 tok/s | 0 GB |
+| 20（混合） | 80 tok/s | 8 GB |
+| 35（全部） | 120 tok/s | 12 GB |

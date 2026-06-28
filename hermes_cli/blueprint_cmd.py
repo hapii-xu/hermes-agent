@@ -1,32 +1,27 @@
-"""Shared ``/blueprint`` command logic for CLI, TUI, and gateway.
+"""CLI、TUI 和 gateway 的 ``/blueprint`` 命令共享逻辑。
 
-The conversational counterpart to the dashboard's Automation Blueprints form. Where a
-surface has a screen, the user fills a form (dashboard / GUI app) and the API
-calls ``fill_blueprint`` -> ``create_job`` directly. Where a surface is just a
-chat line, the user picks a blueprint by name and the agent asks for what it
-needs — pick a blueprint by name and the agent asks you for what it needs, one
-question at a time (the messaging-assistant model: pick a blueprint → it asks you
-a couple things → done).
+仪表盘"自动化蓝图"表单的对话式对应物。界面有屏幕时，用户填写表单
+（仪表盘 / GUI 应用），API 直接调用 ``fill_blueprint`` -> ``create_job``。
+界面仅为聊天行时，用户按名称选择蓝图，agent 逐一询问所需信息
+（消息助手模型：选择蓝图 → 它问你几个问题 → 完成）。
 
-Subcommand shapes:
-  /blueprint                      list the catalog
-  /blueprint <name>               name-match a blueprint, then SEED THE AGENT to
-                                    ask the user for each value conversationally
-  /blueprint <name> slot=val …    fill + create the cron job directly
-                                    (the deterministic dashboard / docs / power-
-                                    user shortcut — no agent turn)
+子命令形式：
+  /blueprint                      列出目录
+  /blueprint <name>               按名称匹配蓝图，然后 SEED THE AGENT
+                                    以对话方式逐一询问用户各字段值
+  /blueprint <name> slot=val …    直接填充并创建 cron 任务
+                                    （仪表盘 / 文档 / 高级用户的确定性快捷方式 — 无需 agent 介入）
 
-The ``<name>`` form is forgiving: exact key, unique prefix, or fuzzy match all
-resolve; an ambiguous query lists the candidates; an unknown one suggests the
-closest. When it resolves, the handler returns an ``agent_seed`` — a natural-
-language instruction built from the blueprint's typed slots + schedule/prompt
-templates — that the calling surface feeds to the agent as a normal user turn
-(gateway: rewrite ``event.text`` and fall through, the ``/steer`` pattern; CLI:
-a one-shot pending seed the main loop runs). The agent then asks for each slot
-and calls the existing ``cronjob`` tool. No new tool, no second job engine.
+``<name>`` 格式宽松：精确 key、唯一前缀或模糊匹配均可解析；
+查询有歧义时列出候选项；未知时建议最接近的结果。解析成功后，
+处理器返回 ``agent_seed`` — 由蓝图的类型化字段和调度/提示模板
+构建的自然语言指令 — 调用界面将其作为普通用户消息输入给 agent
+（gateway：重写 ``event.text`` 并透传，即 ``/steer`` 模式；CLI：
+主循环执行的一次性待定 seed）。agent 随后逐一询问各字段值，
+并调用已有的 ``cronjob`` 工具。无需新工具，无需第二个任务引擎。
 
-Parsing is shlex-based so quoted free-text values (``criteria="from my boss"``)
-survive.
+解析基于 shlex，因此带引号的自由文本值（``criteria="from my boss"``）
+可正确保留。
 """
 
 from __future__ import annotations
@@ -42,14 +37,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BlueprintCommandResult:
-    """Outcome of a ``/blueprint`` invocation.
+    """``/blueprint`` 调用的结果。
 
-    ``text`` is always shown to the user. When ``agent_seed`` is set, the
-    calling surface should ALSO hand that seed to the agent as the user's next
-    turn (the blueprint was matched and now the agent gathers the slot values
-    conversationally). When ``agent_seed`` is None the command is fully handled
-    (catalog listing, direct create, or an error) and nothing is sent to the
-    agent.
+    ``text`` 始终显示给用户。当 ``agent_seed`` 有值时，
+    调用界面还应将该 seed 作为用户的下一轮消息传给 agent
+    （蓝图已匹配，agent 将以对话方式收集各字段值）。
+    当 ``agent_seed`` 为 None 时，命令已完全处理
+    （目录列表、直接创建或错误），不向 agent 发送任何内容。
     """
 
     text: str
@@ -77,7 +71,7 @@ def _resolve_origin(explicit: Optional[Dict[str, Any]]) -> Optional[Dict[str, An
 
 
 def _parse_kv(tokens) -> Tuple[Dict[str, str], list]:
-    """Split ``slot=value`` tokens from bare tokens. Returns (values, leftovers)."""
+    """从裸 token 中分离 ``slot=value`` token。返回 (values, leftovers)。"""
     values: Dict[str, str] = {}
     leftovers = []
     for tok in tokens:
@@ -92,16 +86,16 @@ def _parse_kv(tokens) -> Tuple[Dict[str, str], list]:
 
 
 def match_blueprint(query: str) -> Tuple[Optional[Any], List[Any]]:
-    """Resolve a free-typed blueprint name to a blueprint.
+    """将自由输入的蓝图名称解析为对应蓝图。
 
-    Returns ``(blueprint, candidates)``:
-      * exact key or unique prefix / fuzzy match -> ``(blueprint, [])``
-      * ambiguous (2+ plausible) -> ``(None, [candidates…])``
-      * no plausible match -> ``(None, [])``
+    返回 ``(blueprint, candidates)``：
+      * 精确 key 或唯一前缀/模糊匹配 -> ``(blueprint, [])``
+      * 有歧义（2+ 个候选）        -> ``(None, [candidates…])``
+      * 无合理匹配                 -> ``(None, [])``
 
-    Matching is forgiving because chat-line users type the name (unlike the
-    dashboard/Discord where it's picked): exact key first, then case-insensitive
-    prefix on key or title, then a difflib fuzzy pass.
+    匹配策略宽松，因为聊天行用户需手动输入名称（不像仪表盘/Discord 可以选择）：
+    先精确匹配 key，再对 key 或标题做大小写不敏感的前缀匹配，
+    最后使用 difflib 进行模糊匹配。
     """
     from cron.blueprint_catalog import CATALOG, get_blueprint
 
@@ -113,7 +107,7 @@ def match_blueprint(query: str) -> Tuple[Optional[Any], List[Any]]:
     if exact is not None:
         return exact, []
 
-    # Prefix match on key or title word-start.
+    # 对 key 或标题词首进行前缀匹配。
     prefix = [
         r for r in CATALOG
         if r.key.lower().startswith(q)
@@ -124,7 +118,7 @@ def match_blueprint(query: str) -> Tuple[Optional[Any], List[Any]]:
     if len(prefix) > 1:
         return None, prefix
 
-    # Substring match anywhere in key/title/description.
+    # 在 key/标题/描述中任意位置进行子串匹配。
     substr = [
         r for r in CATALOG
         if q in r.key.lower() or q in r.title.lower() or q in r.description.lower()
@@ -134,7 +128,7 @@ def match_blueprint(query: str) -> Tuple[Optional[Any], List[Any]]:
     if len(substr) > 1:
         return None, substr
 
-    # Fuzzy on keys (typo tolerance).
+    # 对 key 进行模糊匹配（容忍拼写错误）。
     keys = [r.key for r in CATALOG]
     close = difflib.get_close_matches(q, keys, n=3, cutoff=0.6)
     if len(close) == 1:
@@ -155,12 +149,12 @@ def _humanize_schedule(blueprint) -> str:
 
 
 def build_blueprint_seed(blueprint) -> str:
-    """Build the natural-language fill-request the agent will act on.
+    """构建 agent 将要执行的自然语言填充请求。
 
-    The agent reads this as a normal user turn, asks the user for each unfilled
-    slot one at a time, then calls the ``cronjob`` tool with the
-    cron expression it builds from the blueprint's ``schedule_template`` and the
-    rendered prompt. Defaults are stated so the agent can offer them.
+    agent 将此作为普通用户轮次读取，逐一询问用户每个未填充的字段值，
+    然后调用 ``cronjob`` 工具，使用由蓝图 ``schedule_template``
+    和渲染后的提示构建的 cron 表达式。默认值会明确标出，
+    以便 agent 向用户提供建议。
     """
     from cron.blueprint_catalog import WEEKDAY_PRESETS
 
@@ -235,9 +229,9 @@ def _fmt_no_match(query: str) -> str:
 
 
 def _manage_hint(surface: str) -> str:
-    """Post-create management hint. /cron is a CLI-only slash command; on
-    gateway platforms the user manages jobs by asking the agent (cronjob tool)
-    or from the dashboard."""
+    """创建后的管理提示。/cron 是仅限 CLI 的斜杠命令；
+    在 gateway 平台上，用户通过询问 agent（cronjob 工具）
+    或从仪表盘来管理任务。"""
     if surface == "cli":
         return "Manage it with /cron."
     return "Ask me to list, pause, or remove it any time."
@@ -249,16 +243,15 @@ def handle_blueprint_command(
     origin: Optional[Dict[str, Any]] = None,
     surface: str = "cli",
 ) -> BlueprintCommandResult:
-    """Dispatch a ``/blueprint`` invocation.
+    """分发 ``/blueprint`` 调用。
 
-    Returns a :class:`BlueprintCommandResult`. When ``agent_seed`` is set the
-    caller must feed it to the agent as the next user turn; otherwise the
-    command is fully handled and only ``text`` is shown.
+    返回 :class:`BlueprintCommandResult`。当 ``agent_seed`` 有值时，
+    调用方必须将其作为用户的下一轮消息传给 agent；否则命令已完全处理，
+    仅显示 ``text``。
 
-    ``args`` is everything after ``/blueprint``. ``origin`` lets a directly
-    created job deliver back to the chat it was set up from. ``surface``
-    (``"cli"`` | ``"gateway"``) picks the right wording for follow-up hints —
-    ``/cron`` only exists on the CLI.
+    ``args`` 是 ``/blueprint`` 之后的所有内容。``origin`` 让直接创建的任务
+    可以回送到其设置所在的聊天。``surface``（``"cli"`` | ``"gateway"``）
+    决定后续提示的措辞 — ``/cron`` 仅存在于 CLI。
     """
     try:
         from cron.blueprint_catalog import fill_blueprint, BlueprintFillError
@@ -271,7 +264,7 @@ def handle_blueprint_command(
     except ValueError:
         tokens = (args or "").split()
 
-    # Bare -> list catalog.
+    # 无参数 -> 列出目录。
     if not tokens:
         return BlueprintCommandResult(_fmt_catalog())
 
@@ -284,7 +277,7 @@ def handle_blueprint_command(
             return BlueprintCommandResult(_fmt_candidates(query, candidates))
         return BlueprintCommandResult(_fmt_no_match(query))
 
-    # `<name>` with no inline slot values -> seed the agent to ask for them.
+    # ``<name>`` 无内联字段值 -> 向 agent 注入 seed，由其逐一询问。
     if not values:
         seed = build_blueprint_seed(blueprint)
         text = (
@@ -293,7 +286,7 @@ def handle_blueprint_command(
         )
         return BlueprintCommandResult(text, agent_seed=seed)
 
-    # `<name> slot=val …` -> fill + create directly (deterministic shortcut).
+    # ``<name> slot=val …`` -> 直接填充并创建（确定性快捷方式）。
     try:
         spec = fill_blueprint(blueprint, values, origin=_resolve_origin(origin))
     except BlueprintFillError as e:

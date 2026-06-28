@@ -1,41 +1,41 @@
 # bridge
 
-Gap-crossing structure connecting problem to solution or current to future state.
+跨越鸿沟的结构，将问题与解决方案、或现状与未来状态连接起来。
 
-## Structure
+## 结构
 
-- Left side: current state/problem
-- Right side: desired state/solution
-- Bridge element spanning the gap
-- Gap representing challenge/obstacle
-- Bridge elements as steps/methods
+- 左侧：现状/问题
+- 右侧：期望状态/解决方案
+- 横跨鸿沟的桥梁元素
+- 鸿沟代表挑战/障碍
+- 桥梁元素即步骤/方法
 
-## Best For
+## 最适用于
 
-- Problem to solution journeys
-- Current vs future state
-- Gap analysis
-- Transformation bridges
-- Strategic initiatives
+- 问题到解决方案的旅程
+- 现状与未来状态
+- 差距分析
+- 转变之桥
+- 战略举措
 
-## Visual Elements
+## 视觉元素
 
-- Two distinct platforms/sides
-- Visible gap or chasm
-- Bridge structure with supports
-- Icons representing each side
-- Stepping stones or bridge planks
+- 两个截然不同的平台/两侧
+- 可见的鸿沟或深渊
+- 带支撑的桥梁结构
+- 代表两侧的图标
+- 垫脚石或桥板
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Left label (From/Problem/Current)
-- Right label (To/Solution/Future)
-- Bridge elements labeled
-- Gap description below
+- 标题置于顶部
+- 左侧标签（起点/问题/现状）
+- 右侧标签（终点/解决方案/未来）
+- 桥梁元素加标注
+- 鸿沟描述置于下方
 
-## Recommended Pairings
+## 推荐搭配
 
-- `cartoon-hand-drawn`: Friendly journeys
-- `corporate-memphis`: Business transformations
-- `isometric-3d`: Technical transitions
+- `cartoon-hand-drawn`：友好型旅程
+- `corporate-memphis`：商业转型
+- `isometric-3d`：技术性过渡

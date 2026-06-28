@@ -1,193 +1,193 @@
-# Design System: BMW
+# 设计系统：BMW
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `DM Sans` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代方案：
+> - **主字体：** `DM Sans` | **等宽字体：** `system monospace stack`
+> - **字体栈 (CSS)：** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-BMW's website is automotive engineering made visual — a design system that communicates precision, performance, and German industrial confidence. The page alternates between deep dark hero sections (featuring full-bleed automotive photography) and clean white content areas, creating a cinematic rhythm reminiscent of a luxury car showroom where vehicles are lit against darkness. The BMW CI2020 design language (their corporate identity refresh) defines every element.
+BMW 的网站是汽车工程的视觉化呈现——一套传达精确、性能和德式工业自信的设计系统。页面在深邃的暗色英雄区（展示全幅汽车摄影）与干净的白色内容区之间交替，营造出一种电影般的节奏，让人联想到灯光将车辆映衬于黑暗之中的豪华汽车展厅。BMW CI2020 设计语言（其企业标识焕新）定义了每一个元素。
 
-The typography is built on BMWTypeNextLatin — a proprietary typeface in two variants: BMWTypeNextLatin Light (weight 300) for massive uppercase display headings, and BMWTypeNextLatin Regular for body and UI text. The 60px uppercase headline at weight 300 is the defining typographic gesture — light-weight type that whispers authority rather than shouting it. The fallback stack includes Helvetica and Japanese fonts (Hiragino, Meiryo), reflecting BMW's global presence.
+排版基于 BMWTypeNextLatin——一款专有字体，有两个变体：BMWTypeNextLatin Light（字重 300）用于巨大的大写展示标题，BMWTypeNextLatin Regular 用于正文和 UI 文字。60px 大写标题配字重 300 是其标志性的排版姿态——轻字重的字体低语权威，而非呐喊。回退栈包含 Helvetica 和日文字体（Hiragino、Meiryo），反映了 BMW 的全球布局。
 
-What makes BMW distinctive is its CSS variable-driven theming system. Context-aware variables (`--site-context-highlight-color: #1c69d4`, `--site-context-focus-color: #0653b6`, `--site-context-metainfo-color: #757575`) suggest a design system built for multi-brand, multi-context deployment where colors can be swapped globally. The blue highlight color (`#1c69d4`) is BMW's signature blue — used sparingly for interactive elements and focus states, never decoratively. Zero border-radius was detected — BMW's design is angular, sharp-cornered, and uncompromisingly geometric.
+BMW 的独特之处在于其 CSS 变量驱动的主题系统。上下文感知变量（`--site-context-highlight-color: #1c69d4`、`--site-context-focus-color: #0653b6`、`--site-context-metainfo-color: #757575`）暗示这是一套为多品牌、多上下文部署而构建的设计系统，颜色可全局替换。蓝色高亮色（`#1c69d4`）是 BMW 的标志蓝——仅用于交互元素和聚焦状态，从不作装饰。检测到的圆角为零——BMW 的设计是有棱角的、尖角的、毫不妥协的几何形态。
 
-**Key Characteristics:**
-- BMWTypeNextLatin Light (weight 300) uppercase for display — whispered authority
-- BMW Blue (`#1c69d4`) as singular accent — used only for interactive elements
-- Zero border-radius detected — angular, sharp-cornered, industrial geometry
-- Dark hero photography + white content sections — showroom lighting rhythm
-- CSS variable-driven theming: `--site-context-*` tokens for brand flexibility
-- Weight 900 for navigation emphasis — extreme contrast with 300 display
-- Tight line-heights (1.15–1.30) throughout — compressed, efficient, German engineering
-- Full-bleed automotive photography as primary visual content
+**关键特征：**
+- BMWTypeNextLatin Light（字重 300）大写用于展示——低语的权威
+- BMW 蓝（`#1c69d4`）作为单一强调色——仅用于交互元素
+- 检测到的圆角为零——有棱角、尖角、工业几何
+- 暗色英雄摄影 + 白色内容区块——展厅灯光节奏
+- CSS 变量驱动的主题：`--site-context-*` token 用于品牌灵活性
+- 字重 900 用于导航强调——与 300 展示形成极端对比
+- 全程紧凑行高（1.15–1.30）——压缩、高效、德式工程
+- 全幅汽车摄影作为主要视觉内容
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary Brand
-- **Pure White** (`#ffffff`): `--site-context-theme-color`, primary surface, card backgrounds
-- **BMW Blue** (`#1c69d4`): `--site-context-highlight-color`, primary interactive accent
-- **BMW Focus Blue** (`#0653b6`): `--site-context-focus-color`, keyboard focus and active states
+### 主品牌色
+- **纯白**（`#ffffff`）：`--site-context-theme-color`，主表面、卡片背景
+- **BMW 蓝**（`#1c69d4`）：`--site-context-highlight-color`，主交互强调色
+- **BMW 聚焦蓝**（`#0653b6`）：`--site-context-focus-color`，键盘聚焦和激活状态
 
-### Neutral Scale
-- **Near Black** (`#262626`): Primary text on light surfaces, dark link text
-- **Meta Gray** (`#757575`): `--site-context-metainfo-color`, secondary text, metadata
-- **Silver** (`#bbbbbb`): Tertiary text, muted links, footer elements
+### 中性色阶
+- **近黑**（`#262626`）：浅色表面上的主文字、深色链接文字
+- **元数据灰**（`#757575`）：`--site-context-metainfo-color`，次要文字、元数据
+- **银色**（`#bbbbbb`）：三级文字、弱化链接、页脚元素
 
-### Interactive States
-- All links hover to white (`#ffffff`) — suggesting primarily dark-surface navigation
-- Text links use underline: none on hover — clean interaction
+### 交互状态
+- 所有链接悬停时变为白色（`#ffffff`）——暗示主要是深色表面导航
+- 文字链接使用下划线：悬停时无——干净的交互
 
-### Shadows
-- Minimal shadow system — depth through photography and dark/light section contrast
+### 阴影
+- 极简的阴影系统——深度通过摄影和暗/亮区块对比来营造
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Families
-- **Display Light**: `BMWTypeNextLatin Light`, fallbacks: `Helvetica, Arial, Hiragino Kaku Gothic ProN, Hiragino Sans, Meiryo`
-- **Body / UI**: `BMWTypeNextLatin`, same fallback stack
+### 字体族
+- **展示 Light**：`BMWTypeNextLatin Light`，回退：`Helvetica, Arial, Hiragino Kaku Gothic ProN, Hiragino Sans, Meiryo`
+- **正文 / UI**：`BMWTypeNextLatin`，相同回退栈
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 说明 |
 |------|------|------|--------|-------------|-------|
-| Display Hero | BMWTypeNextLatin Light | 60px (3.75rem) | 300 | 1.30 (tight) | `text-transform: uppercase` |
-| Section Heading | BMWTypeNextLatin | 32px (2.00rem) | 400 | 1.30 (tight) | Major section titles |
-| Nav Emphasis | BMWTypeNextLatin | 18px (1.13rem) | 900 | 1.30 (tight) | Navigation bold items |
-| Body | BMWTypeNextLatin | 16px (1.00rem) | 400 | 1.15 (tight) | Standard body text |
-| Button Bold | BMWTypeNextLatin | 16px (1.00rem) | 700 | 1.20–2.88 | CTA buttons |
-| Button | BMWTypeNextLatin | 16px (1.00rem) | 400 | 1.15 (tight) | Standard buttons |
+| 展示英雄 | BMWTypeNextLatin Light | 60px (3.75rem) | 300 | 1.30 (紧凑) | `text-transform: uppercase` |
+| 章节标题 | BMWTypeNextLatin | 32px (2.00rem) | 400 | 1.30 (紧凑) | 主要章节标题 |
+| 导航强调 | BMWTypeNextLatin | 18px (1.13rem) | 900 | 1.30 (紧凑) | 导航加粗项 |
+| 正文 | BMWTypeNextLatin | 16px (1.00rem) | 400 | 1.15 (紧凑) | 标准正文 |
+| 按钮加粗 | BMWTypeNextLatin | 16px (1.00rem) | 700 | 1.20–2.88 | CTA 按钮 |
+| 按钮 | BMWTypeNextLatin | 16px (1.00rem) | 400 | 1.15 (紧凑) | 标准按钮 |
 
-### Principles
-- **Light display, heavy navigation**: Weight 300 for hero headlines creates whispered elegance; weight 900 for navigation creates stark authority. This extreme weight contrast (300 vs 900) is the signature typographic tension.
-- **Universal uppercase display**: The 60px hero is always uppercase — creating a monumental, architectural quality.
-- **Tight everything**: Line-heights from 1.15 to 1.30 across the entire system. Nothing breathes — every line is compressed, efficient, German-engineered.
-- **Single font family**: BMWTypeNextLatin handles everything from 60px display to 16px body — unity through one typeface at different weights.
+### 原则
+- **轻展示，重导航**：字重 300 用于英雄标题创造低语的优雅；字重 900 用于导航创造冷峻的权威。这种极端的字重对比（300 vs 900）是标志性的排版张力。
+- **通用大写展示**：60px 英雄始终大写——营造出纪念碑式的、建筑般的特质。
+- **一切紧凑**：整个系统的行高从 1.15 到 1.30。没有呼吸空间——每一行都被压缩、高效、德式工程。
+- **单一字体族**：BMWTypeNextLatin 承担从 60px 展示到 16px 正文的一切——通过同一字体不同字重实现统一。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
-- Text: 16px BMWTypeNextLatin, weight 700 for primary, 400 for secondary
-- Line-height: 1.15–2.88 (large variation suggests padding-driven sizing)
-- Border: white bottom-border on dark surfaces (`1px solid #ffffff`)
-- No border-radius — sharp rectangular buttons
+### 按钮
+- 文字：16px BMWTypeNextLatin，主按钮字重 700，次按钮字重 400
+- 行高：1.15–2.88（巨大差异暗示由内边距驱动的尺寸）
+- 边框：深色表面上的白色底部边框（`1px solid #ffffff`）
+- 无圆角——尖锐的矩形按钮
 
-### Cards & Containers
-- No border-radius — all containers are sharp-cornered rectangles
-- White backgrounds on light sections
-- Dark backgrounds for hero/feature sections
-- No visible borders on most elements
+### 卡片与容器
+- 无圆角——所有容器都是尖角矩形
+- 浅色区块上使用白色背景
+- 英雄/功能区使用深色背景
+- 大多数元素无可见边框
 
-### Navigation
-- BMWTypeNextLatin 18px weight 900 for primary nav links
-- White text on dark header
+### 导航
+- BMWTypeNextLatin 18px 字重 900 用于主导航链接
+- 深色页头上的白色文字
 - BMW logo 54x54px
-- Hover: remains white, text-decoration none
-- "Home" text link in header
+- 悬停：保持白色，text-decoration 为 none
+- 页头中的 "Home" 文字链接
 
-### Image Treatment
-- Full-bleed automotive photography
-- Dark cinematic lighting
-- Edge-to-edge hero images
-- Car photography as primary visual content
+### 图片处理
+- 全幅汽车摄影
+- 深色电影感布光
+- 边到边的英雄图片
+- 汽车摄影作为主要视觉内容
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 5px, 8px, 10px, 12px, 15px, 16px, 20px, 24px, 30px, 32px, 40px, 45px, 56px, 60px
+### 间距系统
+- 基础单位：8px
+- 阶梯：1px, 5px, 8px, 10px, 12px, 15px, 16px, 20px, 24px, 30px, 32px, 40px, 45px, 56px, 60px
 
-### Grid & Container
-- Full-width hero photography
-- Centered content sections
-- Footer: multi-column link grid
+### 网格与容器
+- 全幅英雄摄影
+- 居中的内容区块
+- 页脚：多列链接网格
 
-### Whitespace Philosophy
-- **Showroom pacing**: Dark hero sections with generous padding create the feeling of walking through a showroom where each vehicle is spotlit in its own space.
-- **Compressed content**: Body text areas use tight line-heights and compact spacing — information-dense, no waste.
+### 留白哲学
+- **展厅节奏**：深色英雄区配以慷慨的内边距，营造出漫步展厅的感觉，每辆车都在自己的空间里被聚光灯照亮。
+- **压缩的内容**：正文区域使用紧凑的行高和紧凑的间距——信息密集，没有浪费。
 
-### Border Radius Scale
-- **None detected.** BMW uses sharp corners exclusively — every element is a precise rectangle. This is the most angular design system analyzed.
+### 圆角阶梯
+- **未检测到。** BMW 专门使用尖角——每个元素都是精确的矩形。这是所分析的最有棱角的设计系统。
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-| Level | Treatment | Use |
+| 级别 | 处理 | 用途 |
 |-------|-----------|-----|
-| Photography (Level 0) | Full-bleed dark imagery | Hero backgrounds |
-| Flat (Level 1) | White surface, no shadow | Content sections |
-| Focus (Accessibility) | BMW Focus Blue (`#0653b6`) | Focus states |
+| 摄影（级别 0） | 全幅深色图像 | 英雄背景 |
+| 扁平（级别 1） | 白色表面，无阴影 | 内容区块 |
+| 聚焦（无障碍） | BMW 聚焦蓝（`#0653b6`） | 聚焦状态 |
 
-**Shadow Philosophy**: BMW uses virtually no shadows. Depth is created entirely through the contrast between dark photographic sections and white content sections — the automotive lighting does the elevation work.
+**阴影哲学**：BMW 几乎不使用阴影。深度完全通过深色摄影区块与白色内容区块之间的对比来营造——汽车灯光完成了抬升工作。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use BMWTypeNextLatin Light (300) uppercase for all display headings
-- Keep ALL corners sharp (0px radius) — angular geometry is non-negotiable
-- Use BMW Blue (`#1c69d4`) only for interactive elements — never decoratively
-- Apply weight 900 for navigation emphasis — the extreme weight contrast is intentional
-- Use full-bleed automotive photography for hero sections
-- Keep line-heights tight (1.15–1.30) throughout
-- Use `--site-context-*` CSS variables for theming
+### 宜
+- 使用 BMWTypeNextLatin Light（300）大写用于所有展示标题
+- 保持所有角落尖角（0px 圆角）——有棱角的几何是不可妥协的
+- 仅将 BMW 蓝（`#1c69d4`）用于交互元素——从不作装饰
+- 应用字重 900 用于导航强调——极端的字重对比是有意为之
+- 使用全幅汽车摄影作为英雄区
+- 全程保持紧凑的行高（1.15–1.30）
+- 使用 `--site-context-*` CSS 变量进行主题设置
 
-### Don't
-- Don't round corners — zero radius is the BMW identity
-- Don't use BMW Blue for backgrounds or large surfaces — it's an accent only
-- Don't use medium font weights (500–600) — the system uses 300, 400, 700, 900 extremes
-- Don't add decorative elements — the photography and typography carry everything
-- Don't use relaxed line-heights — BMW text is always compressed
-- Don't lighten the dark hero sections — the contrast with white IS the design
+### 忌
+- 不要圆角——零圆角是 BMW 的标识
+- 不要用 BMW 蓝作背景或大表面——它仅作强调
+- 不要用中等字重（500–600）——系统使用 300、400、700、900 极端值
+- 不要添加装饰元素——摄影和排版承担一切
+- 不要使用宽松的行高——BMW 文字始终是压缩的
+- 不要淡化深色英雄区——与白色的对比即是设计本身
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile Small | <375px | Minimum supported |
-| Mobile | 375–480px | Single column |
-| Mobile Large | 480–640px | Slight adjustments |
-| Tablet Small | 640–768px | 2-column begins |
-| Tablet | 768–920px | Standard tablet |
-| Desktop Small | 920–1024px | Desktop layout begins |
-| Desktop | 1024–1280px | Standard desktop |
-| Large Desktop | 1280–1440px | Expanded |
-| Ultra-wide | 1440–1600px | Maximum layout |
+| 小型移动 | <375px | 最低支持 |
+| 移动 | 375–480px | 单列 |
+| 大型移动 | 480–640px | 轻微调整 |
+| 小型平板 | 640–768px | 开始 2 列 |
+| 平板 | 768–920px | 标准平板 |
+| 小型桌面 | 920–1024px | 开始桌面布局 |
+| 桌面 | 1024–1280px | 标准桌面 |
+| 大型桌面 | 1280–1440px | 扩展 |
+| 超宽 | 1440–1600px | 最大布局 |
 
-### Collapsing Strategy
-- Hero: 60px → scales down, maintains uppercase
-- Navigation: horizontal → hamburger
-- Photography: full-bleed maintained at all sizes
-- Content sections: stack vertically
-- Footer: multi-column → stacked
+### 折叠策略
+- 英雄：60px → 缩小，保持大写
+- 导航：横向 → 汉堡菜单
+- 摄影：所有尺寸下保持全幅
+- 内容区块：垂直堆叠
+- 页脚：多列 → 堆叠
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Background: Pure White (`#ffffff`)
-- Text: Near Black (`#262626`)
-- Secondary text: Meta Gray (`#757575`)
-- Accent: BMW Blue (`#1c69d4`)
-- Focus: BMW Focus Blue (`#0653b6`)
-- Muted: Silver (`#bbbbbb`)
+### 快速颜色参考
+- 背景：纯白（`#ffffff`）
+- 文字：近黑（`#262626`）
+- 次要文字：元数据灰（`#757575`）
+- 强调：BMW 蓝（`#1c69d4`）
+- 聚焦：BMW 聚焦蓝（`#0653b6`）
+- 弱化：银色（`#bbbbbb`）
 
-### Example Component Prompts
-- "Create a hero: full-width dark automotive photography background. Heading at 60px BMWTypeNextLatin Light weight 300, uppercase, line-height 1.30, white text. No border-radius anywhere."
-- "Design navigation: dark background. BMWTypeNextLatin 18px weight 900 for links, white text. BMW logo 54x54. Sharp rectangular layout."
-- "Build a button: 16px BMWTypeNextLatin weight 700, line-height 1.20. Sharp corners (0px radius). White bottom border on dark surface."
-- "Create content section: white background. Heading at 32px weight 400, line-height 1.30, #262626. Body at 16px weight 400, line-height 1.15."
+### 示例组件提示
+- "创建一个英雄区：全幅深色汽车摄影背景。标题 60px BMWTypeNextLatin Light 字重 300，大写，行高 1.30，白色文字。任何地方都没有圆角。"
+- "设计导航：深色背景。BMWTypeNextLatin 18px 字重 900 用于链接，白色文字。BMW logo 54x54。尖角矩形布局。"
+- "构建一个按钮：16px BMWTypeNextLatin 字重 700，行高 1.20。尖角（0px 圆角）。深色表面上的白色底部边框。"
+- "创建内容区块：白色背景。标题 32px 字重 400，行高 1.30，#262626。正文 16px 字重 400，行高 1.15。"
 
-### Iteration Guide
-1. Zero border-radius — every corner is sharp, no exceptions
-2. Weight extremes: 300 (display), 400 (body), 700 (buttons), 900 (nav)
-3. BMW Blue for interactive only — never as background or decoration
-4. Photography carries emotion — the UI is pure precision
-5. Tight line-heights everywhere — 1.15 to 1.30 is the range
+### 迭代指南
+1. 零圆角——每个角落都是尖角，没有例外
+2. 字重极端值：300（展示）、400（正文）、700（按钮）、900（导航）
+3. BMW 蓝仅用于交互——从不作背景或装饰
+4. 摄影承载情感——UI 是纯粹的精确
+5. 全程紧凑行高——1.15 到 1.30 是范围

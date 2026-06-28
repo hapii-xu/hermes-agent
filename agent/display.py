@@ -1,7 +1,7 @@
-"""CLI presentation -- spinner, kawaii faces, tool preview formatting.
+"""CLI 展示组件 — 加载动画、可爱表情、工具预览格式化。
 
-Pure display functions and classes with no AIAgent dependency.
-Used by AIAgent._execute_tool_calls for CLI feedback.
+纯展示函数和类，不依赖 AIAgent。
+由 AIAgent._execute_tool_calls 用于 CLI 反馈。
 """
 
 import logging
@@ -18,7 +18,7 @@ from typing import Any
 from utils import safe_json_loads
 from agent.tool_result_classification import file_mutation_result_landed
 
-# ANSI escape codes for coloring tool failure indicators
+# 工具失败指示器的 ANSI 转义颜色码
 _RED = "\033[31m"
 _RESET = "\033[0m"
 
@@ -26,19 +26,18 @@ logger = logging.getLogger(__name__)
 
 _ANSI_RESET = "\033[0m"
 
-# Diff colors — resolved lazily from the skin engine so they adapt
-# to light/dark themes.  Falls back to sensible defaults on import
-# failure.  We cache after first resolution for performance.
+# Diff 颜色 — 从皮肤引擎延迟解析，以适配亮色/暗色主题。
+# 解析失败时使用合理的默认值。首次解析后缓存以提升性能。
 _diff_colors_cached: dict[str, str] | None = None
 
 
 def _diff_ansi() -> dict[str, str]:
-    """Return ANSI escapes for diff display, resolved from the active skin."""
+    """返回 diff 显示的 ANSI 转义码，从当前活跃皮肤解析。"""
     global _diff_colors_cached
     if _diff_colors_cached is not None:
         return _diff_colors_cached
 
-    # Defaults that work on dark terminals
+    # 暗色终端的默认值
     dim = "\033[38;2;150;150;150m"
     file_c = "\033[38;2;180;160;255m"
     hunk = "\033[38;2;120;120;140m"

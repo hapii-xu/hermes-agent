@@ -1,41 +1,41 @@
 # iceberg
 
-Surface vs hidden depths, visible vs underlying factors.
+表面与水下深处、可见因素与潜在因素的对比。
 
-## Structure
+## 结构
 
-- Waterline dividing visible/hidden
-- Tip above water (obvious/surface)
-- Larger mass below (hidden/deep)
-- Proportional to emphasize hidden depth
-- Optional layers within underwater section
+- 水位线划分可见/隐藏
+- 水面之上的冰尖（显见/表层）
+- 水面之下更大的冰体（隐藏/深层）
+- 按比例以凸显隐藏深度
+- 水下部分可有内部分层
 
-## Best For
+## 最适用于
 
-- Surface vs root causes
-- Visible vs invisible work
-- Symptoms vs underlying issues
-- Public vs private aspects
-- Known vs unknown factors
+- 表象与根因
+- 可见与不可见的工作
+- 症状与深层问题
+- 公开与私下层面
+- 已知与未知因素
 
-## Visual Elements
+## 视觉元素
 
-- Clear water/surface line
-- Above: smaller, brighter
-- Below: larger, darker/deeper
-- Wave or water texture
-- Gradient showing depth
+- 清晰的水面/水位线
+- 水面之上：较小、较亮
+- 水面之下：更大、更深暗
+- 波浪或水面纹理
+- 渐变表现深度
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Surface items above waterline
-- Hidden items below, larger
-- Waterline label optional
-- Depth indicators for layers
+- 标题置于顶部
+- 表层条目置于水位线之上
+- 隐藏条目置于下方，更大
+- 水位线标签可选
+- 各层配深度指示
 
-## Recommended Pairings
+## 推荐搭配
 
-- `cartoon-hand-drawn`: Friendly metaphor
-- `storybook-watercolor`: Artistic depth
-- `graphic-novel`: Dramatic revelation
+- `cartoon-hand-drawn`：友好型比喻
+- `storybook-watercolor`：艺术化的深度
+- `graphic-novel`：戏剧性揭示

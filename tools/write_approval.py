@@ -1,43 +1,39 @@
 #!/usr/bin/env python3
-"""Write-approval gate + pending store for memory and skill writes.
+"""写入审批闸门 + 针对记忆与技能写入的待审存储。
 
-Background
-----------
-The agent writes to two persistent stores that survive across sessions:
+背景
+----
+agent 会写入两个跨会话持久化的存储：
 
-  * **memory** — MEMORY.md / USER.md, small (~200 char) declarative entries
-  * **skills** — SKILL.md + supporting files, potentially huge (10-100 KB)
+  * **memory** —— MEMORY.md / USER.md，体量小（约 200 字符）的声明式条目
+  * **skills** —— SKILL.md 及配套文件，可能非常大（10-100 KB）
 
-Both stores are written from two origins:
+这两个存储都有两种写入来源：
 
-  * **foreground** — a normal agent turn (user is present / chatting)
-  * **background_review** — the self-improvement review fork that runs after a
-    turn and autonomously decides what to save (the source of the
-    "wrong assumptions" users complained about)
+  * **foreground** —— 普通的 agent 回合（用户在场/正在对话）
+  * **background_review** —— 在某个回合之后运行、自主决定保存什么的
+    自我改进评审分叉（也就是用户抱怨的「错误假设」的来源）
 
-This module lets the user gate those writes per-subsystem with a boolean
-``write_approval``:
+本模块允许用户通过一个布尔值 ``write_approval`` 按子系统对这些写入加闸门：
 
-  * ``false`` (default) — write freely (the pre-gate behaviour)
-  * ``true``            — require approval: do not commit the write; either
-    prompt inline (memory, interactive CLI only) or **stage** it to a pending
-    store and surface it for the user to approve or reject out-of-band
+  * ``false``（默认）—— 自由写入（闸门存在之前的行为）
+  * ``true``            —— 要求审批：不提交写入；要么内联提示
+    （仅限 memory、交互式 CLI），要么把它**暂存**到待审存储，并交给用户
+    通过带外渠道审批或拒绝
 
-The size asymmetry between memory and skills is real and unavoidable: a memory
-entry can be reviewed inline in a chat bubble; a 100 KB SKILL.md cannot. So
-the gate stages BOTH to disk, but review affordances differ by subsystem
-(see ``hermes_cli`` slash handlers): memory shows full content, skills show
-metadata + a one-line gist + a ``diff`` escape hatch (CLI/dashboard/file).
+memory 与 skills 之间的大小差异是真实且无法避免的：一条 memory 条目
+可以在聊天气泡里就地评审；100 KB 的 SKILL.md 则不行。因此闸门会把两者
+都暂存到磁盘，但评审方式因子系统而异（见 ``hermes_cli`` 的斜杠命令处理）：
+memory 展示完整内容，skills 展示元数据 + 一行要点 + 一个 ``diff`` 逃生
+通道（CLI/仪表盘/文件）。
 
-Staging is mandatory for background-origin writes (a daemon thread cannot
-block on an interactive prompt) and for gateway sessions (no inline prompt
-channel — review happens via ``/memory pending``). Foreground CLI memory
-writes prompt inline via the dangerous-command approval callback; skill
-writes always stage (too big to eyeball mid-loop).
+对于来自后台的写入（守护线程不能阻塞在交互式提示上）以及 gateway 会话
+（没有内联提示通道——评审通过 ``/memory pending`` 进行），暂存是强制性的。
+前台 CLI 的 memory 写入通过危险命令审批回调内联提示；技能写入则总是
+暂存（体量太大，难以在循环中即时审阅）。
 
-Pending records live under ``<HERMES_HOME>/pending/{memory,skills}/<id>.json``
-so they survive process restarts and can be reviewed from CLI, gateway, or the
-web dashboard.
+待审记录存放在 ``<HERMES_HOME>/pending/{memory,skills}/<id>.json`` 下，
+因此它们能挺过进程重启，并可从 CLI、gateway 或 Web 仪表盘进行评审。
 """
 
 from __future__ import annotations
@@ -54,29 +50,28 @@ from hermes_constants import get_hermes_home
 
 logger = logging.getLogger(__name__)
 
-# Subsystem identifiers
+# 子系统标识符
 MEMORY = "memory"
 SKILLS = "skills"
 _SUBSYSTEMS = (MEMORY, SKILLS)
 
-# Config key (per subsystem). A single boolean: the approval gate is OFF by
-# default (writes flow freely, the pre-gate behaviour), and ON means stage /
-# prompt every write for the user's approval. There is intentionally no third
-# "block all writes" state — to disable a subsystem entirely use its own
-# enable flag (e.g. ``memory.memory_enabled: false``).
+# 配置键（按子系统）。一个布尔值：审批闸门默认关闭（写入自由流动，即
+# 闸门存在之前的行为），开启则意味着对每次写入进行暂存/提示以征求用户
+# 审批。这里刻意没有第三种「屏蔽所有写入」的状态——要完全禁用某个子
+# 系统，请使用它自己的启用开关（例如 ``memory.memory_enabled: false``）。
 CONFIG_KEY = "write_approval"
 
 
 # ---------------------------------------------------------------------------
-# Config resolution
+# 配置解析
 # ---------------------------------------------------------------------------
 
 def write_approval_enabled(subsystem: str) -> bool:
-    """Return whether the approval gate is enabled for ``subsystem``.
+    """返回 ``subsystem`` 的审批闸门是否开启。
 
-    Reads ``<subsystem>.write_approval`` from config.yaml. Defaults to
-    ``False`` (gate off — writes flow freely) for any unset / invalid value so
-    existing installs keep their current behaviour until the user opts in.
+    从 config.yaml 读取 ``<subsystem>.write_approval``。对于任何未设置/
+    无效的值默认为 ``False``（闸门关闭——写入自由流动），以便现有安装
+    在用户主动开启之前保持原有行为。
     """
     if subsystem not in _SUBSYSTEMS:
         return False
@@ -90,11 +85,11 @@ def write_approval_enabled(subsystem: str) -> bool:
 
 
 def _normalize_enabled(value: Any) -> bool:
-    """Coerce a config value to a bool. Default (unknown) is False (gate off).
+    """把配置值强制转换为布尔值。默认（未知值）为 False（闸门关闭）。
 
-    Accepts real bools and the usual truthy/falsey strings. YAML 1.1 parses
-    bare ``on``/``off``/``yes``/``no`` as bools already, so the string branch
-    is mostly for hand-edited configs.
+    接受真正的布尔值以及常见的真/假字符串。YAML 1.1 已经会把裸
+    ``on``/``off``/``yes``/``no`` 解析为布尔值，因此字符串分支主要服务于
+    手工编辑的配置。
     """
     if isinstance(value, bool):
         return value
@@ -104,7 +99,7 @@ def _normalize_enabled(value: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Pending store (file-backed)
+# 待审存储（基于文件）
 # ---------------------------------------------------------------------------
 
 def _pending_dir(subsystem: str) -> Path:
@@ -113,21 +108,21 @@ def _pending_dir(subsystem: str) -> Path:
 
 def stage_write(subsystem: str, payload: Dict[str, Any],
                 *, summary: str, origin: str) -> Dict[str, Any]:
-    """Persist a pending write and return a short record describing it.
+    """持久化一笔待审写入，并返回描述它的简短记录。
 
-    Args:
-        subsystem: ``memory`` or ``skills``.
-        payload: the exact kwargs needed to replay the write when approved
-            (e.g. ``{"action": "add", "target": "user", "content": "..."}``
-            for memory, or the full ``skill_manage`` kwargs for skills).
-        summary: a one-line human-readable description shown in pending lists.
-            For skills this is the LLM/heuristic gist; for memory it can be the
-            entry text itself.
-        origin: ``foreground`` or ``background_review`` — recorded for audit.
+    参数：
+        subsystem: ``memory`` 或 ``skills``。
+        payload: 审批通过后重放该写入所需的精确 kwargs
+            （例如 memory 的 ``{"action": "add", "target": "user",
+            "content": "..."}``，或技能的完整 ``skill_manage`` kwargs）。
+        summary: 一行人类可读的描述，展示在待审列表中。
+            对技能而言这是 LLM/启发式生成的要点；对 memory 而言可以就是
+            条目文本本身。
+        origin: ``foreground`` 或 ``background_review``——记录以备审计。
 
-    Returns a dict with ``id`` and metadata. Best-effort: on disk failure it
-    logs and still returns a record (the write is simply lost, which is the
-    safe failure for an approval gate — nothing is silently committed).
+    返回一个包含 ``id`` 和元数据的字典。尽力而为：磁盘失败时会记录日志，
+    但仍返回一条记录（该写入就此丢失，这对审批闸门而言是安全的失败方式
+    ——不会有任何东西被静默提交）。
     """
     pid = uuid.uuid4().hex[:8]
     record = {
@@ -146,13 +141,13 @@ def stage_write(subsystem: str, payload: Dict[str, Any],
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, path)
-    except Exception as e:  # pragma: no cover - disk failure path
+    except Exception as e:  # pragma: no cover - 磁盘失败路径
         logger.error("Failed to stage pending %s write: %s", subsystem, e, exc_info=True)
     return record
 
 
 def list_pending(subsystem: str) -> List[Dict[str, Any]]:
-    """Return all pending records for ``subsystem``, oldest first."""
+    """返回 ``subsystem`` 的所有待审记录，最旧的在前。"""
     d = _pending_dir(subsystem)
     if not d.exists():
         return []
@@ -167,7 +162,7 @@ def list_pending(subsystem: str) -> List[Dict[str, Any]]:
 
 
 def get_pending(subsystem: str, pending_id: str) -> Optional[Dict[str, Any]]:
-    """Return a single pending record by id, or None."""
+    """按 id 返回单条待审记录，没有则返回 None。"""
     path = _pending_dir(subsystem) / f"{pending_id}.json"
     if not path.exists():
         return None
@@ -178,7 +173,7 @@ def get_pending(subsystem: str, pending_id: str) -> Optional[Dict[str, Any]]:
 
 
 def discard_pending(subsystem: str, pending_id: str) -> bool:
-    """Delete a pending record. Returns True if it existed."""
+    """删除一条待审记录。如果它原本存在则返回 True。"""
     path = _pending_dir(subsystem) / f"{pending_id}.json"
     try:
         if path.exists():
@@ -190,7 +185,7 @@ def discard_pending(subsystem: str, pending_id: str) -> bool:
 
 
 def pending_count(subsystem: str) -> int:
-    """Cheap count of pending records (for notification badges)."""
+    """待审记录的廉价计数（用于通知徽标）。"""
     d = _pending_dir(subsystem)
     if not d.exists():
         return 0
@@ -201,16 +196,15 @@ def pending_count(subsystem: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Write origin
+# 写入来源
 # ---------------------------------------------------------------------------
 
 def current_origin() -> str:
-    """Return the active write origin: ``foreground`` or ``background_review``.
+    """返回当前写入来源：``foreground`` 或 ``background_review``。
 
-    Reuses the skill-provenance ContextVar, which the background review fork
-    already sets (see ``agent.background_review`` /
-    ``AIAgent._spawn_background_review``). Foreground agent turns leave it at
-    the default ``foreground``.
+    复用技能溯源用的 ContextVar，后台评审分叉已经设置了它（见
+    ``agent.background_review`` / ``AIAgent._spawn_background_review``）。
+    前台 agent 回合会让它保持默认值 ``foreground``。
     """
     try:
         from tools.skill_provenance import get_current_write_origin
@@ -224,21 +218,19 @@ def is_background() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Gate decision
+# 闸门决策
 # ---------------------------------------------------------------------------
 
 class GateDecision:
-    """Result of evaluating the write gate for a single write attempt.
+    """对单次写入尝试评估闸门后的结果。
 
-    Exactly one of the boolean flags is True:
-      * ``allow``  — proceed with the real write (gate off, or an inline
-        approval was granted).
-      * ``blocked`` — refuse the write (the user denied an inline approval
-        prompt). ``message`` explains why; surface it to the agent.
-      * ``stage``  — do not write; the caller should stage the payload via
-        ``stage_write`` (gate on, and no inline prompt is available — gateway,
-        background review, script, or any skill write). ``message`` is the
-        user-facing "staged for approval" note.
+    三个布尔标志中恰好有一个为 True：
+      * ``allow``  —— 继续执行真正的写入（闸门关闭，或已获内联审批）。
+      * ``blocked`` —— 拒绝写入（用户拒绝了一次内联审批提示）。
+        ``message`` 解释原因；把它呈现给 agent。
+      * ``stage``  —— 不写入；调用方应通过 ``stage_write`` 暂存负载
+        （闸门开启，且没有可用的内联提示——gateway、后台评审、脚本，
+        或任何技能写入）。``message`` 是面向用户的「已暂存待审批」提示。
     """
 
     __slots__ = ("allow", "blocked", "stage", "message")
@@ -252,32 +244,31 @@ class GateDecision:
 
 def evaluate_gate(subsystem: str, *, inline_summary: str = "",
                   inline_detail: str = "") -> GateDecision:
-    """Decide what to do with a pending write for ``subsystem``.
+    """决定如何处理 ``subsystem`` 的一笔待审写入。
 
-    Args:
-        subsystem: ``memory`` or ``skills``.
-        inline_summary: short description used as the inline approval prompt
-            header (memory foreground path only).
-        inline_detail: full content shown in the inline prompt (memory entries
-            are small; skills never take the inline path).
+    参数：
+        subsystem: ``memory`` 或 ``skills``。
+        inline_summary: 用作内联审批提示标题的简短描述
+            （仅 memory 前台路径）。
+        inline_detail: 内联提示中展示的完整内容（memory 条目很小；
+            技能绝不走内联路径）。
 
-    Decision matrix:
-        gate off (default)                    → allow (writes flow freely)
-        gate on, memory + interactive CLI     → inline approve/deny prompt
-        gate on, memory + gateway/script/bg   → stage
-        gate on, skills (any origin)          → stage (too big to review inline)
+    决策矩阵：
+        闸门关闭（默认）                       → allow（写入自由流动）
+        闸门开启，memory + 交互式 CLI          → 内联审批/拒绝提示
+        闸门开启，memory + gateway/脚本/后台   → stage
+        闸门开启，skills（任何来源）           → stage（体量太大，无法内联评审）
 
-    Note: there is no config-driven "blocked" outcome — the gate only ever
-    delays a write for approval, never silently refuses it. ``blocked`` is
-    still produced when the user *actively denies* an inline prompt.
+    说明：不存在由配置驱动的 "blocked" 结果——闸门只会延迟写入以等待审批，
+    绝不会静默拒绝。``blocked`` 仍然会在用户*主动拒绝*内联提示时产生。
     """
     if not write_approval_enabled(subsystem):
         return GateDecision(allow=True)
 
     background = is_background()
 
-    # Skills always stage — a SKILL.md is too large to review inline, and a
-    # background skill write happens in a daemon thread with no user present.
+    # 技能总是暂存——SKILL.md 体量太大，无法内联评审；而且后台技能写入
+    # 发生在守护线程中，没有用户在场。
     if subsystem == SKILLS or background:
         where = "/skills pending" if subsystem == SKILLS else "/memory pending"
         return GateDecision(
@@ -288,10 +279,9 @@ def evaluate_gate(subsystem: str, *, inline_summary: str = "",
             ),
         )
 
-    # Memory + foreground: if an interactive approval channel exists (a CLI
-    # approval callback registered on this thread), prompt inline — entries
-    # are small enough to show in full. Otherwise (gateway, script, batch,
-    # no listener) stage instead of forcing a blind deny.
+    # memory + 前台：如果存在一个交互式审批通道（在本线程上注册的 CLI
+    # 审批回调），则内联提示——条目足够小，可以完整展示。否则
+    # （gateway、脚本、批处理、无监听器）改为暂存，而不是强制盲目拒绝。
     if _interactive_approval_available():
         granted = _prompt_inline_memory_approval(inline_summary, inline_detail)
         if granted is True:
@@ -301,7 +291,7 @@ def evaluate_gate(subsystem: str, *, inline_summary: str = "",
                 blocked=True,
                 message="Memory write denied by user. The change was not saved.",
             )
-        # granted is None → prompt failed; fall through to staging.
+        # granted 为 None → 提示失败；回退到暂存。
 
     return GateDecision(
         stage=True,
@@ -313,19 +303,18 @@ def evaluate_gate(subsystem: str, *, inline_summary: str = "",
 
 
 def _interactive_approval_available() -> bool:
-    """True when a foreground memory write can be approved inline.
+    """当前台 memory 写入可以内联审批时返回 True。
 
-    Inline prompting requires a per-thread approval callback registered by the
-    interactive CLI (``tools.terminal_tool.set_approval_callback``). Every
-    other surface stages instead:
+    内联提示需要一个由交互式 CLI 注册的、按线程生效的审批回调
+    （``tools.terminal_tool.set_approval_callback``）。所有其他界面都会
+    改为暂存：
 
-    * **Gateway/API sessions** — the dangerous-command ``/approve`` round-trip
-      lives in the pending-approval queue (``submit_pending`` +
-      ``_await_gateway_decision``), which ``prompt_dangerous_approval`` never
-      reaches; trying to prompt from a gateway session would hit the
-      ``input()`` fallback and silently deny. Staging gives the user a real
-      review affordance (``/memory pending``) instead.
-    * Scripts, cron, and background threads — no user present.
+    * **Gateway/API 会话** —— 危险命令的 ``/approve`` 往返位于待审审批
+      队列中（``submit_pending`` + ``_await_gateway_decision``），
+      ``prompt_dangerous_approval`` 永远不会触及它；试图从 gateway 会话
+      发起提示会命中 ``input()`` 回退并被静默拒绝。暂存能给用户一个真正
+      的评审入口（``/memory pending``）。
+    * 脚本、cron 和后台线程——没有用户在场。
     """
     try:
         from tools.terminal_tool import _get_approval_callback
@@ -335,17 +324,16 @@ def _interactive_approval_available() -> bool:
 
 
 def _prompt_inline_memory_approval(summary: str, detail: str) -> Optional[bool]:
-    """Prompt the user inline to approve a memory write.
+    """向用户内联提示是否审批一笔 memory 写入。
 
-    Returns True (approved), False (denied), or None (no interactive prompt
-    available / prompt failed → caller should stage instead).
+    返回 True（批准）、False（拒绝）或 None（没有可用的交互式提示/
+    提示失败 → 调用方应改为暂存）。
 
-    Reuses the per-thread CLI approval callback registered for dangerous
-    commands (``tools.terminal_tool.set_approval_callback``). The callback is
-    invoked directly — NOT via ``prompt_dangerous_approval`` — because that
-    wrapper falls back to ``input()`` (deadlock-prone under prompt_toolkit,
-    see #15216) and converts callback errors into a silent deny; here a
-    failed prompt must stage the write instead.
+    复用为危险命令注册的、按线程生效的 CLI 审批回调
+    （``tools.terminal_tool.set_approval_callback``）。该回调被直接调用——
+    而非经由 ``prompt_dangerous_approval``——因为那个包装会回退到
+    ``input()``（在 prompt_toolkit 下容易死锁，见 #15216），并把回调错误
+    转换为静默拒绝；而此处一个失败的提示必须改为暂存该写入。
     """
     try:
         from tools.terminal_tool import _get_approval_callback
@@ -354,18 +342,17 @@ def _prompt_inline_memory_approval(summary: str, detail: str) -> Optional[bool]:
 
     callback = _get_approval_callback()
     if callback is None:
-        # No interactive channel on this thread — stage rather than risk the
-        # input() fallback (deadlock under prompt_toolkit, EOF-deny in tests).
+        # 本线程上没有交互式通道——改为暂存，而不是冒险走 input() 回退
+        # （在 prompt_toolkit 下会死锁，在测试中会因 EOF 被拒绝）。
         return None
 
     header = summary.strip() or "Save to memory?"
     body = detail.strip()
     description = f"Save to memory: {header}"
     command = body if body else header
-    # Invoke the callback directly instead of via prompt_dangerous_approval:
-    # that wrapper swallows callback exceptions into "deny", which would
-    # silently refuse the write. Direct invocation lets a crashed prompt fall
-    # back to staging (the gate only ever delays a write, never drops it).
+    # 直接调用回调，而不是经由 prompt_dangerous_approval：那个包装会把
+    # 回调异常吞成 "deny"，从而静默拒绝写入。直接调用让崩溃的提示回退
+    # 到暂存（闸门只会延迟写入，绝不会丢弃它）。
     try:
         choice = callback(command, description, allow_permanent=False)
     except Exception as e:
@@ -376,24 +363,24 @@ def _prompt_inline_memory_approval(summary: str, detail: str) -> Optional[bool]:
         return True
     if choice == "deny":
         return False
-    # Any other outcome (e.g. timeout that returns "deny" already handled) →
-    # treat unknown as no-decision so we stage rather than silently drop.
+    # 任何其他结果（例如超时已经返回 "deny" 的情况已处理）→
+    # 把未知结果视为无决策，从而改为暂存，而不是静默丢弃。
     return None
 
 
 # ---------------------------------------------------------------------------
-# Skill-specific helpers (gist + diff for the review affordances)
+# 技能专用辅助函数（评审入口用的要点 + diff）
 # ---------------------------------------------------------------------------
 
 def skill_gist(action: str, name: str, *, content: str = "",
                file_path: str = "", old_string: str = "",
                new_string: str = "") -> str:
-    """Build a one-line human gist for a pending skill write.
+    """为一笔待审技能写入构造一行人类可读的要点。
 
-    Heuristic, no model call — the gist surfaces enough to decide approve/reject
-    in a chat bubble, while the full diff stays behind /skills diff (CLI/
-    dashboard/file). For create/edit it pulls the frontmatter ``description:``;
-    for patch/write_file it describes the size of the change.
+    基于启发式，不调用模型——这个要点提供的信息足以在聊天气泡中决定
+    批准/拒绝，而完整 diff 则留在 /skills diff（CLI/仪表盘/文件）背后。
+    对于 create/edit，它会提取 frontmatter 的 ``description:``；对于
+    patch/write_file，它描述变更的规模。
     """
     if action in {"create", "edit"} and content:
         desc = _frontmatter_description(content)
@@ -417,7 +404,7 @@ def skill_gist(action: str, name: str, *, content: str = "",
 
 
 def _frontmatter_description(content: str) -> str:
-    """Extract the ``description:`` value from SKILL.md YAML frontmatter."""
+    """从 SKILL.md 的 YAML frontmatter 中提取 ``description:`` 的值。"""
     import re
     m = re.search(r"^description:\s*(.+)$", content, re.MULTILINE)
     if not m:
@@ -427,12 +414,11 @@ def _frontmatter_description(content: str) -> str:
 
 
 def skill_pending_diff(record: Dict[str, Any]) -> str:
-    """Build a full unified diff (or full content) for a staged skill write.
+    """为一笔已暂存的技能写入构造完整的统一 diff（或完整内容）。
 
-    Used by /skills diff <id> on a surface that can render it (CLI pager, web
-    dashboard, or by opening the pending JSON file). For create this is the new
-    file content; for edit/patch it is a unified diff against the current
-    on-disk skill.
+    供 /skills diff <id> 在一个能渲染它的界面上使用（CLI 分页器、Web
+    仪表盘，或直接打开待审 JSON 文件）。对 create 而言是新文件内容；对
+    edit/patch 而言是针对当前磁盘上技能的统一 diff。
     """
     import difflib
     payload = record.get("payload", {})
@@ -442,7 +428,7 @@ def skill_pending_diff(record: Dict[str, Any]) -> str:
     if action == "create":
         return (payload.get("content") or "")
 
-    # Resolve current on-disk content for diffable actions.
+    # 为可 diff 的动作解析当前磁盘上的内容。
     try:
         from tools.skill_manager_tool import _find_skill
     except Exception:

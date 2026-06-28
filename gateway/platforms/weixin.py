@@ -1,13 +1,13 @@
 """
-Weixin platform adapter.
+Weixin 平台适配器。
 
-Connects Hermes Agent to WeChat personal accounts via Tencent's iLink Bot API.
+通过腾讯的 iLink Bot API 将 Hermes Agent 连接到微信个人账号。
 
-Design notes:
-- Long-poll ``getupdates`` drives inbound delivery.
-- Every outbound reply must echo the latest ``context_token`` for the peer.
-- Media files move through an AES-128-ECB encrypted CDN protocol.
-- QR login is exposed as a helper for the gateway setup wizard.
+设计要点：
+- 长轮询 ``getupdates`` 驱动入站投递。
+- 每条出站回复都必须回传对端最新的 ``context_token``。
+- 媒体文件通过 AES-128-ECB 加密的 CDN 协议传输。
+- 二维码登录作为辅助函数暴露给 gateway 配置向导使用。
 """
 
 from __future__ import annotations
@@ -92,16 +92,15 @@ MAX_CONSECUTIVE_FAILURES = 3
 RETRY_DELAY_SECONDS = 2
 BACKOFF_DELAY_SECONDS = 30
 SESSION_EXPIRED_ERRCODE = -14
-RATE_LIMIT_ERRCODE = -2  # iLink frequency limit — backoff and retry
+RATE_LIMIT_ERRCODE = -2  # iLink 频率限制 —— 退避后重试
 MESSAGE_DEDUP_TTL_SECONDS = 300
 
 
 def _is_stale_session_ret(
     ret: "Optional[int]", errcode: "Optional[int]", errmsg: "Optional[str]",
 ) -> bool:
-    """True when iLink returns ret=-2 / errcode=-2 with 'unknown error',
-    which is a stale-session signal (same as errcode=-14) rather than
-    a genuine rate limit."""
+    """当 iLink 返回 ret=-2 / errcode=-2 且 errmsg 为 'unknown error' 时返回 True，
+    这是会话过期的信号（与 errcode=-14 相同），而非真正的频率限制。"""
     if ret != RATE_LIMIT_ERRCODE and errcode != RATE_LIMIT_ERRCODE:
         return False
     return (errmsg or "").lower() == "unknown error"
@@ -116,13 +115,13 @@ _LIVE_ADAPTERS: Dict[str, Any] = {}
 
 
 def _make_ssl_connector() -> Optional["aiohttp.TCPConnector"]:
-    """Return a TCPConnector with a certifi CA bundle, or None if certifi is unavailable.
+    """返回一个带 certifi CA 包的 TCPConnector，若 certifi 不可用则返回 None。
 
-    Tencent's iLink server (``ilinkai.weixin.qq.com``) is not verifiable against
-    some system CA stores (notably Homebrew's OpenSSL on macOS Apple Silicon).
-    When ``certifi`` is installed, use its Mozilla CA bundle to guarantee
-    verification. Otherwise fall back to aiohttp's default (which honors
-    ``SSL_CERT_FILE`` env var via ``trust_env=True``).
+    腾讯的 iLink 服务器（``ilinkai.weixin.qq.com``）无法通过某些
+    系统 CA 库验证（尤其是 macOS Apple Silicon 上 Homebrew 的 OpenSSL）。
+    当 ``certifi`` 已安装时，使用其 Mozilla CA 包来保证
+    验证通过。否则回退到 aiohttp 默认行为（通过 ``trust_env=True``
+    遵循 ``SSL_CERT_FILE`` 环境变量）。
     """
     try:
         import ssl
@@ -154,7 +153,7 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
 def check_weixin_requirements() -> bool:
-    """Return True when runtime dependencies for Weixin are available."""
+    """当 Weixin 的运行时依赖可用时返回 True。"""
     return AIOHTTP_AVAILABLE and CRYPTO_AVAILABLE
 
 
@@ -239,7 +238,7 @@ def save_weixin_account(
     base_url: str,
     user_id: str = "",
 ) -> None:
-    """Persist account credentials for later reuse."""
+    """持久化账号凭据以便后续复用。"""
     payload = {
         "token": token,
         "base_url": base_url,
@@ -255,7 +254,7 @@ def save_weixin_account(
 
 
 def load_weixin_account(hermes_home: str, account_id: str) -> Optional[Dict[str, Any]]:
-    """Load persisted account credentials."""
+    """加载已持久化的账号凭据。"""
     path = _account_file(hermes_home, account_id)
     if not path.exists():
         return None
@@ -266,7 +265,7 @@ def load_weixin_account(hermes_home: str, account_id: str) -> Optional[Dict[str,
 
 
 class ContextTokenStore:
-    """Disk-backed ``context_token`` cache keyed by account + peer."""
+    """以账号 + 对端为键、落盘的 ``context_token`` 缓存。"""
 
     def __init__(self, hermes_home: str):
         self._root = _account_dir(hermes_home)
@@ -316,7 +315,7 @@ class ContextTokenStore:
 
 
 class TypingTicketCache:
-    """Short-lived typing ticket cache from ``getconfig``."""
+    """来自 ``getconfig`` 的短期 typing ticket 缓存。"""
 
     def __init__(self, ttl_seconds: float = 600.0):
         self._ttl_seconds = ttl_seconds
@@ -378,9 +377,9 @@ async def _api_post(
 ) -> Dict[str, Any]:
     body = _json_dumps({**payload, "base_info": _base_info()})
     url = f"{base_url.rstrip('/')}/{endpoint}"
-    # Use asyncio.wait_for() instead of aiohttp ClientTimeout to avoid
-    # "Timeout context manager should be used inside a task" errors when
-    # invoked via asyncio.run_coroutine_threadsafe() from cron jobs.
+    # 使用 asyncio.wait_for() 而非 aiohttp ClientTimeout，以避免
+    # 当通过 asyncio.run_coroutine_threadsafe() 从 cron 任务调用时
+    # 出现 "Timeout context manager should be used inside a task" 错误。
     async def _do() -> Dict[str, Any]:
         async with session.post(url, data=body, headers=_headers(token, body)) as response:
             raw = await response.text()
@@ -402,9 +401,9 @@ async def _api_get(
         "iLink-App-Id": ILINK_APP_ID,
         "iLink-App-ClientVersion": str(ILINK_APP_CLIENT_VERSION),
     }
-    # Use asyncio.wait_for() instead of aiohttp ClientTimeout to avoid
-    # "Timeout context manager should be used inside a task" errors when
-    # invoked via asyncio.run_coroutine_threadsafe() from cron jobs.
+    # 使用 asyncio.wait_for() 而非 aiohttp ClientTimeout，以避免
+    # 当通过 asyncio.run_coroutine_threadsafe() 从 cron 任务调用时
+    # 出现 "Timeout context manager should be used inside a task" 错误。
     async def _do() -> Dict[str, Any]:
         async with session.get(url, headers=headers) as response:
             raw = await response.text()
@@ -445,10 +444,10 @@ async def _send_message(
     context_token: Optional[str],
     client_id: str,
 ) -> Dict[str, Any]:
-    """Send a text message via iLink sendmessage API.
+    """通过 iLink sendmessage API 发送文本消息。
 
-    Returns the raw API response dict (may contain error codes like
-    ``errcode: -14`` for session expiry that the caller can inspect).
+    返回原始 API 响应字典（可能包含错误码，例如
+    表示会话过期的 ``errcode: -14``，调用方可据此检查）。
     """
     if not text or not text.strip():
         raise ValueError("_send_message: text must not be empty")
@@ -554,14 +553,14 @@ async def _upload_ciphertext(
     ciphertext: bytes,
     upload_url: str,
 ) -> str:
-    """Upload encrypted media to the CDN.
+    """上传加密后的媒体到 CDN。
 
-    Accepts either a constructed CDN URL (from upload_param) or a direct
-    upload_full_url — both use POST with the raw ciphertext as the body.
+    既接受构造好的 CDN URL（来自 upload_param），也接受直接的
+    upload_full_url —— 两者都用 POST，原始密文作为请求体。
     """
-    # Use asyncio.wait_for() instead of aiohttp ClientTimeout to avoid
-    # "Timeout context manager should be used inside a task" errors when
-    # invoked via asyncio.run_coroutine_threadsafe() from cron jobs.
+    # 使用 asyncio.wait_for() 而非 aiohttp ClientTimeout，以避免
+    # 当通过 asyncio.run_coroutine_threadsafe() 从 cron 任务调用时
+    # 出现 "Timeout context manager should be used inside a task" 错误。
     async def _do_upload() -> str:
         async with session.post(upload_url, data=ciphertext, headers={"Content-Type": "application/octet-stream"}) as response:
             if response.status == 200:
@@ -582,8 +581,8 @@ async def _download_bytes(
     url: str,
     timeout_seconds: float = 60.0,
 ) -> bytes:
-    # Use asyncio.wait_for() instead of aiohttp ClientTimeout to avoid
-    # "Timeout context manager should be used inside a task" errors.
+    # 使用 asyncio.wait_for() 而非 aiohttp ClientTimeout，以避免
+    # 出现 "Timeout context manager should be used inside a task" 错误。
     async def _do_download() -> bytes:
         async with session.get(url) as response:
             response.raise_for_status()
@@ -605,7 +604,7 @@ _WEIXIN_CDN_ALLOWLIST: frozenset[str] = frozenset(
 
 
 def _assert_weixin_cdn_url(url: str) -> None:
-    """Raise ValueError if *url* does not point at a known WeChat CDN host."""
+    """当 *url* 不指向已知的 WeChat CDN 主机时抛出 ValueError。"""
     try:
         parsed = urlparse(url)
         scheme = parsed.scheme.lower()
@@ -697,7 +696,7 @@ def _normalize_markdown_blocks(content: str) -> str:
 
 
 def _wrap_copy_friendly_lines_for_weixin(content: str) -> str:
-    """Wrap long display lines that are hard to copy in WeChat clients."""
+    """折行过长的显示行，使其在 WeChat 客户端中更易复制。"""
     if not content:
         return content
 
@@ -775,12 +774,12 @@ def _split_markdown_blocks(content: str) -> List[str]:
 
 
 def _split_delivery_units_for_weixin(content: str) -> List[str]:
-    """Split formatted content into chat-friendly delivery units.
+    """将格式化内容拆分为适合聊天投递的单元。
 
-    Weixin can render Markdown, but chat readability is better when top-level
-    line breaks become separate messages. Keep fenced code blocks intact and
-    attach indented continuation lines to the previous top-level line so nested
-    list items do not get torn apart.
+    Weixin 能够渲染 Markdown，但当顶层
+    换行变成独立消息时，聊天可读性更好。保持围栏代码块完整，并将
+    缩进的续行附加到上一个顶层行，这样嵌套的
+    列表项就不会被拆散。
     """
     units: List[str] = []
 
@@ -814,7 +813,7 @@ def _split_delivery_units_for_weixin(content: str) -> List[str]:
 
 
 def _looks_like_chatty_line_for_weixin(line: str) -> bool:
-    """Return True when a line looks like a standalone chat utterance."""
+    """当一行看起来像独立的聊天话语时返回 True。"""
     stripped = line.strip()
     if not stripped:
         return False
@@ -834,7 +833,7 @@ def _looks_like_chatty_line_for_weixin(line: str) -> bool:
 
 
 def _looks_like_heading_line_for_weixin(line: str) -> bool:
-    """Return True when a short line behaves like a heading."""
+    """当一行短文本表现得像标题时返回 True。"""
     stripped = line.strip()
     if not stripped:
         return False
@@ -844,7 +843,7 @@ def _looks_like_heading_line_for_weixin(line: str) -> bool:
 
 
 def _should_split_short_chat_block_for_weixin(block: str) -> bool:
-    """Split only chat-like multiline blocks into separate bubbles."""
+    """仅将聊天式的多行块拆分为独立气泡。"""
     lines = [line for line in block.splitlines() if line.strip()]
     if not 2 <= len(lines) <= 6:
         return False
@@ -879,25 +878,24 @@ def _pack_markdown_blocks_for_weixin(content: str, max_length: int) -> List[str]
 def _split_text_for_weixin_delivery(
     content: str, max_length: int, split_per_line: bool = False,
 ) -> List[str]:
-    """Split content into sequential Weixin messages.
+    """将内容拆分为连续的 Weixin 消息。
 
-    *compact* (default): Keep everything in a single message whenever it fits
-    within the platform limit, even when the author used explicit line breaks.
-    Only fall back to block-aware packing when the payload exceeds
-    ``max_length``.
+    *compact*（默认）：只要在平台限制内，就尽量把所有内容
+    放在单条消息里，即使作者使用了显式换行。
+    仅当负载超过 ``max_length`` 时才回退到块感知打包。
 
-    *per_line* (``split_per_line=True``): Legacy behavior — top-level line
-    breaks become separate chat messages; oversized units still use
-    block-aware packing.
+    *per_line*（``split_per_line=True``）：旧行为 —— 顶层
+    换行变成独立的聊天消息；过大的单元仍使用
+    块感知打包。
 
-    The active mode is controlled via ``config.yaml`` ->
-    ``platforms.weixin.extra.split_multiline_messages`` (``true`` / ``false``)
-    or the env var ``WEIXIN_SPLIT_MULTILINE_MESSAGES``.
+    当前模式通过 ``config.yaml`` ->
+    ``platforms.weixin.extra.split_multiline_messages``（``true`` / ``false``）
+    或环境变量 ``WEIXIN_SPLIT_MULTILINE_MESSAGES`` 控制。
     """
     if not content:
         return []
     if split_per_line:
-        # Legacy: one message per top-level delivery unit.
+        # 旧行为：每个顶层投递单元对应一条消息。
         if len(content) <= max_length and "\n" not in content:
             return [content]
         chunks: List[str] = []
@@ -908,9 +906,9 @@ def _split_text_for_weixin_delivery(
             chunks.extend(_pack_markdown_blocks_for_weixin(unit, max_length))
         return [c for c in chunks if c] or [content]
 
-    # Compact (default): single message when under the limit — unless the
-    # content looks like a short chatty exchange, in which case split into
-    # separate bubbles for a more natural chat feel.
+    # Compact（默认）：未超限时保持单条消息 —— 除非
+    # 内容看起来像简短的闲聊交流，此时拆分为
+    # 独立气泡以获得更自然的聊天感。
     if len(content) <= max_length:
         return (
             [u for u in _split_delivery_units_for_weixin(content) if u]
@@ -921,7 +919,7 @@ def _split_text_for_weixin_delivery(
 
 
 def _coerce_bool(value: Any, default: bool = True) -> bool:
-    """Coerce a config value to bool, tolerating strings like ``"true"``."""
+    """将配置值强制转换为 bool，容忍 ``"true"`` 之类的字符串。"""
     if value is None:
         return default
     if isinstance(value, bool):
@@ -1007,9 +1005,9 @@ async def qr_login(
     timeout_seconds: int = 480,
 ) -> Optional[Dict[str, str]]:
     """
-    Run the interactive iLink QR login flow.
+    运行交互式 iLink 二维码登录流程。
 
-    Returns a credential dict on success, or ``None`` if login fails or times out.
+    成功时返回凭据字典，登录失败或超时则返回 ``None``。
     """
     if not AIOHTTP_AVAILABLE:
         raise RuntimeError("aiohttp is required for Weixin QR login")
@@ -1032,8 +1030,8 @@ async def qr_login(
             logger.error("weixin: QR response missing qrcode")
             return None
 
-        # qrcode_url is the full scannable liteapp URL; qrcode_value is just the hex token
-        # WeChat needs to scan the full URL, not the raw hex string
+        # qrcode_url 是完整的可扫描 liteapp URL；qrcode_value 只是十六进制 token
+        # WeChat 需要扫描完整的 URL，而非原始十六进制字符串
         qr_scan_data = qrcode_url if qrcode_url else qrcode_value
 
         print("\n请使用微信扫描以下二维码：")
@@ -1136,15 +1134,15 @@ async def qr_login(
 
 
 class WeixinAdapter(BasePlatformAdapter):
-    """Native Hermes adapter for Weixin personal accounts."""
+    """Weixin 个人账号的原生 Hermes 适配器。"""
 
-    supports_code_blocks = True  # Weixin renders fenced code blocks
-    splits_long_messages = True  # send() chunks via _split_text()
+    supports_code_blocks = True  # Weixin 会渲染围栏代码块
+    splits_long_messages = True  # send() 通过 _split_text() 分块
 
     MAX_MESSAGE_LENGTH = 2000
 
-    # WeChat does not support editing sent messages — streaming must use the
-    # fallback "send-final-only" path so the cursor (▉) is never left visible.
+    # WeChat 不支持编辑已发送的消息 —— 流式输出必须使用
+    # 回退的"仅发送最终结果"路径，这样光标（▉）就不会一直可见。
     SUPPORTS_MESSAGE_EDITING = False
 
     def __init__(self, config: PlatformConfig):
@@ -1209,14 +1207,14 @@ class WeixinAdapter(BasePlatformAdapter):
             default=False,
         )
 
-        # Text debounce batching (mirrors Telegram adapter pattern).
-        # iLink delivers messages individually, so rapid multi-message
-        # bursts (forwarded batches, paste-splits) each trigger a
-        # separate agent invocation.  Default 3s delay / 5s split delay
-        # are tuned for iLink's typical delivery cadence.  Tunable via
-        # config.yaml under
+        # 文本去抖批处理（沿用 Telegram 适配器的模式）。
+        # iLink 逐条投递消息，因此快速的连续多消息
+        # 爆发（转发批处理、粘贴拆分）每条都会触发一次
+        # 独立的 agent 调用。默认 3 秒延迟 / 5 秒拆分延迟
+        # 是针对 iLink 的典型投递节奏调校的。可通过
+        # ``config.yaml`` 下的
         # ``gateway.platforms.weixin.extra.text_batch_delay_seconds`` /
-        # ``text_batch_split_delay_seconds``.
+        # ``text_batch_split_delay_seconds`` 调整。
         self._text_batch_delay_seconds = self._coerce_float_extra(
             "text_batch_delay_seconds", 3.0
         )
@@ -1233,10 +1231,10 @@ class WeixinAdapter(BasePlatformAdapter):
                 self._base_url = str(persisted.get("base_url") or self._base_url).strip().rstrip("/")
 
     def _coerce_float_extra(self, key: str, default: float) -> float:
-        """Read a float from ``config.extra``, guarding against bad/non-finite values.
+        """从 ``config.extra`` 读取一个 float，防止非法/非有限值。
 
-        The result is fed directly to ``asyncio.sleep()``, so NaN/Inf and
-        unparseable values fall back to ``default``.
+        结果会直接传给 ``asyncio.sleep()``，因此 NaN/Inf 以及
+        无法解析的值都回退到 ``default``。
         """
         import math
 
@@ -1285,10 +1283,10 @@ class WeixinAdapter(BasePlatformAdapter):
             logger.debug("[%s] Token lock unavailable (non-fatal): %s", self.name, exc)
 
         self._poll_session = aiohttp.ClientSession(trust_env=True, connector=_make_ssl_connector())
-        # Disable aiohttp's built-in ClientTimeout (total=None) to prevent
-        # "Timeout context manager should be used inside a task" errors when
-        # send() is invoked via asyncio.run_coroutine_threadsafe() from cron.
-        # Timeout is managed externally via asyncio.wait_for() in _api_post/_api_get.
+        # 禁用 aiohttp 内置的 ClientTimeout（total=None），以避免
+        # 当 send() 通过 asyncio.run_coroutine_threadsafe() 从 cron 调用时
+        # 出现 "Timeout context manager should be used inside a task" 错误。
+        # 超时由 _api_post/_api_get 中的 asyncio.wait_for() 外部管理。
         _no_aiohttp_timeout = aiohttp.ClientTimeout(total=None, connect=None, sock_connect=None, sock_read=None)
         self._send_session = aiohttp.ClientSession(trust_env=True, connector=_make_ssl_connector(), timeout=_no_aiohttp_timeout)
         self._token_store.restore(self._account_id)
@@ -1412,7 +1410,7 @@ class WeixinAdapter(BasePlatformAdapter):
         if message_id and self._dedup.is_duplicate(message_id):
             return
 
-        # Secondary content-fingerprint dedup for text messages
+        # 针对文本消息的二级内容指纹去重
         item_list = message.get("item_list") or []
         text = _extract_text(item_list)
         if text:
@@ -1479,17 +1477,17 @@ class WeixinAdapter(BasePlatformAdapter):
 
     @property
     def enforces_own_access_policy(self) -> bool:
-        """Weixin gates DM/group access at intake via dm_policy/group_policy."""
+        """Weixin 在入口处通过 dm_policy/group_policy 对 DM/群组访问进行门控。"""
         return True
 
     # ------------------------------------------------------------------
-    # Text debounce batching
+    # 文本去抖批处理
     # ------------------------------------------------------------------
 
-    _SPLIT_THRESHOLD = 1800  # iLink chunks at ~2048 chars
+    _SPLIT_THRESHOLD = 1800  # iLink 在约 2048 字符处分块
 
     def _text_batch_key(self, event: MessageEvent) -> str:
-        """Session-scoped key for text message batching."""
+        """文本消息批处理所用的会话级键。"""
         from gateway.session import build_session_key
         return build_session_key(
             event.source,
@@ -1498,12 +1496,12 @@ class WeixinAdapter(BasePlatformAdapter):
         )
 
     def _enqueue_text_event(self, event: MessageEvent) -> None:
-        """Buffer a text event and reset the flush timer.
+        """缓存一个文本事件并重置刷新计时器。
 
-        When users forward multiple messages or send rapid-fire texts
-        via WeChat, each arrives as a separate iLink message. This
-        concatenates them and waits for a short quiet period before
-        dispatching the combined message.
+        当用户通过 WeChat 转发多条消息或快速连发文本时，
+        每条都会作为独立的 iLink 消息到达。本方法把它们
+        拼接起来，并等待一段短暂的静默期后再分发
+        合并后的消息。
         """
         key = self._text_batch_key(event)
         existing = self._pending_text_batches.get(key)
@@ -1527,7 +1525,7 @@ class WeixinAdapter(BasePlatformAdapter):
         )
 
     async def _flush_text_batch(self, key: str) -> None:
-        """Wait for quiet period then dispatch aggregated text."""
+        """等待静默期后分发聚合的文本。"""
         current_task = asyncio.current_task()
         try:
             pending = self._pending_text_batches.get(key)
@@ -1683,7 +1681,7 @@ class WeixinAdapter(BasePlatformAdapter):
         )
 
     def _record_rate_limit_event(self) -> bool:
-        """Record a genuine iLink rate limit and return True if breaker opened."""
+        """记录一次真正的 iLink 频率限制，若熔断器已打开则返回 True。"""
         now = time.monotonic()
         window_start = now - self._rate_limit_circuit_window_seconds
         self._rate_limit_events = [ts for ts in self._rate_limit_events if ts >= window_start]
@@ -1705,12 +1703,12 @@ class WeixinAdapter(BasePlatformAdapter):
         context_token: Optional[str],
         client_id: str,
     ) -> None:
-        """Send a single text chunk with per-chunk retry and backoff.
+        """发送单个文本块，带逐块重试和退避。
 
-        On session-expired errors (errcode -14), automatically retries
-        *without* ``context_token`` — iLink accepts tokenless sends as a
-        degraded fallback, which keeps cron-initiated push messages working
-        even when no user message has refreshed the session recently.
+        遇到会话过期错误（errcode -14）时，自动
+        *不带* ``context_token`` 重试 —— iLink 接受无 token 的发送作为一种
+        降级回退，这样即使近期没有用户消息刷新会话，
+        cron 发起的推送消息也能继续工作。
         """
         async with self._send_text_gate:
             await self._send_text_chunk_locked(
@@ -1728,7 +1726,7 @@ class WeixinAdapter(BasePlatformAdapter):
         context_token: Optional[str],
         client_id: str,
     ) -> None:
-        """Send a text chunk while holding the adapter-wide outbound text gate."""
+        """在持有适配器级出站文本锁的情况下发送一个文本块。"""
         last_error: Optional[Exception] = None
         retried_without_token = False
         for attempt in range(self._send_chunk_retries + 1):
@@ -1744,7 +1742,7 @@ class WeixinAdapter(BasePlatformAdapter):
                     context_token=context_token,
                     client_id=client_id,
                 )
-                # Check iLink response for session-expired error
+                # 检查 iLink 响应是否含会话过期错误
                 if resp and isinstance(resp, dict):
                     ret = resp.get("ret")
                     errcode = resp.get("errcode")
@@ -1754,7 +1752,7 @@ class WeixinAdapter(BasePlatformAdapter):
                             or errcode == SESSION_EXPIRED_ERRCODE
                             or _is_stale_session_ret(ret, errcode, resp.get("errmsg"))
                         )
-                        # Session expired — strip token and retry once
+                        # 会话过期 —— 去掉 token 并重试一次
                         if is_session_expired and not retried_without_token and context_token:
                             retried_without_token = True
                             context_token = None
@@ -1766,16 +1764,15 @@ class WeixinAdapter(BasePlatformAdapter):
                                 self.name, _safe_id(chat_id),
                             )
                             continue
-                        # Rate limit (-2) — backoff and retry
+                        # 频率限制（-2）—— 退避后重试
                         is_rate_limited = (
                             ret == RATE_LIMIT_ERRCODE
                             or errcode == RATE_LIMIT_ERRCODE
                         )
                         if is_rate_limited:
                             errmsg = resp.get("errmsg") or resp.get("msg") or "rate limited"
-                            # Record the error so we raise a descriptive
-                            # RuntimeError (instead of AssertionError) if the
-                            # loop exhausts with the server still rate-limiting.
+                            # 记录该错误，以便当循环耗尽且服务器仍在限流时，
+                            # 抛出有描述性的 RuntimeError（而非 AssertionError）。
                             last_error = RuntimeError(
                                 f"iLink sendmessage rate limited: ret={ret} errcode={errcode} errmsg={errmsg}"
                             )
@@ -1784,7 +1781,7 @@ class WeixinAdapter(BasePlatformAdapter):
                                 break
                             if attempt >= self._send_chunk_retries:
                                 break
-                            wait = self._send_chunk_retry_delay_seconds * 3  # 3x backoff for rate limit
+                            wait = self._send_chunk_retry_delay_seconds * 3  # 频率限制的 3 倍退避
                             logger.warning(
                                 "[%s] rate limited for %s; backing off %.1fs before retry",
                                 self.name, _safe_id(chat_id), wait,
@@ -1828,7 +1825,7 @@ class WeixinAdapter(BasePlatformAdapter):
         context_token = self._token_store.get(self._account_id, chat_id)
         last_message_id: Optional[str] = None
 
-        # Extract MEDIA: tags and bare local file paths before text delivery.
+        # 在投递文本前，提取 MEDIA: 标签和裸的本地文件路径。
         media_files, cleaned_content = self.extract_media(content)
         media_files = self.filter_media_delivery_paths(media_files)
         _, image_cleaned = self.extract_images(cleaned_content)
@@ -1851,21 +1848,21 @@ class WeixinAdapter(BasePlatformAdapter):
                 await self.send_document(chat_id=chat_id, file_path=path, metadata=metadata)
 
         try:
-            # Deliver extracted MEDIA: attachments first.
+            # 先投递提取出的 MEDIA: 附件。
             for media_path, is_voice in media_files:
                 try:
                     await _deliver_media(media_path, is_voice)
                 except Exception as exc:
                     logger.warning("[%s] media delivery failed for %s: %s", self.name, media_path, exc)
 
-            # Deliver bare local file paths.
+            # 投递裸的本地文件路径。
             for file_path in local_files:
                 try:
                     await _deliver_media(file_path, is_voice=False)
                 except Exception as exc:
                     logger.warning("[%s] local file delivery failed for %s: %s", self.name, file_path, exc)
 
-            # Deliver text content.
+            # 投递文本内容。
             chunks = [c for c in self._split_text(self.format_message(final_content)) if c and c.strip()]
             for idx, chunk in enumerate(chunks):
                 client_id = f"hermes-weixin-{uuid.uuid4().hex}"
@@ -1884,22 +1881,21 @@ class WeixinAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(exc))
 
     async def _ensure_typing_ticket(self, chat_id: str) -> Optional[str]:
-        """Return a valid typing ticket, refreshing from getConfig if expired.
+        """返回有效的 typing ticket，若已过期则通过 getConfig 刷新。
 
-        The iLink typing ticket has a 600-second TTL.  When a long-running
-        session exceeds that window the cached ticket evicts, and both
-        ``send_typing`` and ``stop_typing`` silently no-op — leaving the
-        WeChat client stuck showing the typing indicator forever.  This
-        method transparently refreshes the ticket so the stop signal can
-        always be delivered.
+        iLink 的 typing ticket 有 600 秒的 TTL。当长时间运行的
+        会话超过该窗口时，缓存的 ticket 会被驱逐，``send_typing``
+        和 ``stop_typing`` 都会静默空操作 —— 导致
+        WeChat 客户端一直卡在显示输入指示器。本方法透明地
+        刷新 ticket，使停止信号始终能被投递。
         """
         ticket = self._typing_cache.get(chat_id)
         if ticket:
             return ticket
         if not self._send_session or not self._token:
             return None
-        # Ticket expired or never fetched — refresh via getConfig.
-        # Use the most recent context_token for this peer if available.
+        # ticket 已过期或从未获取 —— 通过 getConfig 刷新。
+        # 若有可用的最近 context_token，则使用该对端的最新 token。
         context_token = self._token_store.get(self._account_id, chat_id)
         try:
             response = await _get_config(
@@ -2046,9 +2042,9 @@ class WeixinAdapter(BasePlatformAdapter):
         if not self._send_session or not self._token:
             return SendResult(success=False, error="Not connected")
 
-        # Native outbound Weixin voice bubbles are not proven-working in the
-        # upstream reference implementation. Prefer a reliable file attachment
-        # fallback so users at least receive playable audio, even for .silk.
+        # 原生出站 Weixin 语音气泡在
+        # 上游参考实现中尚未验证可用。优先使用可靠的文件附件
+        # 回退，这样用户至少能收到可播放的音频，即便是 .silk 也能播放。
         fallback_caption = caption or "[voice message as attachment]"
         try:
             message_id = await self._send_file(
@@ -2069,8 +2065,8 @@ class WeixinAdapter(BasePlatformAdapter):
             raise ValueError(f"Blocked unsafe URL (SSRF protection): {url}")
 
         assert self._send_session is not None
-        # Use asyncio.wait_for() instead of aiohttp ClientTimeout to avoid
-        # "Timeout context manager should be used inside a task" errors.
+        # 使用 asyncio.wait_for() 而非 aiohttp ClientTimeout，以避免
+        # 出现 "Timeout context manager should be used inside a task" 错误。
         async def _do_fetch():
             async with self._send_session.get(url) as response:
                 response.raise_for_status()
@@ -2111,9 +2107,9 @@ class WeixinAdapter(BasePlatformAdapter):
         upload_full_url = str(upload_response.get("upload_full_url") or "")
         ciphertext = _aes128_ecb_encrypt(plaintext, aes_key)
 
-        # Prefer upload_full_url (direct CDN), fall back to constructed CDN URL
-        # from upload_param.  Both paths use POST — the old PUT for
-        # upload_full_url caused 404s on the WeChat CDN.
+        # 优先使用 upload_full_url（直连 CDN），回退到由
+        # upload_param 构造的 CDN URL。两条路径都用 POST —— 旧版针对
+        # upload_full_url 的 PUT 会在 WeChat CDN 上导致 404。
         if upload_full_url:
             upload_url = upload_full_url
         elif upload_param:
@@ -2127,9 +2123,9 @@ class WeixinAdapter(BasePlatformAdapter):
             upload_url=upload_url,
         )
         context_token = self._token_store.get(self._account_id, chat_id)
-        # The iLink API expects aes_key as base64(hex_string), not base64(raw_bytes).
-        # Sending base64(raw_bytes) causes images to show as grey boxes on the
-        # receiver side because the decryption key doesn't match.
+        # iLink API 期望 aes_key 为 base64(hex_string)，而非 base64(raw_bytes)。
+        # 发送 base64(raw_bytes) 会导致图片在
+        # 接收端显示为灰块，因为解密密钥不匹配。
         aes_key_for_api = base64.b64encode(aes_key.hex().encode("ascii")).decode("ascii")
         item_kwargs = {
             "encrypt_query_param": encrypted_query_param,
@@ -2267,9 +2263,9 @@ async def send_weixin_direct(
     media_files: Optional[List[Tuple[str, bool]]] = None,
 ) -> Dict[str, Any]:
     """
-    One-shot send helper for ``send_message`` and cron delivery.
+    供 ``send_message`` 和 cron 投递使用的一次性发送辅助函数。
 
-    This bypasses the long-poll adapter lifecycle and uses the raw API directly.
+    它绕过长轮询适配器生命周期，直接使用原始 API。
     """
     account_id = str(extra.get("account_id") or os.getenv("WEIXIN_ACCOUNT_ID", "")).strip()
     base_url = str(extra.get("base_url") or os.getenv("WEIXIN_BASE_URL", ILINK_BASE_URL)).strip().rstrip("/")

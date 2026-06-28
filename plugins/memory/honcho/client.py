@@ -1,14 +1,14 @@
-"""Honcho client initialization and configuration.
+"""Honcho 客户端初始化与配置。
 
-Resolution order for config file:
-  1. $HERMES_HOME/honcho.json  (instance-local, enables isolated Hermes instances)
-  2. ~/.honcho/config.json     (global, shared across all Honcho-enabled apps)
-  3. Environment variables     (HONCHO_API_KEY, HONCHO_ENVIRONMENT)
+配置文件解析顺序：
+  1. $HERMES_HOME/honcho.json  （实例本地，支持隔离的 Hermes 实例）
+  2. ~/.honcho/config.json     （全局，所有启用 Honcho 的应用共享）
+  3. 环境变量                   （HONCHO_API_KEY, HONCHO_ENVIRONMENT）
 
-Resolution order for host-specific settings:
-  1. Explicit host block fields (always win)
-  2. Flat/global fields from config root
-  3. Defaults (host name as workspace/peer)
+主机特定设置的解析顺序：
+  1. 显式主机块字段（始终优先）
+  2. 来自配置根级的扁平/全局字段
+  3. 默认值（以主机名作为 workspace/peer）
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ HOST = "hermes"
 
 
 def profile_host_key(profile: str | None) -> str:
-    """Return the safe Honcho host key for a Hermes profile."""
+    """返回 Hermes profile 对应的安全 Honcho 主机键。"""
     if not profile or profile in {"default", "custom"}:
         return HOST
     sanitized = "".join(c if c.isalnum() or c in "_-" else "_" for c in profile).strip("_")
@@ -42,7 +42,7 @@ def profile_host_key(profile: str | None) -> str:
 
 
 def _host_block(raw: dict, host: str) -> dict:
-    """Return host config, accepting legacy dot-form profile host keys."""
+    """返回主机配置，兼容旧式的点分格式 profile 主机键。"""
     hosts = raw.get("hosts") or {}
     block = hosts.get(host, {})
     if block or not host.startswith(f"{HOST}_"):
@@ -52,12 +52,12 @@ def _host_block(raw: dict, host: str) -> dict:
 
 
 def resolve_active_host() -> str:
-    """Derive the Honcho host key from the active Hermes profile.
+    """从当前活跃的 Hermes profile 派生 Honcho 主机键。
 
-    Resolution order:
-      1. HERMES_HONCHO_HOST env var (explicit override)
-      2. Active profile name via profiles system -> ``hermes.<profile>``
-      3. Fallback: ``"hermes"`` (default profile)
+    解析顺序：
+      1. HERMES_HONCHO_HOST 环境变量（显式覆盖）
+      2. 通过 profiles 系统获取活跃 profile 名称 -> ``hermes.<profile>``
+      3. 回退：``"hermes"``（默认 profile）
     """
     explicit = os.environ.get("HERMES_HONCHO_HOST", "").strip()
     if explicit:
@@ -73,25 +73,25 @@ def resolve_active_host() -> str:
 
 
 def resolve_global_config_path() -> Path:
-    """Return the shared Honcho config path for the current HOME."""
+    """返回当前 HOME 对应的共享 Honcho 配置路径。"""
     return Path.home() / ".honcho" / "config.json"
 
 
 def resolve_config_path() -> Path:
-    """Return the active Honcho config path.
+    """返回当前活跃的 Honcho 配置路径。
 
-    Resolution order:
-      1. $HERMES_HOME/honcho.json      (profile-local, if it exists)
-      2. ~/.hermes/honcho.json          (default profile — shared host blocks live here)
-      3. ~/.honcho/config.json          (global, cross-app interop)
+    解析顺序：
+      1. $HERMES_HOME/honcho.json      （profile 本地，如果存在）
+      2. ~/.hermes/honcho.json          （默认 profile — 共享主机块存储在此）
+      3. ~/.honcho/config.json          （全局，跨应用互操作）
 
-    Returns the global path if none exist (for first-time setup writes).
+    如果都不存在则返回全局路径（用于首次设置写入）。
     """
     local_path = get_hermes_home() / "honcho.json"
     if local_path.exists():
         return local_path
 
-    # Default profile's config — host blocks accumulate here via setup/clone
+    # 默认 profile 的配置 — 主机块通过 setup/clone 在此累积
     default_path = _get_default_hermes_home() / "honcho.json"
     if default_path != local_path and default_path.exists():
         return default_path
@@ -104,18 +104,17 @@ _VALID_RECALL_MODES = {"hybrid", "context", "tools"}
 
 
 def _normalize_recall_mode(val: str) -> str:
-    """Normalize legacy recall mode values (e.g. 'auto' → 'hybrid')."""
+    """规范化旧的 recall mode 值（例如 'auto' → 'hybrid'）。"""
     val = _RECALL_MODE_ALIASES.get(val, val)
     return val if val in _VALID_RECALL_MODES else "hybrid"
 
 
 def _resolve_bool(*vals, default: bool) -> bool:
-    """Resolve a bool config field: first non-None wins, else default.
+    """解析 bool 配置字段：第一个非 None 的值生效，否则使用默认值。
 
-    Variadic to support aliased keys (e.g. ``pinUserPeer`` shadowing
-    ``pinPeerName`` for backwards compatibility).  Pass values in
-    precedence order: caller's preferred alias first, then fallback
-    aliases, in (host, root) interleaving as needed.
+    使用可变参数以支持别名键（例如 ``pinUserPeer`` 覆盖
+    ``pinPeerName`` 以保持向后兼容）。按优先级顺序传入值：
+    调用方的首选别名在前，然后是回退别名，按需交替 (host, root)。
     """
     for val in vals:
         if val is not None:
@@ -124,7 +123,7 @@ def _resolve_bool(*vals, default: bool) -> bool:
 
 
 def _parse_context_tokens(host_val, root_val) -> int | None:
-    """Parse contextTokens: host wins, then root, then None (uncapped)."""
+    """解析 contextTokens：host 优先，其次 root，最后 None（无上限）。"""
     for val in (host_val, root_val):
         if val is not None:
             try:
@@ -135,7 +134,7 @@ def _parse_context_tokens(host_val, root_val) -> int | None:
 
 
 def _parse_int_config(host_val, root_val, default: int) -> int:
-    """Parse an integer config: host wins, then root, then default."""
+    """解析整数配置：host 优先，其次 root，最后 default。"""
     for val in (host_val, root_val):
         if val is not None:
             try:
@@ -146,7 +145,7 @@ def _parse_int_config(host_val, root_val, default: int) -> int:
 
 
 def _parse_string_map(host_obj: dict, root_obj: dict, key: str) -> dict[str, str]:
-    """Parse a string-to-string map with host-level whole-map override."""
+    """解析字符串到字符串的映射，支持 host 级整表覆盖。"""
     source = host_obj[key] if key in host_obj else root_obj.get(key)
     if not isinstance(source, dict):
         return {}
@@ -163,7 +162,7 @@ def _parse_string_map(host_obj: dict, root_obj: dict, key: str) -> dict[str, str
 def _parse_optional_string(
     host_obj: dict, root_obj: dict, key: str, default: str = ""
 ) -> str:
-    """Parse a string field where host-level empty string can override root."""
+    """解析字符串字段，host 级空字符串可覆盖 root。"""
     if key in host_obj:
         value = host_obj.get(key)
     else:
@@ -174,7 +173,7 @@ def _parse_optional_string(
 
 
 def _parse_dialectic_depth(host_val, root_val) -> int:
-    """Parse dialecticDepth: host wins, then root, then 1. Clamped to 1-3."""
+    """解析 dialecticDepth：host 优先，其次 root，最后 1。限制范围 1-3。"""
     for val in (host_val, root_val):
         if val is not None:
             try:

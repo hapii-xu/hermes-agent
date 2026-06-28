@@ -1,24 +1,23 @@
 """
-Cross-platform Computer Use readiness + macOS permission helpers.
+跨平台的 Computer Use 就绪检查 + macOS 权限辅助函数。
 
-cua-driver runs on macOS, Windows, and Linux, but "ready to drive" means
-something different on each:
+cua-driver 可在 macOS、Windows 和 Linux 上运行，但「可以驱动」在每个
+平台上的含义不同：
 
-  * macOS — explicit TCC grants (Accessibility + Screen Recording). cua-driver
-    reports/requests them via ``permissions status`` / ``permissions grant``.
-    The grants attach to cua-driver's OWN identity (``com.trycua.driver`` /
-    the installed ``CuaDriver.app``), NOT Hermes — so no Hermes entitlement is
-    involved, and ``grant`` launches CuaDriver via LaunchServices so the macOS
-    dialog is attributed correctly.
-  * Windows — no TCC toggles; the UIAccess worker (``cua-driver-uia.exe``) may
-    trip a SmartScreen prompt on first run. Readiness == driver health.
-  * Linux — assistive control via the X11/XWayland stack. Readiness == driver
-    health.
+  * macOS —— 需显式的 TCC 授权（辅助功能 + 屏幕录制）。cua-driver 通过
+    ``permissions status`` / ``permissions grant`` 上报/请求这些授权。授权
+    绑定在 cua-driver 自己的身份（``com.trycua.driver`` / 已安装的
+    ``CuaDriver.app``）上，而非 Hermes——因此不涉及任何 Hermes 权限声明，
+    且 ``grant`` 会通过 LaunchServices 启动 CuaDriver，使 macOS 对话框
+    能正确归因。
+  * Windows —— 没有 TCC 开关；UIAccess 工作进程（``cua-driver-uia.exe``）
+    首次运行时可能触发 SmartScreen 提示。就绪 == 驱动健康。
+  * Linux —— 通过 X11/XWayland 栈实现辅助控制。就绪 == 驱动健康。
 
-The universal signal on every platform is ``cua-driver doctor --json`` (binary
-integrity + platform support). ``computer_use_status`` folds that together with
-the macOS permission detail into one payload for the desktop card, the
-``hermes computer-use permissions`` CLI, and ``/api/tools/computer-use/status``.
+每个平台上的通用信号都是 ``cua-driver doctor --json``（二进制完整性 +
+平台支持）。``computer_use_status`` 把它与 macOS 权限细节整合进同一个
+负载，供桌面卡片、``hermes computer-use permissions`` CLI 以及
+``/api/tools/computer-use/status`` 使用。
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Optional
 
-# Platforms with a cua-driver runtime backend (mirrors the toolset platform_gate).
+# 拥有 cua-driver 运行时后端的平台（与 toolset 的 platform_gate 一致）。
 _RUNTIME_PLATFORMS = frozenset({"darwin", "win32", "linux"})
 _BOOLS = ("accessibility", "screen_recording", "screen_recording_capturable")
 
@@ -47,7 +46,7 @@ def _driver_cmd(override: Optional[str]) -> str:
 
 
 def _child_env() -> Dict[str, str]:
-    """cua-driver child env honoring the Hermes telemetry opt-in policy."""
+    """遵循 Hermes 遥测 opt-in 策略的 cua-driver 子进程环境变量。"""
     try:
         from tools.computer_use.cua_backend import cua_driver_child_env
 
@@ -68,13 +67,13 @@ def _run(binary: str, *args: str, timeout: float) -> subprocess.CompletedProcess
 
 
 def _json_out(binary: str, *args: str, timeout: float) -> Any:
-    """Run ``binary args`` and parse stdout as JSON, or ``None`` on any failure."""
+    """运行 ``binary args`` 并把 stdout 解析为 JSON；任意失败则返回 ``None``。"""
     raw = (_run(binary, *args, timeout=timeout).stdout or "").strip()
     return json.loads(raw) if raw else None
 
 
 def _doctor(binary: str) -> Optional[Dict[str, Any]]:
-    """``cua-driver doctor --json`` → ``{ok, checks:[{label,status,message}]}``."""
+    """``cua-driver doctor --json`` → ``{ok, checks:[{label,status,message}]}``。"""
     try:
         data = _json_out(binary, "doctor", "--json", timeout=12)
     except Exception:
@@ -94,13 +93,13 @@ def _doctor(binary: str) -> Optional[Dict[str, Any]]:
 
 
 def _mac_permissions(binary: str, out: Dict[str, Any]) -> None:
-    """Fold ``cua-driver permissions status --json`` booleans into ``out``."""
+    """把 ``cua-driver permissions status --json`` 的布尔值合并进 ``out``。"""
     try:
         data = _json_out(binary, "permissions", "status", "--json", timeout=10)
     except subprocess.TimeoutExpired:
         out["error"] = "cua-driver permissions status timed out"
         return
-    except Exception as exc:  # spawn failure or malformed JSON
+    except Exception as exc:  # 启动失败或 JSON 格式错误
         out["error"] = f"cua-driver permissions status failed: {exc}"
         return
     if isinstance(data, dict):
@@ -110,11 +109,11 @@ def _mac_permissions(binary: str, out: Dict[str, Any]) -> None:
 
 
 def computer_use_status(driver_cmd: Optional[str] = None) -> Dict[str, Any]:
-    """Unified, OS-aware Computer Use readiness for the desktop card.
+    """面向桌面卡片的、感知操作系统的统一 Computer Use 就绪状态。
 
-    ``ready`` is the single signal the UI keys off: on macOS it's both TCC
-    grants; elsewhere it's driver health (no TCC model). ``None`` means
-    unknown (binary missing / probe failed). ``can_grant`` is macOS-only.
+    ``ready`` 是 UI 依赖的唯一信号：在 macOS 上它等于两项 TCC 授权都满足；
+    在其他平台上等于驱动健康（没有 TCC 模型）。``None`` 表示未知（缺少
+    二进制 / 探测失败）。``can_grant`` 仅适用于 macOS。
     """
     plat = sys.platform
     binary = shutil.which(_driver_cmd(driver_cmd))
@@ -147,18 +146,18 @@ def computer_use_status(driver_cmd: Optional[str] = None) -> Dict[str, Any]:
         if out["error"] is None:
             out["ready"] = out["accessibility"] is True and out["screen_recording"] is True
     elif doctor is not None:
-        # No TCC model off macOS — readiness is driver health.
+        # 非 macOS 没有 TCC 模型 —— 就绪即驱动健康。
         out["ready"] = doctor["ok"]
     return out
 
 
 def request_permissions_grant(driver_cmd: Optional[str] = None) -> int:
-    """Run ``cua-driver permissions grant`` (macOS); stream its output.
+    """运行 ``cua-driver permissions grant``（macOS）；流式输出其内容。
 
-    Launches CuaDriver via LaunchServices so the TCC dialog is attributed to
-    ``com.trycua.driver``, then waits for the grant. Returns the driver's exit
-    code (0 ok), 2 if the binary is missing, 64 on a non-macOS platform (which
-    has no TCC permission model to grant).
+    通过 LaunchServices 启动 CuaDriver，使 TCC 对话框归因到
+    ``com.trycua.driver``，随后等待授权完成。返回驱动的退出码（0 为成功）；
+    二进制缺失返回 2；非 macOS 平台返回 64（该平台没有可授予的 TCC 权限
+    模型）。
     """
     if sys.platform != "darwin":
         print("Computer Use permissions are a macOS concept; nothing to grant here.")

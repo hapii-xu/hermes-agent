@@ -1,38 +1,36 @@
-"""Azure Foundry endpoint auto-detection.
+"""Azure Foundry 端点自动检测。
 
-Inspect a Microsoft Foundry / Azure OpenAI endpoint to determine:
-  - API transport (OpenAI-style ``chat_completions`` vs
-    Anthropic-style ``anthropic_messages``)
-  - Available models (best effort — Azure does not expose a deployment
-    listing via the inference API key, but Azure OpenAI v1 endpoints
-    return the resource's model catalog via ``GET /models``)
-  - Context length for each discovered/entered model, via the existing
-    :func:`agent.model_metadata.get_model_context_length` resolver.
+检查 Microsoft Foundry / Azure OpenAI 端点以确定：
+  - API 传输方式（OpenAI 风格的 ``chat_completions`` 还是
+    Anthropic 风格的 ``anthropic_messages``）
+  - 可用模型（尽力而为 — Azure 不通过推理 API key 暴露部署
+    列表，但 Azure OpenAI v1 端点通过 ``GET /models`` 返回
+    资源的模型目录）
+  - 每个发现/输入的模型的上下文长度，通过现有的
+    :func:`agent.model_metadata.get_model_context_length` 解析器获取。
 
-Rationale:
+设计原因：
 
-Azure has no pure-API-key deployment-listing endpoint — per Microsoft,
-deployment enumeration requires ARM management-plane auth.  Azure
-OpenAI v1 endpoints ``{resource}.openai.azure.com/openai/v1`` do return
-a ``/models`` list, but it reflects the resource's *available* models
-rather than the user's *deployed* deployment names.  In practice it is
-still a useful hint — the user picks a familiar model name and we look
-up its context length from the catalog.
+Azure 没有纯 API key 的部署列表端点 — 根据 Microsoft 的说法，
+部署枚举需要 ARM 管理平面认证。Azure OpenAI v1 端点
+``{resource}.openai.azure.com/openai/v1`` 确实返回 ``/models``
+列表，但它反映的是资源的*可用*模型，而不是用户*已部署*的
+部署名称。在实践中，它仍然是一个有用的提示 — 用户选择一个
+熟悉的模型名称，我们从目录中查找其上下文长度。
 
-Authentication modes:
-  - ``api_key`` (default): the wizard passes an ``api_key`` string; the
-    probe sends both ``api-key:`` and ``Authorization: Bearer`` headers
-    so we hit any Azure deployment regardless of which header it expects.
-  - ``entra_id``: the wizard passes a ``token_provider`` callable from
-    :mod:`agent.azure_identity_adapter`. The probe mints exactly one
-    bearer JWT, sends **only** ``Authorization: Bearer <jwt>`` (never
-    ``api-key:``), and never persists the token. This matches Microsoft's
-    documented contract for keyless inference.
+认证模式：
+  - ``api_key``（默认）：向导传入 ``api_key`` 字符串；探测
+    同时发送 ``api-key:`` 和 ``Authorization: Bearer`` 请求头，
+    以便无论 Azure 部署期望哪个请求头都能命中。
+  - ``entra_id``：向导传入一个 ``token_provider`` 可调用对象
+    （来自 :mod:`agent.azure_identity_adapter`）。探测仅生成
+    一个 bearer JWT，**仅**发送 ``Authorization: Bearer <jwt>``
+    （不发送 ``api-key:``），并且不持久化 token。这符合
+    Microsoft 关于无密钥推理的文档约定。
 
-The detector never crashes on errors (every HTTP call is wrapped in a
-broad try/except).  Callers get a :class:`DetectionResult` with whatever
-information could be gathered, and fall back to manual entry for the
-rest.
+检测器在遇到错误时不会崩溃（每个 HTTP 调用都包裹在
+宽泛的 try/except 中）。调用者得到一个 :class:`DetectionResult`，
+包含能收集到的所有信息，其余部分回退到手动输入。
 """
 
 from __future__ import annotations

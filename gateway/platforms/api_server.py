@@ -1,34 +1,34 @@
 """
-OpenAI-compatible API server platform adapter.
+OpenAI 兼容的 API 服务器平台适配器。
 
-Exposes an HTTP server with endpoints:
-- POST /v1/chat/completions        — OpenAI Chat Completions format (stateless; opt-in session continuity via X-Hermes-Session-Id header; opt-in long-term memory scoping via X-Hermes-Session-Key header)
-- POST /v1/responses               — OpenAI Responses API format (stateful via previous_response_id; X-Hermes-Session-Key supported)
-- GET  /v1/responses/{response_id} — Retrieve a stored response
-- DELETE /v1/responses/{response_id} — Delete a stored response
-- GET  /v1/models                  — lists hermes-agent as an available model
-- GET  /v1/capabilities            — machine-readable API capabilities for external UIs
-- GET  /api/sessions               — list client-visible Hermes sessions
-- POST /api/sessions               — create an empty Hermes session
-- GET/PATCH/DELETE /api/sessions/{session_id} — read/update/delete a session
-- GET  /api/sessions/{session_id}/messages — read session message history
-- POST /api/sessions/{session_id}/fork — branch a session using SessionDB lineage
-- POST /api/sessions/{session_id}/chat[/stream] — chat with a persisted session
-- POST /v1/runs                    — start a run, returns run_id immediately (202)
-- GET  /v1/runs/{run_id}           — retrieve current run status
-- GET  /v1/runs/{run_id}/events    — SSE stream of structured lifecycle events
-- POST /v1/runs/{run_id}/approval — resolve a pending run approval
-- POST /v1/runs/{run_id}/stop       — interrupt a running agent
-- GET  /health                     — health check
-- GET  /health/detailed            — rich status for cross-container dashboard probing
+暴露一个 HTTP 服务器，提供以下端点：
+- POST /v1/chat/completions        — OpenAI Chat Completions 格式（无状态；可通过 X-Hermes-Session-Id 头部选择性启用会话连续性；可通过 X-Hermes-Session-Key 头部选择性启用长期记忆作用域）
+- POST /v1/responses               — OpenAI Responses API 格式（通过 previous_response_id 保持状态；支持 X-Hermes-Session-Key）
+- GET  /v1/responses/{response_id} — 获取已存储的响应
+- DELETE /v1/responses/{response_id} — 删除已存储的响应
+- GET  /v1/models                  — 将 hermes-agent 列为可用模型
+- GET  /v1/capabilities            — 供外部 UI 使用的机器可读 API 能力描述
+- GET  /api/sessions               — 列出客户端可见的 Hermes 会话
+- POST /api/sessions               — 创建一个空的 Hermes 会话
+- GET/PATCH/DELETE /api/sessions/{session_id} — 读取/更新/删除会话
+- GET  /api/sessions/{session_id}/messages — 读取会话消息历史
+- POST /api/sessions/{session_id}/fork — 使用 SessionDB 血缘关系分叉会话
+- POST /api/sessions/{session_id}/chat[/stream] — 与已持久化的会话进行聊天
+- POST /v1/runs                    — 启动一个 run，立即返回 run_id（202）
+- GET  /v1/runs/{run_id}           — 获取当前 run 状态
+- GET  /v1/runs/{run_id}/events    — 结构化生命周期事件的 SSE 流
+- POST /v1/runs/{run_id}/approval — 解决一个待处理的 run 审批
+- POST /v1/runs/{run_id}/stop       — 中断正在运行的 agent
+- GET  /health                     — 健康检查
+- GET  /health/detailed            — 用于跨容器仪表盘探测的丰富状态信息
 
-Any OpenAI-compatible frontend (Open WebUI, LobeChat, LibreChat,
-AnythingLLM, NextChat, ChatBox, etc.) can connect to hermes-agent
-through this adapter by pointing at http://localhost:8642/v1 and
-authenticating with API_SERVER_KEY.
+任何 OpenAI 兼容的前端（Open WebUI、LobeChat、LibreChat、
+AnythingLLM、NextChat、ChatBox 等）都可以通过将地址指向
+http://localhost:8642/v1 并使用 API_SERVER_KEY 进行认证，
+从而经由本适配器连接到 hermes-agent。
 
-Requires:
-- aiohttp (already available in the gateway)
+依赖：
+- aiohttp（已在 gateway 中可用）
 """
 
 import asyncio
@@ -63,12 +63,12 @@ logger = logging.getLogger(__name__)
 
 
 def _hermes_version() -> str:
-    """Return the hermes-agent version string, or "dev" if it can't be resolved.
+    """返回 hermes-agent 的版本字符串，无法解析时返回 "dev"。
 
-    Tries the installed package metadata first (authoritative for a pip/uv
-    install), then the in-tree ``hermes_cli.__version__`` (covers editable /
-    source checkouts where metadata may be stale or absent). Never raises —
-    a version probe must not be able to break the health endpoint.
+    首先尝试读取已安装的包元数据（对于 pip/uv 安装是权威来源），
+    然后回退到树内的 ``hermes_cli.__version__``（覆盖可编辑安装 /
+    源码检出场景，此时元数据可能已过期或缺失）。永不抛出异常 ——
+    版本探测绝不能破坏健康检查端点。
     """
     try:
         from importlib.metadata import version
@@ -84,18 +84,18 @@ def _hermes_version() -> str:
         return "dev"
 
 
-# Default settings
+# 默认设置
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8642
 MAX_STORED_RESPONSES = 100
-MAX_REQUEST_BYTES = 10_000_000  # 10 MB — accommodates long agent conversations with tool calls
+MAX_REQUEST_BYTES = 10_000_000  # 10 MB —— 容纳带有工具调用的较长 agent 对话
 CHAT_COMPLETIONS_SSE_KEEPALIVE_SECONDS = 30.0
-MAX_NORMALIZED_TEXT_LENGTH = 65_536  # 64 KB cap for normalized content parts
-MAX_CONTENT_LIST_SIZE = 1_000  # Max items when content is an array
+MAX_NORMALIZED_TEXT_LENGTH = 65_536  # 规范化内容部分的 64 KB 上限
+MAX_CONTENT_LIST_SIZE = 1_000  # content 为数组时的最大条目数
 
 
 def _coerce_port(value: Any, default: int = DEFAULT_PORT) -> int:
-    """Parse a listen port without letting malformed env/config values crash startup."""
+    """解析监听端口，避免格式错误的 env/config 值导致启动崩溃。"""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -107,13 +107,12 @@ _FALSE_REQUEST_BOOL_STRINGS = frozenset({"0", "false", "no", "off"})
 
 
 def _coerce_request_bool(value: Any, default: bool = False) -> bool:
-    """Normalize boolean-like API payload values.
+    """将布尔值形式的 API 负载值规范化。
 
-    External clients should send real JSON booleans, but some OpenAI-compatible
-    frontends and middleware serialize flags like ``stream`` as strings.  Using
-    Python truthiness on those values misroutes requests because ``"false"`` is
-    still truthy.  Treat only explicit bool-ish scalars as booleans; everything
-    else falls back to the caller's default.
+    外部客户端应当发送真正的 JSON 布尔值，但一些 OpenAI 兼容的前端
+    和中间件会将 ``stream`` 之类的标志序列化为字符串。对这些值使用
+    Python 的真值判断会导致请求被错误路由，因为 ``"false"`` 仍然为真。
+    仅将显式的布尔式标量当作布尔值处理；其余情况一律回退到调用方提供的默认值。
     """
     if isinstance(value, bool):
         return value
@@ -134,18 +133,17 @@ def _coerce_request_bool(value: Any, default: bool = False) -> bool:
 def _normalize_chat_content(
     content: Any, *, _max_depth: int = 10, _depth: int = 0,
 ) -> str:
-    """Normalize OpenAI chat message content into a plain text string.
+    """将 OpenAI 聊天消息内容规范化为纯文本字符串。
 
-    Some clients (Open WebUI, LobeChat, etc.) send content as an array of
-    typed parts instead of a plain string::
+    一些客户端（Open WebUI、LobeChat 等）会将 content 以带类型的
+    数组形式发送，而非纯字符串::
 
         [{"type": "text", "text": "hello"}, {"type": "input_text", "text": "..."}]
 
-    This function flattens those into a single string so the agent pipeline
-    (which expects strings) doesn't choke.
+    本函数将这些内容拍平为单个字符串，以免 agent 流水线（其期望字符串）
+    出现解析失败。
 
-    Defensive limits prevent abuse: recursion depth, list size, and output
-    length are all bounded.
+    防御性限制可防止滥用：递归深度、列表大小和输出长度均有上限。
     """
     if _depth > _max_depth:
         return ""
@@ -175,19 +173,19 @@ def _normalize_chat_content(
                             total_len += len(part)
                         except Exception:
                             pass
-                # Silently skip image_url / other non-text parts
+                # 静默跳过 image_url 及其他非文本部分
             elif isinstance(item, list):
                 nested = _normalize_chat_content(item, _max_depth=_max_depth, _depth=_depth + 1)
                 if nested:
                     parts.append(nested)
                     total_len += len(nested)
-            # Check accumulated size
+            # 检查累积大小
             if total_len >= MAX_NORMALIZED_TEXT_LENGTH:
                 break
         result = "\n".join(parts)
         return result[:MAX_NORMALIZED_TEXT_LENGTH] if len(result) > MAX_NORMALIZED_TEXT_LENGTH else result
 
-    # Fallback for unexpected types (int, float, bool, etc.)
+    # 针对意外类型（int、float、bool 等）的回退处理
     try:
         result = str(content)
         return result[:MAX_NORMALIZED_TEXT_LENGTH] if len(result) > MAX_NORMALIZED_TEXT_LENGTH else result
@@ -195,40 +193,40 @@ def _normalize_chat_content(
         return ""
 
 
-# Content part type aliases used by the OpenAI Chat Completions and Responses
-# APIs.  We accept both spellings on input and emit a single canonical internal
-# shape (``{"type": "text", ...}`` / ``{"type": "image_url", ...}``) that the
-# rest of the agent pipeline already understands.
+# OpenAI Chat Completions 和 Responses API 使用的内容部分类型别名。
+# 我们在输入时同时接受两种写法，并输出单一的规范化内部形态
+# （``{"type": "text", ...}`` / ``{"type": "image_url", ...}``），
+# 该形态已被 agent 流水线的其余部分所理解。
 _TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text"})
 _IMAGE_PART_TYPES = frozenset({"image_url", "input_image"})
 _FILE_PART_TYPES = frozenset({"file", "input_file"})
 
 
 def _normalize_multimodal_content(content: Any) -> Any:
-    """Validate and normalize multimodal content for the API server.
+    """为 API 服务器校验并规范化多模态内容。
 
-    Returns a plain string when the content is text-only, or a list of
-    ``{"type": "text"|"image_url", ...}`` parts when images are present.
-    The output shape is the native OpenAI Chat Completions vision format,
-    which the agent pipeline accepts verbatim (OpenAI-wire providers) or
-    converts (``_preprocess_anthropic_content`` for Anthropic).
+    当内容仅包含文本时返回纯字符串；当存在图片时返回
+    ``{"type": "text"|"image_url", ...}`` 部分的列表。
+    输出形态是原生的 OpenAI Chat Completions 视觉格式，
+    agent 流水线可以直接接受（OpenAI 线上协议的 provider）或
+    进行转换（Anthropic 的 ``_preprocess_anthropic_content``）。
 
-    Raises ``ValueError`` with an OpenAI-style code on invalid input:
-      * ``unsupported_content_type`` — file/input_file/file_id parts, or
-        non-image ``data:`` URLs.
-      * ``invalid_image_url`` — missing URL or unsupported scheme.
-      * ``invalid_content_part`` — malformed text/image objects.
+    当输入无效时抛出带有 OpenAI 风格 code 的 ``ValueError``：
+      * ``unsupported_content_type`` — file/input_file/file_id 部分，
+        或非图片的 ``data:`` URL。
+      * ``invalid_image_url`` — 缺少 URL 或不支持的协议。
+      * ``invalid_content_part`` — 格式错误的 text/image 对象。
 
-    Callers translate the ValueError into a 400 response.
+    调用方负责将 ValueError 转换为 400 响应。
     """
-    # Scalar passthrough mirrors ``_normalize_chat_content``.
+    # 标量直接透传，与 ``_normalize_chat_content`` 保持一致。
     if content is None:
         return ""
     if isinstance(content, str):
         return content[:MAX_NORMALIZED_TEXT_LENGTH] if len(content) > MAX_NORMALIZED_TEXT_LENGTH else content
     if not isinstance(content, list):
-        # Mirror the legacy text-normalizer's fallback so callers that
-        # pre-existed image support still get a string back.
+        # 与旧版文本规范化器的回退保持一致，这样在图片支持出现之前
+        # 就存在的调用方仍然能拿到字符串。
         return _normalize_chat_content(content)
 
     items = content[:MAX_CONTENT_LIST_SIZE] if len(content) > MAX_CONTENT_LIST_SIZE else content
@@ -244,9 +242,8 @@ def _normalize_multimodal_content(content: Any) -> Any:
             continue
 
         if not isinstance(part, dict):
-            # Ignore unknown scalars for forward compatibility with future
-            # Responses API additions (e.g. ``refusal``).  The same policy
-            # the text normalizer applies.
+            # 忽略未知标量，以便向前兼容未来 Responses API 的新增内容
+            # （例如 ``refusal``）。这与文本规范化器采用相同策略。
             continue
 
         raw_type = part.get("type")
@@ -267,9 +264,9 @@ def _normalize_multimodal_content(content: Any) -> Any:
         if part_type in _IMAGE_PART_TYPES:
             detail = part.get("detail")
             image_ref = part.get("image_url")
-            # OpenAI Responses sends ``input_image`` with a top-level
-            # ``image_url`` string; Chat Completions sends ``image_url`` as
-            # ``{"url": "...", "detail": "..."}``.  Support both.
+            # OpenAI Responses 在 ``input_image`` 中发送顶层 ``image_url``
+            # 字符串；Chat Completions 则将 ``image_url`` 发送为
+            # ``{"url": "...", "detail": "..."}``。两种写法都支持。
             if isinstance(image_ref, dict):
                 url_value = image_ref.get("url")
                 detail = image_ref.get("detail", detail)
@@ -303,8 +300,8 @@ def _normalize_multimodal_content(content: Any) -> Any:
                 "but uploaded files and document inputs are not supported on this endpoint."
             )
 
-        # Unknown part type — reject explicitly so clients get a clear error
-        # instead of a silently dropped turn.
+        # 未知部分类型 —— 显式拒绝，以便客户端收到清晰错误，
+        # 而不是该轮对话被静默丢弃。
         raise ValueError(
             f"unsupported_content_type:Unsupported content part type {raw_type!r}. "
             "Only text and image_url/input_image parts are supported."
@@ -313,9 +310,8 @@ def _normalize_multimodal_content(content: Any) -> Any:
     if not normalized_parts:
         return ""
 
-    # Text-only: collapse to a plain string so downstream logging/trajectory
-    # code sees the native shape and prompt caching on text-only turns is
-    # unaffected.
+    # 仅文本：折叠为纯字符串，以便下游的日志/轨迹代码看到原生形态，
+    # 且不影响纯文本轮次的 prompt 缓存。
     if all(p.get("type") == "text" for p in normalized_parts):
         return "\n".join(p["text"] for p in normalized_parts if p.get("text"))
 
@@ -323,7 +319,7 @@ def _normalize_multimodal_content(content: Any) -> Any:
 
 
 def _content_has_visible_payload(content: Any) -> bool:
-    """True when content has any text or image attachment.  Used to reject empty turns."""
+    """当 content 含有任何文本或图片附件时返回 True。用于拒绝空轮对话。"""
     if isinstance(content, str):
         return bool(content.strip())
     if isinstance(content, list):
@@ -338,7 +334,7 @@ def _content_has_visible_payload(content: Any) -> bool:
 
 
 def _multimodal_validation_error(exc: ValueError, *, param: str) -> "web.Response":
-    """Translate a ``_normalize_multimodal_content`` ValueError into a 400 response."""
+    """将 ``_normalize_multimodal_content`` 抛出的 ValueError 转换为 400 响应。"""
     raw = str(exc)
     code, _, message = raw.partition(":")
     if not message:
@@ -350,7 +346,7 @@ def _multimodal_validation_error(exc: ValueError, *, param: str) -> "web.Respons
 
 
 def _session_chat_user_message(body: Dict[str, Any], *, param: str = "message") -> tuple[Any, Optional["web.Response"]]:
-    """Parse and normalize session chat ``message`` / ``input`` like chat completions."""
+    """像 chat completions 一样解析并规范化 session chat 的 ``message`` / ``input``。"""
     user_message = body.get("message") or body.get("input")
     if not _content_has_visible_payload(user_message):
         return None, web.json_response(
@@ -364,20 +360,18 @@ def _session_chat_user_message(body: Dict[str, Any], *, param: str = "message") 
 
 
 def check_api_server_requirements() -> bool:
-    """Check if API server dependencies are available."""
+    """检查 API 服务器的依赖是否可用。"""
     return AIOHTTP_AVAILABLE
 
 
 class ResponseStore:
     """
-    SQLite-backed LRU store for Responses API state.
+    基于 SQLite 的 LRU 存储，用于 Responses API 状态。
 
-    Each stored response includes the full internal conversation history
-    (with tool calls and results) so it can be reconstructed on subsequent
-    requests via previous_response_id.
+    每个存储的响应都包含完整的内部对话历史（含工具调用及其结果），
+    以便后续请求通过 previous_response_id 重建对话。
 
-    Persists across gateway restarts.  Falls back to in-memory SQLite
-    if the on-disk path is unavailable.
+    跨 gateway 重启持久化。当磁盘路径不可用时，回退到内存中的 SQLite。
     """
 
     def __init__(self, max_size: int = MAX_STORED_RESPONSES, db_path: str = None):
@@ -394,10 +388,10 @@ class ResponseStore:
         except Exception:
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._db_path = None
-        # Use shared WAL-fallback helper so response_store.db degrades
-        # gracefully on NFS/SMB/FUSE-mounted HERMES_HOME (same filesystem
-        # issue addressed for state.db/kanban.db — see
-        # hermes_state._WAL_INCOMPAT_MARKERS).
+        # 使用共享的 WAL 回退辅助函数，使 response_store.db 在挂载于
+        # NFS/SMB/FUSE 的 HERMES_HOME 上能够优雅降级（这与 state.db/kanban.db
+        # 所解决的同一类文件系统问题 —— 参见
+        # hermes_state._WAL_INCOMPAT_MARKERS）。
         from hermes_state import apply_wal_with_fallback
         apply_wal_with_fallback(self._conn, db_label="response_store.db")
         self._conn.execute(
@@ -414,15 +408,14 @@ class ResponseStore:
             )"""
         )
         self._conn.commit()
-        # response_store.db contains conversation history (tool payloads,
-        # prompts, results). Tighten to owner-only after creation so other
-        # local users on a shared box can't read it. Run once at __init__
-        # rather than after every commit — chmod-on-every-write is wasted
-        # syscalls on a hot path.
+        # response_store.db 包含对话历史（工具负载、prompt、结果）。
+        # 创建后收紧为仅属主可访问，避免共享机器上的其他本地用户读取。
+        # 在 __init__ 时执行一次即可，而不是每次 commit 后都执行 ——
+        # 在热路径上对每次写入都做 chmod 是浪费系统调用。
         self._tighten_file_permissions()
 
     def _tighten_file_permissions(self) -> None:
-        """Force owner-only permissions on the DB and SQLite sidecars."""
+        """强制 DB 及 SQLite 附属文件使用仅属主可访问的权限。"""
         if not self._db_path:
             return
         for candidate in (
@@ -441,7 +434,7 @@ class ResponseStore:
                 )
 
     def get(self, response_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve a stored response by ID (updates access time for LRU)."""
+        """根据 ID 获取已存储的响应（会更新访问时间以用于 LRU）。"""
         row = self._conn.execute(
             "SELECT data FROM responses WHERE response_id = ?", (response_id,)
         ).fetchone()
@@ -467,15 +460,15 @@ class ResponseStore:
             return None
 
     def put(self, response_id: str, data: Dict[str, Any]) -> None:
-        """Store a response, evicting the oldest if at capacity."""
+        """存储一个响应，容量已满时淘汰最旧的条目。"""
         self._conn.execute(
             "INSERT OR REPLACE INTO responses (response_id, data, accessed_at) VALUES (?, ?, ?)",
             (response_id, json.dumps(data, default=str), time.time()),
         )
-        # Evict oldest entries beyond max_size
+        # 淘汰超出 max_size 的最旧条目
         count = self._conn.execute("SELECT COUNT(*) FROM responses").fetchone()[0]
         if count > self._max_size:
-            # Collect IDs that will be evicted
+            # 收集将要被淘汰的 ID
             evict_ids = [
                 row[0]
                 for row in self._conn.execute(
@@ -485,12 +478,12 @@ class ResponseStore:
             ]
             if evict_ids:
                 placeholders = ",".join("?" for _ in evict_ids)
-                # Clear conversation mappings pointing to evicted responses
+                # 清理指向被淘汰响应的会话映射
                 self._conn.execute(
                     f"DELETE FROM conversations WHERE response_id IN ({placeholders})",
                     evict_ids,
                 )
-                # Delete evicted responses
+                # 删除被淘汰的响应
                 self._conn.execute(
                     f"DELETE FROM responses WHERE response_id IN ({placeholders})",
                     evict_ids,
@@ -498,8 +491,8 @@ class ResponseStore:
         self._conn.commit()
 
     def delete(self, response_id: str) -> bool:
-        """Remove a response from the store. Returns True if found and deleted."""
-        # Clear conversation mappings pointing to this response
+        """从存储中移除一个响应。找到并删除则返回 True。"""
+        # 清理指向该响应的会话映射
         self._conn.execute(
             "DELETE FROM conversations WHERE response_id = ?", (response_id,)
         )
@@ -510,14 +503,14 @@ class ResponseStore:
         return cursor.rowcount > 0
 
     def get_conversation(self, name: str) -> Optional[str]:
-        """Get the latest response_id for a conversation name."""
+        """获取某个会话名称对应的最新 response_id。"""
         row = self._conn.execute(
             "SELECT response_id FROM conversations WHERE name = ?", (name,)
         ).fetchone()
         return row[0] if row else None
 
     def set_conversation(self, name: str, response_id: str) -> None:
-        """Map a conversation name to its latest response_id."""
+        """将一个会话名称映射到其最新的 response_id。"""
         self._conn.execute(
             "INSERT OR REPLACE INTO conversations (name, response_id) VALUES (?, ?)",
             (name, response_id),
@@ -525,7 +518,7 @@ class ResponseStore:
         self._conn.commit()
 
     def close(self) -> None:
-        """Close the database connection."""
+        """关闭数据库连接。"""
         try:
             self._conn.close()
         except Exception:
@@ -537,7 +530,7 @@ class ResponseStore:
 
 
 # ---------------------------------------------------------------------------
-# CORS middleware
+# CORS 中间件
 # ---------------------------------------------------------------------------
 
 _CORS_HEADERS = {
@@ -549,7 +542,7 @@ _CORS_HEADERS = {
 if AIOHTTP_AVAILABLE:
     @web.middleware
     async def cors_middleware(request, handler):
-        """Add CORS headers for explicitly allowed origins; handle OPTIONS preflight."""
+        """为显式允许的来源添加 CORS 头部；处理 OPTIONS 预检请求。"""
         adapter = request.app.get("api_server_adapter")
         origin = request.headers.get("Origin", "")
         cors_headers = None
@@ -572,7 +565,7 @@ else:
 
 
 def _openai_error(message: str, err_type: str = "invalid_request_error", param: str = None, code: str = None) -> Dict[str, Any]:
-    """OpenAI-style error envelope."""
+    """OpenAI 风格的错误信封。"""
     return {
         "error": {
             "message": message,
@@ -586,7 +579,7 @@ def _openai_error(message: str, err_type: str = "invalid_request_error", param: 
 if AIOHTTP_AVAILABLE:
     @web.middleware
     async def body_limit_middleware(request, handler):
-        """Reject overly large request bodies early based on Content-Length."""
+        """根据 Content-Length 尽早拒绝过大的请求体。"""
         if request.method in {"POST", "PUT", "PATCH"}:
             cl = request.headers.get("Content-Length")
             if cl is not None:
@@ -613,7 +606,7 @@ _SECURITY_HEADERS = {
 if AIOHTTP_AVAILABLE:
     @web.middleware
     async def security_headers_middleware(request, handler):
-        """Add security headers to all responses (including errors)."""
+        """为所有响应（包括错误响应）添加安全头部。"""
         response = await handler(request)
         for k, v in _SECURITY_HEADERS.items():
             response.headers.setdefault(k, v)
@@ -623,7 +616,7 @@ else:
 
 
 class _IdempotencyCache:
-    """In-memory idempotency cache with TTL and basic LRU semantics."""
+    """带 TTL 和基本 LRU 语义的内存幂等缓存。"""
     def __init__(self, max_items: int = 1000, ttl_seconds: int = 300):
         from collections import OrderedDict
         self._store = OrderedDict()
@@ -680,14 +673,13 @@ def _derive_chat_session_id(
     system_prompt: Optional[str],
     first_user_message: str,
 ) -> str:
-    """Derive a stable session ID from the conversation's first user message.
+    """从对话的首条用户消息推导出一个稳定的 session ID。
 
-    OpenAI-compatible frontends (Open WebUI, LibreChat, etc.) send the full
-    conversation history with every request.  The system prompt and first user
-    message are constant across all turns of the same conversation, so hashing
-    them produces a deterministic session ID that lets the API server reuse
-    the same Hermes session (and therefore the same Docker container sandbox
-    directory) across turns.
+    OpenAI 兼容的前端（Open WebUI、LibreChat 等）在每次请求时都会发送
+    完整的对话历史。系统 prompt 和首条用户消息在同一对话的所有轮次中
+    都保持不变，因此对它们做哈希可以产生确定性的 session ID，使 API
+    服务器能在多轮之间复用同一个 Hermes session（从而复用同一个 Docker
+    容器沙箱目录）。
     """
     seed = f"{system_prompt or ''}\n{first_user_message}"
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
@@ -719,44 +711,41 @@ except ImportError:
 
 
 def _notify_cron_provider_jobs_changed() -> None:
-    """Tell the active cron scheduler provider the job set changed after a REST
-    mutation (no-op for the built-in). Best-effort — never breaks the handler."""
+    """在 REST 变更之后通知当前活跃的 cron 调度器 provider 任务集合已变化
+    （对内置 provider 是空操作）。尽力而为 —— 绝不会破坏 handler。"""
     try:
         from cron.scheduler import _notify_provider_jobs_changed
         _notify_provider_jobs_changed()
     except Exception:
         pass
 
-# Defense-in-depth: mirror the agent-facing cronjob tool, which scans the
-# user-supplied prompt for exfiltration/injection payloads at create/update
-# time (tools/cronjob_tools.py).  The REST cron endpoints are authenticated
-# (every handler runs _check_auth, and connect() refuses to start without
-# API_SERVER_KEY), so this is not the trust boundary — it's parity with the
-# tool path so a malicious prompt is rejected the same way regardless of
-# which surface created the job.  Imported defensively: a missing scanner
-# must not disable the cron REST API.
+# 纵深防御：镜像 agent 侧的 cronjob 工具，在创建/更新时扫描用户提供的
+# prompt 中的数据外泄/注入负载（tools/cronjob_tools.py）。REST cron 端点
+# 都是经过鉴权的（每个 handler 都会运行 _check_auth，且 connect() 在没有
+# API_SERVER_KEY 时拒绝启动），所以这里不是信任边界 —— 它只是与工具路径
+# 保持对齐，使得无论从哪个入口创建任务，恶意 prompt 都会被同样地拒绝。
+# 防御性导入：缺少扫描器绝不能让 cron REST API 不可用。
 try:
     from tools.cronjob_tools import _scan_cron_prompt as _scan_cron_prompt
-except Exception:  # pragma: no cover - scanner is optional hardening
+except Exception:  # pragma: no cover - 扫描器是可选的加固
     _scan_cron_prompt = None
 
 
 class APIServerAdapter(BasePlatformAdapter):
     """
-    OpenAI-compatible HTTP API server adapter.
+    OpenAI 兼容的 HTTP API 服务器适配器。
 
-    Runs an aiohttp web server that accepts OpenAI-format requests
-    and routes them through hermes-agent's AIAgent.
+    运行一个 aiohttp web 服务器，接收 OpenAI 格式的请求，并通过
+    hermes-agent 的 AIAgent 进行路由处理。
     """
 
-    # Stateless request/response: every route (the OpenAI-spec
-    # /v1/chat/completions and /v1/responses, and the proprietary /v1/runs SSE
-    # stream) tears down its channel when the turn ends. There is no persistent
-    # outbound channel to push a background completion to a client that already
-    # received its response, and ``send()`` is a no-op stub. So async-delivery
-    # tools (terminal notify_on_complete / watch_patterns, delegate_task
-    # background=True) must NOT promise delivery on this path — see
-    # ``async_delivery_supported()``.
+    # 无状态请求/响应：每个路由（OpenAI 规范的 /v1/chat/completions 和
+    # /v1/responses，以及自有的 /v1/runs SSE 流）都在一轮结束时拆除其
+    # channel。不存在持久的出站 channel 向一个已经收到响应的客户端推送
+    # 后台补全结果，且 ``send()`` 是一个空操作 stub。因此异步投递类工具
+    # （终端的 notify_on_complete / watch_patterns、delegate_task 的
+    # background=True）绝不能承诺在此路径上投递 —— 参见
+    # ``async_delivery_supported()``。
     supports_async_delivery: bool = False
 
     def __init__(self, config: PlatformConfig):
@@ -778,33 +767,31 @@ class APIServerAdapter(BasePlatformAdapter):
         self._runner: Optional["web.AppRunner"] = None
         self._site: Optional["web.TCPSite"] = None
         self._response_store = ResponseStore()
-        # Active run streams: run_id -> asyncio.Queue of SSE event dicts
+        # 活跃的 run 流：run_id -> asyncio.Queue of SSE event dicts
         self._run_streams: Dict[str, "asyncio.Queue[Optional[Dict]]"] = {}
-        # Creation timestamps for orphaned-run TTL sweep
+        # 用于孤立 run TTL 清扫的创建时间戳
         self._run_streams_created: Dict[str, float] = {}
-        # Active run agent/task references for stop support
+        # 用于支持 stop 的活跃 run agent/task 引用
         self._active_run_agents: Dict[str, Any] = {}
         self._active_run_tasks: Dict[str, "asyncio.Task"] = {}
-        # Pollable run status for dashboards and external control-plane UIs.
+        # 供 dashboard 和外部控制面 UI 轮询的 run 状态。
         self._run_statuses: Dict[str, Dict[str, Any]] = {}
-        # Active approval session key for each run_id.  The approval core
-        # resolves requests by session key, while API clients address the
-        # in-flight run by run_id.
+        # 每个 run_id 对应的活跃审批 session key。审批核心按 session key
+        # 解析请求，而 API 客户端则按 run_id 寻址在途的 run。
         self._run_approval_sessions: Dict[str, str] = {}
-        self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
-        # Concurrency cap shared across all agent-serving endpoints
-        # (/v1/chat/completions, /v1/responses, /v1/runs). Read from
-        # config.yaml gateway.api_server.max_concurrent_runs; 0 disables
-        # the cap. Bounds CPU / memory / upstream-LLM-quota exhaustion
-        # from a request flood (#7483).
+        self._session_db: Optional[Any] = None  # 为会话连续性惰性初始化的 SessionDB
+        # 跨所有 agent 服务端点（/v1/chat/completions、/v1/responses、
+        # /v1/runs）共享的并发上限。从 config.yaml 的
+        # gateway.api_server.max_concurrent_runs 读取；0 表示禁用上限。
+        # 限制请求洪流导致的 CPU / 内存 / 上游 LLM 配额耗尽（#7483）。
         self._max_concurrent_runs: int = self._resolve_max_concurrent_runs()
-        # Number of in-flight runs on the non-streaming chat/responses paths
-        # (the /v1/runs path tracks its own in-flight set via _run_streams).
+        # 非流式 chat/responses 路径上在途 run 的数量
+        # （/v1/runs 路径通过 _run_streams 自行跟踪其在途集合）。
         self._inflight_agent_runs: int = 0
 
     @staticmethod
     def _parse_cors_origins(value: Any) -> tuple[str, ...]:
-        """Normalize configured CORS origins into a stable tuple."""
+        """将配置的 CORS 来源规范化为稳定的 tuple。"""
         if not value:
             return ()
 
@@ -819,11 +806,10 @@ class APIServerAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _resolve_max_concurrent_runs() -> int:
-        """Read the concurrent-run cap from config.yaml (0 disables).
+        """从 config.yaml 读取并发 run 上限（0 表示禁用）。
 
-        gateway.api_server.max_concurrent_runs. Falls back to the historical
-        default of 10 when unset or malformed. Negative values are clamped
-        to 0 (disabled).
+        gateway.api_server.max_concurrent_runs。未设置或格式错误时回退到
+        历史默认值 10。负值会被钳制到 0（禁用）。
         """
         default = 10
         try:
@@ -843,12 +829,12 @@ class APIServerAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _resolve_model_name(explicit: str) -> str:
-        """Derive the advertised model name for /v1/models.
+        """推导用于 /v1/models 的对外模型名称。
 
-        Priority:
-        1. Explicit override (config extra or API_SERVER_MODEL_NAME env var)
-        2. Active profile name (so each profile advertises a distinct model)
-        3. Fallback: "hermes-agent"
+        优先级：
+        1. 显式覆盖（config extra 或 API_SERVER_MODEL_NAME 环境变量）
+        2. 活跃 profile 名称（使每个 profile 对外暴露不同的模型）
+        3. 回退值："hermes-agent"
         """
         if explicit and explicit.strip():
             return explicit.strip()
@@ -862,7 +848,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return "hermes-agent"
 
     def _cors_headers_for_origin(self, origin: str) -> Optional[Dict[str, str]]:
-        """Return CORS headers for an allowed browser origin."""
+        """为被允许的浏览器来源返回 CORS 头部。"""
         if not origin or not self._cors_origins:
             return None
 
@@ -882,7 +868,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return headers
 
     def _origin_allowed(self, origin: str) -> bool:
-        """Allow non-browser clients and explicitly configured browser origins."""
+        """允许非浏览器客户端以及显式配置的浏览器来源。"""
         if not origin:
             return True
 
@@ -893,14 +879,14 @@ class APIServerAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _clean_log_value(value: Any, *, max_len: int = 200) -> str:
-        """Sanitize request metadata before it reaches security logs."""
+        """在请求元数据进入安全日志之前对其进行净化。"""
         if value is None:
             return ""
         text = str(value).replace("\r", " ").replace("\n", " ").strip()
         return text[:max_len]
 
     def _request_audit_context(self, request: "web.Request") -> Dict[str, str]:
-        """Return non-secret source metadata for security/audit warnings."""
+        """返回用于安全/审计告警的非敏感来源元数据。"""
         peer_ip = ""
         try:
             peer = request.transport.get_extra_info("peername") if request.transport else None
@@ -925,7 +911,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return " ".join(fields) if fields else "source='unknown'"
 
     def _cron_origin_from_request(self, request: "web.Request") -> Dict[str, str]:
-        """Persist safe API source metadata on cron jobs created over HTTP."""
+        """将通过 HTTP 创建的 cron 任务的来源安全元数据持久化到任务上。"""
         ctx = self._request_audit_context(request)
         origin = {
             "platform": "api_server",
@@ -944,16 +930,16 @@ class APIServerAdapter(BasePlatformAdapter):
         return origin
 
     # ------------------------------------------------------------------
-    # Auth helper
+    # 鉴权辅助
     # ------------------------------------------------------------------
 
     def _check_auth(self, request: "web.Request") -> Optional["web.Response"]:
         """
-        Validate Bearer token from Authorization header.
+        校验来自 Authorization 头部的 Bearer token。
 
-        Returns None if auth is OK, or a 401 web.Response on failure.
-        connect() refuses to start the API server without API_SERVER_KEY, so
-        the no-key branch only exists for tests or unsupported manual wiring.
+        鉴权通过返回 None，失败则返回 401 web.Response。
+        connect() 在没有 API_SERVER_KEY 时拒绝启动 API 服务器，因此
+        无密钥分支仅为测试或不被支持的手动接线而存在。
         """
         if not self._api_key:
             return None
@@ -962,7 +948,7 @@ class APIServerAdapter(BasePlatformAdapter):
         if auth_header.startswith("Bearer "):
             token = auth_header[7:].strip()
             if hmac.compare_digest(token, self._api_key):
-                return None  # Auth OK
+                return None  # 鉴权通过
 
         logger.warning(
             "API server rejected invalid API key: %s",
@@ -974,36 +960,32 @@ class APIServerAdapter(BasePlatformAdapter):
         )
 
     # ------------------------------------------------------------------
-    # Session header helpers
+    # Session 头部辅助
     # ------------------------------------------------------------------
 
-    # Soft length cap for session identifiers.  Headers are bounded in
-    # aggregate by aiohttp (``client_max_size`` / default 8 KiB per
-    # header), but we impose a tighter limit on the session headers so a
-    # caller can't burn memory by passing a multi-kilobyte "session key".
-    # 256 chars is well above any realistic stable channel identifier
-    # (e.g. ``agent:main:webui:dm:user-42``) while staying small enough
-    # that the sanitized form is safe to pass into Honcho / state.db.
+    # session 标识符的软长度上限。头部总体上受 aiohttp 约束
+    # （``client_max_size`` / 默认每个头部 8 KiB），但我们对 session
+    # 头部施加更紧的限制，这样调用方就无法通过传入多 KB 的 "session
+    # key" 来耗费内存。256 字符远高于任何现实的稳定 channel 标识符
+    # （例如 ``agent:main:webui:dm:user-42``），同时仍足够小，使得
+    # 净化后的形式能安全地传入 Honcho / state.db。
     _MAX_SESSION_HEADER_LEN = 256
 
     def _parse_session_key_header(
         self, request: "web.Request"
     ) -> tuple[Optional[str], Optional["web.Response"]]:
-        """Extract and validate the ``X-Hermes-Session-Key`` header.
+        """提取并校验 ``X-Hermes-Session-Key`` 头部。
 
-        The session key is a stable per-channel identifier that scopes
-        long-term memory (e.g. Honcho sessions) across transcripts.  It
-        is independent of ``X-Hermes-Session-Id``: callers may send
-        either, both, or neither.
+        session key 是一个稳定的、按 channel 划分的标识符，用于跨
+        transcript 划定长期记忆（例如 Honcho session）的作用域。它独立于
+        ``X-Hermes-Session-Id``：调用方可以只发其中之一、两者都发，或都不发。
 
-        Returns ``(session_key, None)`` on success (with an empty/absent
-        header yielding ``None`` for the key), or ``(None, error_response)``
-        on validation failure.
+        成功时返回 ``(session_key, None)``（头部为空/缺失时 key 取
+        ``None``），校验失败时返回 ``(None, error_response)``。
 
-        Security: like session continuation, accepting a caller-supplied
-        memory scope requires API-key authentication so that an
-        unauthenticated client on a local-only server can't inject itself
-        into another user's long-term memory scope by guessing a key.
+        安全性：与会话延续一样，接受调用方提供的记忆作用域需要 API key
+        鉴权，这样仅本地的服务器上的未鉴权客户端就无法通过猜 key 把自己
+        注入到其他用户的长期记忆作用域中。
         """
         raw = request.headers.get("X-Hermes-Session-Key", "").strip()
         if not raw:
@@ -1022,8 +1004,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 status=403,
             )
 
-        # Reject control characters that could enable header injection on
-        # the echo path.
+        # 拒绝控制字符，以免在回显路径上引发 header 注入。
         if re.search(r'[\r\n\x00]', raw):
             return None, web.json_response(
                 {"error": {"message": "Invalid session key", "type": "invalid_request_error"}},
@@ -1039,14 +1020,14 @@ class APIServerAdapter(BasePlatformAdapter):
         return raw, None
 
     # ------------------------------------------------------------------
-    # Session DB helper
+    # Session DB 辅助
     # ------------------------------------------------------------------
 
     def _ensure_session_db(self):
-        """Lazily initialise and return the shared SessionDB instance.
+        """惰性初始化并返回共享的 SessionDB 实例。
 
-        Sessions are persisted to ``state.db`` so that ``hermes sessions list``
-        shows API-server conversations alongside CLI and gateway ones.
+        会话被持久化到 ``state.db``，这样 ``hermes sessions list`` 就能
+        把 API 服务器的对话与 CLI、gateway 的对话一起展示。
         """
         if self._session_db is None:
             try:
@@ -1057,7 +1038,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return self._session_db
 
     # ------------------------------------------------------------------
-    # Agent creation helper
+    # Agent 创建辅助
     # ------------------------------------------------------------------
 
     def _create_agent(
@@ -1071,19 +1052,19 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway_session_key: Optional[str] = None,
     ) -> Any:
         """
-        Create an AIAgent instance using the gateway's runtime config.
+        使用 gateway 的运行时配置创建一个 AIAgent 实例。
 
-        Uses _resolve_runtime_agent_kwargs() to pick up model, api_key,
-        base_url, etc. from config.yaml / env vars.  Toolsets are resolved
-        from config.yaml platform_toolsets.api_server (same as all other
-        gateway platforms), falling back to the hermes-api-server default.
+        使用 _resolve_runtime_agent_kwargs() 从 config.yaml / 环境变量中
+        获取 model、api_key、base_url 等。工具集从 config.yaml 的
+        platform_toolsets.api_server 解析（与所有其他 gateway 平台相同），
+        回退到 hermes-api-server 默认值。
 
-        ``gateway_session_key`` is a stable per-channel identifier supplied
-        by the client (via ``X-Hermes-Session-Key``).  Unlike ``session_id``
-        which scopes the short-term transcript and rotates on /new, this
-        key is meant to persist across transcripts so long-term memory
-        providers (e.g. Honcho) can scope their per-chat state correctly
-        — matching the semantics of the native gateway's ``session_key``.
+        ``gateway_session_key`` 是由客户端（通过 ``X-Hermes-Session-Key``）
+        提供的稳定的、按 channel 划分的标识符。与划定短期 transcript
+        作用域、并在 /new 时轮换的 ``session_id`` 不同，此 key 旨在跨
+        transcript 持久存在，使长期记忆 provider（例如 Honcho）能正确地
+        按对话划定其 per-chat 状态的作用域 —— 与原生 gateway 的
+        ``session_key`` 语义一致。
         """
         from run_agent import AIAgent
         from gateway.run import (
@@ -1104,8 +1085,8 @@ class APIServerAdapter(BasePlatformAdapter):
 
         max_iterations = _current_max_iterations()
 
-        # Load fallback provider chain so the API server platform has the
-        # same fallback behaviour as Telegram/Discord/Slack (fixes #4954).
+        # 加载 fallback provider 链，使 API 服务器平台拥有与
+        # Telegram/Discord/Slack 相同的 fallback 行为（修复 #4954）。
         fallback_model = GatewayRunner._load_fallback_model()
 
         agent = AIAgent(
@@ -1130,21 +1111,20 @@ class APIServerAdapter(BasePlatformAdapter):
         return agent
 
     # ------------------------------------------------------------------
-    # HTTP Handlers
+    # HTTP Handler
     # ------------------------------------------------------------------
 
     async def _handle_health(self, request: "web.Request") -> "web.Response":
-        """GET /health — simple health check."""
+        """GET /health —— 简单的健康检查。"""
         return web.json_response(
             {"status": "ok", "platform": "hermes-agent", "version": _hermes_version()}
         )
 
     async def _handle_health_detailed(self, request: "web.Request") -> "web.Response":
-        """GET /health/detailed — rich status for cross-container dashboard probing.
+        """GET /health/detailed —— 用于跨容器 dashboard 探测的丰富状态信息。
 
-        Returns gateway state, connected platforms, PID, and uptime so the
-        dashboard can display full status without needing a shared PID file or
-        /proc access.  No authentication required.
+        返回 gateway 状态、已连接平台、PID 和运行时长，使 dashboard 无需
+        共享 PID 文件或 /proc 访问即可展示完整状态。无需鉴权。
         """
         from gateway.status import (
             derive_gateway_busy,
@@ -1156,9 +1136,9 @@ class APIServerAdapter(BasePlatformAdapter):
         runtime = read_runtime_status() or {}
         gw_state = runtime.get("gateway_state")
         gw_active = parse_active_agents(runtime.get("active_agents", 0))
-        # This endpoint is served BY the gateway process, so it is by definition
-        # alive — gateway_running is True. Derive busy/drainable from the same
-        # shared contract /api/status uses so the two surfaces never disagree.
+        # 该端点由 gateway 进程提供服务，因此按定义它就是存活的 ——
+        # gateway_running 为 True。从 /api/status 所用的同一份共享契约推导
+        # busy/drainable，使这两个入口永远保持一致。
         return web.json_response({
             "status": "ok",
             "platform": "hermes-agent",
@@ -1181,7 +1161,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_models(self, request: "web.Request") -> "web.Response":
-        """GET /v1/models — return hermes-agent as an available model."""
+        """GET /v1/models —— 将 hermes-agent 作为可用模型返回。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1202,11 +1182,10 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_capabilities(self, request: "web.Request") -> "web.Response":
-        """GET /v1/capabilities — advertise the stable API surface.
+        """GET /v1/capabilities —— 对外声明稳定的 API 接口面。
 
-        External UIs and orchestrators use this endpoint to discover the API
-        server's plugin-safe contract without scraping docs or assuming that
-        every Hermes version exposes the same endpoints.
+        外部 UI 和编排器使用此端点发现 API 服务器的插件安全契约，无需
+        抓取文档，也无需假设每个 Hermes 版本都暴露相同的端点。
         """
         auth_err = self._check_auth(request)
         if auth_err:
@@ -1282,16 +1261,14 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_skills(self, request: "web.Request") -> "web.Response":
-        """GET /v1/skills — list installed skills visible to the API-server agent.
+        """GET /v1/skills —— 列出 API 服务器 agent 可见的已安装技能。
 
-        Read-only listing intended for external clients that need to know
-        which skills are available without sending a chat message and asking
-        the model. Mirrors what the gateway/CLI surfaces through
-        ``/skills list``, but as a deterministic JSON payload.
+        只读列表，面向需要在不发送聊天消息询问模型的情况下了解有哪些
+        技能可用的外部客户端。镜像 gateway/CLI 通过 ``/skills list``
+        暴露的内容，但以确定性的 JSON 负载形式返回。
 
-        Returns the same skill metadata (name, description, category) the
-        skills hub uses internally. Disabled skills are excluded so the
-        listing matches what the agent actually loads.
+        返回与技能中心内部使用的相同的技能元数据（名称、描述、分类）。
+        被禁用的技能会被排除，使列表与 agent 实际加载的内容一致。
         """
         auth_err = self._check_auth(request)
         if auth_err:
@@ -1313,13 +1290,11 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_toolsets(self, request: "web.Request") -> "web.Response":
-        """GET /v1/toolsets — list toolsets and their resolved tools.
+        """GET /v1/toolsets —— 列出工具集及其解析后的工具。
 
-        Returns the toolset surface the api_server platform actually exposes
-        to its agent: each toolset's enabled/configured state plus the
-        concrete tool names it expands to. This is the deterministic
-        equivalent of what a client would otherwise have to recover by
-        asking the model what tools it can call.
+        返回 api_server 平台实际向其 agent 暴露的工具集接口面：每个
+        工具集的启用/配置状态，以及它展开后的具体工具名称。这是客户端
+        本需要通过询问模型它能调用哪些工具才能还原内容的确定性等价物。
         """
         auth_err = self._check_auth(request)
         if auth_err:
@@ -1369,7 +1344,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     # ------------------------------------------------------------------
-    # /api/sessions — thin client/session resource API
+    # /api/sessions —— 轻量客户端/session 资源 API
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -1384,7 +1359,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _session_response(session: Dict[str, Any]) -> Dict[str, Any]:
-        """Return a stable, client-safe session representation."""
+        """返回稳定的、对客户端安全的 session 表示。"""
         safe_keys = (
             "id", "source", "user_id", "model", "title", "started_at", "ended_at",
             "end_reason", "message_count", "tool_call_count", "input_tokens",
@@ -1394,8 +1369,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "_lineage_root_id",
         )
         payload = {key: session.get(key) for key in safe_keys if key in session}
-        # Avoid exposing full system prompts/model_config through the client API;
-        # callers only need to know whether those snapshots exist.
+        # 避免通过客户端 API 暴露完整的 system_prompt/model_config；
+        # 调用方只需要知道这些快照是否存在。
         payload["has_system_prompt"] = bool(session.get("system_prompt"))
         payload["has_model_config"] = bool(session.get("model_config"))
         return payload
@@ -1438,7 +1413,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return []
 
     async def _handle_list_sessions(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions — list persisted Hermes sessions."""
+        """GET /api/sessions —— 列出已持久化的 Hermes 会话。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1467,7 +1442,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_create_session(self, request: "web.Request") -> "web.Response":
-        """POST /api/sessions — create an empty Hermes session row."""
+        """POST /api/sessions —— 创建一个空的 Hermes session 记录。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1504,7 +1479,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)}, status=201)
 
     async def _handle_get_session(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions/{session_id}."""
+        """GET /api/sessions/{session_id}。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1514,7 +1489,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)})
 
     async def _handle_patch_session(self, request: "web.Request") -> "web.Response":
-        """PATCH /api/sessions/{session_id} — update client-safe session metadata."""
+        """PATCH /api/sessions/{session_id} —— 更新对客户端安全的 session 元数据。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1542,7 +1517,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)})
 
     async def _handle_delete_session(self, request: "web.Request") -> "web.Response":
-        """DELETE /api/sessions/{session_id}."""
+        """DELETE /api/sessions/{session_id}。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1555,7 +1530,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session.deleted", "id": session_id, "deleted": bool(deleted)})
 
     async def _handle_session_messages(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions/{session_id}/messages."""
+        """GET /api/sessions/{session_id}/messages。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1573,7 +1548,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_fork_session(self, request: "web.Request") -> "web.Response":
-        """POST /api/sessions/{session_id}/fork — branch via current SessionDB primitives."""
+        """POST /api/sessions/{session_id}/fork —— 通过当前 SessionDB 原语进行分支。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1591,10 +1566,10 @@ class APIServerAdapter(BasePlatformAdapter):
         if db.get_session(fork_id):
             return web.json_response(_openai_error(f"Session already exists: {fork_id}", code="session_exists"), status=409)
 
-        # Match the CLI /branch semantics: mark the original as branched, then
-        # create a child session that carries the transcript forward. This uses
-        # SessionDB's native parent_session_id/end_reason visibility model rather
-        # than inventing a parallel fork store.
+        # 与 CLI 的 /branch 语义保持一致：将原会话标记为 branched，然后创建
+        # 一个承接 transcript 的子会话。这里使用 SessionDB 原生的
+        # parent_session_id/end_reason 可见性模型，而不是另起一套并行的
+        # fork 存储。
         db.end_session(source_id, "branched")
         db.create_session(
             fork_id,
@@ -1620,7 +1595,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(fork)}, status=201)
 
     async def _handle_session_chat(self, request: "web.Request") -> "web.Response":
-        """POST /api/sessions/{session_id}/chat — one synchronous agent turn."""
+        """POST /api/sessions/{session_id}/chat —— 一次同步的 agent 轮次。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1664,7 +1639,7 @@ class APIServerAdapter(BasePlatformAdapter):
         )
 
     async def _handle_session_chat_stream(self, request: "web.Request") -> "web.StreamResponse":
-        """POST /api/sessions/{session_id}/chat/stream — SSE wrapper over _run_agent."""
+        """POST /api/sessions/{session_id}/chat/stream —— 对 _run_agent 的 SSE 封装。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1805,17 +1780,17 @@ class APIServerAdapter(BasePlatformAdapter):
         return response
 
     async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
-        """POST /v1/chat/completions — OpenAI Chat Completions format."""
+        """POST /v1/chat/completions —— OpenAI Chat Completions 格式。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
 
-        # Bound total in-flight agent runs (configurable; #7483).
+        # 限制在途 agent run 的总数（可配置；#7483）。
         limited = self._concurrency_limited_response()
         if limited is not None:
             return limited
 
-        # Parse request body
+        # 解析请求体
         try:
             body = await request.json()
         except (json.JSONDecodeError, Exception):
@@ -1830,7 +1805,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         stream = _coerce_request_bool(body.get("stream"), default=False)
 
-        # Extract system message (becomes ephemeral system prompt layered ON TOP of core)
+        # 提取 system 消息（成为叠加在核心之上的临时 system prompt）
         system_prompt = None
         conversation_messages: List[Dict[str, str]] = []
 
@@ -1838,8 +1813,8 @@ class APIServerAdapter(BasePlatformAdapter):
             role = msg.get("role", "")
             raw_content = msg.get("content", "")
             if role == "system":
-                # System messages don't support images (Anthropic rejects, OpenAI
-                # text-model systems don't render them).  Flatten to text.
+                # system 消息不支持图片（Anthropic 会拒绝，OpenAI 的文本模型
+                # system 也不会渲染它们）。拍平为文本。
                 content = _normalize_chat_content(raw_content)
                 if system_prompt is None:
                     system_prompt = content
@@ -1852,7 +1827,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     return _multimodal_validation_error(exc, param=f"messages[{idx}].content")
                 conversation_messages.append({"role": role, "content": content})
 
-        # Extract the last user message as the primary input
+        # 提取最后一条 user 消息作为主要输入
         user_message: Any = ""
         history = []
         if conversation_messages:
@@ -1865,22 +1840,21 @@ class APIServerAdapter(BasePlatformAdapter):
                 status=400,
             )
 
-        # Allow caller to scope long-term memory (e.g. Honcho) with a
-        # stable per-channel identifier via X-Hermes-Session-Key.  This
-        # is independent of X-Hermes-Session-Id: the key persists across
-        # transcripts while the id rotates when the caller starts a new
-        # transcript (i.e. /new semantics).  See _parse_session_key_header.
+        # 允许调用方通过 X-Hermes-Session-Key 以稳定的、按 channel 划分的
+        # 标识符划定长期记忆（例如 Honcho）的作用域。它独立于
+        # X-Hermes-Session-Id：key 跨 transcript 持久存在，而 id 在调用方
+        # 开启新 transcript（即 /new 语义）时轮换。参见
+        # _parse_session_key_header。
         gateway_session_key, key_err = self._parse_session_key_header(request)
         if key_err is not None:
             return key_err
 
-        # Allow caller to continue an existing session by passing X-Hermes-Session-Id.
-        # When provided, history is loaded from state.db instead of from the request body.
+        # 允许调用方通过传入 X-Hermes-Session-Id 来继续一个已存在的会话。
+        # 提供该头部时，历史会从 state.db 加载，而不是来自请求体。
         #
-        # Security: session continuation exposes conversation history, so it is
-        # only allowed when the API key is configured and the request is
-        # authenticated.  Without this gate, any unauthenticated client could
-        # read arbitrary session history by guessing/enumerating session IDs.
+        # 安全性：会话延续会暴露对话历史，因此仅在配置了 API key 且请求
+        # 已通过鉴权时才允许。没有这道关卡，任何未鉴权的客户端都能通过
+        # 猜测/枚举 session ID 读取任意会话的历史。
         provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
         if provided_session_id:
             if not self._api_key:
@@ -1896,7 +1870,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     ),
                     status=403,
                 )
-            # Sanitize: reject control characters that could enable header injection.
+            # 净化：拒绝可能引发 header 注入的控制字符。
             if re.search(r'[\r\n\x00]', provided_session_id):
                 return web.json_response(
                     {"error": {"message": "Invalid session ID", "type": "invalid_request_error"}},
@@ -1911,17 +1885,16 @@ class APIServerAdapter(BasePlatformAdapter):
                 logger.warning("Failed to load session history for %s: %s", session_id, e)
                 history = []
         else:
-            # Derive a stable session ID from the conversation fingerprint so
-            # that consecutive messages from the same Open WebUI (or similar)
-            # conversation map to the same Hermes session.  The first user
-            # message + system prompt are constant across all turns.
+            # 从对话指纹推导出一个稳定的 session ID，使来自同一个 Open WebUI
+            # （或类似前端）对话的连续消息映射到同一个 Hermes session。
+            # 首条 user 消息 + system prompt 在所有轮次中都是常量。
             first_user = ""
             for cm in conversation_messages:
                 if cm.get("role") == "user":
                     first_user = cm.get("content", "")
                     break
             session_id = _derive_chat_session_id(system_prompt, first_user)
-            # history already set from request body above
+            # history 已在上方从请求体中设置
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         model_name = body.get("model", self._model_name)
@@ -1932,34 +1905,30 @@ class APIServerAdapter(BasePlatformAdapter):
             _stream_q: _q.Queue = _q.Queue()
 
             def _on_delta(delta):
-                # Filter out None — the agent fires stream_delta_callback(None)
-                # to signal the CLI display to close its response box before
-                # tool execution, but the SSE writer uses None as end-of-stream
-                # sentinel.  Forwarding it would prematurely close the HTTP
-                # response, causing Open WebUI (and similar frontends) to miss
-                # the final answer after tool calls.  The SSE loop detects
-                # completion via agent_task.done() instead.
+                # 过滤掉 None —— agent 触发 stream_delta_callback(None) 是
+                # 为了通知 CLI 显示层在工具执行前关闭响应框，但 SSE 写入端
+                # 把 None 用作流结束哨兵。转发它会过早关闭 HTTP 响应，导致
+                # Open WebUI（及类似前端）在工具调用后错过最终答案。SSE
+                # 循环改为通过 agent_task.done() 检测完成。
                 if delta is not None:
                     _stream_q.put(delta)
 
-            # Track which tool_call_ids we've emitted a "running" lifecycle
-            # event for, so a "completed" event without a matching "running"
-            # (e.g. internal/filtered tools) is silently dropped instead of
-            # producing an orphaned event clients can't correlate.
+            # 记录我们已经为其发过 "running" 生命周期事件的 tool_call_id，
+            # 这样没有匹配 "running" 的 "completed" 事件（例如内部/被过滤的
+            # 工具）会被静默丢弃，而不是产生客户端无法关联的孤立事件。
             _started_tool_call_ids: set[str] = set()
 
             def _on_tool_start(tool_call_id, function_name, function_args):
-                """Emit ``hermes.tool.progress`` with ``status: running``.
+                """发出携带 ``status: running`` 的 ``hermes.tool.progress``。
 
-                Replaces the old ``tool_progress_callback("tool.started",
-                ...)`` emit so SSE consumers receive a single event per
-                tool start, carrying both the legacy ``tool``/``emoji``/
-                ``label`` payload (for #6972 frontends) and the new
-                ``toolCallId``/``status`` correlation fields (#16588).
+                替换旧的 ``tool_progress_callback("tool.started", ...)``
+                发射，使 SSE 消费方在每个工具开始时收到单一事件，同时携带
+                旧的 ``tool``/``emoji``/``label`` 负载（面向 #6972 前端）
+                和新的 ``toolCallId``/``status`` 关联字段（#16588）。
 
-                Skips tools whose names start with ``_`` so internal
-                events (``_thinking``, …) stay off the wire — matching
-                the prior ``_on_tool_progress`` filter exactly.
+                跳过名字以 ``_`` 开头的工具，使内部事件（``_thinking``、…）
+                不出现在线路上 —— 与之前 ``_on_tool_progress`` 的过滤器
+                保持完全一致。
                 """
                 if not tool_call_id or function_name.startswith("_"):
                     return
@@ -1975,11 +1944,11 @@ class APIServerAdapter(BasePlatformAdapter):
                 }))
 
             def _on_tool_complete(tool_call_id, function_name, function_args, function_result):
-                """Emit the matching ``status: completed`` event.
+                """发出匹配的 ``status: completed`` 事件。
 
-                Dropped if the start was filtered (internal tool, missing
-                id, or never seen) so clients never get an orphaned
-                ``completed`` they can't correlate to a prior ``running``.
+                如果开始被过滤掉（内部工具、缺少 id 或从未见过），则丢弃
+                此事件，使客户端永远不会收到无法与之前 ``running`` 关联的
+                孤立 ``completed``。
                 """
                 if not tool_call_id or tool_call_id not in _started_tool_call_ids:
                     return
@@ -1990,14 +1959,14 @@ class APIServerAdapter(BasePlatformAdapter):
                     "status": "completed",
                 }))
 
-            # Start agent in background.  agent_ref is a mutable container
-            # so the SSE writer can interrupt the agent on client disconnect.
+            # 在后台启动 agent。agent_ref 是一个可变容器，使 SSE 写入端
+            # 可以在客户端断开连接时打断 agent。
             #
-            # ``tool_progress_callback`` is intentionally not wired here:
-            # it would duplicate every emit because ``run_agent`` fires it
-            # side-by-side with ``tool_start_callback``/``tool_complete_callback``.
-            # The structured callbacks are strictly richer (they carry the
-            # tool_call id), so they own the chat-completions SSE channel.
+            # 这里有意不接 ``tool_progress_callback``：它会导致每次发射
+            # 重复，因为 ``run_agent`` 会把它和
+            # ``tool_start_callback``/``tool_complete_callback`` 并排触发。
+            # 结构化回调的信息更丰富（携带 tool_call id），因此由它们
+            # 负责占据 chat-completions 的 SSE channel。
             agent_ref = [None]
             agent_task = asyncio.ensure_future(self._run_agent(
                 user_message=user_message,
@@ -2010,8 +1979,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
             ))
-            # Ensure SSE drain loops can terminate without relying on polling
-            # agent_task.done(), which can race with queue timeout checks.
+            # 确保 SSE 排空循环能够终止，而无需依赖轮询 agent_task.done()，
+            # 后者可能与队列超时检查产生竞态。
             agent_task.add_done_callback(lambda _fut: _stream_q.put(None))
 
             return await self._write_sse_chat_completion(
@@ -2020,7 +1989,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 gateway_session_key=gateway_session_key,
             )
 
-        # Non-streaming: run the agent (with optional Idempotency-Key)
+        # 非流式：运行 agent（可带可选的 Idempotency-Key）
         async def _compute_completion():
             return await self._run_agent(
                 user_message=user_message,
@@ -2057,9 +2026,8 @@ class APIServerAdapter(BasePlatformAdapter):
         completed = bool(result.get("completed", True))
         err_msg = result.get("error")
 
-        # Decide finish_reason. OpenAI uses "length" for truncation, "stop"
-        # for normal completion, and downstream SDKs accept "error" / custom
-        # codes. See issue #22496.
+        # 决定 finish_reason。OpenAI 用 "length" 表示截断，用 "stop" 表示
+        # 正常完成，下游 SDK 也接受 "error" / 自定义 code。参见 #22496。
         if is_partial and err_msg and "truncat" in err_msg.lower():
             finish_reason = "length"
         elif is_failed or (not completed and err_msg):
@@ -2073,9 +2041,9 @@ class APIServerAdapter(BasePlatformAdapter):
         if gateway_session_key:
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
 
-        # Hard-fail path: no usable assistant text AND a real failure → 5xx
-        # with OpenAI-style error envelope so SDK clients raise instead of
-        # silently rendering the internal failure string as message.content.
+        # 硬失败路径：没有可用的 assistant 文本且存在真正的失败 → 返回 5xx
+        # 和 OpenAI 风格的错误信封，使 SDK 客户端抛出异常，而不是静默地把
+        # 内部失败字符串渲染成 message.content。
         if not final_response and (is_failed or is_partial):
             err_body = _openai_error(
                 err_msg or "Agent run did not produce a response.",
@@ -2091,9 +2059,9 @@ class APIServerAdapter(BasePlatformAdapter):
             response_headers["X-Hermes-Partial"] = "true" if is_partial else "false"
             return web.json_response(err_body, status=502, headers=response_headers)
 
-        # Soft-partial path: we have *some* text but the run did not complete
-        # (e.g. truncation with partial buffered output). Still 200 but signal
-        # truncation via finish_reason="length" + Hermes-specific extras.
+        # 软部分失败路径：我们有 *一些* 文本但 run 未完成（例如截断后还留下
+        # 部分缓冲输出）。仍返回 200，但通过 finish_reason="length" + Hermes
+        # 专有扩展来标示截断。
         response_data = {
             "id": completion_id,
             "object": "chat.completion",
@@ -2135,11 +2103,11 @@ class APIServerAdapter(BasePlatformAdapter):
         created: int, stream_q, agent_task, agent_ref=None, session_id: str = None,
         gateway_session_key: str = None,
     ) -> "web.StreamResponse":
-        """Write real streaming SSE from agent's stream_delta_callback queue.
+        """将 agent 的 stream_delta_callback 队列写入真正的流式 SSE。
 
-        If the client disconnects mid-stream (network drop, browser tab close),
-        the agent is interrupted via ``agent.interrupt()`` so it stops making
-        LLM API calls, and the asyncio task wrapper is cancelled.
+        如果客户端在流传输过程中断开（网络掉线、关闭浏览器标签页），agent
+        会通过 ``agent.interrupt()`` 被打断，从而停止发起 LLM API 调用，
+        并且其 asyncio 任务包装器会被取消。
         """
         import queue as _q
 
@@ -2148,8 +2116,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         }
-        # CORS middleware can't inject headers into StreamResponse after
-        # prepare() flushes them, so resolve CORS headers up front.
+        # CORS 中间件无法在 prepare() 刷新头部之后向 StreamResponse 注入
+        # 头部，因此需要预先解析 CORS 头部。
         origin = request.headers.get("Origin", "")
         cors = self._cors_headers_for_origin(origin) if origin else None
         if cors:
@@ -2164,7 +2132,7 @@ class APIServerAdapter(BasePlatformAdapter):
         try:
             last_activity = time.monotonic()
 
-            # Role chunk
+            # 角色 chunk
             role_chunk = {
                 "id": completion_id, "object": "chat.completion.chunk",
                 "created": created, "model": model,
@@ -2173,16 +2141,15 @@ class APIServerAdapter(BasePlatformAdapter):
             await response.write(f"data: {json.dumps(role_chunk)}\n\n".encode())
             last_activity = time.monotonic()
 
-            # Helper — route a queue item to the correct SSE event.
+            # 辅助函数 —— 把一个队列项路由到正确的 SSE 事件。
             async def _emit(item):
-                """Write a single queue item to the SSE stream.
+                """向 SSE 流写入单个队列项。
 
-                Plain strings are sent as normal ``delta.content`` chunks.
-                Tagged tuples ``("__tool_progress__", payload)`` are sent
-                as a custom ``event: hermes.tool.progress`` SSE event so
-                frontends can display them without storing the markers in
-                conversation history.  See #6972 for the original event,
-                #16588 for the ``toolCallId``/``status`` lifecycle fields.
+                纯字符串作为普通的 ``delta.content`` chunk 发送。带标签的
+                元组 ``("__tool_progress__", payload)`` 则作为自定义的
+                ``event: hermes.tool.progress`` SSE 事件发送，使前端能够展示
+                它们而不必将这些标记存入对话历史。原事件见 #6972，
+                ``toolCallId``/``status`` 生命周期字段见 #16588。
                 """
                 if isinstance(item, tuple) and len(item) == 2 and item[0] == "__tool_progress__":
                     event_data = json.dumps(item[1])
@@ -2198,14 +2165,14 @@ class APIServerAdapter(BasePlatformAdapter):
                     await response.write(f"data: {json.dumps(content_chunk)}\n\n".encode())
                 return time.monotonic()
 
-            # Stream content chunks as they arrive from the agent
+            # 随 agent 产出持续发送 content chunk
             loop = asyncio.get_running_loop()
             while True:
                 try:
                     delta = await loop.run_in_executor(None, lambda: stream_q.get(timeout=0.5))
                 except _q.Empty:
                     if agent_task.done():
-                        # Drain any remaining items
+                        # 排空剩余项
                         while True:
                             try:
                                 delta = stream_q.get_nowait()
@@ -2220,12 +2187,12 @@ class APIServerAdapter(BasePlatformAdapter):
                         last_activity = time.monotonic()
                     continue
 
-                if delta is None:  # End of stream sentinel
+                if delta is None:  # 流结束哨兵
                     break
 
                 last_activity = await _emit(delta)
 
-            # Get usage from completed agent
+            # 从已完成的 agent 获取 usage
             usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             try:
                 result, agent_usage = await agent_task
@@ -2233,7 +2200,7 @@ class APIServerAdapter(BasePlatformAdapter):
             except Exception as exc:
                 logger.warning("Agent task %s failed, usage data lost: %s", completion_id, exc)
 
-            # Finish chunk
+            # 结束 chunk
             finish_chunk = {
                 "id": completion_id, "object": "chat.completion.chunk",
                 "created": created, "model": model,
@@ -2247,9 +2214,8 @@ class APIServerAdapter(BasePlatformAdapter):
             await response.write(f"data: {json.dumps(finish_chunk)}\n\n".encode())
             await response.write(b"data: [DONE]\n\n")
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
-            # Client disconnected mid-stream.  Interrupt the agent so it
-            # stops making LLM API calls at the next loop iteration, then
-            # cancel the asyncio task wrapper.
+            # 客户端在流传输过程中断开。打断 agent，使其在下次循环迭代时停止
+            # 发起 LLM API 调用，然后取消 asyncio 任务包装器。
             agent = agent_ref[0] if agent_ref else None
             if agent is not None:
                 try:
@@ -2264,9 +2230,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     pass
             logger.info("SSE client disconnected; interrupted agent task %s", completion_id)
         except Exception as _exc:
-            # Agent crashed mid-stream.  Try to emit an error chunk
-            # so the client gets a proper response instead of a
-            # TransferEncodingError from incomplete chunked encoding.
+            # agent 在流传输过程中崩溃。尝试发出一个错误 chunk，使客户端
+            # 得到正确的响应，而不是因为不完整的 chunked encoding 而收到
+            # TransferEncodingError。
             import traceback as _tb
             logger.error("Agent crashed mid-stream for %s: %s", completion_id, _tb.format_exc()[:300])
             try:
@@ -2299,33 +2265,31 @@ class APIServerAdapter(BasePlatformAdapter):
         session_id: str,
         gateway_session_key: Optional[str] = None,
     ) -> "web.StreamResponse":
-        """Write an SSE stream for POST /v1/responses (OpenAI Responses API).
+        """为 POST /v1/responses（OpenAI Responses API）写入 SSE 流。
 
-        Emits spec-compliant event types as the agent runs:
+        在 agent 运行过程中发出符合规范的事件类型：
 
-        - ``response.created`` — initial envelope (status=in_progress)
-        - ``response.output_text.delta`` / ``response.output_text.done`` —
-          streamed assistant text
-        - ``response.output_item.added`` / ``response.output_item.done``
-          with ``item.type == "function_call"`` — when the agent invokes a
-          tool (both events fire; the ``done`` event carries the finalized
-          ``arguments`` string)
-        - ``response.output_item.added`` with
-          ``item.type == "function_call_output"`` — tool result with
+        - ``response.created`` —— 初始信封（status=in_progress）
+        - ``response.output_text.delta`` / ``response.output_text.done`` ——
+          流式发送的 assistant 文本
+        - ``response.output_item.added`` / ``response.output_item.done``，
+          且 ``item.type == "function_call"`` —— 当 agent 调用工具时
+          （两个事件都会触发；``done`` 事件携带最终确定的 ``arguments``
+          字符串）
+        - ``response.output_item.added``，且
+          ``item.type == "function_call_output"`` —— 工具结果，包含
           ``{call_id, output, status}``
-        - ``response.completed`` — terminal event carrying the full
-          response object with all output items + usage (same payload
-          shape as the non-streaming path for parity)
-        - ``response.failed`` — terminal event on agent error
+        - ``response.completed`` —— 终止事件，携带包含全部 output item
+          和 usage 的完整 response 对象（与非流式路径保持相同的负载形态
+          以保证一致性）
+        - ``response.failed`` —— agent 出错时的终止事件
 
-        If the client disconnects mid-stream, ``agent.interrupt()`` is
-        called so the agent stops issuing upstream LLM calls, then the
-        asyncio task is cancelled.  When ``store=True`` an initial
-        ``in_progress`` snapshot is persisted immediately after
-        ``response.created`` and disconnects update it to an
-        ``incomplete`` snapshot so GET /v1/responses/{id} and
-        ``previous_response_id`` chaining still have something to
-        recover from.
+        如果客户端在流传输过程中断开，会调用 ``agent.interrupt()`` 使
+        agent 停止发起上游 LLM 调用，然后取消 asyncio 任务。当
+        ``store=True`` 时，会在 ``response.created`` 之后立即持久化一份
+        初始的 ``in_progress`` 快照，断开连接时则会将其更新为
+        ``incomplete`` 快照，使 GET /v1/responses/{id} 和
+        ``previous_response_id`` 链式调用仍有可恢复的内容。
         """
         import queue as _q
 
@@ -2345,25 +2309,25 @@ class APIServerAdapter(BasePlatformAdapter):
         response = web.StreamResponse(status=200, headers=sse_headers)
         await response.prepare(request)
 
-        # State accumulated during the stream
+        # 流传输过程中累积的状态
         final_text_parts: List[str] = []
-        # Track open function_call items by name so we can emit a matching
-        # ``done`` event when the tool completes.  Order preserved.
+        # 按名称跟踪尚未闭合的 function_call 项，以便工具完成时发出匹配的
+        # ``done`` 事件。保留顺序。
         pending_tool_calls: List[Dict[str, Any]] = []
-        # Output items we've emitted so far (used to build the terminal
-        # response.completed payload).  Kept in the order they appeared.
+        # 我们目前发出过的 output item（用于构造终止的 response.completed
+        # 负载）。按出现顺序保留。
         emitted_items: List[Dict[str, Any]] = []
-        # Monotonic counter for output_index (spec requires it).
+        # output_index 的单调计数器（规范要求）。
         output_index = 0
-        # Monotonic counter for call_id generation if the agent doesn't
-        # provide one (it doesn't, from tool_progress_callback).
+        # 当 agent 未提供 call_id 时用于生成 call_id 的单调计数器
+        # （它确实不会从 tool_progress_callback 提供）。
         call_counter = 0
-        # Canonical Responses SSE events include a monotonically increasing
-        # sequence_number. Add it server-side for every emitted event so
-        # clients that validate the OpenAI event schema can parse our stream.
+        # 规范的 Responses SSE 事件包含单调递增的 sequence_number。在服务端
+        # 为每个发出的事件都加上它，使校验 OpenAI 事件 schema 的客户端能
+        # 解析我们的流。
         sequence_number = 0
-        # Track the assistant message item id + content index for text
-        # delta events — the spec ties deltas to a specific item.
+        # 跟踪 assistant 消息 item id + content index 用于文本 delta 事件 ——
+        # 规范将 delta 绑定到具体的 item。
         message_item_id = f"msg_{uuid.uuid4().hex[:24]}"
         message_output_index: Optional[int] = None
         message_opened = False
@@ -2411,12 +2375,12 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._response_store.set_conversation(conversation, response_id)
 
         def _persist_incomplete_if_needed() -> None:
-            """Persist an ``incomplete`` snapshot if no terminal one was written.
+            """如果尚未写入终止快照，则持久化一份 ``incomplete`` 快照。
 
-            Called from both the client-disconnect (``ConnectionResetError``)
-            and server-cancellation (``asyncio.CancelledError``) paths so
-            GET /v1/responses/{id} and ``previous_response_id`` chaining keep
-            working after abrupt stream termination.
+            从客户端断开（``ConnectionResetError``）和服务端取消
+            （``asyncio.CancelledError``）两条路径都会调用，使
+            GET /v1/responses/{id} 和 ``previous_response_id`` 链式调用在
+            流被突然终止后仍能继续工作。
             """
             if not store or terminal_snapshot_persisted:
                 return
@@ -2445,7 +2409,7 @@ class APIServerAdapter(BasePlatformAdapter):
             )
 
         try:
-            # response.created — initial envelope, status=in_progress
+            # response.created —— 初始信封，status=in_progress
             created_env = _envelope("in_progress")
             created_env["output"] = []
             await _write_event("response.created", {
@@ -2456,8 +2420,8 @@ class APIServerAdapter(BasePlatformAdapter):
             last_activity = time.monotonic()
 
             async def _open_message_item() -> None:
-                """Emit response.output_item.added for the assistant message
-                the first time any text delta arrives."""
+                """在首个文本 delta 到达时为 assistant 消息发出
+                response.output_item.added。"""
                 nonlocal message_opened, message_output_index, output_index
                 if message_opened:
                     return
@@ -2490,12 +2454,11 @@ class APIServerAdapter(BasePlatformAdapter):
                 })
 
             async def _emit_tool_started(payload: Dict[str, Any]) -> str:
-                """Emit response.output_item.added for a function_call.
+                """为 function_call 发出 response.output_item.added。
 
-                Returns the call_id so the matching completion event can
-                reference it.  Prefer the real ``tool_call_id`` from the
-                agent when available; fall back to a generated call id for
-                safety in tests or older code paths.
+                返回 call_id，以便匹配的完成事件能引用它。优先使用 agent
+                提供的真实 ``tool_call_id``；在测试或旧代码路径中回退到生成
+                的 call id 以保证安全。
                 """
                 nonlocal output_index, call_counter
                 call_counter += 1
@@ -2536,8 +2499,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 return call_id
 
             async def _emit_tool_completed(payload: Dict[str, Any]) -> None:
-                """Emit response.output_item.done (function_call) followed
-                by response.output_item.added (function_call_output)."""
+                """先发出 response.output_item.done（function_call），随后发出
+                response.output_item.added（function_call_output）。"""
                 nonlocal output_index
                 call_id = payload.get("tool_call_id")
                 result = payload.get("result", "")
@@ -2548,11 +2511,11 @@ class APIServerAdapter(BasePlatformAdapter):
                             pending = pending_tool_calls.pop(i)
                             break
                 if pending is None:
-                    # Completion without a matching start — skip to avoid
-                    # emitting orphaned done events.
+                    # 没有匹配的 start 就到达完成 —— 跳过，避免发出孤立的
+                    # done 事件。
                     return
 
-                # function_call done
+                # function_call 完成
                 done_item = {
                     "id": pending["item_id"],
                     "type": "function_call",
@@ -2567,7 +2530,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     "item": done_item,
                 })
 
-                # function_call_output added (result)
+                # function_call_output 已添加（结果）
                 result_str = result if isinstance(result, str) else json.dumps(result)
                 output_parts = [{"type": "input_text", "text": result_str}]
                 output_item = {
@@ -2595,20 +2558,19 @@ class APIServerAdapter(BasePlatformAdapter):
                     "item": output_item,
                 })
 
-            # Main drain loop — thread-safe queue fed by agent callbacks.
+            # 主排空循环 —— 由 agent 回调馈送的线程安全队列。
             async def _dispatch(it) -> None:
-                """Route a queue item to the correct SSE emitter.
+                """把一个队列项路由到正确的 SSE 发射器。
 
-                Plain strings are text deltas — they are batched (50ms)
-                to reduce Open WebUI re-render storms.  Tagged tuples
-                with ``__tool_started__`` / ``__tool_completed__``
-                prefixes are tool lifecycle events and flush the buffer
-                before emitting.
+                纯字符串是文本 delta —— 它们会被批处理（50ms），以减少
+                Open WebUI 的重渲染风暴。带 ``__tool_started__`` /
+                ``__tool_completed__`` 前缀的带标签元组是工具生命周期事件，
+                会在发射前先刷新缓冲区。
                 """
                 nonlocal _batch_timer
                 if isinstance(it, tuple) and len(it) == 2 and isinstance(it[0], str):
                     tag, payload = it
-                    # Flush batched text before tool events
+                    # 工具事件之前先刷新批处理的文本
                     if _batch_buf:
                         await _flush_batch()
                     if tag == "__tool_started__":
@@ -2616,31 +2578,31 @@ class APIServerAdapter(BasePlatformAdapter):
                     elif tag == "__tool_completed__":
                         await _emit_tool_completed(payload)
                 elif isinstance(it, str):
-                    # Batch text deltas — append to buffer, flush on timer
+                    # 批处理文本 delta —— 追加到缓冲区，按定时器刷新
                     _batch_buf.append(it)
                     if _batch_timer is None:
                         _batch_timer = asyncio.create_task(_batch_flush_after(0.05))
-                # Other types are silently dropped.
+                # 其他类型被静默丢弃。
 
-            # ── Batching state ──
+            # ── 批处理状态 ──
             _batch_buf: List[str] = []
             _batch_timer: Optional[asyncio.Task] = None
             _batch_lock = asyncio.Lock()
 
             async def _batch_flush_after(delay: float) -> None:
-                """Wait delay seconds, then flush accumulated text deltas."""
+                """等待 delay 秒，然后刷新累积的文本 delta。"""
                 try:
                     await asyncio.sleep(delay)
                 except asyncio.CancelledError:
                     return
-                # Clear timer reference BEFORE flush so new deltas
-                # can start a fresh timer while we emit
+                # 在刷新之前先清除定时器引用，使新的 delta 能在我们发射时
+                # 启动一个全新的定时器
                 nonlocal _batch_buf, _batch_timer
                 _batch_timer = None
                 await _flush_batch()
 
             async def _flush_batch() -> None:
-                """Emit a single SSE delta for all accumulated text."""
+                """为所有累积的文本发出单个 SSE delta。"""
                 nonlocal _batch_buf
                 async with _batch_lock:
                     if _batch_buf:
@@ -2654,7 +2616,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     item = await loop.run_in_executor(None, lambda: stream_q.get(timeout=0.5))
                 except _q.Empty:
                     if agent_task.done():
-                        # Drain remaining
+                        # 排空剩余项
                         while True:
                             try:
                                 item = stream_q.get_nowait()
@@ -2670,8 +2632,8 @@ class APIServerAdapter(BasePlatformAdapter):
                         last_activity = time.monotonic()
                     continue
 
-                if item is None:  # EOS sentinel
-                    # Cancel pending timer and flush remaining batched text
+                if item is None:  # 流结束哨兵
+                    # 取消待处理的定时器并刷新剩余的批处理文本
                     if _batch_timer and not _batch_timer.done():
                         _batch_timer.cancel()
                         _batch_timer = None
@@ -2682,18 +2644,17 @@ class APIServerAdapter(BasePlatformAdapter):
                 await _dispatch(item)
                 last_activity = time.monotonic()
 
-            # Flush any final batched text before processing result
+            # 在处理结果之前刷新任何最后的批处理文本
             if _batch_buf:
                 await _flush_batch()
 
-            # Pick up agent result + usage from the completed task
+            # 从已完成的任务中获取 agent 结果和 usage
             try:
                 result, agent_usage = await agent_task
                 usage = agent_usage or usage
-                # If the agent produced a final_response but no text
-                # deltas were streamed (e.g. some providers only emit
-                # the full response at the end), emit a single fallback
-                # delta so Responses clients still receive a live text part.
+                # 如果 agent 产生了 final_response 但没有流式发送文本 delta
+                # （例如某些 provider 只在最后发出完整响应），则发出一个
+                # 回退 delta，使 Responses 客户端仍能收到实时的文本部分。
                 agent_final = result.get("final_response", "") if isinstance(result, dict) else ""
                 if agent_final and not final_text_parts:
                     await _emit_text_delta(agent_final)
@@ -2705,7 +2666,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 logger.error("Error running agent for streaming responses: %s", e, exc_info=True)
                 agent_error = str(e)
 
-            # Close the message item if it was opened
+            # 如果消息 item 已经打开，则关闭它
             final_response_text = "".join(final_text_parts) or final_response_text
             if message_opened:
                 await _write_event("response.output_text.done", {
@@ -2731,15 +2692,13 @@ class APIServerAdapter(BasePlatformAdapter):
                     "item": msg_done_item,
                 })
 
-            # Always append a final message item in the completed
-            # response envelope so clients that only parse the terminal
-            # payload still see the assistant text.  This mirrors the
-            # shape produced by _extract_output_items in the batch path.
+            # 始终在 completed 的 response 信封中追加一个最终 message item，
+            # 使只解析终止负载的客户端仍能看到 assistant 文本。这镜像了
+            # 批处理路径中 _extract_output_items 所产生的形态。
             final_items: List[Dict[str, Any]] = list(emitted_items)
 
-            # Trim large content from tool call arguments to keep the
-            # response.completed event under ~100KB.  Clients already
-            # received full details via incremental events.
+            # 裁剪工具调用 arguments 中的大块内容，使 response.completed
+            # 事件保持在 ~100KB 以内。客户端已经通过增量事件收到了完整细节。
             for _item in final_items:
                 if _item.get("type") == "function_call":
                     try:
@@ -2820,8 +2779,8 @@ class APIServerAdapter(BasePlatformAdapter):
 
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
             _persist_incomplete_if_needed()
-            # Client disconnected — interrupt the agent so it stops
-            # making upstream LLM calls, then cancel the task.
+            # 客户端断开连接 —— 打断 agent 使其停止发起上游 LLM 调用，
+            # 然后取消任务。
             agent = agent_ref[0] if agent_ref else None
             if agent is not None:
                 try:
@@ -2836,10 +2795,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     pass
             logger.info("SSE client disconnected; interrupted agent task %s", response_id)
         except asyncio.CancelledError:
-            # Server-side cancellation (e.g. shutdown, request timeout) —
-            # persist an incomplete snapshot so GET /v1/responses/{id} and
-            # previous_response_id chaining still work, then re-raise so the
-            # runtime's cancellation semantics are respected.
+            # 服务端取消（例如关机、请求超时）—— 持久化一份 incomplete 快照
+            # 使 GET /v1/responses/{id} 和 previous_response_id 链式调用仍能
+            # 工作，然后重新抛出，以遵守运行时的取消语义。
             _persist_incomplete_if_needed()
             agent = agent_ref[0] if agent_ref else None
             if agent is not None:
@@ -2852,10 +2810,10 @@ class APIServerAdapter(BasePlatformAdapter):
             logger.info("SSE task cancelled; persisted incomplete snapshot for %s", response_id)
             raise
         except Exception as _exc:
-            # Agent crashed with an unhandled error (e.g. model API error like
-            # BadRequestError, AuthenticationError).  Emit a response.failed
-            # event and properly terminate the SSE stream so the client doesn't
-            # get a TransferEncodingError from incomplete chunked encoding.
+            # agent 因未处理的错误而崩溃（例如 BadRequestError、
+            # AuthenticationError 之类的 model API 错误）。发出一个
+            # response.failed 事件并正确终止 SSE 流，使客户端不会因为
+            # 不完整的 chunked encoding 而收到 TransferEncodingError。
             import traceback as _tb
             _persist_incomplete_if_needed()
             agent_error = _tb.format_exc()
@@ -2879,22 +2837,22 @@ class APIServerAdapter(BasePlatformAdapter):
         return response
 
     async def _handle_responses(self, request: "web.Request") -> "web.Response":
-        """POST /v1/responses — OpenAI Responses API format."""
+        """POST /v1/responses —— OpenAI Responses API 格式。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
 
-        # Bound total in-flight agent runs (configurable; #7483).
+        # 限制在途 agent run 的总数（可配置；#7483）。
         limited = self._concurrency_limited_response()
         if limited is not None:
             return limited
 
-        # Long-term memory scope header (see chat_completions for details).
+        # 长期记忆作用域头部（详见 chat_completions）。
         gateway_session_key, key_err = self._parse_session_key_header(request)
         if key_err is not None:
             return key_err
 
-        # Parse request body
+        # 解析请求体
         try:
             body = await request.json()
         except (json.JSONDecodeError, Exception):
@@ -2912,16 +2870,16 @@ class APIServerAdapter(BasePlatformAdapter):
         conversation = body.get("conversation")
         store = _coerce_request_bool(body.get("store"), default=True)
 
-        # conversation and previous_response_id are mutually exclusive
+        # conversation 和 previous_response_id 互斥
         if conversation and previous_response_id:
             return web.json_response(_openai_error("Cannot use both 'conversation' and 'previous_response_id'"), status=400)
 
-        # Resolve conversation name to latest response_id
+        # 将 conversation 名称解析为最新的 response_id
         if conversation:
             previous_response_id = self._response_store.get_conversation(conversation)
-            # No error if conversation doesn't exist yet — it's a new conversation
+            # 如果 conversation 尚不存在也不报错 —— 这是一个全新的 conversation
 
-        # Normalize input to message list
+        # 将 input 规范化为消息列表
         input_messages: List[Dict[str, Any]] = []
         if isinstance(raw_input, str):
             input_messages = [{"role": "user", "content": raw_input}]
@@ -2939,10 +2897,10 @@ class APIServerAdapter(BasePlatformAdapter):
         else:
             return web.json_response(_openai_error("'input' must be a string or array"), status=400)
 
-        # Accept explicit conversation_history from the request body.
-        # This lets stateless clients supply their own history instead of
-        # relying on server-side response chaining via previous_response_id.
-        # Precedence: explicit conversation_history > previous_response_id.
+        # 接受来自请求体的显式 conversation_history。
+        # 这让无状态客户端可以提供自己的历史，而不必依赖通过
+        # previous_response_id 进行的服务端响应链式拼接。
+        # 优先级：显式 conversation_history > previous_response_id。
         conversation_history: List[Dict[str, Any]] = []
         raw_history = body.get("conversation_history")
         if raw_history:
@@ -2972,53 +2930,53 @@ class APIServerAdapter(BasePlatformAdapter):
                 return web.json_response(_openai_error(f"Previous response not found: {previous_response_id}"), status=404)
             conversation_history = list(stored.get("conversation_history", []))
             stored_session_id = stored.get("session_id")
-            # If no instructions provided, carry forward from previous
+            # 如果未提供 instructions，则沿用上一次的
             if instructions is None:
                 instructions = stored.get("instructions")
 
-        # Append new input messages to history (all but the last become history)
+        # 将新的 input 消息追加到历史（除最后一条外其余都成为历史）
         for msg in input_messages[:-1]:
             conversation_history.append(msg)
 
-        # Last input message is the user_message
+        # 最后一条 input 消息即 user_message
         user_message: Any = input_messages[-1].get("content", "") if input_messages else ""
         if not _content_has_visible_payload(user_message):
             return web.json_response(_openai_error("No user message found in input"), status=400)
 
-        # Truncation support
+        # 截断支持
         if body.get("truncation") == "auto" and len(conversation_history) > 100:
             conversation_history = conversation_history[-100:]
 
-        # Reuse session from previous_response_id chain so the dashboard
-        # groups the entire conversation under one session entry.
+        # 复用 previous_response_id 链上的 session，使 dashboard 把整段
+        # 对话归到同一个 session 条目下。
         session_id = stored_session_id or str(uuid.uuid4())
 
         stream = _coerce_request_bool(body.get("stream"), default=False)
         if stream:
-            # Streaming branch — emit OpenAI Responses SSE events as the
-            # agent runs so frontends can render text deltas and tool
-            # calls in real time.  See _write_sse_responses for details.
+            # 流式分支 —— 在 agent 运行过程中发出 OpenAI Responses SSE
+            # 事件，使前端能实时渲染文本 delta 和工具调用。详见
+            # _write_sse_responses。
             import queue as _q
             _stream_q: _q.Queue = _q.Queue()
 
             def _on_delta(delta):
-                # None from the agent is a CLI box-close signal, not EOS.
-                # Forwarding would kill the SSE stream prematurely; the
-                # SSE writer detects completion via agent_task.done().
+                # agent 的 None 是 CLI 的关闭响应框信号，而不是 EOS（流结束）。
+                # 转发它会过早终止 SSE 流；SSE 写入端通过
+                # agent_task.done() 检测完成。
                 if delta is not None:
                     _stream_q.put(delta)
 
             def _on_tool_progress(event_type, name, preview, args, **kwargs):
-                """Queue non-start tool progress events if needed in future.
+                """如有需要，将来可在此排入非 start 的工具进度事件。
 
-                The structured Responses stream uses ``tool_start_callback``
-                and ``tool_complete_callback`` for exact call-id correlation,
-                so progress events are currently ignored here.
+                结构化的 Responses 流使用 ``tool_start_callback`` 和
+                ``tool_complete_callback`` 进行精确的 call-id 关联，因此
+                进度事件目前在此被忽略。
                 """
                 return
 
             def _on_tool_start(tool_call_id, function_name, function_args):
-                """Queue a started tool for live function_call streaming."""
+                """将一个已开始的工具排入队列，用于实时的 function_call 流式传输。"""
                 _stream_q.put(("__tool_started__", {
                     "tool_call_id": tool_call_id,
                     "name": function_name,
@@ -3026,7 +2984,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 }))
 
             def _on_tool_complete(tool_call_id, function_name, function_args, function_result):
-                """Queue a completed tool result for live function_call_output streaming."""
+                """将一个已完成的工具结果排入队列，用于实时的 function_call_output 流式传输。"""
                 _stream_q.put(("__tool_completed__", {
                     "tool_call_id": tool_call_id,
                     "name": function_name,
@@ -3047,8 +3005,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
             ))
-            # Ensure SSE drain loops can terminate without relying on polling
-            # agent_task.done(), which can race with queue timeout checks.
+            # 确保 SSE 排空循环能够终止，而无需依赖轮询 agent_task.done()，
+            # 后者可能与队列超时检查产生竞态。
             agent_task.add_done_callback(lambda _fut: _stream_q.put(None))
 
             response_id = f"resp_{uuid.uuid4().hex[:28]}"
@@ -3112,8 +3070,8 @@ class APIServerAdapter(BasePlatformAdapter):
         response_id = f"resp_{uuid.uuid4().hex[:28]}"
         created_at = int(time.time())
 
-        # Build the full conversation history for storage
-        # (includes tool calls from the agent run)
+        # 构造用于存储的完整对话历史
+        # （包含 agent 运行产生的工具调用）
         full_history = self._build_response_conversation_history(
             conversation_history,
             user_message,
@@ -3121,9 +3079,9 @@ class APIServerAdapter(BasePlatformAdapter):
             final_response,
         )
 
-        # Build output items from the current turn only.  AIAgent returns a
-        # full transcript in result["messages"], while older/mocked paths may
-        # return only the current turn suffix.
+        # 仅从当前轮次构造 output item。AIAgent 会在 result["messages"] 中
+        # 返回完整 transcript，而较旧/被 mock 的路径可能只返回当前轮次的
+        # 后缀。
         output_start_index = self._response_messages_turn_start_index(
             conversation_history,
             user_message,
@@ -3145,7 +3103,7 @@ class APIServerAdapter(BasePlatformAdapter):
             },
         }
 
-        # Store the complete response object for future chaining / GET retrieval
+        # 存储完整的 response 对象，供将来链式拼接 / GET 检索使用
         if store:
             self._response_store.put(response_id, {
                 "response": response_data,
@@ -3153,8 +3111,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 "instructions": instructions,
                 "session_id": session_id,
             })
-            # Update conversation mapping so the next request with the same
-            # conversation name automatically chains to this response
+            # 更新 conversation 映射，使下一个携带相同 conversation 名称的
+            # 请求自动链式指向此响应
             if conversation:
                 self._response_store.set_conversation(conversation, response_id)
 
@@ -3164,11 +3122,11 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response(response_data, headers=response_headers)
 
     # ------------------------------------------------------------------
-    # GET / DELETE response endpoints
+    # GET / DELETE response 端点
     # ------------------------------------------------------------------
 
     async def _handle_get_response(self, request: "web.Request") -> "web.Response":
-        """GET /v1/responses/{response_id} — retrieve a stored response."""
+        """GET /v1/responses/{response_id} —— 获取一个已存储的响应。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3181,7 +3139,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response(stored["response"])
 
     async def _handle_delete_response(self, request: "web.Request") -> "web.Response":
-        """DELETE /v1/responses/{response_id} — delete a stored response."""
+        """DELETE /v1/responses/{response_id} —— 删除一个已存储的响应。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3198,18 +3156,18 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     # ------------------------------------------------------------------
-    # Cron jobs API
+    # Cron 任务 API
     # ------------------------------------------------------------------
 
     _JOB_ID_RE = __import__("re").compile(r"[a-f0-9]{12}")
-    # Allowed fields for update — prevents clients injecting arbitrary keys
+    # 更新时允许的字段 —— 阻止客户端注入任意键
     _UPDATE_ALLOWED_FIELDS = {"name", "schedule", "prompt", "deliver", "skills", "skill", "repeat", "enabled"}
     _MAX_NAME_LENGTH = 200
     _MAX_PROMPT_LENGTH = 5000
 
     @staticmethod
     def _check_jobs_available() -> Optional["web.Response"]:
-        """Return error response if cron module isn't available."""
+        """如果 cron 模块不可用则返回错误响应。"""
         if not _CRON_AVAILABLE:
             return web.json_response(
                 {"error": "Cron module not available"}, status=501,
@@ -3217,7 +3175,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return None
 
     def _check_job_id(self, request: "web.Request") -> tuple:
-        """Validate and extract job_id. Returns (job_id, error_response)."""
+        """校验并提取 job_id。返回 (job_id, error_response)。"""
         job_id = request.match_info["job_id"]
         if not self._JOB_ID_RE.fullmatch(job_id):
             logger.warning(
@@ -3231,7 +3189,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return job_id, None
 
     async def _handle_list_jobs(self, request: "web.Request") -> "web.Response":
-        """GET /api/jobs — list all cron jobs."""
+        """GET /api/jobs —— 列出全部 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3246,7 +3204,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_create_job(self, request: "web.Request") -> "web.Response":
-        """POST /api/jobs — create a new cron job."""
+        """POST /api/jobs —— 创建一个新的 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3300,7 +3258,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_get_job(self, request: "web.Request") -> "web.Response":
-        """GET /api/jobs/{job_id} — get a single cron job."""
+        """GET /api/jobs/{job_id} —— 获取单个 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3319,7 +3277,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_update_job(self, request: "web.Request") -> "web.Response":
-        """PATCH /api/jobs/{job_id} — update a cron job."""
+        """PATCH /api/jobs/{job_id} —— 更新一个 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3331,11 +3289,11 @@ class APIServerAdapter(BasePlatformAdapter):
             return id_err
         try:
             body = await request.json()
-            # Whitelist allowed fields to prevent arbitrary key injection
+            # 白名单允许的字段，防止任意键注入
             sanitized = {k: v for k, v in body.items() if k in self._UPDATE_ALLOWED_FIELDS}
             if not sanitized:
                 return web.json_response({"error": "No valid fields to update"}, status=400)
-            # Validate lengths if present
+            # 如果存在则校验长度
             if "name" in sanitized and len(sanitized["name"]) > self._MAX_NAME_LENGTH:
                 return web.json_response(
                     {"error": f"Name must be ≤ {self._MAX_NAME_LENGTH} characters"}, status=400,
@@ -3357,7 +3315,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_delete_job(self, request: "web.Request") -> "web.Response":
-        """DELETE /api/jobs/{job_id} — delete a cron job."""
+        """DELETE /api/jobs/{job_id} —— 删除一个 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3377,7 +3335,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_pause_job(self, request: "web.Request") -> "web.Response":
-        """POST /api/jobs/{job_id}/pause — pause a cron job."""
+        """POST /api/jobs/{job_id}/pause —— 暂停一个 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3397,7 +3355,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_resume_job(self, request: "web.Request") -> "web.Response":
-        """POST /api/jobs/{job_id}/resume — resume a paused cron job."""
+        """POST /api/jobs/{job_id}/resume —— 恢复一个已暂停的 cron 任务。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3417,7 +3375,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_run_job(self, request: "web.Request") -> "web.Response":
-        """POST /api/jobs/{job_id}/run — trigger immediate execution."""
+        """POST /api/jobs/{job_id}/run —— 触发立即执行。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3436,16 +3394,16 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_cron_fire(self, request: "web.Request") -> "web.Response":
-        """POST /api/cron/fire — Chronos managed-cron fire webhook (NAS → agent).
+        """POST /api/cron/fire —— Chronos 托管 cron 的 fire webhook（NAS → agent）。
 
-        Authenticated by a NAS-minted JWT (verified via the pluggable
-        fire-verifier), NOT API_SERVER_KEY — NAS holds no API server key, and
-        this is the only inbound that can trigger remote job execution, so it
-        gets its own purpose-scoped token check.
+        由 NAS 签发的 JWT（通过可插拔的 fire-verifier 校验）鉴权，而
+        非使用 API_SERVER_KEY —— NAS 不持有任何 API 服务器密钥，并且这是
+        唯一能够触发远程任务执行的入站请求，因此它有自己专用作用域的
+        token 校验。
 
-        Returns 202 + runs the job in the background so a long agent turn never
-        trips NAS's HTTP timeout. The store CAS claim inside fire_due guards
-        against double-fire on a NAS/scheduler retry.
+        返回 202 并在后台运行任务，使一次漫长的 agent 轮次永远不会触发
+        NAS 的 HTTP 超时。fire_due 内部的 store CAS 认领可防止在
+        NAS/调度器重试时重复触发。
         """
         from hermes_cli.config import cfg_get, load_config
         from plugins.cron_providers.chronos.verify import get_fire_verifier
@@ -3479,8 +3437,8 @@ class APIServerAdapter(BasePlatformAdapter):
         provider = resolve_cron_scheduler()
 
         loop = asyncio.get_running_loop()
-        # Fire in the background (202 immediately). fire_due claims via the
-        # store CAS, so a retry while this is in flight is de-duped.
+        # 在后台触发（立即返回 202）。fire_due 通过 store CAS 认领，
+        # 因此在途期间的重试会被去重。
         task = asyncio.create_task(
             asyncio.to_thread(provider.fire_due, job_id, adapters=None, loop=loop)
         )
@@ -3494,7 +3452,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
 
     # ------------------------------------------------------------------
-    # Output extraction helper
+    # 输出抽取辅助
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -3504,7 +3462,7 @@ class APIServerAdapter(BasePlatformAdapter):
         result: Dict[str, Any],
         final_response: Any,
     ) -> List[Dict[str, Any]]:
-        """Build the stored Responses transcript without duplicating history."""
+        """构造存储用的 Responses transcript，且不重复历史。"""
         prior = list(conversation_history)
         current_user = {"role": "user", "content": user_message}
         agent_messages = result.get("messages") if isinstance(result, dict) else None
@@ -3534,7 +3492,7 @@ class APIServerAdapter(BasePlatformAdapter):
         user_message: Any,
         result: Dict[str, Any],
     ) -> int:
-        """Detect transcript-shaped result["messages"] and return turn start."""
+        """检测 transcript 形态的 result["messages"] 并返回该轮的起始位置。"""
         agent_messages = result.get("messages") if isinstance(result, dict) else None
         if not isinstance(agent_messages, list) or not agent_messages:
             return 0
@@ -3555,20 +3513,18 @@ class APIServerAdapter(BasePlatformAdapter):
         user_message: Any,
         result: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        """Return this turn's assistant/tool messages in client-safe shape.
+        """以对客户端安全的形态返回本轮的 assistant/工具消息。
 
-        The streaming SSE contract delivers all assistant text as
-        ``assistant.delta`` events under one ``message_id`` interleaved with
-        ``tool.*`` events, and a single ``assistant.completed`` carrying only
-        the final reply.  A client that accumulates deltas into one buffer
-        cannot reconstruct *intermediate* assistant text segments that preceded
-        tool calls — so when the page is re-opened mid/post-stream those
-        segments appear lost, even though state.db persisted them correctly.
+        流式 SSE 契约把所有 assistant 文本作为同一个 ``message_id`` 下的
+        ``assistant.delta`` 事件发送，并与 ``tool.*`` 事件交织，最后由一个
+        只携带最终回复的 ``assistant.completed`` 收尾。把 delta 累积进单个
+        缓冲区的客户端无法重建工具调用 *之前* 的 *中间* assistant 文本片段
+        —— 因此在流传输中途/之后重新打开页面时，这些片段看起来像是丢失了，
+        尽管 state.db 已正确持久化它们。
 
-        Emitting the authoritative per-turn transcript on ``run.completed`` lets
-        any SSE consumer reconcile its live view against ground truth without a
-        separate ``GET /messages`` round-trip.  Purely additive: clients that
-        ignore the field are unaffected.  Refs #34703.
+        在 ``run.completed`` 上发出权威的逐轮 transcript，使任何 SSE 消费方
+        都能将自己的实时视图与事实基准核对，而无需单独往返一次
+        ``GET /messages``。纯增量：忽略该字段的客户端不受影响。参见 #34703。
         """
         agent_messages = result.get("messages") if isinstance(result, dict) else None
         if not isinstance(agent_messages, list) or not agent_messages:
@@ -3589,12 +3545,12 @@ class APIServerAdapter(BasePlatformAdapter):
     @staticmethod
     def _extract_output_items(result: Dict[str, Any], start_index: int = 0) -> List[Dict[str, Any]]:
         """
-        Build the output item array from the agent's messages.
+        根据 agent 的 messages 构造 output item 数组。
 
-        Walks *result["messages"]* starting at *start_index* and emits:
-        - ``function_call`` items for each tool_call on assistant messages
-        - ``function_call_output`` items for each tool-role message
-        - a final ``message`` item with the assistant's text reply
+        从 *start_index* 起遍历 *result["messages"]*，并发出：
+        - 为 assistant 消息上的每个 tool_call 发出 ``function_call`` 项
+        - 为每个 tool 角色的消息发出 ``function_call_output`` 项
+        - 发出一个携带 assistant 文本回复的最终 ``message`` 项
         """
         items: List[Dict[str, Any]] = []
         messages = result.get("messages", [])
@@ -3619,7 +3575,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     "output": msg.get("content", ""),
                 })
 
-        # Final assistant message
+        # 最终的 assistant 消息
         final = result.get("final_response", "")
         if not final:
             final = result.get("error", "(No response generated)")
@@ -3637,17 +3593,16 @@ class APIServerAdapter(BasePlatformAdapter):
         return items
 
     # ------------------------------------------------------------------
-    # Agent execution
+    # Agent 执行
     # ------------------------------------------------------------------
 
     def _concurrency_limited_response(self) -> Optional["web.Response"]:
-        """Return a 429 response if the concurrent-run cap is reached, else None.
+        """如果达到并发 run 上限则返回 429 响应，否则返回 None。
 
-        The cap bounds total in-flight agent activity across every
-        agent-serving endpoint: the non-streaming chat/responses paths
-        (tracked by ``_inflight_agent_runs``) plus the ``/v1/runs`` streaming
-        path (tracked by ``_run_streams``). A configured value of 0 disables
-        the cap entirely.
+        该上限约束跨所有 agent 服务端点的在途 agent 活动总量：非流式的
+        chat/responses 路径（由 ``_inflight_agent_runs`` 跟踪）加上
+        ``/v1/runs`` 流式路径（由 ``_run_streams`` 跟踪）。配置值为 0 时
+        完全禁用该上限。
         """
         limit = self._max_concurrent_runs
         if limit <= 0:
@@ -3672,20 +3627,19 @@ class APIServerAdapter(BasePlatformAdapter):
         session_key: str = "",
         session_id: str = "",
     ) -> list:
-        """Bind session contextvars for an API-server agent run.
+        """为一次 API 服务器的 agent 运行绑定 session contextvar。
 
-        This is the SINGLE structural chokepoint every API-server agent-entry
-        path must use to seed session context — it hardwires
-        ``platform="api_server"`` and ``async_delivery=False`` so a new route
-        physically cannot reintroduce the silent-no-op bug (#10760) by
-        forgetting to mark the channel as non-delivering. There is no
-        ``async_delivery`` parameter to get wrong; the stateless HTTP path can
-        never wake the agent after the turn ends, on ANY route.
+        这是每个 API 服务器 agent 入口路径都必须用来初始化 session 上下文的
+        唯一结构性咽喉点 —— 它硬编码 ``platform="api_server"`` 和
+        ``async_delivery=False``，使新路由在物理上不可能因为忘记把 channel
+        标记为非投递型而重新引入那个静默空操作的 bug（#10760）。这里没有
+        ``async_delivery`` 参数可供写错；无状态的 HTTP 路径在任何路由上都
+        永远无法在一轮结束后唤醒 agent。
 
-        Returns reset tokens; pass them to ``clear_session_vars`` in a
-        ``finally`` block (the binding is request-scoped and must not outlive
-        the turn — a session resumed later on a delivering interface, e.g. the
-        CLI or a gateway platform, re-binds fresh and is NOT blocked).
+        返回重置 token；请在 ``finally`` 块中将其传给
+        ``clear_session_vars``（该绑定是请求作用域的，不得超出该轮的生存期
+        —— 之后在投递型接口（例如 CLI 或 gateway 平台）上恢复的 session 会
+        重新绑定，且不会被阻塞）。
         """
         from gateway.session_context import set_session_vars
 
@@ -3711,15 +3665,15 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway_session_key: Optional[str] = None,
     ) -> tuple:
         """
-        Create an agent and run a conversation in a thread executor.
+        创建一个 agent，并在一个线程 executor 中运行一次对话。
 
-        Returns ``(result_dict, usage_dict)`` where *usage_dict* contains
-        ``input_tokens``, ``output_tokens`` and ``total_tokens``.
+        返回 ``(result_dict, usage_dict)``，其中 *usage_dict* 包含
+        ``input_tokens``、``output_tokens`` 和 ``total_tokens``。
 
-        If *agent_ref* is a one-element list, the AIAgent instance is stored
-        at ``agent_ref[0]`` before ``run_conversation`` begins.  This allows
-        callers (e.g. the SSE writer) to call ``agent.interrupt()`` from
-        another thread to stop in-progress LLM calls.
+        如果 *agent_ref* 是单元素列表，则 AIAgent 实例会在
+        ``run_conversation`` 开始之前被存入 ``agent_ref[0]``。这使调用方
+        （例如 SSE 写入端）能够从另一个线程调用 ``agent.interrupt()`` 来
+        停止进行中的 LLM 调用。
         """
         loop = asyncio.get_running_loop()
 
@@ -3754,9 +3708,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     "output_tokens": getattr(agent, "session_completion_tokens", 0) or 0,
                     "total_tokens": getattr(agent, "session_total_tokens", 0) or 0,
                 }
-                # Include the effective session ID in the result so callers
-                # (e.g. X-Hermes-Session-Id header) can track compression-
-                # triggered session rotations. (#16938)
+                # 将有效的 session ID 包含在结果里，使调用方
+                # （例如 X-Hermes-Session-Id 头部）能够跟踪因压缩触发的
+                # session 轮换。（#16938）
                 _eff_sid = getattr(agent, "session_id", session_id)
                 if isinstance(_eff_sid, str) and _eff_sid:
                     result["session_id"] = _eff_sid
@@ -3771,14 +3725,14 @@ class APIServerAdapter(BasePlatformAdapter):
             self._inflight_agent_runs -= 1
 
     # ------------------------------------------------------------------
-    # /v1/runs — structured event streaming
+    # /v1/runs —— 结构化事件流
     # ------------------------------------------------------------------
 
-    _RUN_STREAM_TTL = 300  # seconds before orphaned runs are swept
-    _RUN_STATUS_TTL = 3600  # seconds to retain terminal run status for polling
+    _RUN_STREAM_TTL = 300  # 孤立 run 被清扫前的秒数
+    _RUN_STATUS_TTL = 3600  # 为轮询保留终止 run 状态的秒数
 
     def _set_run_status(self, run_id: str, status: str, **fields: Any) -> Dict[str, Any]:
-        """Update pollable run status without exposing private agent objects."""
+        """更新可轮询的 run 状态，且不暴露私有的 agent 对象。"""
         now = time.time()
         current = self._run_statuses.get(run_id, {})
         current.update({
@@ -3793,7 +3747,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return current
 
     def _make_run_event_callback(self, run_id: str, loop: "asyncio.AbstractEventLoop"):
-        """Return a tool_progress_callback that pushes structured events to the run's SSE queue."""
+        """返回一个 tool_progress_callback，把结构化事件推送到该 run 的 SSE 队列。"""
         def _push(event: Dict[str, Any]) -> None:
             self._set_run_status(
                 run_id,
@@ -3834,23 +3788,23 @@ class APIServerAdapter(BasePlatformAdapter):
                     "timestamp": ts,
                     "text": preview or "",
                 })
-            # _thinking and subagent_progress are intentionally not forwarded
+            # _thinking 和 subagent_progress 有意不转发
 
         return _callback
 
     async def _handle_runs(self, request: "web.Request") -> "web.Response":
-        """POST /v1/runs — start an agent run, return run_id immediately."""
+        """POST /v1/runs —— 启动一个 agent run，立即返回 run_id。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
 
-        # Long-term memory scope header (see chat_completions for details).
+        # 长期记忆作用域头部（详见 chat_completions）。
         gateway_session_key, key_err = self._parse_session_key_header(request)
         if key_err is not None:
             return key_err
 
-        # Enforce concurrency limit (shared across all agent-serving
-        # endpoints; configurable via gateway.api_server.max_concurrent_runs).
+        # 强制并发上限（跨所有 agent 服务端点共享；可通过
+        # gateway.api_server.max_concurrent_runs 配置）。
         limited = self._concurrency_limited_response()
         if limited is not None:
             return limited
@@ -3871,8 +3825,8 @@ class APIServerAdapter(BasePlatformAdapter):
         instructions = body.get("instructions")
         previous_response_id = body.get("previous_response_id")
 
-        # Accept explicit conversation_history from the request body.
-        # Precedence: explicit conversation_history > previous_response_id.
+        # 接受来自请求体的显式 conversation_history。
+        # 优先级：显式 conversation_history > previous_response_id。
         conversation_history: List[Dict[str, str]] = []
         raw_history = body.get("conversation_history")
         if raw_history:
@@ -3900,15 +3854,14 @@ class APIServerAdapter(BasePlatformAdapter):
                 if instructions is None:
                     instructions = stored.get("instructions")
 
-        # When input is a multi-message array, extract all but the last
-        # message as conversation history (the last becomes user_message).
-        # Only fires when no explicit history was provided.
+        # 当 input 是多消息数组时，将除最后一条外的所有消息抽取为对话历史
+        # （最后一条成为 user_message）。仅在未提供显式历史时触发。
         if not conversation_history and isinstance(raw_input, list) and len(raw_input) > 1:
             for msg in raw_input[:-1]:
                 if isinstance(msg, dict) and msg.get("role") and msg.get("content"):
                     content = msg["content"]
                     if isinstance(content, list):
-                        # Flatten multi-part content blocks to text
+                        # 将多部分内容块拍平为文本
                         content = " ".join(
                             part.get("text", "") for part in content
                             if isinstance(part, dict) and part.get("type") == "text"
@@ -3928,7 +3881,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         event_cb = self._make_run_event_callback(run_id, loop)
 
-        # Also wire stream_delta_callback so message.delta events flow through.
+        # 同时接入 stream_delta_callback，使 message.delta 事件得以流通。
         def _text_cb(delta: Optional[str]) -> None:
             if delta is None:
                 return
@@ -3964,10 +3917,9 @@ class APIServerAdapter(BasePlatformAdapter):
 
                 def _approval_notify(approval_data: Dict[str, Any]) -> None:
                     event = dict(approval_data or {})
-                    # Redact credentials from the command before it enters the
-                    # SSE/API event stream — same egress bug as #48456, second
-                    # transport: API/desktop clients would otherwise receive the
-                    # raw command Tirith flagged. Reuse the gateway seam.
+                    # 在命令进入 SSE/API 事件流之前对其中的凭据进行打码 —— 与
+                    # #48456 同一类出口 bug，只是换了传输通道：否则 API/桌面
+                    # 客户端会收到 Tirith 标记的原始命令。复用 gateway 的接缝。
                     if "command" in event:
                         from gateway.run import _redact_approval_command
 
@@ -4001,9 +3953,8 @@ class APIServerAdapter(BasePlatformAdapter):
                     approval_token = None
                     session_tokens = []
                     try:
-                        # Bind approval/session identity for this API run via
-                        # contextvars so concurrent runs do not share process
-                        # environment state.
+                        # 通过 contextvar 为本次 API run 绑定审批/session 身份，
+                        # 使并发 run 不共享进程级的环境状态。
                         approval_token = set_current_session_key(approval_session_key)
                         session_tokens = self._bind_api_server_session(
                             session_key=approval_session_key,
@@ -4036,9 +3987,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     return r, u
 
                 result, usage = await asyncio.get_running_loop().run_in_executor(None, _run_sync)
-                # Check for structured failure (non-retryable client errors like
-                # 401/400 return failed=True instead of raising, so the except
-                # block below never fires — issue #15561).
+                # 检查结构化失败（像 401/400 这类不可重试的客户端错误会返回
+                # failed=True 而不是抛出异常，因此下方的 except 块永远不会触发
+                # —— #15561）。
                 if isinstance(result, dict) and result.get("failed"):
                     error_msg = result.get("error") or "agent run failed"
                     q.put_nowait({
@@ -4102,18 +4053,16 @@ class APIServerAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
             finally:
-                # If the asyncio wrapper is cancelled (for example via
-                # /stop), the executor thread can still be blocked waiting
-                # on an approval Event.  Unregistering here releases those
-                # waits immediately; the in-thread unregister is harmlessly
-                # idempotent on normal completion.
+                # 如果 asyncio 包装器被取消（例如通过 /stop），executor 线程
+                # 仍可能阻塞在等待一个 approval Event 上。在此反注册可以立即
+                # 释放这些等待；线程内的反注册在正常完成时是幂等的、无害的。
                 try:
                     from tools.approval import unregister_gateway_notify
 
                     unregister_gateway_notify(approval_session_key)
                 except Exception:
                     pass
-                # Sentinel: signal SSE stream to close
+                # 哨兵：通知 SSE 流关闭
                 try:
                     q.put_nowait(None)
                 except Exception:
@@ -4141,7 +4090,7 @@ class APIServerAdapter(BasePlatformAdapter):
         )
 
     async def _handle_get_run(self, request: "web.Request") -> "web.Response":
-        """GET /v1/runs/{run_id} — return pollable run status for external UIs."""
+        """GET /v1/runs/{run_id} —— 为外部 UI 返回可轮询的 run 状态。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -4156,14 +4105,14 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response(status)
 
     async def _handle_run_events(self, request: "web.Request") -> "web.StreamResponse":
-        """GET /v1/runs/{run_id}/events — SSE stream of structured agent lifecycle events."""
+        """GET /v1/runs/{run_id}/events —— 结构化 agent 生命周期事件的 SSE 流。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
 
         run_id = request.match_info["run_id"]
 
-        # Allow subscribing slightly before the run is registered (race condition window)
+        # 允许在 run 注册之前稍早订阅（竞态条件窗口）
         for _ in range(20):
             if run_id in self._run_streams:
                 break
@@ -4191,7 +4140,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     await response.write(b": keepalive\n\n")
                     continue
                 if event is None:
-                    # Run finished — send final SSE comment and close
+                    # run 结束 —— 发送最后的 SSE 注释并关闭
                     await response.write(b": stream closed\n\n")
                     break
                 payload = f"data: {json.dumps(event)}\n\n"
@@ -4206,7 +4155,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
 
     async def _handle_run_approval(self, request: "web.Request") -> "web.Response":
-        """POST /v1/runs/{run_id}/approval — resolve a pending run approval."""
+        """POST /v1/runs/{run_id}/approval —— 解决一个待处理的 run 审批。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -4294,7 +4243,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_stop_run(self, request: "web.Request") -> "web.Response":
-        """POST /v1/runs/{run_id}/stop — interrupt a running agent."""
+        """POST /v1/runs/{run_id}/stop —— 中断正在运行的 agent。"""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -4316,10 +4265,10 @@ class APIServerAdapter(BasePlatformAdapter):
 
         if task is not None and not task.done():
             task.cancel()
-            # Bounded wait: run_conversation() executes in the default
-            # executor thread which task.cancel() cannot preempt — we rely on
-            # agent.interrupt() above to break the loop. Cap the wait so a
-            # slow/unresponsive interrupt can't hang this handler.
+            # 有界等待：run_conversation() 在默认 executor 线程中执行，
+            # task.cancel() 无法抢占它 —— 我们依赖上方的
+            # agent.interrupt() 来打断循环。给等待设上限，避免一个缓慢/
+            # 无响应的 interrupt 把这个 handler 挂死。
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5.0)
             except asyncio.TimeoutError:
@@ -4334,7 +4283,7 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"run_id": run_id, "status": "stopping"})
 
     async def _sweep_orphaned_runs(self) -> None:
-        """Periodically clean up run streams that were never consumed."""
+        """定期清理从未被消费的 run 流。"""
         while True:
             await asyncio.sleep(60)
             now = time.time()
@@ -4369,11 +4318,11 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._run_statuses.pop(run_id, None)
 
     # ------------------------------------------------------------------
-    # BasePlatformAdapter interface
+    # BasePlatformAdapter 接口
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Start the aiohttp web server."""
+        """启动 aiohttp web 服务器。"""
         if not AIOHTTP_AVAILABLE:
             logger.warning("[%s] aiohttp not installed", self.name)
             return False
@@ -4389,7 +4338,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/capabilities", self._handle_capabilities)
             self._app.router.add_get("/v1/skills", self._handle_skills)
             self._app.router.add_get("/v1/toolsets", self._handle_toolsets)
-            # Session/client control surface (thin wrappers over SessionDB + _run_agent)
+            # Session/客户端控制面（SessionDB + _run_agent 的薄封装）
             self._app.router.add_get("/api/sessions", self._handle_list_sessions)
             self._app.router.add_post("/api/sessions", self._handle_create_session)
             self._app.router.add_get("/api/sessions/{session_id}", self._handle_get_session)
@@ -4403,7 +4352,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/v1/responses", self._handle_responses)
             self._app.router.add_get("/v1/responses/{response_id}", self._handle_get_response)
             self._app.router.add_delete("/v1/responses/{response_id}", self._handle_delete_response)
-            # Cron jobs management API
+            # Cron 任务管理 API
             self._app.router.add_get("/api/jobs", self._handle_list_jobs)
             self._app.router.add_post("/api/jobs", self._handle_create_job)
             self._app.router.add_get("/api/jobs/{job_id}", self._handle_get_job)
@@ -4413,23 +4362,22 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/resume", self._handle_resume_job)
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
 
-            # Chronos managed-cron fire webhook (NAS → agent). Authenticated by a
-            # NAS-minted JWT (NOT API_SERVER_KEY), so it has its own auth path.
+            # Chronos 托管 cron 的 fire webhook（NAS → agent）。由 NAS 签发
+            # 的 JWT 鉴权（而非 API_SERVER_KEY），因此它有自己的鉴权路径。
             if _CRON_AVAILABLE:
                 self._app.router.add_post("/api/cron/fire", self._handle_cron_fire)
-            # Structured event streaming
+            # 结构化事件流
             self._app.router.add_post("/v1/runs", self._handle_runs)
             self._app.router.add_get("/v1/runs/{run_id}", self._handle_get_run)
             self._app.router.add_get("/v1/runs/{run_id}/events", self._handle_run_events)
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
-            # Store the adapter after native routes are registered. Local Hermes-Relay
-            # bootstrap shims use this key as a feature-detection hook; registering
-            # native routes first lets those shims no-op instead of shadowing the
-            # upstream session-control handlers.
+            # 在注册原生路由之后再存储 adapter。本地的 Hermes-Relay 引导
+            # shim 把这个 key 用作特性探测钩子；先注册原生路由可让这些
+            # shim 变为空操作，而不是遮蔽上游的 session 控制 handler。
             self._app["api_server_adapter"] = self
 
-            # Start background sweep to clean up orphaned (unconsumed) run streams
+            # 启动后台清扫，清理孤立的（未被消费的）run 流
             sweep_task = asyncio.create_task(self._sweep_orphaned_runs())
             try:
                 self._background_tasks.add(sweep_task)
@@ -4438,9 +4386,8 @@ class APIServerAdapter(BasePlatformAdapter):
             if hasattr(sweep_task, "add_done_callback"):
                 sweep_task.add_done_callback(self._background_tasks.discard)
 
-            # Refuse to start without authentication. The API server can
-            # dispatch terminal-capable agent work, so every deployment needs
-            # an explicit API_SERVER_KEY regardless of bind address.
+            # 无鉴权则拒绝启动。API 服务器可以分派具备终端能力的 agent 工作，
+            # 因此每个部署都需要显式的 API_SERVER_KEY，无论绑定地址如何。
             if not self._api_key:
                 logger.error(
                     "[%s] Refusing to start: API_SERVER_KEY is required for the API server, "
@@ -4449,10 +4396,10 @@ class APIServerAdapter(BasePlatformAdapter):
                 )
                 return False
 
-            # Refuse to start network-accessible with a placeholder or weak key.
-            # Ported from openclaw/openclaw#64586; entropy floor raised to 16 in
-            # the June 2026 hermes-0day hardening (an 8-char key dispatching
-            # terminal-capable agent work on a public bind is brute-forceable).
+            # 在网络可访问的绑定上，若使用占位符或弱密钥则拒绝启动。
+            # 移植自 openclaw/openclaw#64586；在 2026 年 6 月的
+            # hermes-0day 加固中，熵下限提升到 16（在公网绑定上用一个 8
+            # 字符的密钥分派具备终端能力的 agent 工作是可暴力破解的）。
             if is_network_accessible(self._host) and self._api_key:
                 try:
                     from hermes_cli.auth import has_usable_secret
@@ -4471,13 +4418,12 @@ class APIServerAdapter(BasePlatformAdapter):
                 except ImportError:
                     pass
 
-            # Loud warning when a network-accessible API server runs against an
-            # unsandboxed local terminal backend. The API server can drive the
-            # agent's terminal/file tools as the host user; on a public bind
-            # that is the exact surface the hermes-0day campaign abused to write
-            # ~/.hermes/config.yaml and plant persistence. Sandboxing (Docker /
-            # remote backend) contains the blast radius. Warn, don't refuse —
-            # the operator may have an external firewall / strong key.
+            # 当网络可访问的 API 服务器运行在未沙箱化的本地终端后端上时，给出
+            # 显著告警。API 服务器可以以宿主用户的身份驱动 agent 的终端/文件
+            # 工具；在公网绑定上，这正是 hermes-0day 攻击活动所滥用、用于写入
+            # ~/.hermes/config.yaml 并植入持久化的那一面。沙箱化（Docker /
+            # 远程后端）可以控制影响范围。只告警、不拒绝 —— 运维方可能已配备
+            # 外部防火墙 / 强密钥。
             if is_network_accessible(self._host):
                 try:
                     from hermes_cli.config import load_config as _load_cfg
@@ -4499,7 +4445,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         self.name, self._host,
                     )
 
-            # Port conflict detection — fail fast if port is already in use
+            # 端口冲突检测 —— 端口已被占用则快速失败
             try:
                 with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
                     _s.settimeout(1)
@@ -4507,7 +4453,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 logger.error('[%s] Port %d already in use. Set a different port in config.yaml: platforms.api_server.port', self.name, self._port)
                 return False
             except (ConnectionRefusedError, OSError):
-                pass  # port is free
+                pass  # 端口空闲
 
             self._runner = web.AppRunner(self._app)
             await self._runner.setup()
@@ -4526,16 +4472,15 @@ class APIServerAdapter(BasePlatformAdapter):
             return False
 
     async def disconnect(self) -> None:
-        """Stop the aiohttp web server and release all owned resources.
+        """停止 aiohttp web 服务器并释放所有持有的资源。
 
-        Closes the ResponseStore SQLite connection in addition to stopping
-        the aiohttp web server. Without this, every adapter instance leaks
-        2 file descriptors (the database file and its WAL sidecar) — the
-        reconnect loop in ``gateway.run`` constructs a fresh adapter on
-        every retry, so 2 fds/retry × 300s backoff cap ≈ 12 fds/hour, which
-        exhausts the default 2560 fd limit after ~12h of failed reconnects
-        and turns the whole gateway into a zombie
-        (OSError: [Errno 24] Too many open files, #37011).
+        除了停止 aiohttp web 服务器之外，还会关闭 ResponseStore 的 SQLite
+        连接。如果不这么做，每个 adapter 实例都会泄漏 2 个文件描述符
+        （数据库文件及其 WAL sidecar）—— ``gateway.run`` 中的重连循环在
+        每次重试时都会构造一个新的 adapter，因此 2 个 fd/次重试 × 300s
+        退避上限 ≈ 12 个 fd/小时，这会在约 12 小时的失败重连之后耗尽默认
+        的 2560 fd 上限，并使整个 gateway 变成僵尸进程
+        （OSError: [Errno 24] Too many open files，#37011）。
         """
         self._mark_disconnected()
         if self._response_store is not None:
@@ -4562,12 +4507,12 @@ class APIServerAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """
-        Not used — HTTP request/response cycle handles delivery directly.
+        未使用 —— HTTP 请求/响应周期直接处理投递。
         """
         return SendResult(success=False, error="API server uses HTTP request/response, not send()")
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Return basic info about the API server."""
+        """返回 API 服务器的基本信息。"""
         return {
             "name": "API Server",
             "type": "api",

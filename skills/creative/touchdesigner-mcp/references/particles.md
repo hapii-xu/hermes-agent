@@ -1,125 +1,125 @@
-# Particles Reference
+# 粒子参考
 
-Particle systems in TouchDesigner — modern POPs (Particle Operators) and the legacy particleSOP path.
+TouchDesigner 中的粒子系统 —— 现代 POPs（粒子算子）和传统的 particleSOP 路径。
 
-For instancing static geometry (without per-instance lifetime/velocity), see `geometry-comp.md`. For GLSL-driven feedback simulations (no particle abstraction), see `operator-tips.md` (Feedback TOP section).
+关于静态几何体实例化（无每个实例的生命周期/速度），见 `geometry-comp.md`。关于 GLSL 驱动的反馈模拟（无粒子抽象），见 `operator-tips.md`（Feedback TOP 部分）。
 
-Always call `td_get_par_info` for the op type before setting params. Param names below reflect TD 2025.32 — verify before relying on them.
+在设置参数前始终调用 `td_get_par_info` 查询该算子类型。下方参数名对应 TD 2025.32 —— 依赖前请核实。
 
 ---
 
-## Two Paths: POPs vs. SOPs
+## 两条路径：POPs vs. SOPs
 
-| | **POP family** (modern) | **particleSOP** (legacy) |
+| | **POP 家族**（现代） | **particleSOP**（传统） |
 |---|---|---|
-| GPU? | Yes (compute) | No (CPU) |
-| Particle count | 100k+ comfortably | ~5k before slowdown |
-| API style | Source / Force / Solver / Render chain | Single op with many params |
-| Use for | New projects, anything intensive | Quick demos, low counts, TD < 2023 |
+| GPU？ | 是（compute） | 否（CPU） |
+| 粒子数量 | 轻松 10 万+ | 约 5 千开始变慢 |
+| API 风格 | Source / Force / Solver / Render 链 | 单个带大量参数的算子 |
+| 用于 | 新项目、任何密集场景 | 快速演示、低数量、TD < 2023 |
 
-**Default to POPs.** Only fall back to particleSOP if a POP variant of an op you need doesn't exist.
-
----
-
-## POP Pipeline Overview
-
-A POP system is a chain of operators inside a `geometryCOMP`:
-
-```
-popSourceTOP / popSourceSOP   ← spawn new particles
-        ↓
-popForceTOP (gravity, wind, etc.)
-        ↓
-popForceTOP (attractor, vortex, ...)
-        ↓
-popDeleteTOP (lifetime, bounds)
-        ↓
-popSolverTOP                  ← integrates velocity, updates positions
-        ↓
-[render via geometryCOMP / glslMAT instancing]
-```
-
-POP buffers carry standard channels: `P` (position), `v` (velocity), `life`, `id`, `Cd` (color), plus any custom channels you add.
+**默认用 POPs。** 仅当所需的某个算子没有 POP 版本时，才回退到 particleSOP。
 
 ---
 
-## Minimal POP Setup
+## POP 流水线概览
+
+一个 POP 系统是 `geometryCOMP` 内的一条算子链：
+
+```
+popSourceTOP / popSourceSOP   ← 生成新粒子
+        ↓
+popForceTOP（重力、风力等）
+        ↓
+popForceTOP（吸引子、涡旋……）
+        ↓
+popDeleteTOP（生命周期、边界）
+        ↓
+popSolverTOP                  ← 积分速度、更新位置
+        ↓
+[通过 geometryCOMP / glslMAT 实例化渲染]
+```
+
+POP 缓冲区携带标准通道：`P`（位置）、`v`（速度）、`life`、`id`、`Cd`（颜色），以及你添加的任意自定义通道。
+
+---
+
+## 最小 POP 设置
 
 ```python
-# Create a geometry COMP to hold the POP network
+# 创建一个 geometry COMP 来承载 POP 网络
 geo = root.create(geometryCOMP, 'particles_geo')
 
-# 1. Source — emit particles from a point
+# 1. 源 —— 从一个点发射粒子
 src = geo.create(popSourceTOP, 'src')
-src.par.birthrate = 500          # per second
-src.par.life = 4.0                # seconds
+src.par.birthrate = 500          # 每秒
+src.par.life = 4.0                # 秒
 
-# 2. Gravity force
+# 2. 重力
 grav = geo.create(popForceTOP, 'gravity')
 grav.par.forcetype = 'gravity'
 grav.par.fy = -9.8
 
-# 3. Lifetime cleanup
+# 3. 生命周期清理
 delp = geo.create(popDeleteTOP, 'cull')
-delp.par.condition = 'lifeleq'    # delete when life <= 0
+delp.par.condition = 'lifeleq'    # 当 life <= 0 时删除
 delp.par.value = 0
 
-# 4. Solver
+# 4. 求解器
 solv = geo.create(popSolverTOP, 'solver')
 solv.par.timestep = 'frame'
 
-# Wire: source → force → delete → solver
+# 连线：source → force → delete → solver
 src.outputConnectors[0].connect(grav.inputConnectors[0])
 grav.outputConnectors[0].connect(delp.inputConnectors[0])
 delp.outputConnectors[0].connect(solv.inputConnectors[0])
 ```
 
-The `popSolverTOP` output IS the live particle buffer. Render it via `glslMAT` instancing on a small SOP (sphere, point) as the "shape" of each particle.
+`popSolverTOP` 的输出就是实时粒子缓冲区。通过在小型 SOP（球体、点）上用 `glslMAT` 实例化来渲染，把每个粒子当作一个“形状”。
 
 ---
 
-## Common Forces
+## 常见力
 
-| Force type | Effect | Common params |
+| 力类型 | 效果 | 常用参数 |
 |---|---|---|
-| `gravity` | Constant directional pull | `fx`, `fy`, `fz` |
-| `wind` | Constant velocity addition | `wx`, `wy`, `wz` |
-| `drag` | Velocity damping over time | `dragstrength` |
-| `noise` | Curl-noise turbulence | `noiseamp`, `noisefreq`, `noiseseed` |
-| `attractor` | Pull toward a point | `position`, `strength`, `falloff` |
-| `vortex` | Swirl around an axis | `axis`, `strength` |
-| `point` (custom) | GLSL-evaluated arbitrary force | via `popforceadvancedTOP` |
+| `gravity` | 恒定方向拉力 | `fx`、`fy`、`fz` |
+| `wind` | 恒定速度叠加 | `wx`、`wy`、`wz` |
+| `drag` | 随时间阻尼速度 | `dragstrength` |
+| `noise` | 卷曲噪声湍流 | `noiseamp`、`noisefreq`、`noiseseed` |
+| `attractor` | 朝某点拉拽 | `position`、`strength`、`falloff` |
+| `vortex` | 绕轴旋转 | `axis`、`strength` |
+| `point`（自定义） | GLSL 求值的任意力 | 通过 `popforceadvancedTOP` |
 
-Stack multiple `popForceTOP`s in series — each modifies velocity additively.
+多个 `popForceTOP` 串联叠加 —— 每个加性地修改速度。
 
 ---
 
-## Lifecycle Patterns
+## 生命周期模式
 
-### Continuous emission (e.g. smoke plume)
+### 连续发射（如烟柱）
 
 ```python
 src.par.birthrate = 800
-src.par.life = 6.0       # variance via 'lifevariance'
+src.par.life = 6.0       # 通过 'lifevariance' 加方差
 src.par.lifevariance = 1.5
 ```
 
-### Burst emission (e.g. explosion)
+### 爆发式发射（如爆炸）
 
 ```python
-src.par.birthrate = 0    # no continuous emission
-src.par.burst.pulse()    # one burst on demand (verify param name)
+src.par.birthrate = 0    # 不连续发射
+src.par.burst.pulse()    # 按需一次性爆发（核实参数名）
 src.par.burstcount = 5000
 src.par.life = 1.5
 ```
 
-### Beat-triggered burst
+### 节拍触发的爆发
 
-Wire a `triggerCHOP` (from audio or MIDI) to pulse the burst:
+把一个 `triggerCHOP`（来自音频或 MIDI）接到脉冲化爆发：
 
 ```python
 op('/project1/audio_kick_trigger').outputConnectors[0].connect(...)
-# Then via a chopExecuteDAT, on each kick:
+# 然后通过 chopExecuteDAT，每次底鼓：
 def offToOn(channel, sampleIndex, val, prev):
     op('/project1/particles_geo/src').par.burst.pulse()
     return
@@ -127,70 +127,70 @@ def offToOn(channel, sampleIndex, val, prev):
 
 ---
 
-## Rendering Particles
+## 渲染粒子
 
-### Point Sprites (simplest)
+### 点精灵（最简单）
 
 ```python
-# Inside the geometryCOMP, render the solver output directly
-# The geo's first SOP child becomes the geometry
-# But for POPs, we typically render via glslMAT on a small "shape"
+# 在 geometryCOMP 内，直接渲染求解器输出
+# geo 的第一个 SOP 子级成为几何体
+# 但对 POPs，我们通常在小型“形状”上用 glslMAT 渲染
 
-# Simple billboard sphere per particle:
+# 每个粒子的简易广告牌球体：
 shape = geo.create(sphereSOP, 'shape')
 shape.par.rad = 0.05
-shape.par.rows = 6; shape.par.cols = 6   # low-poly to keep it fast
+shape.par.rows = 6; shape.par.cols = 6   # 低面数以保持快速
 
-# Material that uses POP buffer for instancing
+# 用 POP 缓冲区做实例化的材质
 mat = root.create(glslMAT, 'particle_mat')
-# Configure mat.par.instancingTOP = solver output (verify param name)
+# 配置 mat.par.instancingTOP = 求解器输出（核实参数名）
 ```
 
-The exact instancing setup varies by TD version — call `td_get_hints(topic='popInstancing')` (or `popRender` / `instancing` — try a few).
+确切的实例化设置随 TD 版本不同 —— 调用 `td_get_hints(topic='popInstancing')`（或 `popRender` / `instancing` —— 多试几个）。
 
-### GPU Sprites via glslcopyPOP
+### 通过 glslcopyPOP 实现 GPU 精灵
 
-For dense smoke/fire-like effects, use a `glslcopyPOP` that writes per-particle color/size from a compute shader, then render as point sprites with additive blending in a `renderTOP`.
+对于密集的烟/火类效果，用 `glslcopyPOP` 从 compute 着色器写入每粒子的颜色/尺寸，再在 `renderTOP` 中以相加混合渲染为点精灵。
 
 ---
 
-## Collisions
+## 碰撞
 
 ```python
-# Collision detection against an SOP
+# 对一个 SOP 做碰撞检测
 coll = geo.create(popCollideTOP, 'ground_coll')
-coll.par.collidewithsop = '/project1/ground_geo'  # path to colliding SOP
+coll.par.collidewithsop = '/project1/ground_geo'  # 碰撞 SOP 的路径
 coll.par.bounce = 0.3
 coll.par.friction = 0.1
-# Insert between force and solver
+# 插在 force 与 solver 之间
 ```
 
-For plane/box collisions only, use `popPlaneCollideTOP` (cheaper).
+若仅需平面/盒子碰撞，用 `popPlaneCollideTOP`（更省）。
 
 ---
 
-## Custom Per-Particle Data
+## 自定义每粒子数据
 
-Add a custom channel via `popAttribCreateTOP` (or by writing through `glslcopyPOP`):
+通过 `popAttribCreateTOP`（或用 `glslcopyPOP` 写入）添加自定义通道：
 
 ```python
-# Add a "phase" attribute initialized random per-particle, used in render shader
+# 添加一个每粒子随机初始化的 "phase" 属性，供渲染着色器使用
 attr = geo.create(popAttribCreateTOP, 'add_phase')
 attr.par.attribname = 'phase'
-attr.par.value0 = 'rand(@id)'   # expression in TD's POP attribute language
+attr.par.value0 = 'rand(@id)'   # TD 的 POP 属性语言表达式
 ```
 
-Then in the render shader, `texture(sTDPOPInputs[0].phase, ...)` (or whichever sampler convention your TD version uses — verify with `td_get_docs(topic='pops')`).
+然后在渲染着色器中 `texture(sTDPOPInputs[0].phase, ...)`（或你的 TD 版本所用的采样器约定 —— 用 `td_get_docs(topic='pops')` 核实）。
 
 ---
 
-## Legacy particleSOP (Use Sparingly)
+## 传统 particleSOP（谨慎使用）
 
-For quick demos or low-count systems:
+用于快速演示或低数量系统：
 
 ```python
-# Inside a geo
-psrc = geo.create(addSOP, 'point_src')      # source: a single point
+# 在一个 geo 内
+psrc = geo.create(addSOP, 'point_src')      # 源：单个点
 psrc.par.points = '0 0 0'
 
 part = geo.create(particleSOP, 'particles')
@@ -201,45 +201,45 @@ part.par.windx = 0.5
 part.inputConnectors[0].connect(psrc)
 ```
 
-CPU-bound. Beyond ~5,000 active particles you'll see frame drops.
+基于 CPU。超过约 5000 个活动粒子就会出现掉帧。
 
 ---
 
-## Pitfalls
+## 陷阱
 
-1. **Particles don't appear** — usually a render-side issue. Check via `td_get_screenshot` on the solver output (renders the buffer as a TOP-like view in newer TD). Then check the `geometryCOMP`'s render path.
-2. **Burst won't fire** — verify the `burst` param is a pulse, not a toggle. Pulses must use `.pulse()`, not `= True`.
-3. **Particles teleport on first frame** — uninitialized velocity. Set `popSourceTOP.par.initialvelocityX/Y/Z` or zero them explicitly.
-4. **Gravity feels wrong** — TD's "1 unit" depends on your scene scale. Start with `fy = -1.0` and scale up rather than using real-world 9.8.
-5. **High birthrate = stuttering** — birthrate is per-second, not per-frame. At 60fps, `birthrate = 6000` is 100/frame which is fine; `birthrate = 600000` will tank.
-6. **POP solver order matters** — forces apply in the order they appear in the chain. Putting gravity AFTER drag dampens gravity itself; usually not what you want.
-7. **Instancing param name varies** — `mat.par.instancingTOP` vs. `mat.par.instanceop` vs. `mat.par.instances` differs across TD versions. Always check `td_get_par_info(op_type='glslMAT')`.
-8. **Cooking dependency loops** — POP solvers create implicit time-loops. The "cook dependency loop" warning is expected and harmless for POPs.
-9. **CHOP-driven force values** — when a force param is expression-bound to a CHOP (e.g., audio-reactive gravity), make sure the CHOP cooks before the solver. If not, force lags by one frame.
+1. **粒子不显示** —— 通常是渲染侧问题。对求解器输出用 `td_get_screenshot` 检查（较新的 TD 会把缓冲区渲染为类 TOP 视图）。再检查 `geometryCOMP` 的渲染路径。
+2. **爆发不触发** —— 核实 `burst` 参数是脉冲而非切换。脉冲必须用 `.pulse()`，而不是 `= True`。
+3. **粒子在首帧瞬移** —— 速度未初始化。设置 `popSourceTOP.par.initialvelocityX/Y/Z`，或显式置零。
+4. **重力感觉不对** —— TD 的“1 个单位”取决于你的场景尺度。从 `fy = -1.0` 起步再放大，而不是直接用现实世界的 9.8。
+5. **高出生率 = 卡顿** —— birthrate 是每秒，不是每帧。在 60fps 下，`birthrate = 6000` 相当于 100/帧，没问题；`birthrate = 600000` 会拖垮。
+6. **POP 求解器顺序很重要** —— 力按链中顺序施加。把重力放在 drag 之后会同时阻尼重力本身；通常不是你想要的。
+7. **实例化参数名各异** —— `mat.par.instancingTOP` vs. `mat.par.instanceop` vs. `mat.par.instances` 在不同 TD 版本中不同。始终用 `td_get_par_info(op_type='glslMAT')` 检查。
+8. **cook 依赖循环** —— POP 求解器会创建隐式时间循环。出现“cook dependency loop”警告对 POPs 是预期且无害的。
+9. **CHOP 驱动的力值** —— 当力参数被表达式绑定到 CHOP（如音频响应的重力）时，确保该 CHOP 在求解器之前 cook。否则力会滞后一帧。
 
 ---
 
-## Performance Targets
+## 性能目标
 
-| Particle count | Setup | Frame budget @ 60fps |
+| 粒子数量 | 设置 | 60fps 帧预算 |
 |---|---|---|
-| < 1k | particleSOP fine | trivial |
-| 1k - 10k | POPs, simple forces | ~2-5ms |
-| 10k - 100k | POPs, GPU-only forces | ~5-15ms |
-| 100k+ | `glslcopyPOP`, custom compute | ~10-25ms |
-| 1M+ | Custom GPU buffer, no POP framework | depends on shader |
+| < 1k | particleSOP 即可 | 微不足道 |
+| 1k - 10k | POPs、简单力 | 约 2-5ms |
+| 10k - 10 万 | POPs、仅 GPU 力 | 约 5-15ms |
+| 10 万+ | `glslcopyPOP`、自定义 compute | 约 10-25ms |
+| 100 万+ | 自定义 GPU 缓冲区、不用 POP 框架 | 取决于着色器 |
 
-Use `td_get_perf` to find which op in the POP chain is the bottleneck.
+用 `td_get_perf` 找出 POP 链中的瓶颈算子。
 
 ---
 
-## Quick Recipes
+## 快速配方
 
-| Goal | Pipeline |
+| 目标 | 流水线 |
 |---|---|
-| Smoke plume | `popSourceTOP` (point) → gravity + wind + noise → `popDeleteTOP` (life) → solver → glslMAT instancing |
-| Beat-triggered burst | `triggerCHOP` (audio) → chopExecuteDAT pulses `popSourceTOP.par.burst` |
-| Fireworks shell | Burst at point → drag + gravity → secondary burst on lifetime threshold |
-| Snow/rain | Continuous emission across XZ plane (high y), gravity + small wind, infinite life box-deleted |
-| Sparks | Burst, very short life (0.3s), bright additive render, motion blur via feedback |
-| Audio particles | Birthrate driven by audio envelope, color driven by frequency band |
+| 烟柱 | `popSourceTOP`（点）→ 重力 + 风 + 噪声 → `popDeleteTOP`（生命）→ 求解器 → glslMAT 实例化 |
+| 节拍触发爆发 | `triggerCHOP`（音频）→ chopExecuteDAT 脉冲化 `popSourceTOP.par.burst` |
+| 烟花弹 | 在某点爆发 → drag + 重力 → 到达生命周期阈值时二次爆发 |
+| 雪/雨 | 跨 XZ 平面（高 y）连续发射、重力 + 微风、无限生命由盒子删除 |
+| 火花 | 爆发、极短生命（0.3s）、明亮相加渲染、用反馈做运动模糊 |
+| 音频粒子 | 出生率由音频包络驱动、颜色由频段驱动 |

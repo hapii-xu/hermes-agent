@@ -1,38 +1,38 @@
-# WebGL and 3D
+# WebGL 与 3D
 
-## WebGL Mode Setup
+## WebGL 模式设置
 
 ```javascript
 function setup() {
   createCanvas(1920, 1080, WEBGL);
-  // Origin is CENTER, not top-left
-  // Y-axis points UP (opposite of 2D mode)
-  // Z-axis points toward viewer
+  // 原点在中心，不是左上角
+  // Y 轴朝上（与 2D 模式相反）
+  // Z 轴朝向观看者
 }
 ```
 
-### Coordinate Conversion (WEBGL to P2D-like)
+### 坐标转换（WEBGL 转为类 P2D）
 
 ```javascript
 function draw() {
-  translate(-width/2, -height/2);  // shift origin to top-left
-  // Now coordinates work like P2D
+  translate(-width/2, -height/2);  // 把原点移到左上角
+  // 此后坐标与 P2D 一致
 }
 ```
 
-## 3D Primitives
+## 3D 图元
 
 ```javascript
-box(w, h, d);             // rectangular prism
+box(w, h, d);             // 长方体
 sphere(radius, detailX, detailY);
 cylinder(radius, height, detailX, detailY);
 cone(radius, height, detailX, detailY);
 torus(radius, tubeRadius, detailX, detailY);
-plane(width, height);     // flat rectangle
-ellipsoid(rx, ry, rz);    // stretched sphere
+plane(width, height);     // 平面矩形
+ellipsoid(rx, ry, rz);    // 拉伸的球体
 ```
 
-### 3D Transforms
+### 3D 变换
 
 ```javascript
 push();
@@ -45,25 +45,25 @@ push();
 pop();
 ```
 
-## Camera
+## 相机
 
-### Default Camera
+### 默认相机
 
 ```javascript
 camera(
-  eyeX, eyeY, eyeZ,       // camera position
-  centerX, centerY, centerZ, // look-at target
-  upX, upY, upZ             // up direction
+  eyeX, eyeY, eyeZ,       // 相机位置
+  centerX, centerY, centerZ, // 注视目标
+  upX, upY, upZ             // 朝上方向
 );
 
-// Default: camera(0, 0, (height/2)/tan(PI/6), 0, 0, 0, 0, 1, 0)
+// 默认：camera(0, 0, (height/2)/tan(PI/6), 0, 0, 0, 0, 1, 0)
 ```
 
-### Orbit Control
+### 轨道控制
 
 ```javascript
 function draw() {
-  orbitControl();  // mouse drag to rotate, scroll to zoom
+  orbitControl();  // 鼠标拖拽旋转，滚动缩放
   box(200);
 }
 ```
@@ -80,96 +80,96 @@ function setup() {
   cam.lookAt(0, 0, 0);
 }
 
-// Camera methods
+// 相机方法
 cam.setPosition(x, y, z);
 cam.lookAt(x, y, z);
-cam.move(dx, dy, dz);      // relative to camera orientation
-cam.pan(angle);              // horizontal rotation
-cam.tilt(angle);             // vertical rotation
-cam.roll(angle);             // z-axis rotation
-cam.slerp(otherCam, t);     // smooth interpolation between cameras
+cam.move(dx, dy, dz);      // 相对相机朝向移动
+cam.pan(angle);              // 水平旋转
+cam.tilt(angle);             // 垂直旋转
+cam.roll(angle);             // z 轴旋转
+cam.slerp(otherCam, t);     // 相机之间的平滑插值
 ```
 
-### Perspective and Orthographic
+### 透视与正交
 
 ```javascript
-// Perspective (default)
+// 透视（默认）
 perspective(fov, aspect, near, far);
-// fov: field of view in radians (PI/3 default)
-// aspect: width/height
-// near/far: clipping planes
+// fov：视野弧度（默认 PI/3）
+// aspect：宽/高
+// near/far：裁剪平面
 
-// Orthographic (no depth foreshortening)
+// 正交（无深度透视收缩）
 ortho(-width/2, width/2, -height/2, height/2, 0, 2000);
 ```
 
-## Lighting
+## 光照
 
 ```javascript
-// Ambient (uniform, no direction)
-ambientLight(50, 50, 50);     // dim fill light
+// 环境光（均匀、无方向）
+ambientLight(50, 50, 50);     // 暗淡补光
 
-// Directional (parallel rays, like sun)
-directionalLight(255, 255, 255, 0, -1, 0);  // color + direction
+// 平行光（平行光线，如太阳）
+directionalLight(255, 255, 255, 0, -1, 0);  // 颜色 + 方向
 
-// Point (radiates from position)
-pointLight(255, 200, 150, 200, -300, 400);   // color + position
+// 点光源（从位置辐射）
+pointLight(255, 200, 150, 200, -300, 400);   // 颜色 + 位置
 
-// Spot (cone from position toward target)
-spotLight(255, 255, 255,       // color
-          0, -300, 300,         // position
-          0, 1, -1,             // direction
-          PI / 4, 5);           // angle, concentration
+// 聚光灯（从位置朝目标的锥形）
+spotLight(255, 255, 255,       // 颜色
+          0, -300, 300,         // 位置
+          0, 1, -1,             // 方向
+          PI / 4, 5);           // 角度，聚光度
 
-// Image-based lighting
+// 基于图像的光照
 imageLight(myHDRI);
 
-// No lights (flat shading)
+// 无光照（平面着色）
 noLights();
 
-// Quick default lighting
+// 快速默认光照
 lights();
 ```
 
-### Three-Point Lighting Setup
+### 三点照明设置
 
 ```javascript
 function setupLighting() {
-  ambientLight(30, 30, 40);                    // dim blue fill
+  ambientLight(30, 30, 40);                    // 暗淡蓝色补光
 
-  // Key light (main, warm)
+  // 主光（主要，暖色）
   directionalLight(255, 240, 220, -1, -1, -1);
 
-  // Fill light (softer, cooler, opposite side)
+  // 补光（更柔、更冷，在对侧）
   directionalLight(80, 100, 140, 1, -0.5, -1);
 
-  // Rim light (behind subject, for edge definition)
+  // 轮廓光（在主体后方，用于勾勒边缘）
   pointLight(200, 200, 255, 0, -200, -400);
 }
 ```
 
-## Materials
+## 材质
 
 ```javascript
-// Normal material (debug — colors from surface normals)
+// 法线材质（调试——颜色来自表面法线）
 normalMaterial();
 
-// Ambient (responds only to ambientLight)
+// 环境材质（只响应 ambientLight）
 ambientMaterial(200, 100, 100);
 
-// Emissive (self-lit, no shadows)
+// 自发光材质（自发光，无阴影）
 emissiveMaterial(255, 0, 100);
 
-// Specular (shiny reflections)
+// 镜面材质（闪亮反射）
 specularMaterial(255);
-shininess(50);                // 1-200 (higher = tighter highlight)
-metalness(100);               // 0-200 (metallic reflection)
+shininess(50);                // 1-200（越高高光越紧）
+metalness(100);               // 0-200（金属反射）
 
-// Fill works too (no lighting response)
+// fill 也有效（不响应光照）
 fill(255, 0, 0);
 ```
 
-### Texture
+### 纹理
 
 ```javascript
 let img;
@@ -177,14 +177,14 @@ function preload() { img = loadImage('texture.jpg'); }
 
 function draw() {
   texture(img);
-  textureMode(NORMAL);  // UV coords 0-1
-  // textureMode(IMAGE); // UV coords in pixels
-  textureWrap(REPEAT);  // or CLAMP, MIRROR
+  textureMode(NORMAL);  // UV 坐标 0-1
+  // textureMode(IMAGE); // UV 坐标用像素
+  textureWrap(REPEAT);  // 或 CLAMP、MIRROR
   box(200);
 }
 ```
 
-## Custom Geometry
+## 自定义几何体
 
 ### buildGeometry
 
@@ -204,7 +204,7 @@ function setup() {
 }
 
 function draw() {
-  model(myShape);  // renders once-built geometry efficiently
+  model(myShape);  // 高效渲染一次性构建的几何体
 }
 ```
 
@@ -212,16 +212,16 @@ function draw() {
 
 ```javascript
 beginGeometry();
-  // draw shapes here
+  // 在这里绘制形状
   box(50);
   translate(100, 0, 0);
   sphere(30);
 let geo = endGeometry();
 
-model(geo);  // reuse
+model(geo);  // 复用
 ```
 
-### Manual Geometry (p5.Geometry)
+### 手动几何体（p5.Geometry）
 
 ```javascript
 let geo = new p5.Geometry(detailX, detailY, function() {
@@ -241,9 +241,9 @@ let geo = new p5.Geometry(detailX, detailY, function() {
 });
 ```
 
-## GLSL Shaders
+## GLSL 着色器
 
-### createShader (Vertex + Fragment)
+### createShader（顶点 + 片段）
 
 ```javascript
 let myShader;
@@ -290,9 +290,9 @@ function draw() {
 }
 ```
 
-### createFilterShader (Post-Processing)
+### createFilterShader（后期处理）
 
-Simpler — only needs a fragment shader. Automatically gets the canvas as a texture.
+更简单——只需要片段着色器。会自动把画布作为纹理传入。
 
 ```javascript
 let blurShader;
@@ -319,30 +319,30 @@ function setup() {
 }
 
 function draw() {
-  // Draw scene normally
+  // 正常绘制场景
   background(0);
   fill(255, 0, 0);
   sphere(100);
 
-  // Apply post-processing filter
+  // 应用后期处理滤镜
   filter(blurShader);
 }
 ```
 
-### Common Shader Uniforms
+### 常见着色器 uniform
 
 ```javascript
 myShader.setUniform('uTime', millis() / 1000.0);
 myShader.setUniform('uResolution', [width, height]);
 myShader.setUniform('uMouse', [mouseX / width, mouseY / height]);
-myShader.setUniform('uTexture', myGraphics);  // pass p5.Graphics as texture
-myShader.setUniform('uValue', 0.5);           // float
+myShader.setUniform('uTexture', myGraphics);  // 把 p5.Graphics 作为纹理传入
+myShader.setUniform('uValue', 0.5);           // 浮点
 myShader.setUniform('uColor', [1.0, 0.0, 0.5, 1.0]); // vec4
 ```
 
-### Shader Recipes
+### 着色器配方
 
-**Chromatic Aberration:**
+**色差：**
 ```glsl
 vec4 r = texture2D(tex0, vTexCoord + vec2(0.005, 0.0));
 vec4 g = texture2D(tex0, vTexCoord);
@@ -350,21 +350,21 @@ vec4 b = texture2D(tex0, vTexCoord - vec2(0.005, 0.0));
 gl_FragColor = vec4(r.r, g.g, b.b, 1.0);
 ```
 
-**Vignette:**
+**暗角：**
 ```glsl
 float d = distance(vTexCoord, vec2(0.5));
 float v = smoothstep(0.7, 0.4, d);
 gl_FragColor = texture2D(tex0, vTexCoord) * v;
 ```
 
-**Scanlines:**
+**扫描线：**
 ```glsl
 float scanline = sin(vTexCoord.y * uResolution.y * 3.14159) * 0.04;
 vec4 col = texture2D(tex0, vTexCoord);
 gl_FragColor = col - scanline;
 ```
 
-## Framebuffers
+## 帧缓冲
 
 ```javascript
 let fbo;
@@ -375,20 +375,20 @@ function setup() {
 }
 
 function draw() {
-  // Render to framebuffer
+  // 渲染到帧缓冲
   fbo.begin();
   clear();
   rotateY(frameCount * 0.01);
   box(200);
   fbo.end();
 
-  // Use framebuffer as texture
+  // 把帧缓冲作为纹理使用
   texture(fbo.color);
   plane(width, height);
 }
 ```
 
-### Multi-Pass Rendering
+### 多通道渲染
 
 ```javascript
 let sceneBuffer, blurBuffer;
@@ -400,7 +400,7 @@ function setup() {
 }
 
 function draw() {
-  // Pass 1: render scene
+  // 通道 1：渲染场景
   sceneBuffer.begin();
   clear();
   lights();
@@ -408,7 +408,7 @@ function draw() {
   box(200);
   sceneBuffer.end();
 
-  // Pass 2: blur
+  // 通道 2：模糊
   blurBuffer.begin();
   shader(blurShader);
   blurShader.setUniform('uTexture', sceneBuffer.color);
@@ -416,7 +416,7 @@ function draw() {
   resetShader();
   blurBuffer.end();
 
-  // Final: composite
+  // 最终：合成
   texture(blurBuffer.color);
   plane(width, height);
 }

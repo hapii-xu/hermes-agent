@@ -206,14 +206,14 @@ async def download_url(
     """
     下载 URL 内容，返回 (bytes, content_type)。
 
-    Args:
+    参数：
         url:          HTTP(S) URL
         max_size_mb:  最大允许大小（MB），超过则抛出异常
 
-    Returns:
+    返回：
         (data_bytes, content_type_string)
 
-    Raises:
+    异常：
         ValueError:  内容超过大小限制
         httpx.HTTPError: 网络/HTTP 错误
     """
@@ -266,7 +266,7 @@ def _cos_sign(
     构建 COS 请求签名（q-sign-algorithm=sha1 方案）。
     参考：https://cloud.tencent.com/document/product/436/7778
 
-    Args:
+    参数：
         method:         HTTP 方法（小写，如 "put"）
         path:           URL 路径（URL encode 后的小写）
         params:         URL 查询参数 dict（用于签名）
@@ -276,20 +276,20 @@ def _cos_sign(
         start_time:     签名起始 Unix 时间戳（默认 now）
         expire_seconds: 签名有效期（秒，默认 3600）
 
-    Returns:
+    返回：
         Authorization header 值（完整字符串）
     """
     now = int(time.time())
     q_sign_time = f"{start_time or now};{(start_time or now) + expire_seconds}"
 
-    # Step 1: SignKey = HMAC-SHA1(SecretKey, q-sign-time)
+    # 步骤 1：SignKey = HMAC-SHA1(SecretKey, q-sign-time)
     sign_key = hmac.new(
         secret_key.encode("utf-8"),
         q_sign_time.encode("utf-8"),
         hashlib.sha1,
     ).hexdigest()
 
-    # Step 2: HttpString
+    # 步骤 2：HttpString
     # 参数和头部需按字典序排列，key 小写
     sorted_params = sorted((k.lower(), urllib.parse.quote(str(v), safe="") ) for k, v in params.items())
     sorted_headers = sorted((k.lower(), urllib.parse.quote(str(v), safe="") ) for k, v in headers.items())
@@ -307,7 +307,7 @@ def _cos_sign(
         "",
     ])
 
-    # Step 3: StringToSign = sha1 hash of HttpString
+    # 步骤 3：StringToSign = HttpString 的 sha1 摘要
     sha1_of_http = hashlib.sha1(http_string.encode("utf-8")).hexdigest()
     string_to_sign = "\n".join([
         "sha1",
@@ -316,7 +316,7 @@ def _cos_sign(
         "",
     ])
 
-    # Step 4: Signature = HMAC-SHA1(SignKey, StringToSign)
+    # 步骤 4：Signature = HMAC-SHA1(SignKey, StringToSign)
     signature = hmac.new(
         sign_key.encode("utf-8"),
         string_to_sign.encode("utf-8"),
@@ -348,7 +348,7 @@ async def get_cos_credentials(
     """
     调用 genUploadInfo 接口获取 COS 临时密钥及上传配置。
 
-    Args:
+    参数：
         app_key:        应用 Key（用于 X-ID 头）
         api_domain:     API 域名（如 https://bot.yuanbao.tencent.com）
         token:          当前有效的签票 token（X-Token 头）
@@ -356,7 +356,7 @@ async def get_cos_credentials(
         file_id:        客户端生成的唯一文件 ID（不传则自动生成）
         bot_id:         Bot 账号 ID（用于 X-ID 头）
 
-    Returns:
+    返回：
         COS 上传配置 dict，包含以下字段：
             bucketName         (str)  — COS Bucket 名称
             region             (str)  — COS 地域
@@ -369,7 +369,7 @@ async def get_cos_credentials(
             resourceUrl        (str)  — 上传后的公网访问 URL
             resourceID         (str)  — 资源 ID（可选）
 
-    Raises:
+    异常：
         RuntimeError: 接口返回非 0 code 或字段缺失
     """
     if file_id is None:
@@ -426,7 +426,7 @@ async def upload_to_cos(
     通过 httpx PUT 请求将文件上传到 COS。
     使用临时凭证（tmpSecretId/tmpSecretKey/sessionToken）构建 HMAC-SHA1 签名。
 
-    Args:
+    参数：
         file_bytes:   文件二进制内容
         filename:     文件名（用于辅助计算 MIME、UUID）
         content_type: MIME 类型（如 "image/jpeg"）
@@ -441,7 +441,7 @@ async def upload_to_cos(
         bucket:       COS Bucket 名称（如 chatbot-1234567890）
         region:       COS 地域（如 ap-guangzhou）
 
-    Returns:
+    返回：
         上传结果 dict，包含：
             url       (str)           — COS 公网访问 URL
             uuid      (str)           — 文件内容 MD5
@@ -449,7 +449,7 @@ async def upload_to_cos(
             width     (int, optional) — 图片宽度（仅图片）
             height    (int, optional) — 图片高度（仅图片）
 
-    Raises:
+    异常：
         httpx.HTTPStatusError: COS 返回非 2xx 状态
         RuntimeError:          credentials 字段缺失
     """
@@ -565,7 +565,7 @@ def build_image_msg_body(
     构建腾讯 IM TIMImageElem 消息体。
     参考：https://cloud.tencent.com/document/product/269/2720
 
-    Args:
+    参数：
         url:       图片公网访问 URL（COS resourceUrl）
         uuid:      文件 UUID（MD5 或其他唯一标识）
         filename:  文件名（uuid 为空时作为备用）
@@ -574,7 +574,7 @@ def build_image_msg_body(
         height:    图片高度（像素）
         mime_type: MIME 类型（用于确定 image_format）
 
-    Returns:
+    返回：
         TIMImageElem 消息体列表（适合直接放入 msg_body）
     """
     _uuid = uuid or filename or _basename_from_url(url) or "image"
@@ -610,13 +610,13 @@ def build_file_msg_body(
     构建腾讯 IM TIMFileElem 消息体。
     参考：https://cloud.tencent.com/document/product/269/2720
 
-    Args:
+    参数：
         url:      文件公网访问 URL（COS resourceUrl）
         filename: 文件名（含扩展名）
         uuid:     文件 UUID（MD5 或其他唯一标识，不传则使用 filename）
         size:     文件大小（字节）
 
-    Returns:
+    返回：
         TIMFileElem 消息体列表（适合直接放入 msg_body）
     """
     _uuid = uuid or filename

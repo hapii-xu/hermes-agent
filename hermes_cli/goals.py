@@ -1,30 +1,27 @@
-"""Persistent session goals — the Ralph loop for Hermes.
+"""持久化会话目标 — Hermes 的 Ralph 循环。
 
-A goal is a free-form user objective that stays active across turns. After
-each turn completes, a small judge call asks an auxiliary model "is this
-goal satisfied by the assistant's last response?". If not, Hermes feeds a
-continuation prompt back into the same session and keeps working until the
-goal is done, turn budget is exhausted, the user pauses/clears it, or the
-user sends a new message (which takes priority and pauses the goal loop).
+目标是一个自由形式的用户意图，在多轮对话中保持活跃。每一轮结束后，
+一个小型评判调用会询问辅助模型"助手的上一次回复是否满足了这个目标？"。
+如果没有满足，Hermes 会将一个续接提示词送回同一个会话并继续工作，
+直到目标完成、轮次预算耗尽、用户暂停/清除目标，或者用户发送了新消息
+（新消息优先并暂停目标循环）。
 
-State is persisted in SessionDB's ``state_meta`` table keyed by
-``goal:<session_id>`` so ``/resume`` picks it up.
+状态持久化在 SessionDB 的 ``state_meta`` 表中，键为
+``goal:<session_id>``，因此 ``/resume`` 可以恢复它。
 
-Design notes / invariants:
+设计说明 / 不变量：
 
-- The continuation prompt is just a normal user message appended to the
-  session via ``run_conversation``. No system-prompt mutation, no toolset
-  swap — prompt caching stays intact.
-- Judge failures are fail-OPEN: ``continue``. A broken judge must not wedge
-  progress; the turn budget is the backstop.
-- When a real user message arrives mid-loop it preempts the continuation
-  prompt and also pauses the goal loop for that turn (we still re-judge
-  after, so if the user's message happens to complete the goal the judge
-  will say ``done``).
-- This module has zero hard dependency on ``cli.HermesCLI`` or the gateway
-  runner — both wire the same ``GoalManager`` in.
+- 续接提示词只是一个普通的用户消息，通过 ``run_conversation`` 追加到
+  会话中。不修改系统提示词，不交换工具集 — 提示词缓存保持完好。
+- 评判失败时采用失败开放策略：``continue``。损坏的评判绝不能阻塞
+  进度；轮次预算是最终保障。
+- 当循环中途收到真实用户消息时，它会抢占续接提示词，并在该轮暂停
+  目标循环（我们仍然会在之后重新评判，所以如果用户的消息恰好完成了
+  目标，评判会给出 ``done``）。
+- 本模块对 ``cli.HermesCLI`` 或网关运行器没有硬性依赖 — 两者都以
+  相同方式接入 ``GoalManager``。
 
-Nothing in this module touches the agent's system prompt or toolset.
+本模块中没有任何内容会触及代理的系统提示词或工具集。
 """
 
 from __future__ import annotations
@@ -41,30 +38,28 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Constants & defaults
+# 常量与默认值
 # ──────────────────────────────────────────────────────────────────────
 
 DEFAULT_MAX_TURNS = 20
 DEFAULT_JUDGE_TIMEOUT = 30.0
-# Judge output budget. The freeform judge returns a one-line JSON verdict, but
-# reasoning models (deepseek-v4, qwq, etc.) burn tokens on hidden reasoning
-# before emitting the visible JSON — and the first /goal turn's prompt is
-# larger than later turns, which pushes total reply length past tight caps.
-# 200 tokens (the original default) reliably truncated the JSON on reasoning
-# models, leaving '{"done": true, "reason": "The agent successfully' and
-# triggering the auto-pause. 4096 covers reasoning + verdict on every model
-# we've live-tested; override via auxiliary.goal_judge.max_tokens for
-# specifically constrained setups.
+# 评判输出 token 预算。freeform 评判返回单行 JSON 判定，但
+# 推理模型（deepseek-v4、qwq 等）在发出可见 JSON 之前会消耗 token
+# 进行隐藏推理 — 而且首轮 /goal 的提示词比后续轮次更大，这会将
+# 总回复长度推过较紧的限制。200 token（原始默认值）会可靠地在推理
+# 模型上截断 JSON，留下 '{"done": true, "reason": "The agent successfully'
+# 并触发自动暂停。4096 在我们实际测试过的每个模型上都能覆盖
+# 推理 + 判定；对于特别受限的设置，可通过
+# auxiliary.goal_judge.max_tokens 覆盖。
 DEFAULT_JUDGE_MAX_TOKENS = 4096
-# Cap how much of the last response + recent messages we send to the judge.
+# 限制发送给评判的最后回复 + 最近消息的数量。
 _JUDGE_RESPONSE_SNIPPET_CHARS = 4000
-# After this many consecutive judge *parse* failures (empty output / non-JSON),
-# the loop auto-pauses and points the user at the goal_judge config. API /
-# transport errors do NOT count toward this — those are transient. This guards
-# against small models (e.g. deepseek-v4-flash) that cannot follow the strict
-# JSON reply contract; without it the loop runs until the turn budget is
-# exhausted with every reply shaped like `judge returned empty response` or
-# `judge reply was not JSON`.
+# 在连续这么多次评判*解析*失败（空输出/非 JSON）之后，
+# 循环会自动暂停并提示用户检查 goal_judge 配置。API /
+# 传输错误不计入此数 — 这些是瞬态的。这可以防护那些无法遵循严格
+# JSON 回复合约的小型模型（例如 deepseek-v4-flash）；没有这个防护，
+# 循环会一直运行到轮次预算耗尽，每次回复都显示 `judge returned empty response`
+# 或 `judge reply was not JSON`。
 DEFAULT_MAX_CONSECUTIVE_PARSE_FAILURES = 3
 
 
@@ -76,10 +71,9 @@ CONTINUATION_PROMPT_TEMPLATE = (
     "If you are blocked and need input from the user, say so clearly and stop."
 )
 
-# Used when the goal carries a structured completion contract. The contract
-# block tells the agent exactly what "done" means, how to prove it, what not
-# to break, what's in scope, and when to stop and ask — so it targets the
-# verification surface instead of declaring victory loosely.
+# 当目标带有结构化完成合约时使用。合约块
+# 告诉代理"完成"的确切含义、如何证明、不能破坏什么、什么在范围内，
+# 以及何时应停下来询问 — 因此它针对的是验证面，而不是松散地宣布胜利。
 CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "[Continuing toward your standing goal]\n"
     "Goal: {goal}\n\n"
@@ -93,9 +87,8 @@ CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "user input, say so clearly and stop."
 )
 
-# Used when the user has added one or more /subgoal criteria. Surfaced
-# to the agent verbatim so it sees what to target on the next turn,
-# and surfaced to the judge so the verdict considers them too.
+# 当用户添加了一个或多个 /subgoal 标准时使用。逐字呈现给代理，
+# 让它看到下一轮应该针对什么；也呈现给评判，使判定也考虑这些标准。
 CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE = (
     "[Continuing toward your standing goal]\n"
     "Goal: {goal}\n\n"
@@ -149,9 +142,8 @@ JUDGE_SYSTEM_PROMPT = (
 )
 
 
-# Rendered into the judge prompt when the agent has background processes
-# running. Gives the judge the context it needs to decide WAIT vs CONTINUE
-# (and which pid to wait on) without it having to probe anything itself.
+# 当代理有后台进程运行时，渲染到评判提示词中。为评判提供所需上下文，
+# 使其能够决定 WAIT 还是 CONTINUE（以及等待哪个 pid），而不需要自己探测。
 JUDGE_BACKGROUND_BLOCK_TEMPLATE = (
     "Background processes the agent currently has running (it may be waiting "
     "on one of these):\n{background_lines}\n\n"
@@ -166,8 +158,8 @@ JUDGE_USER_PROMPT_TEMPLATE = (
     "Is the goal satisfied — done, continue, or wait?"
 )
 
-# Used when the user has added /subgoal criteria. The judge must
-# evaluate ALL of them being met, not just the original goal.
+# 当用户添加了 /subgoal 标准时使用。评判必须评估所有标准都已满足，
+# 而不仅仅是原始目标。
 JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE = (
     "Goal:\n{goal}\n\n"
     "Additional criteria the user added mid-loop (all must also be "
@@ -187,9 +179,8 @@ JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE = (
 )
 
 
-# Used when the goal carries a structured completion contract. The judge
-# decides DONE strictly against the Verification criterion and refuses to
-# accept completion when a constraint was violated.
+# 当目标带有结构化完成合约时使用。评判严格根据验证标准
+# 判定 DONE，并在约束被违反时拒绝接受完成。
 JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "Goal:\n{goal}\n\n"
     "Completion contract (the authoritative definition of done):\n"
@@ -215,9 +206,8 @@ JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE = (
 )
 
 
-# System prompt for /goal draft — turns a plain-language objective into a
-# structured completion contract the user can review before activating.
-# Adapted from Codex's "let Codex draft the goal" guidance.
+# /goal draft 的系统提示词 — 将自然语言目标转化为结构化的完成合约，
+# 供用户在激活前审查。改编自 Codex 的"让 Codex 起草目标"指南。
 DRAFT_CONTRACT_SYSTEM_PROMPT = (
     "You turn a user's plain-language objective into a structured completion "
     "contract for an autonomous coding agent. The contract has five fields:\n"
@@ -240,18 +230,16 @@ DRAFT_CONTRACT_SYSTEM_PROMPT = (
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Completion contract
+# 完成合约
 # ──────────────────────────────────────────────────────────────────────
 
-# The five contract fields, in display order. Adapted from OpenAI Codex's
-# "strong goal" guidance: a durable objective works best when it names what
-# "done" means, how to prove it, what must not regress, what tools/paths are
-# in bounds, and when to stop and ask. A bare free-form goal (no contract)
-# stays fully supported — every field defaults empty and is simply omitted
-# from the prompts when unset.
+# 五个合约字段，按显示顺序排列。改编自 OpenAI Codex 的"强目标"指南：
+# 持久的目标在命名"完成"的含义、如何证明、什么不能回退、哪些工具/路径
+# 在范围内、以及何时停下来询问时效果最好。裸的自由形式目标（无合约）
+# 仍然完全受支持 — 每个字段默认为空，未设置时在提示词中会被省略。
 _CONTRACT_FIELDS = ("outcome", "verification", "constraints", "boundaries", "stop_when")
 
-# Human labels for rendering and for the inline `field: value` parser.
+# 用于渲染和内联 `field: value` 解析器的人类可读标签。
 _CONTRACT_LABELS = {
     "outcome": "Outcome",
     "verification": "Verification",
@@ -260,8 +248,8 @@ _CONTRACT_LABELS = {
     "stop_when": "Stop when blocked",
 }
 
-# Inline-input aliases the user may type before a value, mapped to the
-# canonical field name. e.g. `verify: tests pass` or `done when: ...`.
+# 用户可以在值前输入的内联输入别名，映射到规范字段名。
+# 例如 `verify: tests pass` 或 `done when: ...`。
 _CONTRACT_ALIASES = {
     "outcome": "outcome",
     "goal": "outcome",
@@ -292,14 +280,12 @@ _CONTRACT_ALIASES = {
 
 @dataclass
 class GoalContract:
-    """Optional structured completion contract for a goal.
+    """目标的可选结构化完成合约。
 
-    Each field is free-form prose the user (or :func:`draft_contract`)
-    supplies. Empty fields are omitted everywhere — a goal with no contract
-    behaves exactly like the original free-form goal. The contract is woven
-    into both the continuation prompt (so the agent targets the verification
-    surface and respects constraints) and the judge prompt (so "done" is
-    decided against evidence, not vibes).
+    每个字段都是由用户（或 :func:`draft_contract`）提供的自由形式文本。
+    空字段在所有地方都会被省略 — 没有合约的目标行为与原始自由形式目标
+    完全相同。合约被编织进续接提示词（以便代理针对验证面并遵守约束）和
+    评判提示词（以便"完成"是基于证据而非感觉来判定的）。
     """
 
     outcome: str = ""
@@ -321,8 +307,8 @@ class GoalContract:
         return cls(**{f: str(data.get(f) or "").strip() for f in _CONTRACT_FIELDS})
 
     def render_block(self) -> str:
-        """Render non-empty contract fields as a labelled block. Empty
-        contract → empty string (callers skip the section entirely)."""
+        """将非空合约字段渲染为带标签的块。空合约 → 空字符串
+        （调用方完全跳过该部分）。"""
         lines = []
         for f in _CONTRACT_FIELDS:
             val = getattr(self, f).strip()
@@ -332,10 +318,10 @@ class GoalContract:
 
 
 def parse_contract(text: str) -> Tuple[str, GoalContract]:
-    """Split user-typed goal text into a headline + structured contract.
+    """将用户输入的目标文本拆分为标题 + 结构化合约。
 
-    Supports inline ``field: value`` lines so power users can type a full
-    contract in one shot, e.g.::
+    支持内联 ``field: value`` 行，以便高级用户可以一次性输入完整合约，
+    例如::
 
         Migrate auth to JWT
         verify: the auth test suite passes
@@ -343,12 +329,10 @@ def parse_contract(text: str) -> Tuple[str, GoalContract]:
         boundaries: only touch services/auth and its tests
         stop when: a schema change needs product sign-off
 
-    The first non-field line(s) become the goal headline; recognized
-    ``field:`` lines populate the contract. Lines for the same field are
-    joined. Unrecognized prefixes stay part of the headline, so a plain
-    free-form goal with an incidental colon (``Fix bug: the parser``)
-    is NOT mangled — only lines whose prefix matches a known alias are
-    pulled out. Returns ``(headline, contract)``.
+    第一个非字段行成为目标标题；已识别的 ``field:`` 行填充合约。
+    同一字段的行会被连接。未识别的前缀保留在标题中，因此带有 incidental
+    冒号的普通自由形式目标（``Fix bug: the parser``）不会被破坏 —
+    只有前缀匹配已知别名的行才会被提取出来。返回 ``(headline, contract)``。
     """
     if not text:
         return "", GoalContract()
@@ -381,7 +365,7 @@ def parse_contract(text: str) -> Tuple[str, GoalContract]:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Dataclass
+# 数据类
 # ──────────────────────────────────────────────────────────────────────
 
 

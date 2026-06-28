@@ -1,8 +1,8 @@
 """
-Cron subcommand for hermes CLI.
+hermes CLI 的 cron 子命令。
 
-Handles standalone cron management commands like list, create, edit,
-pause/resume/run/remove, status, and tick.
+处理独立的 cron 管理命令，如 list、create、edit、
+pause/resume/run/remove、status 和 tick。
 """
 
 import json
@@ -16,11 +16,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from hermes_cli.colors import Colors, color
 
-# Patterns that indicate a cron job targets the gateway lifecycle.
-# Matches commands that restart/stop the gateway or its service manager.
-# Deliberately specific — a bare "gateway ... restart" catch-all would block
-# legitimate prompts that merely mention an unrelated gateway (e.g. "summarize
-# the API gateway logs and report restart events").
+# 标识 cron job 针对 gateway 生命周期的模式。
+# 匹配重启/停止 gateway 或其服务管理器的命令。
+# 特意做得很精确——一个简单的 "gateway ... restart" 全能匹配会阻止
+# 仅仅提到无关 gateway 的合法 prompt（例如"总结 API gateway
+# 日志并报告重启事件"）。
 _GATEWAY_LIFECYCLE_PATTERNS = re.compile(
     r"(?i)"
     r"(hermes\s+gateway\s+(restart|stop|start))"
@@ -31,7 +31,7 @@ _GATEWAY_LIFECYCLE_PATTERNS = re.compile(
 
 
 def _contains_gateway_lifecycle_command(text: str) -> bool:
-    """Return True if *text* contains a gateway lifecycle command pattern."""
+    """如果 *text* 包含 gateway 生命周期命令模式则返回 True。"""
     return bool(_GATEWAY_LIFECYCLE_PATTERNS.search(text))
 
 
@@ -58,13 +58,13 @@ def _cron_api(**kwargs):
 
 
 def _warn_if_gateway_not_running() -> None:
-    """Warn that scheduled jobs won't fire unless the gateway is running.
+    """警告：除非 gateway 正在运行，否则定时 job 不会触发。
 
-    The cron ticker only runs inside the gateway (``_start_cron_ticker`` in
-    gateway/run.py); there is no standalone cron daemon. Without a running
-    gateway, ``next_run_at`` passes but jobs never fire and ``last_run_at``
-    stays null — the most common cron support report (#51038). Surfacing this
-    at create/list time, when the user is right there, prevents it.
+    cron ticker 只在 gateway 内部运行（gateway/run.py 中的
+    ``_start_cron_ticker``）；没有独立的 cron 守护进程。如果 gateway
+    没有运行，``next_run_at`` 会过去但 job 永远不会触发，而
+    ``last_run_at`` 保持为 null——这是最常见的 cron 支持报告 (#51038)。
+    在 create/list 时（当用户就在面前）提示这一点可以预防此问题。
     """
     try:
         from hermes_cli.gateway import find_gateway_pids
@@ -72,7 +72,7 @@ def _warn_if_gateway_not_running() -> None:
         if find_gateway_pids():
             return
     except Exception:
-        # If we can't determine gateway state, stay quiet rather than nag.
+        # 如果无法确定 gateway 状态，保持安静而不是烦扰用户。
         return
 
     print(color("  ⚠  Gateway is not running — jobs won't fire automatically.", Colors.YELLOW))
@@ -82,7 +82,7 @@ def _warn_if_gateway_not_running() -> None:
 
 
 def cron_list(show_all: bool = False):
-    """List all scheduled jobs."""
+    """列出所有定时 job。"""
     from cron.jobs import list_jobs
 
     jobs = list_jobs(include_disabled=show_all)
@@ -105,9 +105,9 @@ def cron_list(show_all: bool = False):
         state = job.get("state", "scheduled" if job.get("enabled", True) else "paused")
         next_run = job.get("next_run_at", "?")
 
-        # `repeat` may be present-but-null in the job record (e.g. a one-shot
-        # job persisted with "repeat": null), so coalesce to {} rather than
-        # relying on the dict-default, which only applies to a missing key.
+        # job 记录中 `repeat` 可能存在但为 null（例如一次性的 job
+        # 以 "repeat": null 持久化），所以使用或运算合并为 {}，
+        # 而不是依赖 dict 默认值（后者仅适用于缺失的键）。
         repeat_info = job.get("repeat") or {}
         repeat_times = repeat_info.get("times")
         repeat_completed = repeat_info.get("completed", 0)
@@ -145,7 +145,7 @@ def cron_list(show_all: bool = False):
         if workdir:
             print(f"    Workdir:   {workdir}")
 
-        # Execution history
+        # 执行历史
         last_status = job.get("last_status")
         if last_status:
             last_run = job.get("last_run_at", "?")

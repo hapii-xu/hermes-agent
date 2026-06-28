@@ -1,13 +1,14 @@
-"""Single source of truth for the agent working directory.
+"""agent 工作目录的唯一权威来源。
 
-`TERMINAL_CWD` is the runtime carrier for the configured working directory
-(design #19214/#19242: `terminal.cwd` is bridged once to `TERMINAL_CWD` at
-gateway/cron startup). The local-CLI backend deliberately leaves it unset and
-relies on the launch dir. Reading it in one place keeps the system prompt, the
-tool surfaces, and context-file discovery agreeing on where the agent lives.
+`TERMINAL_CWD` 是已配置工作目录的运行时载体
+（设计 #19214/#19242：`terminal.cwd` 在 gateway/cron 启动时
+一次性桥接到 `TERMINAL_CWD`）。
+本地 CLI 后端故意不设置该变量，依赖启动目录。
+在一处读取此值可确保系统提示词、工具界面和上下文文件发现
+对 agent 所在位置保持一致。
 
-Multi-session gateways can pin a logical cwd via the `_SESSION_CWD`
-contextvar; CLI/cron fall through to `TERMINAL_CWD`/launch cwd.
+多会话 gateway 可通过 `_SESSION_CWD` contextvar 固定逻辑 cwd；
+CLI/cron 则回退到 `TERMINAL_CWD`/启动 cwd。
 """
 
 import os
@@ -21,7 +22,7 @@ _SESSION_CWD: ContextVar = ContextVar("HERMES_SESSION_CWD", default=_UNSET)
 
 
 def set_session_cwd(cwd: str | None) -> Token:
-    """Pin the logical cwd for the current context."""
+    """为当前上下文固定逻辑 cwd。"""
     return _SESSION_CWD.set((cwd or "").strip())
 
 
@@ -51,10 +52,10 @@ def resolve_agent_cwd() -> Path:
 
 
 def resolve_context_cwd() -> Path | None:
-    # None means "no configured cwd": build_context_files_prompt then falls back
-    # to the launch dir (os.getcwd()) — correct for the local CLI. The gateway
-    # avoids slurping its install dir by setting TERMINAL_CWD (see system_prompt.py)
-    # or, per session, the _SESSION_CWD contextvar above.
+    # None 表示"未配置 cwd"：build_context_files_prompt 随后回退到
+    # 启动目录（os.getcwd()）—— 对本地 CLI 是正确的。
+    # gateway 通过设置 TERMINAL_CWD（见 system_prompt.py）或
+    # 逐会话使用上方的 _SESSION_CWD contextvar 来避免读取其安装目录。
     override = _session_cwd_override()
     if override:
         return Path(override).expanduser()

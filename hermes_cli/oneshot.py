@@ -1,21 +1,21 @@
-"""Oneshot (-z) mode: send a prompt, get the final content block, exit.
+"""Oneshot (-z) 模式: 发送 prompt, 获取最终内容块, 然后退出。
 
-Bypasses cli.py entirely.  No banner, no spinner, no session_id line,
-no stderr chatter.  Just the agent's final text to stdout.
+完全绕过 cli.py。没有 banner、没有 spinner、没有 session_id 行、
+没有 stderr 输出。只将 agent 的最终文本输出到 stdout。
 
-Toolsets = explicit --toolsets when provided, otherwise whatever the user has
-configured for "cli" in `hermes tools`.
-Rules / memory / AGENTS.md / preloaded skills = same as a normal chat turn.
-Approvals = auto-bypassed (HERMES_YOLO_MODE=1 is set for the call).
-Working directory = the user's CWD (AGENTS.md etc. resolve from there as usual).
+Toolset = 显式指定的 --toolsets (如果有), 否则使用用户在
+`hermes tools` 中为 "cli" 配置的内容。
+Rules / memory / AGENTS.md / 预加载 skills = 与普通 chat turn 相同。
+Approvals = 自动绕过 (调用时设置 HERMES_YOLO_MODE=1)。
+工作目录 = 用户的 CWD (AGENTS.md 等从该目录正常解析)。
 
-Model / provider selection mirrors `hermes chat`:
-    - Both optional. If omitted, use the user's configured default.
-    - If both given, pair them exactly as given.
-    - If only --model given, auto-detect the provider that serves it.
-    - If only --provider given, error out (ambiguous — caller must pick a model).
+Model / provider 选择与 `hermes chat` 一致:
+    - 两者均可选。如果省略, 使用用户配置的默认值.
+    - 如果两者都指定, 按给定方式配对。
+    - 如果只指定 --model, 自动检测提供该 model 的 provider。
+    - 如果只指定 --provider, 报错 (有歧义 — 调用者必须选择 model)。
 
-Env var fallbacks (used when the corresponding arg is not passed):
+环境变量回退 (当对应参数未传递时使用):
     - HERMES_INFERENCE_MODEL
 """
 

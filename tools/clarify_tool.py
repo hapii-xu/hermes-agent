@@ -1,42 +1,39 @@
 #!/usr/bin/env python3
 """
-Clarify Tool Module - Interactive Clarifying Questions
+Clarify 工具模块 —— 交互式澄清提问。
 
-Allows the agent to present structured multiple-choice questions or open-ended
-prompts to the user. In CLI mode, choices are navigable with arrow keys. On
-messaging platforms, choices are rendered as a numbered list.
+允许 agent 向用户呈现结构化的多选题或开放式提示。在 CLI 模式下，可用方向
+键在选项间导航；在消息平台上，选项以编号列表形式呈现。
 
-The actual user-interaction logic lives in the platform layer (cli.py for CLI,
-gateway/run.py for messaging). This module defines the schema, validation, and
-a thin dispatcher that delegates to a platform-provided callback.
+真正的用户交互逻辑位于平台层（CLI 为 cli.py，消息平台为 gateway/run.py）。
+本模块只定义 schema、校验，以及一个轻量的分发器，把实际工作委托给平台
+提供的回调。
 """
 
 import json
 from typing import List, Optional, Callable
 
 
-# Maximum number of predefined choices the agent can offer.
-# A 5th "Other (type your answer)" option is always appended by the UI.
+# agent 最多能提供的预设选项数量。
+# UI 总会在末尾追加第 5 个「其他（输入你的答案）」选项。
 MAX_CHOICES = 4
 
 
 def _flatten_choice(c) -> str:
-    """Coerce a single choice into its user-facing display string.
+    """把单个选项规整为面向用户的展示字符串。
 
-    The schema declares choices as bare strings, but LLMs sometimes emit
-    dict-shaped choices like ``[{"description": "..."}]``. A naive ``str(c)``
-    turns the whole dict into its Python repr — ``{'description': '...'}`` —
-    which then leaks onto every surface that renders the choice (CLI panel,
-    Discord buttons, Telegram numbered list) AND is returned verbatim as the
-    user's answer. Normalising here, at the one platform-agnostic entry point,
-    fixes the whole class in one place instead of per-adapter.
+    schema 声明选项为纯字符串，但 LLM 有时会发出字典形态的选项，例如
+    ``[{"description": "..."}]``。简单地 ``str(c)`` 会把整个字典变成它的
+    Python repr——``{'description': '...'}``——这会泄漏到每一个渲染该选项
+    的界面（CLI 面板、Discord 按钮、Telegram 编号列表），并且原样作为用户
+    的回答返回。在这里，即唯一与平台无关的入口处做归一化，能一处修复整类
+    问题，而无需逐个适配器修改。
 
-    Dict unwrap order is the canonical LLM tool-call user-facing keys:
-    ``label`` → ``description`` → ``text`` → ``title``. ``name`` and ``value``
-    are deliberately excluded — they're component-shaped fields that could
-    carry raw enum values or short identifiers, not human-readable labels. A
-    dict with none of the canonical keys is dropped (returns ""), since a
-    garbage label is worse than no choice at all.
+    字典解包顺序遵循 LLM 工具调用中面向用户的规范键：
+    ``label`` → ``description`` → ``text`` → ``title``。``name`` 和
+    ``value`` 被有意排除——它们是组件形态的字段，可能承载原始枚举值或短
+    标识符，而非人类可读的标签。不包含任何规范键的字典会被丢弃（返回 ""），
+    因为一个垃圾标签比没有选项更糟。
     """
     if c is None:
         return ""
@@ -59,38 +56,37 @@ def clarify_tool(
     callback: Optional[Callable] = None,
 ) -> str:
     """
-    Ask the user a question, optionally with multiple-choice options.
+    向用户提问，可选地附带多选项。
 
-    Args:
-        question: The question text to present.
-        choices:  Up to 4 predefined answer choices. When omitted the
-                  question is purely open-ended.
-        callback: Platform-provided function that handles the actual UI
-                  interaction. Signature: callback(question, choices) -> str.
-                  Injected by the agent runner (cli.py / gateway).
+    参数：
+        question: 要呈现的提问文本。
+        choices:  最多 4 个预设答案选项。省略时提问为纯开放式。
+        callback: 由平台提供的、处理实际 UI 交互的函数。签名：
+                  callback(question, choices) -> str。由 agent 运行器
+                  （cli.py / gateway）注入。
 
-    Returns:
-        JSON string with the user's response.
+    返回：
+        包含用户回答的 JSON 字符串。
     """
     if not question or not question.strip():
         return tool_error("Question text is required.")
 
     question = question.strip()
 
-    # Validate and trim choices
+    # 校验并裁剪选项
     if choices is not None:
         if not isinstance(choices, list):
             return tool_error("choices must be a list of strings.")
-        # LLMs sometimes emit dict-shaped choices (e.g. [{"description": "..."}])
-        # instead of bare strings. _flatten_choice unwraps them to their
-        # user-facing text here — the single platform-agnostic entry point —
-        # so the CLI panel, Discord buttons, and Telegram list all render clean
-        # text and the resolved answer is never a raw Python dict repr.
+        # LLM 有时会发出字典形态的选项（例如 [{"description": "..."}]），
+        # 而不是纯字符串。_flatten_choice 在这里——即唯一与平台无关的入口
+        # 处——把它们解包为面向用户的文本，使 CLI 面板、Discord 按钮和
+        # Telegram 列表都能渲染干净的文本，且解析出的答案永远不会是原始的
+        # Python 字典 repr。
         choices = [s for s in (_flatten_choice(c) for c in choices) if s]
         if len(choices) > MAX_CHOICES:
             choices = choices[:MAX_CHOICES]
         if not choices:
-            choices = None  # empty list → open-ended
+            choices = None  # 空列表 → 开放式
 
     if callback is None:
         return json.dumps(
@@ -114,7 +110,7 @@ def clarify_tool(
 
 
 def check_clarify_requirements() -> bool:
-    """Clarify tool has no external requirements -- always available."""
+    """Clarify 工具没有外部依赖 —— 始终可用。"""
     return True
 
 
@@ -175,7 +171,7 @@ CLARIFY_SCHEMA = {
 }
 
 
-# --- Registry ---
+# --- 注册表 ---
 from tools.registry import registry, tool_error
 
 registry.register(

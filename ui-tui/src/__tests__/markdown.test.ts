@@ -76,16 +76,16 @@ describe('INLINE_RE emphasis', () => {
   })
 
   it('ignores kaomoji-style ~! and ~? punctuation', () => {
-    // Kimi / Qwen / GLM emit these as decorators and the whole span between
-    // two tildes used to get collapsed into one dim blob.
+    // Kimi / Qwen / GLM 会把这些作为装饰符输出，两个波浪号之间的
+    // 整段内容曾经被折叠成一个暗淡的色块。
     expect(matches('Aww ~! Building step by step, I love it ~!')).toEqual([])
     expect(matches('cool ~? yeah ~?')).toEqual([])
     expect(matches('mixed ~! and ~? flow')).toEqual([])
   })
 
   it('ignores tilde spans that contain spaces or punctuation', () => {
-    // Real subscript doesn't contain spaces; a tilde followed by words-then-
-    // tilde is almost always conversational. Matching it swallows text.
+    // 真正的下标不会包含空格；波浪号后接一串文字再接波浪号
+    // 几乎总是口语化表达，匹配它会吞掉文本。
     expect(matches('hello ~good idea~ there')).toEqual([])
     expect(matches('x ~oh no!~ y')).toEqual([])
   })
@@ -120,9 +120,9 @@ describe('stripInlineMarkup', () => {
 
 describe('INLINE_RE inline math', () => {
   it('matches single-dollar math and beats emphasis at the same start', () => {
-    // Without math handling, `*b*` would have matched as italics and
-    // corrupted the formula. With math added to INLINE_RE, the leftmost
-    // match at column 0 (`$P=a*b*c$`) wins.
+    // 如果没有数学公式处理，`*b*` 会被匹配为斜体，
+    // 从而破坏公式。在 INLINE_RE 中加入数学公式后，第 0 列
+    // 的最左匹配（`$P=a*b*c$`）会胜出。
     expect(matches('$P=a*b*c$')).toEqual(['$P=a*b*c$'])
     expect(matches('see $\\mathbb{Z}$ here')).toEqual(['$\\mathbb{Z}$'])
   })
@@ -133,7 +133,7 @@ describe('INLINE_RE inline math', () => {
   })
 
   it('does not let inline math swallow a $$ display fence', () => {
-    // `$$x$$` is a display block, not two abutting inline-math spans.
+    // `$$x$$` 是一个 display block，而不是两个相邻的 inline math span。
     expect(matches('$$x$$')).toEqual([])
   })
 
@@ -142,19 +142,19 @@ describe('INLINE_RE inline math', () => {
   })
 
   it('does not corrupt subscripts/superscripts inside math', () => {
-    // `_n` and `^r` are markdown emphasis/superscript markers in prose, but
-    // inside a `$...$` span the entire formula is captured as a single
-    // inline-math token so the inner regexes never see those characters.
+    // `_n` 和 `^r` 在普通文本中是 markdown 的强调/上标标记，
+    // 但在 `$...$` span 内部，整个公式会被捕获为单个
+    // inline math token，因此内部的正则永远看不到这些字符。
     expect(matches('$P=a_n x^n + a_0$')).toEqual(['$P=a_n x^n + a_0$'])
     expect(matches('$\\beta_1,\\dots,\\beta_r$')).toEqual(['$\\beta_1,\\dots,\\beta_r$'])
   })
 
   it('places math content in the correct capture group (regression: m[16] is bare URL)', () => {
-    // When `m[16]` was the bare URL group AND the inline-math `$...$`
-    // group simultaneously (because the bare URL pattern lacked its own
-    // capturing parens), MdInline rendered `$\\mathbb{R}$` as an
-    // underlined autolink instead of italic amber math. Lock down the
-    // numbering: math goes in m[17] / m[18], URLs go in m[16].
+    // 当 `m[16]` 同时是裸 URL 分组和 inline math `$...$`
+    // 分组时（因为裸 URL 模式缺少自己的捕获括号），
+    // MdInline 会把 `$\\mathbb{R}$` 渲染成带下划线的自动链接，
+    // 而不是斜体琥珀色的数学公式。锁定编号：数学公式
+    // 在 m[17] / m[18]，URL 在 m[16]。
     const url = [...'see https://example.com here'.matchAll(INLINE_RE)][0]!
     const dollarMath = [...'$\\mathbb{R}$'.matchAll(INLINE_RE)][0]!
     const parenMath = [...'\\(\\pi\\)'.matchAll(INLINE_RE)][0]!
@@ -294,22 +294,21 @@ describe('renderTable CJK width alignment', () => {
       '| 通义千问 | qwen | × |'
     ].join('\n')
 
-    // Pre-fix bug: ` `.repeat(w - stripInlineMarkup(...).length) used
-    // UTF-16 code units, so a CJK header cell padded to 2 cells while
-    // the body cell padded to 4, drifting subsequent columns by 2
-    // cells per CJK char.
+    // 修复前的 bug：` `.repeat(w - stripInlineMarkup(...).length) 使用的是
+    // UTF-16 代码单元，因此一个 CJK 表头单元格填充到 2 个显示宽度，
+    // 而 body 单元格填充到 4 个，导致后续列每个 CJK 字符偏移 2 个
+    // 显示宽度。
     //
-    // Post-fix contract: the prefix preceding the start of column N
-    // has the same display width across the header and every body row
-    // (deduped to skip the divider, which renders independently).
+    // 修复后的约定：列 N 开始之前的前缀，在表头和所有 body 行
+    // 中具有相同的显示宽度（去重后跳过分隔行，因为它独立渲染）。
     const lines = renderPlain(
       React.createElement(Box, null, React.createElement(Md, { compact: true, t: DEFAULT_THEME, text: md }))
     ).filter(line => line.trim().length > 0)
 
-    // Heuristic: a "data row" line either contains 'Config' (header)
-    // or one of the body labels; a divider is all box-drawing.  Use
-    // the substring 'Config' / 'dense' / 'chat' / 'qwen' as the
-    // unique anchor for column 2's start position on each row.
+    // 启发式规则：一行"数据行"要么包含 'Config'（表头），
+    // 要么包含某个 body 标签；分隔行全是 box-drawing 字符。
+    // 使用子串 'Config' / 'dense' / 'chat' / 'qwen' 作为
+    // 每行第 2 列起始位置的唯一锚点。
     const colStarts = (line: string, anchor: string): number => {
       const idx = line.indexOf(anchor)
 
@@ -324,8 +323,8 @@ describe('renderTable CJK width alignment', () => {
     expect(headerCol2).toBeDefined()
     expect(denseCol2).toBe(headerCol2)
     expect(chatCol2).toBe(headerCol2)
-    // The CJK row is the one that drifted before the fix.  It must
-    // align with the rest now.
+    // CJK 行就是修复前发生偏移的那一行。现在它必须
+    // 与其他行对齐。
     expect(qwenCol2).toBe(headerCol2)
   })
 })

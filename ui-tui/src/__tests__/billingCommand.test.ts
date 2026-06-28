@@ -51,7 +51,7 @@ const guarded =
     }
   }
 
-/** Build a ctx whose rpc routes by method name to a supplied map of results. */
+/** 构建一个 ctx，其 rpc 按方法名路由到提供的结果映射。 */
 const buildCtx = (results: Record<string, unknown>) => {
   const sys = vi.fn()
   const calls: Array<{ method: string; params: unknown }> = []
@@ -111,7 +111,7 @@ describe('/billing slash command (overlay-driven)', () => {
     await run('buy 100')
     const billing = getOverlayState().billing
     expect(billing?.screen).toBe('overview')
-    // No confirm overlay armed directly by the command anymore.
+    // 命令不再直接武装 confirm overlay。
     expect(getOverlayState().confirm).toBeNull()
   })
 
@@ -133,7 +133,7 @@ describe('/billing slash command (overlay-driven)', () => {
     expect(billing?.screen).toBe('overview')
   })
 
-  // ── Overlay ctx behaviors (RPC + error mapping live in billing.ts) ──
+  // ── Overlay ctx 行为（RPC + 错误映射在 billing.ts 中） ──
 
   it('ctx.validate rejects out-of-bounds and sub-cent amounts, accepts valid', async () => {
     const { run } = buildCtx({ 'billing.state': ownerState() })
@@ -182,7 +182,7 @@ describe('/billing slash command (overlay-driven)', () => {
       await vi.runAllTimersAsync()
       const out = printed(sys)
       expect(out).toContain('Your card was declined')
-      // Parity with the CLI: a failed poll funnels to the portal (from state.portal_url).
+      // 与 CLI 行为一致：失败的轮询导向 portal（来自 state.portal_url）。
       expect(out).toContain('Portal: https://portal/billing?topup=open')
     } finally {
       vi.useRealTimers()
@@ -241,7 +241,7 @@ describe('/billing slash command (overlay-driven)', () => {
     getOverlayState().billing!.ctx.charge('100')
     await Promise.resolve()
     await Promise.resolve()
-    // The charge failed with insufficient_scope → a NEW confirm (step-up) is armed.
+    // 充值因 insufficient_scope 失败 → 武装一个新的 confirm（step-up）。
     const stepUp = getOverlayState().confirm
     expect(stepUp?.title).toBe('Grant terminal billing access?')
   })

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Read the in-app terminal pane in the Hermes desktop GUI.
+"""读取 Hermes 桌面 GUI 中的应用内终端面板。
 
-The embedded terminal's buffer lives in the desktop renderer (xterm.js), so this
-tool round-trips through the gateway's blocking-prompt bridge — the same one
-`clarify` uses: tui_gateway emits ``terminal.read.request``, the renderer answers
-with ``terminal.read.respond``. This module is just schema + a thin dispatcher
-over the platform-injected callback.
+内嵌终端的缓冲区位于桌面渲染器（xterm.js）中，因此本工具会经由 gateway
+的阻塞式 prompt 桥接往返一次——也就是 `clarify` 使用的同一个桥接：
+tui_gateway 发出 ``terminal.read.request``，渲染器以
+``terminal.read.respond`` 作答。本模块仅是 schema 加一层薄薄的分发器，
+构建在平台注入的回调之上。
 """
 
 import json
@@ -20,7 +20,7 @@ def read_terminal_tool(
     count: Optional[int] = None,
     callback: Optional[Callable] = None,
 ) -> str:
-    """Return the in-app terminal's contents (+ line metadata) as a JSON string."""
+    """以 JSON 字符串形式返回应用内终端的内容（含行元数据）。"""
     if callback is None:
         return tool_error("read_terminal is only available in the Hermes desktop app.")
 
@@ -41,7 +41,7 @@ def read_terminal_tool(
     if not raw:
         return tool_error("No in-app terminal is open, or the read timed out.")
 
-    # Desktop answers with a JSON object; pass it through, else wrap the raw text.
+    # 桌面端返回的是一个 JSON 对象；直接透传，否则把原始文本包裹一层。
     try:
         return json.dumps(json.loads(raw), ensure_ascii=False)
     except (TypeError, ValueError):
@@ -49,7 +49,7 @@ def read_terminal_tool(
 
 
 def check_read_terminal_requirements() -> bool:
-    """Desktop GUI only — HERMES_DESKTOP is set on the gateway the app spawns."""
+    """仅限桌面 GUI——应用启动的 gateway 上会设置 HERMES_DESKTOP。"""
     return (os.getenv("HERMES_DESKTOP") or "").strip().lower() in ("1", "true", "yes")
 
 

@@ -1,233 +1,233 @@
-# Design System: Figma
+# 设计系统：Figma
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `JetBrains Mono`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代方案：
+> - **主字体：** `Inter` | **等宽字体：** `JetBrains Mono`
+> - **字体栈 (CSS)：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Figma's interface is the design tool that designed itself — a masterclass in typographic sophistication where a custom variable font (figmaSans) modulates between razor-thin (weight 320) and bold (weight 700) with stops at unusual intermediates (330, 340, 450, 480, 540) that most type systems never explore. This granular weight control gives every text element a precisely calibrated visual weight, creating hierarchy through micro-differences rather than the blunt instrument of "regular vs bold."
+Figma 的界面是设计了自身的设计工具——一场排版精雕细琢的大师课，一款自定义可变字体（figmaSans）在剃刀般纤细（字重 320）和粗体（字重 700）之间调节，并在多数字体系统从未探索的不寻常中间停靠点（330、340、450、480、540）停留。这种精细的字重控制赋予每个文字元素精确校准的视觉重量，通过微差异而非"regular vs bold"这种粗暴工具来建立层级。
 
-The page presents a fascinating duality: the interface chrome is strictly black-and-white (literally only `#000000` and `#ffffff` detected as colors), while the hero section and product showcases explode with vibrant multi-color gradients — electric greens, bright yellows, deep purples, hot pinks. This separation means the design system itself is colorless, treating the product's colorful output as the hero content. Figma's marketing page is essentially a white gallery wall displaying colorful art.
+页面呈现出迷人的二元性：界面外框严格黑白（检测到的颜色字面上只有 `#000000` 和 `#ffffff`），而英雄区和产品展示则迸发出充满活力的多彩渐变——电光绿、明亮黄、深紫、热粉。这种分离意味着设计系统本身是无色的，把产品色彩缤纷的产出当作英雄内容。Figma 的营销页面本质上是一面展示彩色艺术品的白色画廊墙。
 
-What makes Figma distinctive beyond the variable font is its circle-and-pill geometry. Buttons use 50px radius (pill) or 50% (perfect circle for icon buttons), creating an organic, tool-palette-like feel. The dashed-outline focus indicator (`dashed 2px`) is a deliberate design choice that echoes selection handles in the Figma editor itself — the website's UI language references the product's UI language.
+让 Figma 在可变字体之外显得独特的是其圆形与胶囊几何。按钮使用 50px 圆角（胶囊）或 50%（图标按钮的完美圆），营造出有机的、调色盘般的触感。虚线轮廓的聚焦指示器（`dashed 2px`）是一个刻意的设计选择，呼应了 Figma 编辑器本身的选择手柄——网站的 UI 语言引用了产品的 UI 语言。
 
-**Key Characteristics:**
-- Custom variable font (figmaSans) with unusual weight stops: 320, 330, 340, 450, 480, 540, 700
-- Strictly black-and-white interface chrome — color exists only in product content
-- figmaMono for uppercase technical labels with wide letter-spacing
-- Pill (50px) and circular (50%) button geometry
-- Dashed focus outlines echoing Figma's editor selection handles
-- Vibrant multi-color hero gradients (green, yellow, purple, pink)
-- OpenType `"kern"` feature enabled globally
-- Negative letter-spacing throughout — even body text at -0.14px to -0.26px
+**关键特征：**
+- 自定义可变字体（figmaSans），带不寻常的字重停靠点：320、330、340、450、480、540、700
+- 严格黑白的界面外框——颜色仅存在于产品内容中
+- figmaMono 用于大写技术标签，带宽字间距
+- 胶囊（50px）和圆形（50%）按钮几何
+- 虚线聚焦轮廓，呼应 Figma 编辑器的选择手柄
+- 充满活力的多彩英雄渐变（绿、黄、紫、粉）
+- 全局启用 OpenType `"kern"` 特性
+- 全程负字间距——即便正文也在 -0.14px 到 -0.26px
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary
-- **Pure Black** (`#000000`): All text, all solid buttons, all borders. The sole "color" of the interface.
-- **Pure White** (`#ffffff`): All backgrounds, white buttons, text on dark surfaces. The other half of the binary.
+### 主色
+- **纯黑**（`#000000`）：所有文字、所有实心按钮、所有边框。界面唯一的"颜色"。
+- **纯白**（`#ffffff`）：所有背景、白色按钮、深色表面上的文字。二元体的另一半。
 
-*Note: Figma's marketing site uses ONLY these two colors for its interface layer. All vibrant colors appear exclusively in product screenshots, hero gradients, and embedded content.*
+*注：Figma 的营销网站仅使用这两种颜色作为其界面层。所有鲜艳的色彩只出现在产品截图、英雄渐变和嵌入内容中。*
 
-### Surface & Background
-- **Pure White** (`#ffffff`): Primary page background and card surfaces.
-- **Glass Black** (`rgba(0, 0, 0, 0.08)`): Subtle dark overlay for secondary circular buttons and glass effects.
-- **Glass White** (`rgba(255, 255, 255, 0.16)`): Frosted glass overlay for buttons on dark/colored surfaces.
+### 表面与背景
+- **纯白**（`#ffffff`）：主页面背景和卡片表面。
+- **玻璃黑**（`rgba(0, 0, 0, 0.08)`）：用于次要圆形按钮和玻璃效果的微妙深色叠加。
+- **玻璃白**（`rgba(255, 255, 255, 0.16)`）：深色/彩色表面按钮上的磨砂玻璃叠加。
 
-### Gradient System
-- **Hero Gradient**: A vibrant multi-stop gradient using electric green, bright yellow, deep purple, and hot pink. This gradient is the visual signature of the hero section — it represents the creative possibilities of the tool.
-- **Product Section Gradients**: Individual product areas (Design, Dev Mode, Prototyping) may use distinct color themes in their showcases.
+### 渐变系统
+- **英雄渐变**：使用电光绿、明亮黄、深紫和热粉的多停靠点鲜艳渐变。该渐变是英雄区的视觉签名——代表工具的创造可能性。
+- **产品区渐变**：单个产品区域（Design、Dev Mode、Prototyping）在其展示中可能使用不同的颜色主题。
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Family
-- **Primary**: `figmaSans`, with fallbacks: `figmaSans Fallback, SF Pro Display, system-ui, helvetica`
-- **Monospace / Labels**: `figmaMono`, with fallbacks: `figmaMono Fallback, SF Mono, menlo`
+### 字体族
+- **主字体**：`figmaSans`，回退：`figmaSans Fallback, SF Pro Display, system-ui, helvetica`
+- **等宽 / 标签**：`figmaMono`，回退：`figmaMono Fallback, SF Mono, menlo`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 说明 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display / Hero | figmaSans | 86px (5.38rem) | 400 | 1.00 (tight) | -1.72px | Maximum impact, extreme tracking |
-| Section Heading | figmaSans | 64px (4rem) | 400 | 1.10 (tight) | -0.96px | Feature section titles |
-| Sub-heading | figmaSans | 26px (1.63rem) | 540 | 1.35 | -0.26px | Emphasized section text |
-| Sub-heading Light | figmaSans | 26px (1.63rem) | 340 | 1.35 | -0.26px | Light-weight section text |
-| Feature Title | figmaSans | 24px (1.5rem) | 700 | 1.45 | normal | Bold card headings |
-| Body Large | figmaSans | 20px (1.25rem) | 330–450 | 1.30–1.40 | -0.1px to -0.14px | Descriptions, intros |
-| Body / Button | figmaSans | 16px (1rem) | 330–400 | 1.40–1.45 | -0.14px to normal | Standard body, nav, buttons |
-| Body Light | figmaSans | 18px (1.13rem) | 320 | 1.45 | -0.26px to normal | Light-weight body text |
-| Mono Label | figmaMono | 18px (1.13rem) | 400 | 1.30 (tight) | 0.54px | Uppercase section labels |
-| Mono Small | figmaMono | 12px (0.75rem) | 400 | 1.00 (tight) | 0.6px | Uppercase tiny tags |
+| 展示 / 英雄 | figmaSans | 86px (5.38rem) | 400 | 1.00 (紧凑) | -1.72px | 最大冲击，极端字距 |
+| 章节标题 | figmaSans | 64px (4rem) | 400 | 1.10 (紧凑) | -0.96px | 功能章节标题 |
+| 副标题 | figmaSans | 26px (1.63rem) | 540 | 1.35 | -0.26px | 强调章节文字 |
+| 副标题 Light | figmaSans | 26px (1.63rem) | 340 | 1.35 | -0.26px | 轻字重章节文字 |
+| 功能标题 | figmaSans | 24px (1.5rem) | 700 | 1.45 | normal | 粗体卡片标题 |
+| 正文大 | figmaSans | 20px (1.25rem) | 330–450 | 1.30–1.40 | -0.1px 到 -0.14px | 描述、引言 |
+| 正文 / 按钮 | figmaSans | 16px (1rem) | 330–400 | 1.40–1.45 | -0.14px 到 normal | 标准正文、导航、按钮 |
+| 正文 Light | figmaSans | 18px (1.13rem) | 320 | 1.45 | -0.26px 到 normal | 轻字重正文 |
+| 等宽标签 | figmaMono | 18px (1.13rem) | 400 | 1.30 (紧凑) | 0.54px | 大写章节标签 |
+| 等宽小字 | figmaMono | 12px (0.75rem) | 400 | 1.00 (紧凑) | 0.6px | 大写微型标签 |
 
-### Principles
-- **Variable font precision**: figmaSans uses weights that most systems never touch — 320, 330, 340, 450, 480, 540. This creates hierarchy through subtle weight differences rather than dramatic jumps. The difference between 330 and 340 is nearly imperceptible but structurally significant.
-- **Light as the base**: Most body text uses 320–340 (lighter than typical 400 "regular"), creating an ethereal, airy reading experience that matches the design-tool aesthetic.
-- **Kern everywhere**: Every text element enables OpenType `"kern"` feature — kerning is not optional, it's structural.
-- **Negative tracking by default**: Even body text uses -0.1px to -0.26px letter-spacing, creating universally tight text. Display text compresses further to -0.96px and -1.72px.
-- **Mono for structure**: figmaMono in uppercase with positive letter-spacing (0.54px–0.6px) creates technical signpost labels.
+### 原则
+- **可变字体精度**：figmaSans 使用多数系统从不触及的字重——320、330、340、450、480、540。这通过微妙的字重差异而非戏剧性跳跃来建立层级。330 和 340 之间的差异几乎无法察觉，但在结构上意义重大。
+- **轻字重为基准**：大多数正文使用 320–340（比典型的 400 "regular" 更轻），营造出一种空灵、通透的阅读体验，契合设计工具美学。
+- **处处字距调整**：每个文字元素都启用 OpenType `"kern"` 特性——字距调整不是可选的，它是结构性的。
+- **默认负字距**：即便正文也使用 -0.1px 到 -0.26px 字间距，创造普遍紧凑的文字。展示文字进一步压缩到 -0.96px 和 -1.72px。
+- **等宽用于结构**：figmaMono 大写带正字间距（0.54px–0.6px）创造技术路标标签。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Black Solid (Pill)**
-- Background: Pure Black (`#000000`)
-- Text: Pure White (`#ffffff`)
-- Radius: circle (50%) for icon buttons
-- Focus: dashed 2px outline
-- Maximum emphasis
+**黑色实心（胶囊）**
+- 背景：纯黑（`#000000`）
+- 文字：纯白（`#ffffff`）
+- 圆角：圆形（50%）用于图标按钮
+- 聚焦：dashed 2px 轮廓
+- 最大强调
 
-**White Pill**
-- Background: Pure White (`#ffffff`)
-- Text: Pure Black (`#000000`)
-- Padding: 8px 18px 10px (asymmetric vertical)
-- Radius: pill (50px)
-- Focus: dashed 2px outline
-- Standard CTA on dark/colored surfaces
+**白色胶囊**
+- 背景：纯白（`#ffffff`）
+- 文字：纯黑（`#000000`）
+- 内边距：8px 18px 10px（垂直不对称）
+- 圆角：胶囊（50px）
+- 聚焦：dashed 2px 轮廓
+- 深色/彩色表面上的标准 CTA
 
-**Glass Dark**
-- Background: `rgba(0, 0, 0, 0.08)` (subtle dark overlay)
-- Text: Pure Black
-- Radius: circle (50%)
-- Focus: dashed 2px outline
-- Secondary action on light surfaces
+**玻璃深色**
+- 背景：`rgba(0, 0, 0, 0.08)`（微妙深色叠加）
+- 文字：纯黑
+- 圆角：圆形（50%）
+- 聚焦：dashed 2px 轮廓
+- 浅色表面上的次要操作
 
-**Glass Light**
-- Background: `rgba(255, 255, 255, 0.16)` (frosted glass)
-- Text: Pure White
-- Radius: circle (50%)
-- Focus: dashed 2px outline
-- Secondary action on dark/colored surfaces
+**玻璃浅色**
+- 背景：`rgba(255, 255, 255, 0.16)`（磨砂玻璃）
+- 文字：纯白
+- 圆角：圆形（50%）
+- 聚焦：dashed 2px 轮廓
+- 深色/彩色表面上的次要操作
 
-### Cards & Containers
-- Background: Pure White
-- Border: none or minimal
-- Radius: 6px (small containers), 8px (images, cards, dialogs)
-- Shadow: subtle to medium elevation effects
-- Product screenshots as card content
+### 卡片与容器
+- 背景：纯白
+- 边框：无或极简
+- 圆角：6px（小容器）、8px（图片、卡片、对话框）
+- 阴影：微妙到中等的抬升效果
+- 产品截图作为卡片内容
 
-### Navigation
-- Clean horizontal nav on white
-- Logo: Figma wordmark in black
-- Product tabs: pill-shaped (50px) tab navigation
-- Links: black text, underline 1px decoration
-- CTA: Black pill button
-- Hover: text color via CSS variable
+### 导航
+- 白色背景上的干净横向导航
+- Logo：Figma 文字商标，黑色
+- 产品标签页：胶囊形（50px）标签页导航
+- 链接：黑色文字，下划线 1px 装饰
+- CTA：黑色胶囊按钮
+- 悬停：通过 CSS 变量改变文字颜色
 
-### Distinctive Components
+### 独特组件
 
-**Product Tab Bar**
-- Horizontal pill-shaped tabs (50px radius)
-- Each tab represents a Figma product area (Design, Dev Mode, Prototyping, etc.)
-- Active tab highlighted
+**产品标签栏**
+- 横向胶囊形标签（50px 圆角）
+- 每个标签代表一个 Figma 产品区域（Design、Dev Mode、Prototyping 等）
+- 激活标签高亮
 
-**Hero Gradient Section**
-- Full-width vibrant multi-color gradient background
-- White text overlay with 86px display heading
-- Product screenshots floating within the gradient
+**英雄渐变区**
+- 全宽鲜艳多彩渐变背景
+- 白色文字叠加，86px 展示标题
+- 产品截图漂浮在渐变之中
 
-**Dashed Focus Indicators**
-- All interactive elements use `dashed 2px` outline on focus
-- References the selection handles in the Figma editor
-- A meta-design choice connecting website and product
+**虚线聚焦指示器**
+- 所有交互元素在聚焦时使用 `dashed 2px` 轮廓
+- 引用 Figma 编辑器中的选择手柄
+- 连接网站与产品的元设计选择
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 2px, 4px, 4.5px, 8px, 10px, 12px, 16px, 18px, 24px, 32px, 40px, 46px, 48px, 50px
+### 间距系统
+- 基础单位：8px
+- 阶梯：1px, 2px, 4px, 4.5px, 8px, 10px, 12px, 16px, 18px, 24px, 32px, 40px, 46px, 48px, 50px
 
-### Grid & Container
-- Max container width: up to 1920px
-- Hero: full-width gradient with centered content
-- Product sections: alternating showcases
-- Footer: dark full-width section
-- Responsive from 559px to 1920px
+### 网格与容器
+- 最大容器宽度：最高 1920px
+- 英雄：全宽渐变，内容居中
+- 产品区块：交替展示
+- 页脚：深色全宽区块
+- 从 559px 到 1920px 响应式
 
-### Whitespace Philosophy
-- **Gallery-like pacing**: Generous spacing lets each product section breathe as its own exhibit.
-- **Color sections as visual breathing**: The gradient hero and product showcases provide chromatic relief between the monochrome interface sections.
+### 留白哲学
+- **画廊般的节奏**：慷慨的间距让每个产品区块像独立的展品一样呼吸。
+- **彩色区块作为视觉呼吸**：渐变英雄区和产品展示在单色界面区块之间提供色彩上的舒缓。
 
-### Border Radius Scale
-- Minimal (2px): Small link elements
-- Subtle (6px): Small containers, dividers
-- Comfortable (8px): Cards, images, dialogs
-- Pill (50px): Tab buttons, CTAs
-- Circle (50%): Icon buttons, circular elements
+### 圆角阶梯
+- 微小（2px）：小链接元素
+- 微妙（6px）：小容器、分隔线
+- 舒适（8px）：卡片、图片、对话框
+- 胶囊（50px）：标签按钮、CTA
+- 圆形（50%）：图标按钮、圆形元素
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-| Level | Treatment | Use |
+| 级别 | 处理 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | Page background, most text |
-| Surface (Level 1) | White card on gradient/dark section | Cards, product showcases |
-| Elevated (Level 2) | Subtle shadow | Floating cards, hover states |
+| 扁平（级别 0） | 无阴影 | 页面背景、大多数文字 |
+| 表面（级别 1） | 渐变/深色区块上的白色卡片 | 卡片、产品展示 |
+| 抬升（级别 2） | 微妙阴影 | 浮动卡片、悬停状态 |
 
-**Shadow Philosophy**: Figma uses shadows sparingly. The primary depth mechanisms are **background contrast** (white content on colorful/dark sections) and the inherent dimensionality of the product screenshots themselves.
+**阴影哲学**：Figma 谨慎使用阴影。主要的深度机制是 **背景对比**（彩色/深色区块上的白色内容）以及产品截图本身固有的立体感。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use figmaSans with precise variable weights (320–540) — the granular weight control IS the design
-- Keep the interface strictly black-and-white — color comes from product content only
-- Use pill (50px) and circular (50%) geometry for all interactive elements
-- Apply dashed 2px focus outlines — the signature accessibility pattern
-- Enable `"kern"` feature on all text
-- Use figmaMono in uppercase with positive letter-spacing for labels
-- Apply negative letter-spacing throughout (-0.1px to -1.72px)
+### 宜
+- 使用 figmaSans 的精确可变字重（320–540）——精细的字重控制即是设计
+- 保持界面严格黑白——颜色仅来自产品内容
+- 对所有交互元素使用胶囊（50px）和圆形（50%）几何
+- 应用 dashed 2px 聚焦轮廓——标志性的无障碍模式
+- 在所有文字上启用 `"kern"` 特性
+- 使用 figmaMono 大写带正字间距作为标签
+- 全程应用负字间距（-0.1px 到 -1.72px）
 
-### Don't
-- Don't add interface colors — the monochrome palette is absolute
-- Don't use standard font weights (400, 500, 600, 700) — use the variable font's unique stops (320, 330, 340, 450, 480, 540)
-- Don't use sharp corners on buttons — pill and circular geometry only
-- Don't use solid focus outlines — dashed is the signature
-- Don't increase body font weight above 450 — the light-weight aesthetic is core
-- Don't use positive letter-spacing on body text — it's always negative
+### 忌
+- 不要添加界面颜色——单色调色板是绝对的
+- 不要使用标准字重（400、500、600、700）——使用可变字体的独特停靠点（320、330、340、450、480、540）
+- 不要在按钮上使用尖角——仅胶囊和圆形几何
+- 不要使用实线聚焦轮廓——虚线是签名
+- 不要将正文字重提高到 450 以上——轻字重美学是核心
+- 不要在正文上使用正字间距——始终为负
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Small Mobile | <560px | Compact layout, stacked |
-| Tablet | 560–768px | Minor adjustments |
-| Small Desktop | 768–960px | 2-column layouts |
-| Desktop | 960–1280px | Standard layout |
-| Large Desktop | 1280–1440px | Expanded |
-| Ultra-wide | 1440–1920px | Maximum width |
+| 小型移动 | <560px | 紧凑布局，堆叠 |
+| 平板 | 560–768px | 轻微调整 |
+| 小型桌面 | 768–960px | 2 列布局 |
+| 桌面 | 960–1280px | 标准布局 |
+| 大型桌面 | 1280–1440px | 扩展 |
+| 超宽 | 1440–1920px | 最大宽度 |
 
-### Collapsing Strategy
-- Hero text: 86px → 64px → 48px
-- Product tabs: horizontal scroll on mobile
-- Feature sections: stacked single column
-- Footer: multi-column → stacked
+### 折叠策略
+- 英雄文字：86px → 64px → 48px
+- 产品标签：移动端横向滚动
+- 功能区块：堆叠为单列
+- 页脚：多列 → 堆叠
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Everything: "Pure Black (#000000)" and "Pure White (#ffffff)"
-- Glass Dark: "rgba(0, 0, 0, 0.08)"
-- Glass Light: "rgba(255, 255, 255, 0.16)"
+### 快速颜色参考
+- 一切："纯黑 (#000000)" 和 "纯白 (#ffffff)"
+- 玻璃深色："rgba(0, 0, 0, 0.08)"
+- 玻璃浅色："rgba(255, 255, 255, 0.16)"
 
-### Example Component Prompts
-- "Create a hero on a vibrant multi-color gradient (green, yellow, purple, pink). Headline at 86px figmaSans weight 400, line-height 1.0, letter-spacing -1.72px. White text. White pill CTA button (50px radius, 8px 18px padding)."
-- "Design a product tab bar with pill-shaped buttons (50px radius). Active: Black bg, white text. Inactive: transparent, black text. figmaSans at 20px weight 480."
-- "Build a section label: figmaMono 18px, uppercase, letter-spacing 0.54px, black text. Kern enabled."
-- "Create body text at 20px figmaSans weight 330, line-height 1.40, letter-spacing -0.14px. Pure Black on white."
+### 示例组件提示
+- "在鲜艳多彩渐变（绿、黄、紫、粉）上创建英雄区。标题 86px figmaSans 字重 400，行高 1.0，字间距 -1.72px。白色文字。白色胶囊 CTA 按钮（50px 圆角，8px 18px 内边距）。"
+- "设计产品标签栏，配胶囊形按钮（50px 圆角）。激活：黑色背景，白色文字。未激活：透明，黑色文字。figmaSans 20px 字重 480。"
+- "构建章节标签：figmaMono 18px，大写，字间距 0.54px，黑色文字。启用 Kern。"
+- "创建正文 20px figmaSans 字重 330，行高 1.40，字间距 -0.14px。纯黑在白底上。"
 
-### Iteration Guide
-1. Use variable font weight stops precisely: 320, 330, 340, 450, 480, 540, 700
-2. Interface is always black + white — never add colors to chrome
-3. Dashed focus outlines, not solid
-4. Letter-spacing is always negative on body, always positive on mono labels
-5. Pill (50px) for buttons/tabs, circle (50%) for icon buttons
+### 迭代指南
+1. 精确使用可变字重停靠点：320、330、340、450、480、540、700
+2. 界面始终是黑 + 白——永远不要在外框添加颜色
+3. 虚线聚焦轮廓，而非实线
+4. 正文字间距始终为负，等宽标签始终为正
+5. 胶囊（50px）用于按钮/标签，圆形（50%）用于图标按钮

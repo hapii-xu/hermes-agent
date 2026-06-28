@@ -1,33 +1,33 @@
-# Visual Effects
+# 视觉特效
 
-## Noise
+## 噪声
 
-### Perlin Noise Basics
+### 柏林噪声基础
 
 ```javascript
 noiseSeed(42);
-noiseDetail(4, 0.5);  // octaves, falloff
+noiseDetail(4, 0.5);  // 倍频数，衰减
 
-// 1D noise — smooth undulation
-let y = noise(x * 0.01);  // returns 0.0 to 1.0
+// 1D 噪声——平滑起伏
+let y = noise(x * 0.01);  // 返回 0.0 到 1.0
 
-// 2D noise — terrain/texture
+// 2D 噪声——地形/纹理
 let v = noise(x * 0.005, y * 0.005);
 
-// 3D noise — animated 2D field (z = time)
+// 3D 噪声——动画化的 2D 场（z = 时间）
 let v = noise(x * 0.005, y * 0.005, frameCount * 0.005);
 ```
 
-The scale factor (0.005 etc.) is critical:
-- `0.001` — very smooth, large features
-- `0.005` — smooth, medium features
-- `0.01` — standard generative art scale
-- `0.05` — detailed, small features
-- `0.1` — near-random, grainy
+缩放因子（0.005 等）至关重要：
+- `0.001`——非常平滑，大尺度特征
+- `0.005`——平滑，中等特征
+- `0.01`——标准生成艺术尺度
+- `0.05`——细致，小特征
+- `0.1`——近随机，颗粒感
 
-### Fractal Brownian Motion (fBM)
+### 分形布朗运动（fBM）
 
-Layered noise octaves for natural-looking texture. Each octave adds detail at smaller scale.
+叠加多倍频噪声以获得自然纹理。每个倍频在更小尺度上添加细节。
 
 ```javascript
 function fbm(x, y, octaves = 6, lacunarity = 2.0, gain = 0.5) {
@@ -45,17 +45,17 @@ function fbm(x, y, octaves = 6, lacunarity = 2.0, gain = 0.5) {
 }
 ```
 
-### Domain Warping
+### 域畸变
 
-Feed noise output back as input coordinates for flowing organic distortion.
+把噪声输出回喂为输入坐标，获得流动的有机扭曲。
 
 ```javascript
 function domainWarp(x, y, scale, strength, time) {
-  // First warp pass
+  // 第一次畸变通道
   let qx = fbm(x + 0.0, y + 0.0);
   let qy = fbm(x + 5.2, y + 1.3);
 
-  // Second warp pass (feed back)
+  // 第二次畸变通道（回喂）
   let rx = fbm(x + strength * qx + 1.7, y + strength * qy + 9.2, 4, 2, 0.5);
   let ry = fbm(x + strength * qx + 8.3, y + strength * qy + 2.8, 4, 2, 0.5);
 
@@ -63,26 +63,26 @@ function domainWarp(x, y, scale, strength, time) {
 }
 ```
 
-### Curl Noise
+### 旋度噪声
 
-Divergence-free noise field. Particles following curl noise never converge or diverge — they flow in smooth, swirling patterns.
+无散度的噪声场。跟随旋度噪声的粒子永不汇聚或发散——它们以平滑、漩涡式的模式流动。
 
 ```javascript
 function curlNoise(x, y, scale, time) {
   let eps = 0.001;
-  // Partial derivatives via finite differences
+  // 通过有限差分求偏导
   let dndx = (noise(x * scale + eps, y * scale, time) -
               noise(x * scale - eps, y * scale, time)) / (2 * eps);
   let dndy = (noise(x * scale, y * scale + eps, time) -
               noise(x * scale, y * scale - eps, time)) / (2 * eps);
-  // Curl = perpendicular to gradient
+  // 旋度 = 与梯度垂直
   return createVector(dndy, -dndx);
 }
 ```
 
-## Flow Fields
+## 流场
 
-A grid of vectors that steer particles. The foundational generative art technique.
+一个由向量组成的网格，用来引导粒子。这是生成艺术的基础技法。
 
 ```javascript
 class FlowField {
@@ -111,7 +111,7 @@ class FlowField {
 }
 ```
 
-### Flow Field Particle
+### 流场粒子
 
 ```javascript
 class FlowParticle {
@@ -126,7 +126,7 @@ class FlowParticle {
 
   follow(field) {
     let force = field.lookup(this.pos.x, this.pos.y);
-    force.mult(0.5);  // force magnitude
+    force.mult(0.5);  // 力的大小
     this.acc.add(force);
   }
 
@@ -144,7 +144,7 @@ class FlowParticle {
     if (this.pos.x < 0) this.pos.x = width;
     if (this.pos.y > height) this.pos.y = 0;
     if (this.pos.y < 0) this.pos.y = height;
-    this.prev = this.pos.copy();  // prevent wrap line
+    this.prev = this.pos.copy();  // 防止环绕线
   }
 
   display(buffer) {
@@ -155,9 +155,9 @@ class FlowParticle {
 }
 ```
 
-## Particle Systems
+## 粒子系统
 
-### Basic Physics Particle
+### 基础物理粒子
 
 ```javascript
 class Particle {
@@ -189,7 +189,7 @@ class Particle {
 }
 ```
 
-### Attractor-Driven Particles
+### 吸引子驱动的粒子
 
 ```javascript
 class Attractor {
@@ -208,7 +208,7 @@ class Attractor {
 }
 ```
 
-### Boid Flocking
+### Boid 群聚
 
 ```javascript
 class Boid {
@@ -258,9 +258,9 @@ class Boid {
 }
 ```
 
-## Pixel Manipulation
+## 像素操作
 
-### Reading and Writing Pixels
+### 读写像素
 
 ```javascript
 loadPixels();
@@ -272,16 +272,16 @@ for (let y = 0; y < height; y++) {
     let b = pixels[idx + 2];
     let a = pixels[idx + 3];
 
-    // Modify
-    pixels[idx] = 255 - r;       // invert red
-    pixels[idx + 1] = 255 - g;   // invert green
-    pixels[idx + 2] = 255 - b;   // invert blue
+    // 修改
+    pixels[idx] = 255 - r;       // 红色反转
+    pixels[idx + 1] = 255 - g;   // 绿色反转
+    pixels[idx + 2] = 255 - b;   // 蓝色反转
   }
 }
 updatePixels();
 ```
 
-### Pixel-Level Noise Texture
+### 像素级噪声纹理
 
 ```javascript
 loadPixels();
@@ -298,22 +298,22 @@ for (let i = 0; i < pixels.length; i += 4) {
 updatePixels();
 ```
 
-### Built-in Filters
+### 内置滤镜
 
 ```javascript
-filter(BLUR, 3);        // Gaussian blur (radius)
-filter(THRESHOLD, 0.5); // Black/white threshold
-filter(INVERT);          // Color inversion
-filter(POSTERIZE, 4);    // Reduce color levels
-filter(GRAY);            // Desaturate
-filter(ERODE);           // Thin bright areas
-filter(DILATE);          // Expand bright areas
-filter(OPAQUE);          // Remove transparency
+filter(BLUR, 3);        // 高斯模糊（半径）
+filter(THRESHOLD, 0.5); // 黑/白阈值
+filter(INVERT);          // 颜色反转
+filter(POSTERIZE, 4);    // 减少色阶
+filter(GRAY);            // 去饱和
+filter(ERODE);           // 收缩亮区
+filter(DILATE);          // 扩展亮区
+filter(OPAQUE);          // 移除透明度
 ```
 
-## Texture Generation
+## 纹理生成
 
-### Stippling / Pointillism
+### 点画 / 点彩派
 
 ```javascript
 function stipple(buffer, density, minSize, maxSize) {
@@ -333,7 +333,7 @@ function stipple(buffer, density, minSize, maxSize) {
 }
 ```
 
-### Halftone
+### 半色调
 
 ```javascript
 function halftone(sourceBuffer, dotSpacing, maxDotSize) {
@@ -352,11 +352,11 @@ function halftone(sourceBuffer, dotSpacing, maxDotSize) {
 }
 ```
 
-### Cross-Hatching
+### 交叉排线
 
 ```javascript
 function crossHatch(x, y, w, h, value, spacing) {
-  // value: 0 (dark) to 1 (light)
+  // value：0（深）到 1（浅）
   let numLayers = floor(map(value, 0, 1, 4, 0));
   let angles = [PI/4, -PI/4, 0, PI/2];
 
@@ -373,9 +373,9 @@ function crossHatch(x, y, w, h, value, spacing) {
 }
 ```
 
-## Feedback Loops
+## 反馈回路
 
-### Frame Feedback (Echo/Trail)
+### 帧反馈（回声/拖尾）
 
 ```javascript
 let feedback;
@@ -386,31 +386,31 @@ function setup() {
 }
 
 function draw() {
-  // Copy current feedback, slightly zoomed and rotated
+  // 复制当前反馈，略微缩放和旋转
   let temp = feedback.get();
 
   feedback.push();
   feedback.translate(width/2, height/2);
-  feedback.scale(1.005);  // slow zoom
-  feedback.rotate(0.002); // slow rotation
+  feedback.scale(1.005);  // 缓慢缩放
+  feedback.rotate(0.002); // 缓慢旋转
   feedback.translate(-width/2, -height/2);
-  feedback.tint(255, 245);  // slight fade
+  feedback.tint(255, 245);  // 轻微渐隐
   feedback.image(temp, 0, 0);
   feedback.pop();
 
-  // Draw new content to feedback
+  // 把新内容绘到反馈上
   feedback.noStroke();
   feedback.fill(255);
   feedback.ellipse(mouseX, mouseY, 20);
 
-  // Show
+  // 显示
   image(feedback, 0, 0);
 }
 ```
 
-### Bloom / Glow (Post-Processing)
+### 泛光 / 辉光（后期处理）
 
-Downsample the scene to a small buffer, blur it, overlay additively. Creates soft glow around bright areas. This is the standard generative art bloom technique.
+把场景降采样到一个小缓冲，模糊，再以相加方式叠加。在亮区周围创造柔和辉光。这是标准的生成艺术泛光技法。
 
 ```javascript
 let scene, bloomBuf;
@@ -422,72 +422,72 @@ function setup() {
 }
 
 function draw() {
-  // 1. Render scene to offscreen buffer
+  // 1. 把场景渲染到离屏缓冲
   scene.background(0);
   scene.fill(255, 200, 100);
   scene.noStroke();
-  // ... draw bright elements to scene ...
+  // ... 把亮元素绘到 scene ...
 
-  // 2. Build bloom: downsample → blur → upscale
+  // 2. 构建泛光：降采样 → 模糊 → 升采样
   bloomBuf.clear();
-  bloomBuf.image(scene, 0, 0, width / 4, height / 4);  // 4x downsample
-  bloomBuf.filter(BLUR, 6);  // blur the small version
+  bloomBuf.image(scene, 0, 0, width / 4, height / 4);  // 4 倍降采样
+  bloomBuf.filter(BLUR, 6);  // 模糊小版本
 
-  // 3. Composite: scene + additive bloom
+  // 3. 合成：场景 + 相加式泛光
   background(0);
-  image(scene, 0, 0);           // base layer
-  blendMode(ADD);               // additive = glow
-  tint(255, 80);                // control bloom intensity (0-255)
-  image(bloomBuf, 0, 0, width, height);  // upscale back to full size
+  image(scene, 0, 0);           // 基础层
+  blendMode(ADD);               // 相加 = 辉光
+  tint(255, 80);                // 控制泛光强度（0-255）
+  image(bloomBuf, 0, 0, width, height);  // 升采样回全尺寸
   noTint();
-  blendMode(BLEND);             // ALWAYS reset blend mode
+  blendMode(BLEND);             // 务必重置混合模式
 }
 ```
 
-**Tuning:**
-- Downsample ratio (1/4 is standard, 1/8 for softer, 1/2 for tighter)
-- Blur radius (4-8 typical, higher = wider glow)
-- Tint alpha (40-120, controls glow intensity)
-- Update bloom every N frames to save perf: `if (frameCount % 2 === 0) { ... }`
+**调参：**
+- 降采样比（1/4 是标准，1/8 更柔，1/2 更紧）
+- 模糊半径（典型 4-8，越大辉光越宽）
+- Tint alpha（40-120，控制辉光强度）
+- 每 N 帧更新泛光以省性能：`if (frameCount % 2 === 0) { ... }`
 
-**Common mistake:** Forgetting `blendMode(BLEND)` after the ADD pass — everything drawn after will be additive.
+**常见错误：** 在 ADD 通道后忘记 `blendMode(BLEND)`——此后绘的一切都会变成相加式。
 
-### Trail Buffer Brightness
+### 拖尾缓冲亮度
 
-Trail accumulation via `createGraphics()` + semi-transparent fade rect is the standard technique for particle trails, but **trails are always dimmer than you expect**. The fade rect's alpha compounds multiplicatively every frame.
+通过 `createGraphics()` + 半透明渐隐矩形做拖尾累积是粒子拖尾的标准技法，但**拖尾总是比你预期的更暗**。渐隐矩形的 alpha 每帧以乘法复合。
 
 ```javascript
-// The fade rect alpha controls trail length AND brightness:
+// 渐隐矩形 alpha 同时控制拖尾长度和亮度：
 trailBuf.fill(0, 0, 0, alpha);
 trailBuf.rect(0, 0, width, height);
 
-// alpha=5  → very long trails, very dim (content fades to 50% in ~35 frames)
-// alpha=10 → long trails, dim
-// alpha=20 → medium trails, visible
-// alpha=40 → short trails, bright
-// alpha=80 → very short trails, crisp
+// alpha=5  → 极长拖尾，极暗（内容约 35 帧后渐隐到 50%）
+// alpha=10 → 长拖尾，暗
+// alpha=20 → 中等拖尾，可见
+// alpha=40 → 短拖尾，亮
+// alpha=80 → 极短拖尾，清晰
 ```
 
-**The trap:** You set alpha=5 for long trails, but particle strokes at alpha=30 are invisible because they fade before accumulating enough density. Either:
-- **Boost stroke alpha** to 80-150 (not the intuitive 20-40)
-- **Reduce fade alpha** but accept shorter trails
-- **Use additive blending** for the strokes: bright particles accumulate, dim ones stay dark
+**陷阱：** 你为长拖尾设了 alpha=5，但 alpha=30 的粒子描边却看不见，因为它们在累积到足够密度前就渐隐了。要么：
+- **把描边 alpha 提到** 80-150（而非直觉上的 20-40）
+- **降低渐隐 alpha**，但接受更短的拖尾
+- **对描边使用相加混合**：亮粒子累积，暗粒子保持暗
 
 ```javascript
-// WRONG: low fade + low stroke = invisible
-trailBuf.fill(0, 0, 0, 5);     // long trails
+// 错误：低渐隐 + 低描边 = 看不见
+trailBuf.fill(0, 0, 0, 5);     // 长拖尾
 trailBuf.rect(0, 0, W, H);
-trailBuf.stroke(255, 30);       // too dim to ever accumulate
+trailBuf.stroke(255, 30);       // 太暗，永远累积不起来
 trailBuf.line(px, py, x, y);
 
-// RIGHT: low fade + high stroke = visible long trails
+// 正确：低渐隐 + 高描边 = 可见的长拖尾
 trailBuf.fill(0, 0, 0, 5);
 trailBuf.rect(0, 0, W, H);
-trailBuf.stroke(255, 100);      // bright enough to persist through fade
+trailBuf.stroke(255, 100);      // 足够亮，能穿过渐隐留存
 trailBuf.line(px, py, x, y);
 ```
 
-### Reaction-Diffusion (Gray-Scott)
+### 反应-扩散（Gray-Scott）
 
 ```javascript
 class ReactionDiffusion {
@@ -539,7 +539,7 @@ class ReactionDiffusion {
 }
 ```
 
-## Pixel Sorting
+## 像素排序
 
 ```javascript
 function pixelSort(buffer, threshold, direction = 'horizontal') {
@@ -575,11 +575,11 @@ function findSpans(px, row, w, threshold, horizontal) {
 }
 ```
 
-## Advanced Generative Techniques
+## 高级生成技法
 
-### L-Systems (Lindenmayer Systems)
+### L 系统（Lindenmayer 系统）
 
-Grammar-based recursive growth for trees, plants, fractals.
+基于文法的递归生长，用于树木、植物、分形。
 
 ```javascript
 class LSystem {
@@ -612,7 +612,7 @@ class LSystem {
   }
 }
 
-// Usage: fractal plant
+// 用法：分形植物
 let lsys = new LSystem('X', {
   'X': 'F+[[X]-X]-F[-FX]+X',
   'F': 'FF'
@@ -622,9 +622,9 @@ translate(width/2, height);
 lsys.draw(4, radians(25));
 ```
 
-### Circle Packing
+### 圆堆叠
 
-Fill a space with non-overlapping circles of varying size.
+用大小不一、互不重叠的圆填满空间。
 
 ```javascript
 class PackedCircle {
@@ -637,7 +637,7 @@ class PackedCircle {
 
   overlaps(other) {
     let d = dist(this.x, this.y, other.x, other.y);
-    return d < this.r + other.r + 2;  // +2 gap
+    return d < this.r + other.r + 2;  // +2 间隙
   }
 
   atEdge() {
@@ -649,7 +649,7 @@ class PackedCircle {
 let circles = [];
 
 function packStep() {
-  // Try to place new circle
+  // 尝试放置新圆
   for (let attempts = 0; attempts < 100; attempts++) {
     let x = random(width), y = random(height);
     let valid = true;
@@ -659,7 +659,7 @@ function packStep() {
     if (valid) { circles.push(new PackedCircle(x, y, 1)); break; }
   }
 
-  // Grow existing circles
+  // 让现有圆生长
   for (let c of circles) {
     if (!c.growing) continue;
     c.grow();
@@ -671,10 +671,10 @@ function packStep() {
 }
 ```
 
-### Voronoi Diagram (Fortune's Algorithm Approximation)
+### Voronoi 图（Fortune 算法近似）
 
 ```javascript
-// Simple brute-force Voronoi (for small point counts)
+// 简单的暴力 Voronoi（适用于小点数）
 function drawVoronoi(points, colors) {
   loadPixels();
   for (let y = 0; y < height; y++) {
@@ -697,7 +697,7 @@ function drawVoronoi(points, colors) {
 }
 ```
 
-### Fractal Trees
+### 分形树
 
 ```javascript
 function fractalTree(x, y, len, angle, depth, branchAngle) {
@@ -714,14 +714,14 @@ function fractalTree(x, y, len, angle, depth, branchAngle) {
   fractalTree(x2, y2, len * shrink, angle + branchAngle, depth - 1, branchAngle);
 }
 
-// Usage
+// 用法
 fractalTree(width/2, height, 120, -HALF_PI, 10, PI/6);
 ```
 
-### Strange Attractors
+### 奇异吸引子
 
 ```javascript
-// Clifford Attractor
+// Clifford 吸引子
 function cliffordAttractor(a, b, c, d, iterations) {
   let x = 0, y = 0;
   beginShape(POINTS);
@@ -736,7 +736,7 @@ function cliffordAttractor(a, b, c, d, iterations) {
   endShape();
 }
 
-// De Jong Attractor
+// De Jong 吸引子
 function deJongAttractor(a, b, c, d, iterations) {
   let x = 0, y = 0;
   beginShape(POINTS);
@@ -752,9 +752,9 @@ function deJongAttractor(a, b, c, d, iterations) {
 }
 ```
 
-### Poisson Disk Sampling
+### 泊松盘采样
 
-Even distribution that looks natural — better than pure random for placing elements.
+看起来自然的均匀分布——比纯随机更适合放置元素。
 
 ```javascript
 function poissonDiskSampling(r, k = 30) {
@@ -769,7 +769,7 @@ function poissonDiskSampling(r, k = 30) {
     return Math.floor(x / cellSize) + Math.floor(y / cellSize) * cols;
   }
 
-  // Seed
+  // 种子
   let p0 = createVector(random(width), random(height));
   points.push(p0);
   active.push(p0);
@@ -815,11 +815,11 @@ function poissonDiskSampling(r, k = 30) {
 }
 ```
 
-## Addon Libraries
+## 附加库
 
-### p5.brush — Natural Media
+### p5.brush — 自然媒介
 
-Hand-drawn, organic aesthetics. Watercolor, charcoal, pen, marker. Requires **p5.js 2.x + WEBGL**.
+手绘、有机美学。水彩、炭笔、钢笔、马克笔。需要 **p5.js 2.x + WEBGL**。
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/p5.brush@latest/dist/p5.brush.js"></script>
@@ -828,9 +828,9 @@ Hand-drawn, organic aesthetics. Watercolor, charcoal, pen, marker. Requires **p5
 ```javascript
 function setup() {
   createCanvas(1200, 1200, WEBGL);
-  brush.scaleBrushes(3);  // essential for proper sizing
-  translate(-width/2, -height/2);  // WEBGL origin is center
-  brush.pick('2B');  // pencil brush
+  brush.scaleBrushes(3);  // 正确尺寸所必需
+  translate(-width/2, -height/2);  // WEBGL 原点在中心
+  brush.pick('2B');  // 铅笔笔刷
   brush.stroke(50, 50, 50);
   brush.strokeWeight(2);
   brush.line(100, 100, 500, 500);
@@ -840,10 +840,10 @@ function setup() {
 }
 ```
 
-Built-in brushes: `2B`, `HB`, `2H`, `cpencil`, `pen`, `rotring`, `spray`, `marker`, `charcoal`, `hatch_brush`.
-Built-in vector fields: `hand`, `curved`, `zigzag`, `waves`, `seabed`, `spiral`, `columns`.
+内置笔刷：`2B`、`HB`、`2H`、`cpencil`、`pen`、`rotring`、`spray`、`marker`、`charcoal`、`hatch_brush`。
+内置向量场：`hand`、`curved`、`zigzag`、`waves`、`seabed`、`spiral`、`columns`。
 
-### p5.grain — Film Grain & Texture
+### p5.grain — 胶片颗粒与纹理
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/p5.grain@0.7.0/p5.grain.min.js"></script>
@@ -851,15 +851,15 @@ Built-in vector fields: `hand`, `curved`, `zigzag`, `waves`, `seabed`, `spiral`,
 
 ```javascript
 function draw() {
-  // ... render scene ...
-  applyMonochromaticGrain(42);   // uniform grain
-  // or: applyChromaticGrain(42); // per-channel randomization
+  // ... 渲染场景 ...
+  applyMonochromaticGrain(42);   // 均匀颗粒
+  // 或：applyChromaticGrain(42); // 按通道随机化
 }
 ```
 
-### CCapture.js — Deterministic Video Capture
+### CCapture.js — 确定性视频捕获
 
-Records canvas at fixed framerate regardless of actual render speed. Essential for complex generative art.
+以固定帧率录制画布，无论实际渲染速度如何。复杂生成艺术必备。
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/ccapture.js-npmfixed/build/CCapture.all.min.js"></script>
@@ -874,8 +874,8 @@ function setup() {
     format: 'webm',
     framerate: 60,
     quality: 99,
-    // timeLimit: 10,    // auto-stop after N seconds
-    // motionBlurFrames: 4  // supersampled motion blur
+    // timeLimit: 10,    // N 秒后自动停止
+    // motionBlurFrames: 4  // 超采样的运动模糊
   });
 }
 
@@ -884,12 +884,12 @@ function startRecording() {
 }
 
 function draw() {
-  // ... render frame ...
+  // ... 渲染帧 ...
   if (capturer) capturer.capture(document.querySelector('canvas'));
 }
 
 function stopRecording() {
   capturer.stop();
-  capturer.save();  // triggers download
+  capturer.save();  // 触发下载
 }
 ```

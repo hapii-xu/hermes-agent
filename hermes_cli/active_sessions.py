@@ -1,8 +1,7 @@
-"""Cross-process active chat session leases.
+"""跨进程活跃聊天会话租约。
 
-The session database records persisted conversations.  This module records
-currently open chat surfaces, including idle CLI/TUI sessions that have not
-written a transcript row yet.
+会话数据库记录已持久化的对话。本模块记录
+当前打开的聊天界面，包括尚未写入会话记录行的空闲 CLI/TUI 会话。
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def coerce_max_concurrent_sessions(value: Any, key: str = "max_concurrent_sessions") -> Optional[int]:
-    """Return a positive integer cap, or None when disabled/invalid."""
+    """返回正整数上限，若已禁用或无效则返回 None。"""
     if value is None:
         return None
     if isinstance(value, bool):
@@ -54,7 +53,7 @@ def coerce_max_concurrent_sessions(value: Any, key: str = "max_concurrent_sessio
 
 
 def resolve_max_concurrent_sessions(config: Any) -> Optional[int]:
-    """Resolve top-level max_concurrent_sessions with gateway.* fallback."""
+    """解析顶层 max_concurrent_sessions，回退到 gateway.* 配置。"""
     raw: Any = None
     key = "max_concurrent_sessions"
     if isinstance(config, dict):
@@ -166,8 +165,8 @@ def _write_entries(path: Path, entries: list[dict[str, Any]]) -> None:
 
 
 def _process_start_time(pid: int) -> Optional[float]:
-    # Pair pid with process create_time when psutil can read it, so a recycled
-    # pid does not keep a stale lease alive indefinitely.
+    # 当 psutil 可读取时，将 pid 与进程创建时间配对，
+    # 以防止被回收的 pid 无限期保持过期租约。
     try:
         import psutil  # type: ignore
 
@@ -238,10 +237,10 @@ def try_acquire_active_session(
     config: Any,
     metadata: Optional[dict[str, Any]] = None,
 ) -> tuple[Optional[ActiveSessionLease], Optional[str]]:
-    """Acquire an active-session slot.
+    """获取一个活跃会话槽位。
 
-    Returns ``(lease, None)`` on success.  When the cap is disabled, the lease is
-    a no-op object so callers can unconditionally call ``release()``.
+    成功时返回 ``(lease, None)``。当上限被禁用时，lease 是
+    一个空操作对象，调用方可无条件调用 ``release()``。
     """
     max_sessions = resolve_max_concurrent_sessions(config)
     lease_id = uuid.uuid4().hex
@@ -317,7 +316,7 @@ def transfer_active_session(
     session_id: str,
     metadata: Optional[dict[str, Any]] = None,
 ) -> bool:
-    """Move an existing lease to a new session id without dropping the slot."""
+    """将现有租约迁移到新的会话 ID，且不释放槽位。"""
     new_session_id = str(session_id or "")
     if not new_session_id:
         return False
@@ -349,7 +348,7 @@ def transfer_active_session(
 
 
 def active_session_registry_snapshot() -> list[dict[str, Any]]:
-    """Return the pruned active-session registry for diagnostics/tests."""
+    """返回经过清理的活跃会话注册表，用于诊断或测试。"""
     state_path = _state_path()
     with _FileLock(_lock_path()):
         entries = _prune_dead(_read_entries(state_path))

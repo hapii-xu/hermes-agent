@@ -1,16 +1,15 @@
 """
-`hermes computer-use doctor` — thin client for cua-driver's `health_report` MCP tool.
+`hermes computer-use doctor` —— cua-driver 的 `health_report` MCP 工具的轻量客户端。
 
-cua-driver owns the health model (#1908 / be761fac on `main`). This module
-just drives the stdio JSON-RPC handshake, calls `health_report`, and
-renders the structured response. When the driver gets new checks, they
-flow through here without code changes on the Hermes side — the only
-contract is the stable `schema_version="1"` payload shape.
+cua-driver 拥有健康模型（`main` 分支上的 #1908 / be761fac）。本模块
+只是驱动 stdio JSON-RPC 握手、调用 `health_report`，并渲染结构化
+响应。当驱动新增检查项时，会经由这里而无需 Hermes 侧改动代码——
+唯一的契约就是稳定的 `schema_version="1"` 负载结构。
 
-Exit code conventions:
+退出码约定：
 - 0: overall == "ok"
 - 1: overall in ("degraded", "failed")
-- 2: driver binary missing / unreachable / protocol error
+- 2: 驱动二进制缺失 / 不可达 / 协议错误
 """
 
 from __future__ import annotations
@@ -23,8 +22,8 @@ import sys
 from typing import Any, Dict, List, Optional, Sequence
 
 
-# Match the ALLOWED_STATUS_VALUES + ALLOWED_OVERALL_VALUES the cua-driver
-# integration test pins. If health_report widens its vocabulary, add here.
+# 与 cua-driver 集成测试所固定的 ALLOWED_STATUS_VALUES + ALLOWED_OVERALL_VALUES
+# 保持一致。若 health_report 扩展了词汇表，在此处补充。
 _STATUS_GLYPH = {
     "pass": "✅",
     "fail": "❌",
@@ -38,11 +37,11 @@ _OVERALL_GLYPH = {
 
 
 def _cua_child_env() -> Dict[str, str]:
-    """cua-driver child env with the Hermes telemetry policy applied.
+    """应用了 Hermes 遥测策略的 cua-driver 子进程环境。
 
-    Delegates to ``cua_backend.cua_driver_child_env`` (telemetry disabled by
-    default unless the user opts in). Falls back to the current environment
-    if that import fails, so doctor never breaks on a telemetry-helper error.
+    委托给 ``cua_backend.cua_driver_child_env``（除非用户主动开启，
+    否则默认禁用遥测）。若该导入失败则回退到当前环境，使 doctor
+    永远不会因遥测辅助函数的报错而中断。
     """
     try:
         from tools.computer_use.cua_backend import cua_driver_child_env
@@ -59,13 +58,13 @@ def _drive_health_report(
     skip: Sequence[str] = (),
     timeout: float = 12.0,
 ) -> Dict[str, Any]:
-    """Spawn `<binary> mcp`, perform the JSON-RPC handshake, call
-    `health_report`, and return the parsed `structuredContent` dict.
+    """启动 `<binary> mcp`，执行 JSON-RPC 握手，调用
+    `health_report`，并返回解析后的 `structuredContent` 字典。
 
-    Raises `RuntimeError` on a protocol-level failure (binary crash,
-    malformed response, JSON-RPC error). Never raises on a `health_report`
-    that has failing checks — the tool's contract is to always return a
-    well-formed report with `overall` set, never to set `isError`.
+    在协议级失败（二进制崩溃、响应格式错误、JSON-RPC 错误）时抛出
+    `RuntimeError`。但当 `health_report` 存在失败的检查项时永不抛出
+    异常——该工具的契约是始终返回一份结构良好的报告（带 `overall`
+    字段），而绝不设置 `isError`。
     """
     args: Dict[str, Any] = {}
     if include:
@@ -73,11 +72,10 @@ def _drive_health_report(
     if skip:
         args["skip"] = list(skip)
 
-    # cua-driver emits UTF-8 (containing emoji in check messages on macOS
-    # and arbitrary file paths on Windows). The Python default
-    # text-mode encoding follows the system locale — `cp1252` on a
-    # default Windows install — which raises UnicodeDecodeError on the
-    # first non-ASCII byte. Pin the codec.
+    # cua-driver 输出 UTF-8（macOS 上检查消息中含 emoji，Windows 上
+    # 含任意文件路径）。Python 默认的文本模式编码跟随系统区域设置——
+    # 在默认的 Windows 安装上是 `cp1252`——遇到第一个非 ASCII 字节
+    # 就会抛出 UnicodeDecodeError。这里固定使用该编码。
     proc = subprocess.Popen(
         [binary, "mcp"],
         stdin=subprocess.PIPE,
@@ -90,7 +88,7 @@ def _drive_health_report(
         env=_cua_child_env(),
     )
     try:
-        # 1. initialize
+        # 1. initialize（初始化）
         proc.stdin.write(json.dumps({
             "jsonrpc": "2.0", "id": 1,
             "method": "initialize", "params": {},
@@ -104,7 +102,7 @@ def _drive_health_report(
                 f"stderr tail: {stderr_tail or '(empty)'}"
             )
 
-        # 2. tools/call health_report
+        # 2. tools/call health_report（调用 health_report）
         proc.stdin.write(json.dumps({
             "jsonrpc": "2.0", "id": 2,
             "method": "tools/call",
@@ -135,9 +133,9 @@ def _drive_health_report(
 
     result = resp.get("result") or {}
 
-    # Preferred: structuredContent (cua-driver-rs always emits it on the
-    # health_report response). Fall back to parsing the first text item
-    # as JSON for older cua-driver builds that didn't carry structuredContent.
+    # 首选：structuredContent（cua-driver-rs 在 health_report 响应中始终
+    # 会发送它）。对较早、未携带 structuredContent 的 cua-driver 构建版本，
+    # 回退为把第一个 text 项当作 JSON 解析。
     sc = result.get("structuredContent")
     if isinstance(sc, dict):
         return sc
@@ -146,7 +144,7 @@ def _drive_health_report(
         if item.get("type") == "text":
             text = item.get("text", "")
             try:
-                # Many health_report payloads ship JSON in the text item too.
+                # 许多 health_report 负载也把 JSON 放在 text 项里。
                 parsed = json.loads(text)
                 if isinstance(parsed, dict) and "schema_version" in parsed:
                     return parsed
@@ -160,8 +158,8 @@ def _drive_health_report(
 
 
 def _print_text_report(report: Dict[str, Any], color: bool) -> None:
-    """Render the report in the same style as `cua-driver call health_report`
-    would (one line per check + a summary footer)."""
+    """以与 `cua-driver call health_report` 相同的风格渲染报告
+    （每项检查一行 + 一个摘要页脚）。"""
     schema = report.get("schema_version", "?")
     platform = report.get("platform", "?")
     driver_v = report.get("driver_version", "?")
@@ -170,8 +168,8 @@ def _print_text_report(report: Dict[str, Any], color: bool) -> None:
     header_glyph = _OVERALL_GLYPH.get(overall, "•")
 
     if color and overall in _OVERALL_GLYPH:
-        # No external color library — keep ANSI inline so the doctor
-        # command stays a single self-contained module.
+        # 不引入外部颜色库——将 ANSI 转义内联，使 doctor 命令
+        # 保持为单一自包含模块。
         col_red = "\033[31m"
         col_yellow = "\033[33m"
         col_green = "\033[32m"
@@ -202,15 +200,14 @@ def _print_text_report(report: Dict[str, Any], color: bool) -> None:
         hint = check.get("hint")
         if hint:
             print(f"      → {col_dim}{hint}{col_reset}")
-        # `data` is the structured payload some checks attach (bundle id,
-        # AX permission state, version triple, etc.). Surface when present
-        # because users / support staff frequently need it.
+        # `data` 是某些检查项附带的结构化负载（bundle id、AX 权限状态、
+        # 版本三元组等）。存在时予以展示，因为用户 / 支持人员经常需要它。
         data = check.get("data")
         if isinstance(data, dict) and data:
             for key, value in data.items():
                 rendered = value if not isinstance(value, (dict, list)) else json.dumps(value)
                 print(f"      {col_dim}{key}={rendered}{col_reset}")
-    _ = schema  # acknowledge field for forward-compat readers
+    _ = schema  # 标记该字段已被使用，供前向兼容的读取者参考
 
 
 def run_doctor(
@@ -221,18 +218,18 @@ def run_doctor(
     json_output: bool = False,
     color: Optional[bool] = None,
 ) -> int:
-    """Resolve the cua-driver binary, call `health_report`, render the result.
+    """解析 cua-driver 二进制，调用 `health_report`，渲染结果。
 
-    Honors `HERMES_CUA_DRIVER_CMD` via the same `_cua_driver_cmd()` resolver
-    that `install_cua_driver` + the runtime backend use, so the doctor
-    diagnoses what your `computer_use` toolset will actually invoke.
+    通过 `install_cua_driver` 与运行时后端共用的同一个 `_cua_driver_cmd()`
+    解析器来识别 `HERMES_CUA_DRIVER_CMD`，这样 doctor 诊断的就是你的
+    `computer_use` 工具集实际会调用的目标。
     """
-    # Windows ships stdout/stderr wrapped with the system ANSI codec
-    # (`cp1252` on a US locale, `cp936` on zh-CN, etc.). The check-matrix
-    # output below contains ✅ ❌ ⚠️ ⏭️ glyphs — none of them encodable
-    # in those codepages. Switch stdout to UTF-8 once, idempotently: every
-    # supported TextIOWrapper (Py3.7+) has `.reconfigure`, and a no-op
-    # re-encode is cheap if we were already UTF-8.
+    # Windows 的 stdout/stderr 被系统 ANSI 编解码器包裹（美式区域下
+    # 为 `cp1252`，zh-CN 下为 `cp936` 等）。下方的检查矩阵输出中含
+    # ✅ ❌ ⚠️ ⏭️ 这些字形——它们都无法用这些代码页编码。这里一次性、
+    # 幂等地把 stdout 切换为 UTF-8：每个受支持的 TextIOWrapper（Py3.7+）
+    # 都有 `.reconfigure`，且若原本已是 UTF-8，一次空操作的重编码代价
+    # 也很低。
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]

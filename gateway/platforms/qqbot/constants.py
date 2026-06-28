@@ -1,28 +1,28 @@
-"""QQBot package-level constants shared across adapter, onboard, and other modules."""
+"""QQBot 包级别常量，供适配器、入驻引导及其他模块共享使用。"""
 
 from __future__ import annotations
 
 import os
 
 # ---------------------------------------------------------------------------
-# QQBot adapter version — bump on functional changes to the adapter package.
+# QQBot 适配器版本 — 当适配器包发生功能性变更时需要递增。
 # ---------------------------------------------------------------------------
 
 QQBOT_VERSION = "1.1.0"
 
 # ---------------------------------------------------------------------------
-# API endpoints
+# API 端点
 # ---------------------------------------------------------------------------
 
-# The portal domain is configurable via QQ_API_HOST for corporate proxies
-# or test environments.  Default: q.qq.com (production).
+# Portal 域名可通过 QQ_API_HOST 环境变量配置，适用于企业代理或测试环境。
+# 默认值：q.qq.com（生产环境）。
 PORTAL_HOST = os.getenv("QQ_PORTAL_HOST", "q.qq.com")
 
 API_BASE = "https://api.sgroup.qq.com"
 TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 GATEWAY_URL_PATH = "/gateway"
 
-# QR-code onboard endpoints (on the portal host)
+# 二维码入驻引导端点（位于 portal 域名下）
 ONBOARD_CREATE_PATH = "/lite/create_bind_task"
 ONBOARD_POLL_PATH = "/lite/poll_bind_result"
 QR_URL_TEMPLATE = (
@@ -31,7 +31,7 @@ QR_URL_TEMPLATE = (
 )
 
 # ---------------------------------------------------------------------------
-# Timeouts & retry
+# 超时与重试
 # ---------------------------------------------------------------------------
 
 DEFAULT_API_TIMEOUT = 30.0
@@ -40,15 +40,15 @@ CONNECT_TIMEOUT_SECONDS = 20.0
 
 RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 MAX_RECONNECT_ATTEMPTS = 100
-RATE_LIMIT_DELAY = 60  # seconds
-QUICK_DISCONNECT_THRESHOLD = 5.0  # seconds
+RATE_LIMIT_DELAY = 60  # 秒
+QUICK_DISCONNECT_THRESHOLD = 5.0  # 秒
 MAX_QUICK_DISCONNECT_COUNT = 3
 
-ONBOARD_POLL_INTERVAL = 2.0  # seconds between poll_bind_result calls
+ONBOARD_POLL_INTERVAL = 2.0  # 每次 poll_bind_result 调用之间的间隔（秒）
 ONBOARD_API_TIMEOUT = 10.0
 
 # ---------------------------------------------------------------------------
-# Message limits
+# 消息限制
 # ---------------------------------------------------------------------------
 
 MAX_MESSAGE_LENGTH = 4000
@@ -56,7 +56,7 @@ DEDUP_WINDOW_SECONDS = 300
 DEDUP_MAX_SIZE = 1000
 
 # ---------------------------------------------------------------------------
-# QQ Bot message types
+# QQ Bot 消息类型
 # ---------------------------------------------------------------------------
 
 MSG_TYPE_TEXT = 0
@@ -65,7 +65,7 @@ MSG_TYPE_MEDIA = 7
 MSG_TYPE_INPUT_NOTIFY = 6
 
 # ---------------------------------------------------------------------------
-# QQ Bot file media types
+# QQ Bot 文件媒体类型
 # ---------------------------------------------------------------------------
 
 MEDIA_TYPE_IMAGE = 1

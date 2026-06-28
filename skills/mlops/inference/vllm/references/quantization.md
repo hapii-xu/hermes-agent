@@ -1,41 +1,41 @@
-# Quantization Guide
+# 量化指南
 
-## Contents
-- Quantization methods comparison
-- AWQ setup and usage
-- GPTQ setup and usage
-- FP8 quantization (H100)
-- Model preparation
-- Accuracy vs compression trade-offs
+## 目录
+- 量化方法对比
+- AWQ 设置与使用
+- GPTQ 设置与使用
+- FP8 量化（H100）
+- 模型准备
+- 精度与压缩的折衷
 
-## Quantization methods comparison
+## 量化方法对比
 
-| Method | Compression | Accuracy Loss | Speed | Best For |
+| 方法 | 压缩率 | 精度损失 | 速度 | 最适用于 |
 |--------|-------------|---------------|-------|----------|
-| **AWQ** | 4-bit (75%) | <1% | Fast | 70B models, production |
-| **GPTQ** | 4-bit (75%) | 1-2% | Fast | Wide model support |
-| **FP8** | 8-bit (50%) | <0.5% | Fastest | H100 GPUs only |
-| **SqueezeLLM** | 3-4 bit (75-80%) | 2-3% | Medium | Extreme compression |
+| **AWQ** | 4-bit (75%) | <1% | 快 | 70B 模型、生产环境 |
+| **GPTQ** | 4-bit (75%) | 1-2% | 快 | 广泛的模型支持 |
+| **FP8** | 8-bit (50%) | <0.5% | 最快 | 仅限 H100 GPU |
+| **SqueezeLLM** | 3-4 bit (75-80%) | 2-3% | 中等 | 极致压缩 |
 
-**Recommendation**:
-- **Production**: Use AWQ for 70B models
-- **H100 GPUs**: Use FP8 for best speed
-- **Maximum compatibility**: Use GPTQ
-- **Extreme compression**: Use SqueezeLLM
+**建议**：
+- **生产环境**：对 70B 模型使用 AWQ
+- **H100 GPU**：使用 FP8 获得最佳速度
+- **最大兼容性**：使用 GPTQ
+- **极致压缩**：使用 SqueezeLLM
 
-## AWQ setup and usage
+## AWQ 设置与使用
 
-**AWQ** (Activation-aware Weight Quantization) achieves best accuracy at 4-bit.
+**AWQ**（Activation-aware Weight Quantization，激活感知权重量化）在 4-bit 下精度最佳。
 
-**Step 1: Find pre-quantized model**
+**第 1 步：查找预量化模型**
 
-Search HuggingFace for AWQ models:
+在 HuggingFace 上搜索 AWQ 模型：
 ```bash
-# Example: TheBloke/Llama-2-70B-AWQ
-# Example: TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ
+# 例如：TheBloke/Llama-2-70B-AWQ
+# 例如：TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ
 ```
 
-**Step 2: Launch with AWQ**
+**第 2 步：使用 AWQ 启动**
 
 ```bash
 vllm serve TheBloke/Llama-2-70B-AWQ \
@@ -44,32 +44,32 @@ vllm serve TheBloke/Llama-2-70B-AWQ \
   --gpu-memory-utilization 0.95
 ```
 
-**Memory savings**:
+**显存节省**：
 ```
-Llama 2 70B fp16: 140GB VRAM (4x A100 needed)
-Llama 2 70B AWQ: 35GB VRAM (1x A100 40GB)
-= 4x memory reduction
+Llama 2 70B fp16：140GB VRAM（需要 4x A100）
+Llama 2 70B AWQ：35GB VRAM（1x A100 40GB）
+= 显存减少 4 倍
 ```
 
-**Step 3: Verify performance**
+**第 3 步：验证性能**
 
-Test that outputs are acceptable:
+测试输出是否可接受：
 ```python
 from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
 
-# Test complex reasoning
+# 测试复杂推理
 response = client.chat.completions.create(
     model="TheBloke/Llama-2-70B-AWQ",
     messages=[{"role": "user", "content": "Explain quantum entanglement"}]
 )
 
 print(response.choices[0].message.content)
-# Verify quality matches your requirements
+# 验证质量是否满足你的要求
 ```
 
-**Quantize your own model** (requires GPU with 80GB+ VRAM):
+**量化你自己的模型**（需要 80GB+ VRAM 的 GPU）：
 
 ```python
 from awq import AutoAWQForCausalLM
@@ -78,31 +78,31 @@ from transformers import AutoTokenizer
 model_path = "meta-llama/Llama-2-70b-hf"
 quant_path = "llama-2-70b-awq"
 
-# Load model
+# 加载模型
 model = AutoAWQForCausalLM.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
-# Quantize
+# 量化
 quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4}
 model.quantize(tokenizer, quant_config=quant_config)
 
-# Save
+# 保存
 model.save_quantized(quant_path)
 tokenizer.save_pretrained(quant_path)
 ```
 
-## GPTQ setup and usage
+## GPTQ 设置与使用
 
-**GPTQ** has widest model support and good compression.
+**GPTQ** 拥有最广的模型支持和良好的压缩效果。
 
-**Step 1: Find GPTQ model**
+**第 1 步：查找 GPTQ 模型**
 
 ```bash
-# Example: TheBloke/Llama-2-13B-GPTQ
-# Example: TheBloke/CodeLlama-34B-GPTQ
+# 例如：TheBloke/Llama-2-13B-GPTQ
+# 例如：TheBloke/CodeLlama-34B-GPTQ
 ```
 
-**Step 2: Launch with GPTQ**
+**第 2 步：使用 GPTQ 启动**
 
 ```bash
 vllm serve TheBloke/Llama-2-13B-GPTQ \
@@ -110,16 +110,16 @@ vllm serve TheBloke/Llama-2-13B-GPTQ \
   --dtype float16
 ```
 
-**GPTQ configuration options**:
+**GPTQ 配置选项**：
 ```bash
-# Specify GPTQ parameters if needed
+# 如有需要，指定 GPTQ 参数
 vllm serve MODEL \
   --quantization gptq \
-  --gptq-act-order \  # Activation ordering
+  --gptq-act-order \  # 激活顺序
   --dtype float16
 ```
 
-**Quantize your own model**:
+**量化你自己的模型**：
 
 ```python
 from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
@@ -128,14 +128,14 @@ from transformers import AutoTokenizer
 model_name = "meta-llama/Llama-2-13b-hf"
 quantized_name = "llama-2-13b-gptq"
 
-# Load model
+# 加载模型
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoGPTQForCausalLM.from_pretrained(model_name, quantize_config)
 
-# Prepare calibration data
-calib_data = [...]  # List of sample texts
+# 准备校准数据
+calib_data = [...]  # 样本文本列表
 
-# Quantize
+# 量化
 quantize_config = BaseQuantizeConfig(
     bits=4,
     group_size=128,
@@ -143,20 +143,20 @@ quantize_config = BaseQuantizeConfig(
 )
 model.quantize(calib_data)
 
-# Save
+# 保存
 model.save_quantized(quantized_name)
 ```
 
-## FP8 quantization (H100)
+## FP8 量化（H100）
 
-**FP8** (8-bit floating point) offers best speed on H100 GPUs with minimal accuracy loss.
+**FP8**（8-bit 浮点）在 H100 GPU 上速度最佳，精度损失极小。
 
-**Requirements**:
-- H100 or H800 GPU
-- CUDA 12.3+ (12.8 recommended)
-- Hopper architecture support
+**要求**：
+- H100 或 H800 GPU
+- CUDA 12.3+（推荐 12.8）
+- Hopper 架构支持
 
-**Step 1: Enable FP8**
+**第 1 步：启用 FP8**
 
 ```bash
 vllm serve meta-llama/Llama-3-70B-Instruct \
@@ -164,119 +164,119 @@ vllm serve meta-llama/Llama-3-70B-Instruct \
   --tensor-parallel-size 2
 ```
 
-**Performance gains on H100**:
+**在 H100 上的性能提升**：
 ```
-fp16: 180 tokens/sec
-FP8: 320 tokens/sec
-= 1.8x speedup
+fp16：180 tokens/sec
+FP8：320 tokens/sec
+= 1.8 倍加速
 ```
 
-**Step 2: Verify accuracy**
+**第 2 步：验证精度**
 
-FP8 typically has <0.5% accuracy degradation:
+FP8 通常精度下降 <0.5%：
 ```python
-# Run evaluation suite
-# Compare FP8 vs FP16 on your tasks
-# Verify acceptable accuracy
+# 运行评测套件
+# 在你的任务上对比 FP8 与 FP16
+# 验证精度可接受
 ```
 
-**Dynamic FP8 quantization** (no pre-quantized model needed):
+**动态 FP8 量化**（无需预量化模型）：
 
 ```bash
-# vLLM automatically quantizes at runtime
+# vLLM 在运行时自动量化
 vllm serve MODEL --quantization fp8
-# No model preparation required
+# 无需准备模型
 ```
 
-## Model preparation
+## 模型准备
 
-**Pre-quantized models (easiest)**:
+**预量化模型（最简单）**：
 
-1. Search HuggingFace: `[model name] AWQ` or `[model name] GPTQ`
-2. Download or use directly: `TheBloke/[Model]-AWQ`
-3. Launch with appropriate `--quantization` flag
+1. 在 HuggingFace 搜索：`[model name] AWQ` 或 `[model name] GPTQ`
+2. 下载或直接使用：`TheBloke/[Model]-AWQ`
+3. 用对应的 `--quantization` 标志启动
 
-**Quantize your own model**:
+**量化你自己的模型**：
 
-**AWQ**:
+**AWQ**：
 ```bash
-# Install AutoAWQ
+# 安装 AutoAWQ
 pip install autoawq
 
-# Run quantization script
+# 运行量化脚本
 python quantize_awq.py --model MODEL --output OUTPUT
 ```
 
-**GPTQ**:
+**GPTQ**：
 ```bash
-# Install AutoGPTQ
+# 安装 AutoGPTQ
 pip install auto-gptq
 
-# Run quantization script
+# 运行量化脚本
 python quantize_gptq.py --model MODEL --output OUTPUT
 ```
 
-**Calibration data**:
-- Use 128-512 diverse examples from target domain
-- Representative of production inputs
-- Higher quality calibration = better accuracy
+**校准数据**：
+- 使用来自目标领域的 128-512 个多样化样本
+- 应能代表生产环境的输入
+- 校准数据质量越高 = 精度越好
 
-## Accuracy vs compression trade-offs
+## 精度与压缩的折衷
 
-**Empirical results** (Llama 2 70B on MMLU benchmark):
+**实测结果**（Llama 2 70B 在 MMLU 基准上）：
 
-| Quantization | Accuracy | Memory | Speed | Production-Ready |
+| 量化方式 | 精度 | 显存 | 速度 | 是否生产就绪 |
 |--------------|----------|--------|-------|------------------|
-| FP16 (baseline) | 100% | 140GB | 1.0x | ✅ (if memory available) |
-| FP8 | 99.5% | 70GB | 1.8x | ✅ (H100 only) |
-| AWQ 4-bit | 99.0% | 35GB | 1.5x | ✅ (best for 70B) |
-| GPTQ 4-bit | 98.5% | 35GB | 1.5x | ✅ (good compatibility) |
-| SqueezeLLM 3-bit | 96.0% | 26GB | 1.3x | ⚠️ (check accuracy) |
+| FP16（基线） | 100% | 140GB | 1.0x | ✅（显存充足时） |
+| FP8 | 99.5% | 70GB | 1.8x | ✅（仅 H100） |
+| AWQ 4-bit | 99.0% | 35GB | 1.5x | ✅（70B 模型最佳） |
+| GPTQ 4-bit | 98.5% | 35GB | 1.5x | ✅（兼容性好） |
+| SqueezeLLM 3-bit | 96.0% | 26GB | 1.3x | ⚠️（需核对精度） |
 
-**When to use each**:
+**何时使用哪种方案**：
 
-**No quantization (FP16)**:
-- Have sufficient GPU memory
-- Need absolute best accuracy
-- Model <13B parameters
+**不量化（FP16）**：
+- GPU 显存充足
+- 需要绝对最佳精度
+- 模型 <13B 参数
 
-**FP8**:
-- Using H100/H800 GPUs
-- Need best speed with minimal accuracy loss
-- Production deployment
+**FP8**：
+- 使用 H100/H800 GPU
+- 需要在精度损失极小的前提下获得最佳速度
+- 生产部署
 
-**AWQ 4-bit**:
-- Need to fit 70B model in 40GB GPU
-- Production deployment
-- <1% accuracy loss acceptable
+**AWQ 4-bit**：
+- 需要把 70B 模型塞进 40GB GPU
+- 生产部署
+- 可接受 <1% 的精度损失
 
-**GPTQ 4-bit**:
-- Wide model support needed
-- Not on H100 (use FP8 instead)
-- 1-2% accuracy loss acceptable
+**GPTQ 4-bit**：
+- 需要广泛的模型支持
+- 不在 H100 上（改用 FP8）
+- 可接受 1-2% 的精度损失
 
-**Testing strategy**:
+**测试策略**：
 
-1. **Baseline**: Measure FP16 accuracy on your evaluation set
-2. **Quantize**: Create quantized version
-3. **Evaluate**: Compare quantized vs baseline on same tasks
-4. **Decide**: Accept if degradation < threshold (typically 1-2%)
+1. **基线**：在你的评测集上测量 FP16 精度
+2. **量化**：创建量化版本
+3. **评测**：在相同任务上对比量化版与基线
+4. **决策**：当下降 < 阈值（通常 1-2%）时接受
 
-**Example evaluation**:
+**评测示例**：
 ```python
 from evaluate import load_evaluation_suite
 
-# Run on FP16 baseline
+# 在 FP16 基线上运行
 baseline_score = evaluate(model_fp16, eval_suite)
 
-# Run on quantized
+# 在量化版本上运行
 quant_score = evaluate(model_awq, eval_suite)
 
-# Compare
+# 对比
 degradation = (baseline_score - quant_score) / baseline_score * 100
 print(f"Accuracy degradation: {degradation:.2f}%")
 
-# Decision
+# 决策
 if degradation < 1.0:
     print("✅ Quantization acceptable for production")
 else:

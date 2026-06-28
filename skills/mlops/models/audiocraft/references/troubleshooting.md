@@ -1,28 +1,28 @@
-# AudioCraft Troubleshooting Guide
+# AudioCraft 故障排查指南
 
-## Installation Issues
+## 安装问题
 
-### Import errors
+### 导入错误
 
-**Error**: `ModuleNotFoundError: No module named 'audiocraft'`
+**错误**：`ModuleNotFoundError: No module named 'audiocraft'`
 
-**Solutions**:
+**解决方案**：
 ```bash
-# Install from PyPI
+# 从 PyPI 安装
 pip install audiocraft
 
-# Or from GitHub
+# 或从 GitHub 安装
 pip install git+https://github.com/facebookresearch/audiocraft.git
 
-# Verify installation
+# 验证安装
 python -c "from audiocraft.models import MusicGen; print('OK')"
 ```
 
-### FFmpeg not found
+### 找不到 FFmpeg
 
-**Error**: `RuntimeError: ffmpeg not found`
+**错误**：`RuntimeError: ffmpeg not found`
 
-**Solutions**:
+**解决方案**：
 ```bash
 # Ubuntu/Debian
 sudo apt-get install ffmpeg
@@ -30,66 +30,66 @@ sudo apt-get install ffmpeg
 # macOS
 brew install ffmpeg
 
-# Windows (using conda)
+# Windows（用 conda）
 conda install -c conda-forge ffmpeg
 
-# Verify
+# 验证
 ffmpeg -version
 ```
 
-### PyTorch CUDA mismatch
+### PyTorch CUDA 不匹配
 
-**Error**: `RuntimeError: CUDA error: no kernel image is available`
+**错误**：`RuntimeError: CUDA error: no kernel image is available`
 
-**Solutions**:
+**解决方案**：
 ```bash
-# Check CUDA version
+# 检查 CUDA 版本
 nvcc --version
 python -c "import torch; print(torch.version.cuda)"
 
-# Install matching PyTorch
+# 安装匹配的 PyTorch
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# For CUDA 11.8
+# 适用于 CUDA 11.8
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
-### xformers issues
+### xformers 问题
 
-**Error**: `ImportError: xformers` related errors
+**错误**：`ImportError: xformers` 相关错误
 
-**Solutions**:
+**解决方案**：
 ```bash
-# Install xformers for memory efficiency
+# 安装 xformers 以节省内存
 pip install xformers
 
-# Or disable xformers
+# 或禁用 xformers
 export AUDIOCRAFT_USE_XFORMERS=0
 
-# In Python
+# 在 Python 中
 import os
 os.environ["AUDIOCRAFT_USE_XFORMERS"] = "0"
 from audiocraft.models import MusicGen
 ```
 
-## Model Loading Issues
+## 模型加载问题
 
-### Out of memory during load
+### 加载时内存不足
 
-**Error**: `torch.cuda.OutOfMemoryError` during model loading
+**错误**：加载模型时 `torch.cuda.OutOfMemoryError`
 
-**Solutions**:
+**解决方案**：
 ```python
-# Use smaller model
+# 使用更小的模型
 model = MusicGen.get_pretrained('facebook/musicgen-small')
 
-# Force CPU loading first
+# 先强制在 CPU 上加载
 import torch
 device = "cpu"
 model = MusicGen.get_pretrained('facebook/musicgen-small', device=device)
 model = model.to("cuda")
 
-# Use HuggingFace with device_map
+# 用 HuggingFace 的 device_map
 from transformers import MusicgenForConditionalGeneration
 model = MusicgenForConditionalGeneration.from_pretrained(
     "facebook/musicgen-small",
@@ -97,65 +97,65 @@ model = MusicgenForConditionalGeneration.from_pretrained(
 )
 ```
 
-### Download failures
+### 下载失败
 
-**Error**: Connection errors or incomplete downloads
+**错误**：连接错误或下载不完整
 
-**Solutions**:
+**解决方案**：
 ```python
-# Set cache directory
+# 设置缓存目录
 import os
 os.environ["AUDIOCRAFT_CACHE_DIR"] = "/path/to/cache"
 
-# Or for HuggingFace
+# 或用于 HuggingFace
 os.environ["HF_HOME"] = "/path/to/hf_cache"
 
-# Resume download
+# 续传下载
 from huggingface_hub import snapshot_download
 snapshot_download("facebook/musicgen-small", resume_download=True)
 
-# Use local files
+# 使用本地文件
 model = MusicGen.get_pretrained('/local/path/to/model')
 ```
 
-### Wrong model type
+### 模型类型选错
 
-**Error**: Loading wrong model for task
+**错误**：为任务加载了错误的模型
 
-**Solutions**:
+**解决方案**：
 ```python
-# For text-to-music: use MusicGen
+# 文生音乐：用 MusicGen
 from audiocraft.models import MusicGen
 model = MusicGen.get_pretrained('facebook/musicgen-medium')
 
-# For text-to-sound: use AudioGen
+# 文生音效：用 AudioGen
 from audiocraft.models import AudioGen
 model = AudioGen.get_pretrained('facebook/audiogen-medium')
 
-# For melody conditioning: use melody variant
+# 旋律条件化：用 melody 变体
 model = MusicGen.get_pretrained('facebook/musicgen-melody')
 
-# For stereo: use stereo variant
+# 立体声：用 stereo 变体
 model = MusicGen.get_pretrained('facebook/musicgen-stereo-medium')
 ```
 
-## Generation Issues
+## 生成问题
 
-### Empty or silent output
+### 输出为空或静音
 
-**Problem**: Generated audio is silent or very quiet
+**问题**：生成的音频是静音或非常轻
 
-**Solutions**:
+**解决方案**：
 ```python
 import torch
 
-# Check output
+# 检查输出
 wav = model.generate(["upbeat music"])
 print(f"Shape: {wav.shape}")
 print(f"Max amplitude: {wav.abs().max().item()}")
 print(f"Mean amplitude: {wav.abs().mean().item()}")
 
-# If too quiet, normalize
+# 如果太轻，做归一化
 def normalize_audio(audio, target_db=-14.0):
     rms = torch.sqrt(torch.mean(audio ** 2))
     target_rms = 10 ** (target_db / 20)
@@ -165,123 +165,123 @@ def normalize_audio(audio, target_db=-14.0):
 wav_normalized = normalize_audio(wav)
 ```
 
-### Poor quality output
+### 输出质量差
 
-**Problem**: Generated music sounds bad or noisy
+**问题**：生成的音乐听起来很差或很多噪音
 
-**Solutions**:
+**解决方案**：
 ```python
-# Use larger model
+# 使用更大的模型
 model = MusicGen.get_pretrained('facebook/musicgen-large')
 
-# Adjust generation parameters
+# 调整生成参数
 model.set_generation_params(
     duration=15,
-    top_k=250,          # Increase for more diversity
-    temperature=0.8,    # Lower for more focused output
-    cfg_coef=4.0        # Increase for better text adherence
+    top_k=250,          # 调高以增加多样性
+    temperature=0.8,    # 调低以获得更聚焦的输出
+    cfg_coef=4.0        # 调高以获得更好的文本贴合度
 )
 
-# Use better prompts
-# Bad: "music"
-# Good: "upbeat electronic dance music with synthesizers and punchy drums"
+# 用更好的提示
+# 差："music"
+# 好："upbeat electronic dance music with synthesizers and punchy drums"
 
-# Try MultiBand Diffusion
+# 尝试 MultiBand Diffusion
 from audiocraft.models import MultiBandDiffusion
 mbd = MultiBandDiffusion.get_mbd_musicgen()
 tokens = model.generate_tokens(["prompt"])
 wav = mbd.tokens_to_wav(tokens)
 ```
 
-### Generation too short
+### 生成太短
 
-**Problem**: Audio shorter than expected
+**问题**：音频比预期短
 
-**Solutions**:
+**解决方案**：
 ```python
-# Check duration setting
-model.set_generation_params(duration=30)  # Set before generate
+# 检查时长设置
+model.set_generation_params(duration=30)  # 在 generate 之前设置
 
-# Verify in generation
+# 在生成时验证
 print(f"Duration setting: {model.generation_params}")
 
-# Check output shape
+# 检查输出形状
 wav = model.generate(["prompt"])
 actual_duration = wav.shape[-1] / 32000
 print(f"Actual duration: {actual_duration}s")
 
-# Note: max duration is typically 30s
+# 注意：最大时长通常是 30 秒
 ```
 
-### Melody conditioning fails
+### 旋律条件化失败
 
-**Error**: Issues with melody-conditioned generation
+**错误**：旋律条件化生成有问题
 
-**Solutions**:
+**解决方案**：
 ```python
 import torchaudio
 from audiocraft.models import MusicGen
 
-# Load melody model (not base model)
+# 加载旋律模型（不是基础模型）
 model = MusicGen.get_pretrained('facebook/musicgen-melody')
 
-# Load and prepare melody
+# 加载并准备旋律
 melody, sr = torchaudio.load("melody.wav")
 
-# Resample to model sample rate if needed
+# 如有需要，重采样到模型采样率
 if sr != 32000:
     resampler = torchaudio.transforms.Resample(sr, 32000)
     melody = resampler(melody)
 
-# Ensure correct shape [batch, channels, samples]
+# 确保形状正确 [batch, channels, samples]
 if melody.dim() == 1:
     melody = melody.unsqueeze(0).unsqueeze(0)
 elif melody.dim() == 2:
     melody = melody.unsqueeze(0)
 
-# Convert stereo to mono
+# 立体声转单声道
 if melody.shape[1] > 1:
     melody = melody.mean(dim=1, keepdim=True)
 
-# Generate with melody
+# 用旋律生成
 model.set_generation_params(duration=min(melody.shape[-1] / 32000, 30))
 wav = model.generate_with_chroma(["piano cover"], melody, 32000)
 ```
 
-## Memory Issues
+## 内存问题
 
-### CUDA out of memory
+### CUDA 内存不足
 
-**Error**: `torch.cuda.OutOfMemoryError: CUDA out of memory`
+**错误**：`torch.cuda.OutOfMemoryError: CUDA out of memory`
 
-**Solutions**:
+**解决方案**：
 ```python
 import torch
 
-# Clear cache before generation
+# 在生成前清空缓存
 torch.cuda.empty_cache()
 
-# Use smaller model
+# 使用更小的模型
 model = MusicGen.get_pretrained('facebook/musicgen-small')
 
-# Reduce duration
-model.set_generation_params(duration=10)  # Instead of 30
+# 缩短时长
+model.set_generation_params(duration=10)  # 而非 30
 
-# Generate one at a time
+# 一次只生成一个
 for prompt in prompts:
     wav = model.generate([prompt])
     save_audio(wav)
     torch.cuda.empty_cache()
 
-# Use CPU for very large generations
+# 对非常大的生成，用 CPU
 model = MusicGen.get_pretrained('facebook/musicgen-small', device="cpu")
 ```
 
-### Memory leak during batch processing
+### 批处理时内存泄漏
 
-**Problem**: Memory grows over time
+**问题**：内存随时间增长
 
-**Solutions**:
+**解决方案**：
 ```python
 import gc
 import torch
@@ -294,211 +294,211 @@ def generate_with_cleanup(model, prompts):
             wav = model.generate([prompt])
             results.append(wav.cpu())
 
-        # Cleanup
+        # 清理
         del wav
         gc.collect()
         torch.cuda.empty_cache()
 
     return results
 
-# Use context manager
+# 用上下文管理器
 with torch.inference_mode():
     wav = model.generate(["prompt"])
 ```
 
-## Audio Format Issues
+## 音频格式问题
 
-### Wrong sample rate
+### 采样率错误
 
-**Problem**: Audio plays at wrong speed
+**问题**：音频以错误的速度播放
 
-**Solutions**:
+**解决方案**：
 ```python
 import torchaudio
 
-# MusicGen outputs at 32kHz
+# MusicGen 输出为 32kHz
 sample_rate = 32000
 
-# AudioGen outputs at 16kHz
+# AudioGen 输出为 16kHz
 sample_rate = 16000
 
-# Always use correct rate when saving
+# 保存时始终使用正确的采样率
 torchaudio.save("output.wav", wav[0].cpu(), sample_rate=sample_rate)
 
-# Resample if needed
+# 如有需要做重采样
 resampler = torchaudio.transforms.Resample(32000, 44100)
 wav_resampled = resampler(wav)
 ```
 
-### Stereo/mono mismatch
+### 立体声/单声道不匹配
 
-**Problem**: Wrong number of channels
+**问题**：声道数不对
 
-**Solutions**:
+**解决方案**：
 ```python
-# Check model type
+# 检查模型类型
 print(f"Audio channels: {wav.shape}")
-# Mono: [batch, 1, samples]
-# Stereo: [batch, 2, samples]
+# 单声道：[batch, 1, samples]
+# 立体声：[batch, 2, samples]
 
-# Convert mono to stereo
+# 单声道转立体声
 if wav.shape[1] == 1:
     wav_stereo = wav.repeat(1, 2, 1)
 
-# Convert stereo to mono
+# 立体声转单声道
 if wav.shape[1] == 2:
     wav_mono = wav.mean(dim=1, keepdim=True)
 
-# Use stereo model for stereo output
+# 立体声输出请使用立体声模型
 model = MusicGen.get_pretrained('facebook/musicgen-stereo-medium')
 ```
 
-### Clipping and distortion
+### 削波和失真
 
-**Problem**: Audio has clipping or distortion
+**问题**：音频有削波或失真
 
-**Solutions**:
+**解决方案**：
 ```python
 import torch
 
-# Check for clipping
+# 检查削波
 max_val = wav.abs().max().item()
 print(f"Max amplitude: {max_val}")
 
-# Normalize to prevent clipping
+# 归一化以防止削波
 if max_val > 1.0:
     wav = wav / max_val
 
-# Apply soft clipping
+# 施加软削波
 def soft_clip(x, threshold=0.9):
     return torch.tanh(x / threshold) * threshold
 
 wav_clipped = soft_clip(wav)
 
-# Lower temperature during generation
-model.set_generation_params(temperature=0.7)  # More controlled
+# 生成时降低 temperature
+model.set_generation_params(temperature=0.7)  # 更可控
 ```
 
-## HuggingFace Transformers Issues
+## HuggingFace Transformers 问题
 
-### Processor errors
+### Processor 错误
 
-**Error**: Issues with MusicgenProcessor
+**错误**：MusicgenProcessor 相关问题
 
-**Solutions**:
+**解决方案**：
 ```python
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
-# Load matching processor and model
+# 加载匹配的 processor 和模型
 processor = AutoProcessor.from_pretrained("facebook/musicgen-small")
 model = MusicgenForConditionalGeneration.from_pretrained("facebook/musicgen-small")
 
-# Ensure inputs are on same device
+# 确保输入在同一设备上
 inputs = processor(
     text=["prompt"],
     padding=True,
     return_tensors="pt"
 ).to("cuda")
 
-# Check processor configuration
+# 检查 processor 配置
 print(processor.tokenizer)
 print(processor.feature_extractor)
 ```
 
-### Generation parameter errors
+### 生成参数错误
 
-**Error**: Invalid generation parameters
+**错误**：无效的生成参数
 
-**Solutions**:
+**解决方案**：
 ```python
-# HuggingFace uses different parameter names
+# HuggingFace 使用不同的参数名
 audio_values = model.generate(
     **inputs,
-    do_sample=True,           # Enable sampling
-    guidance_scale=3.0,       # CFG (not cfg_coef)
-    max_new_tokens=256,       # Token limit (not duration)
+    do_sample=True,           # 启用采样
+    guidance_scale=3.0,       # CFG（不是 cfg_coef）
+    max_new_tokens=256,       # token 上限（不是 duration）
     temperature=1.0
 )
 
-# Calculate tokens from duration
-# ~50 tokens per second
+# 从时长换算 token
+# 每秒约 50 个 token
 duration_seconds = 10
 max_tokens = duration_seconds * 50
 audio_values = model.generate(**inputs, max_new_tokens=max_tokens)
 ```
 
-## Performance Issues
+## 性能问题
 
-### Slow generation
+### 生成缓慢
 
-**Problem**: Generation takes too long
+**问题**：生成耗时过长
 
-**Solutions**:
+**解决方案**：
 ```python
-# Use smaller model
+# 使用更小的模型
 model = MusicGen.get_pretrained('facebook/musicgen-small')
 
-# Reduce duration
+# 缩短时长
 model.set_generation_params(duration=10)
 
-# Use GPU
+# 使用 GPU
 model.to("cuda")
 
-# Enable flash attention if available
-# (requires compatible hardware)
+# 如可用，启用 flash attention
+# （需要兼容的硬件）
 
-# Batch multiple prompts
+# 批量处理多个提示
 prompts = ["prompt1", "prompt2", "prompt3"]
-wav = model.generate(prompts)  # Single batch is faster than loop
+wav = model.generate(prompts)  # 单个批次比循环快
 
-# Use compile (PyTorch 2.0+)
+# 使用 compile（PyTorch 2.0+）
 model.lm = torch.compile(model.lm)
 ```
 
-### CPU fallback
+### 回退到 CPU
 
-**Problem**: Generation running on CPU instead of GPU
+**问题**：生成在 CPU 而非 GPU 上运行
 
-**Solutions**:
+**解决方案**：
 ```python
 import torch
 
-# Check CUDA availability
+# 检查 CUDA 可用性
 print(f"CUDA available: {torch.cuda.is_available()}")
 print(f"CUDA device: {torch.cuda.get_device_name(0)}")
 
-# Explicitly move to GPU
+# 显式移到 GPU
 model = MusicGen.get_pretrained('facebook/musicgen-small')
 model.to("cuda")
 
-# Verify model device
+# 验证模型所在设备
 print(f"Model device: {next(model.lm.parameters()).device}")
 ```
 
-## Common Error Messages
+## 常见错误信息
 
-| Error | Cause | Solution |
+| 错误 | 原因 | 解决方案 |
 |-------|-------|----------|
-| `CUDA out of memory` | Model too large | Use smaller model, reduce duration |
-| `ffmpeg not found` | FFmpeg not installed | Install FFmpeg |
-| `No module named 'audiocraft'` | Not installed | `pip install audiocraft` |
-| `RuntimeError: Expected 3D tensor` | Wrong input shape | Check tensor dimensions |
-| `KeyError: 'melody'` | Wrong model for melody | Use musicgen-melody |
-| `Sample rate mismatch` | Wrong audio format | Resample to model rate |
+| `CUDA out of memory` | 模型太大 | 使用更小的模型，缩短时长 |
+| `ffmpeg not found` | 未安装 FFmpeg | 安装 FFmpeg |
+| `No module named 'audiocraft'` | 未安装 | `pip install audiocraft` |
+| `RuntimeError: Expected 3D tensor` | 输入形状错误 | 检查张量维度 |
+| `KeyError: 'melody'` | 旋律用了错误的模型 | 使用 musicgen-melody |
+| `Sample rate mismatch` | 音频格式错误 | 重采样到模型采样率 |
 
-## Getting Help
+## 获取帮助
 
 1. **GitHub Issues**: https://github.com/facebookresearch/audiocraft/issues
-2. **HuggingFace Forums**: https://discuss.huggingface.co
-3. **Paper**: https://arxiv.org/abs/2306.05284
+2. **HuggingFace 论坛**: https://discuss.huggingface.co
+3. **论文**: https://arxiv.org/abs/2306.05284
 
-### Reporting Issues
+### 反馈问题
 
-Include:
-- Python version
-- PyTorch version
-- CUDA version
-- AudioCraft version: `pip show audiocraft`
-- Full error traceback
-- Minimal reproducible code
-- Hardware (GPU model, VRAM)
+请包含：
+- Python 版本
+- PyTorch 版本
+- CUDA 版本
+- AudioCraft 版本：`pip show audiocraft`
+- 完整的错误回溯
+- 最小可复现代码
+- 硬件（GPU 型号、显存）

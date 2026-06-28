@@ -1,4 +1,4 @@
-"""Shared helpers for attaching Hermes to a local Chromium-family CDP port."""
+"""将 Hermes 连接到本地 Chromium 系列 CDP 端口的通用辅助工具。"""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ def _chrome_debug_args(port: int) -> list[str]:
 
 
 def is_browser_debug_ready(url: str, timeout: float = 1.0) -> bool:
-    """Return True when ``url`` exposes a reachable Chrome DevTools endpoint."""
+    """当 ``url`` 暴露可访问的 Chrome DevTools 端点时返回 True。"""
     import socket
     import urllib.request
     from urllib.parse import urlparse

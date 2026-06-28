@@ -1,27 +1,27 @@
 """
-Gateway runner - entry point for messaging platform integrations.
+网关运行器 —— 消息平台集成的入口点。
 
-This module provides:
-- start_gateway(): Start all configured platform adapters
-- GatewayRunner: Main class managing the gateway lifecycle
+本模块提供：
+- start_gateway()：启动所有已配置的平台适配器
+- GatewayRunner：管理网关生命周期的主类
 
-Usage:
-    # Start the gateway
+用法：
+    # 启动网关
     python -m gateway.run
-    
-    # Or from CLI
+
+    # 或从 CLI 启动
     python cli.py --gateway
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# 重要：hermes_bootstrap 必须是最先导入的 —— 它在 Windows 上设置 UTF-8
+# stdio。在 POSIX 上是空操作。完整原因见 hermes_bootstrap.py。
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
-    # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
-    # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
+    # 当 hermes_bootstrap 尚未在 venv 中注册时的优雅兜底 ——
+    # 发生在 ``hermes update`` 只完成了一半时：git-reset 已经落地了
+    # 新代码，但 ``uv pip install -e .`` 还没跑完。缺少 bootstrap 意味着
+    # Windows 上会跳过 UTF-8 stdio 设置；POSIX 不受影响。
     pass
 
 import asyncio
@@ -45,31 +45,29 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Any, List, Union
 
-# account_usage imports the OpenAI SDK chain (~230 ms). Only needed by
-# /usage; we still import it at module top in the gateway because test
-# patches (tests/gateway/test_usage_command.py) target
-# `gateway.run.fetch_account_usage` as a module-level attribute. The
-# gateway is a long-running daemon, so its boot cost matters less than
-# preserving the established test-patch surface.
+# account_usage 会导入 OpenAI SDK 链（约 230 ms）。只有 /usage 才需要它；
+# 我们仍然在网关的模块顶层导入，是因为测试补丁
+# (tests/gateway/test_usage_command.py) 会把 `gateway.run.fetch_account_usage`
+# 当作模块级属性来打补丁。网关是长驻守护进程，因此启动开销比起保留既有
+# 的测试补丁接入面而言没那么重要。
 from agent.account_usage import fetch_account_usage, render_account_usage_lines
 from agent.async_utils import safe_schedule_threadsafe
 from agent.i18n import t
 from hermes_cli.config import cfg_get
 from hermes_cli.fallback_config import get_fallback_chain
 
-# --- Agent cache tuning ---------------------------------------------------
-# Bounds the per-session AIAgent cache to prevent unbounded growth in
-# long-lived gateways (each AIAgent holds LLM clients, tool schemas,
-# memory providers, etc.).  LRU order + idle TTL eviction are enforced
-# from _enforce_agent_cache_cap() and _session_expiry_watcher() below.
+# --- Agent 缓存调优 ------------------------------------------------------
+# 限制按会话的 AIAgent 缓存，避免在长驻网关中无限增长（每个 AIAgent 都
+# 持有 LLM 客户端、工具 schema、记忆 provider 等）。LRU 顺序和空闲 TTL
+# 淘汰由下文的 _enforce_agent_cache_cap() 和 _session_expiry_watcher() 执行。
 _AGENT_CACHE_MAX_SIZE = 128
-_AGENT_CACHE_IDLE_TTL_SECS = 3600.0  # evict agents idle for >1h
+_AGENT_CACHE_IDLE_TTL_SECS = 3600.0  # 淘汰空闲超过 1 小时的 agent
 _PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT = 30.0
 _ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT = 5.0
 _TELEGRAM_COMMAND_MENTION_RE = re.compile(r"(?<![\w:/])/([A-Za-z0-9][A-Za-z0-9_-]*)")
 
 _TELEGRAM_NOISY_STATUS_RE = re.compile(
-    r"("  # transient/auxiliary status that should stay in logs, not Telegram chat
+    r"("  # 应该留在日志里、不推到 Telegram 聊天中的瞬时/辅助状态
     r"auxiliary\s+.+\s+failed"
     r"|compression\s+summary\s+failed"
     r"|fallback\s+context\s+marker"
@@ -88,7 +86,7 @@ _TELEGRAM_NOISY_STATUS_RE = re.compile(
 )
 
 _GATEWAY_PROVIDER_ERROR_RE = re.compile(
-    r"("  # infrastructure/provider error preambles, not ordinary assistant prose
+    r"("  # 基础设施/provider 错误的引导文本，不是普通的助手正文
     r"api\s+(?:call\s+)?failed"
     r"|provider\s+authentication\s+failed"
     r"|non-retryable\s+error"
@@ -102,7 +100,7 @@ _GATEWAY_PROVIDER_ERROR_RE = re.compile(
 )
 
 _GATEWAY_PROVIDER_POLICY_RE = re.compile(
-    r"("  # raw provider policy/safety bodies are noisy and may be sensitive
+    r"("  # 原始的 provider 策略/安全正文很嘈杂，而且可能涉敏
     r"cybersecurity\s+risk"
     r"|security\s+policy"
     r"|safety\s+policy"
@@ -137,14 +135,14 @@ _GATEWAY_SECRET_PATTERNS = (
 
 
 def _ensure_windows_gateway_venv_imports() -> None:
-    """Make detached Windows gateway runs see the Hermes venv packages.
+    """让分离式 Windows 网关进程能看到 Hermes venv 里的包。
 
-    Some Windows restart paths run the gateway under uv's base ``pythonw.exe``
-    to avoid the venv launcher respawning a visible console interpreter.  That
-    mode can import the source tree via cwd/PYTHONPATH but still miss optional
-    packages installed only in ``venv/Lib/site-packages`` (notably the MCP SDK).
-    Patch the live process before MCP discovery so tool injection does not
-    depend on every launcher preserving PYTHONPATH perfectly.
+    某些 Windows 重启路径会在 uv 的基础 ``pythonw.exe`` 下运行网关，以避免
+    venv 启动器重新拉起一个可见的控制台解释器。该模式可以通过
+    cwd/PYTHONPATH 导入源码树，但仍然会漏掉只装在
+    ``venv/Lib/site-packages`` 中的可选包（尤其是 MCP SDK）。在 MCP 发现之前
+    给活动进程打补丁，这样工具注入就不会依赖于每个启动器都完美保留
+    PYTHONPATH。
     """
     if sys.platform != "win32":
         return
@@ -174,8 +172,8 @@ def _ensure_windows_gateway_venv_imports() -> None:
         site_entry = str(site_packages)
         if project_entry not in sys.path:
             sys.path.insert(0, project_entry)
-        # addsitepackages() semantics matter here: pywin32, used by the MCP
-        # SDK on Windows, relies on .pth processing to expose pywintypes.
+        # 这里 addsitepackages() 的语义很关键：Windows 上 MCP SDK 使用的
+        # pywin32 依赖 .pth 处理来暴露 pywintypes。
         site.addsitedir(site_entry)
         if site_entry in sys.path:
             sys.path.remove(site_entry)
@@ -191,7 +189,7 @@ def _ensure_windows_gateway_venv_imports() -> None:
 
 
 def _gateway_platform_value(platform: Any) -> str:
-    """Return a normalized gateway platform value for enums or raw strings."""
+    """为枚举或原始字符串返回归一化的网关平台值。"""
     return str(getattr(platform, "value", platform) or "").strip().lower()
 
 
@@ -200,7 +198,7 @@ def _non_conversational_metadata(
     *,
     platform: Any = None,
 ) -> Optional[Dict[str, Any]]:
-    """Mark Discord lifecycle/status sends without changing other platforms."""
+    """标记 Discord 的生命周期/状态发送，不影响其他平台。"""
     if _gateway_platform_value(platform) != "discord":
         return metadata
     merged = dict(metadata or {})
@@ -209,17 +207,16 @@ def _non_conversational_metadata(
 
 
 def _is_transient_network_error(exc: BaseException) -> bool:
-    """Return True for transient network errors safe to log + swallow.
+    """对可以安全记录并吞掉的瞬时网络错误返回 True。
 
-    The crash class targeted by #31066 / #31110: an unhandled Telegram
-    ``TimedOut`` (or peer ``NetworkError`` / ``httpx`` connection error)
-    propagating to the event loop and killing the entire gateway
-    process. These are by definition transient — the next poll cycle or
-    user action recovers — so they must never crash the process.
+    #31066 / #31110 针对的崩溃类：一个未被处理的 Telegram
+    ``TimedOut``（或对等的 ``NetworkError`` / ``httpx`` 连接错误）传播
+    到事件循环并杀死整个网关进程。这些本质上都是瞬时的 —— 下一次轮询
+    循环或用户操作就能恢复 —— 所以它们绝不能让进程崩溃。
 
-    Walk the exception cause chain so wrapped errors (e.g. PTB's
-    ``NetworkError`` wrapping ``httpx.ConnectError``) are still
-    classified. The chain is bounded to avoid pathological cycles.
+    会遍历异常原因链，这样被包装的错误（例如 PTB 的 ``NetworkError``
+    包装了 ``httpx.ConnectError``）也能被正确分类。遍历深度有上限，
+    以避免病态环。
     """
     seen: set[int] = set()
     cur: Optional[BaseException] = exc
@@ -255,15 +252,13 @@ def _is_transient_network_error(exc: BaseException) -> bool:
 def _gateway_loop_exception_handler(
     loop: "asyncio.AbstractEventLoop", context: Dict[str, Any]
 ) -> None:
-    """Loop-level safety net for transient network errors.
+    """针对瞬时网络错误的事件循环级安全网。
 
-    Installed once during :func:`start_gateway`. Catches the
-    ``telegram.error.TimedOut`` crash class (issues #31066 / #31110)
-    and any peer transient network error before it can kill the
-    gateway process. Logs at WARNING with full traceback so the
-    originating call site stays diagnosable; non-transient errors
-    are forwarded to the default loop handler so real bugs still
-    surface.
+    在 :func:`start_gateway` 期间安装一次。捕获
+    ``telegram.error.TimedOut`` 这一类崩溃（issues #31066 / #31110）
+    以及任何对等的瞬时网络错误，避免它们杀死网关进程。以 WARNING
+    级别记录并带上完整 traceback，使最初的调用点仍可诊断；非瞬时的
+    错误会转发给默认循环 handler，让真正的 bug 仍然能暴露出来。
     """
     exc = context.get("exception")
     if exc is not None and _is_transient_network_error(exc):
@@ -283,12 +278,12 @@ def _gateway_loop_exception_handler(
             exc_info=(type(exc), exc, exc.__traceback__),
         )
         return
-    # Fall back to the default handler for anything we don't recognise.
+    # 对于我们识别不了的错误，回退到默认 handler。
     loop.default_exception_handler(context)
 
 
 def _redact_gateway_user_facing_secrets(text: str) -> str:
-    """Best-effort secret redaction before text can leave the gateway."""
+    """在文本可能离开网关之前，尽力做一次密钥脱敏。"""
     redacted = str(text or "")
     for pattern in _GATEWAY_SECRET_PATTERNS:
         redacted = pattern.sub(lambda m: (m.group(1) if m.lastindex else "") + "[REDACTED]", redacted)
@@ -296,15 +291,14 @@ def _redact_gateway_user_facing_secrets(text: str) -> str:
 
 
 def _redact_approval_command(cmd: "str | None") -> str:
-    """Redact credentials from a command before it goes into an approval prompt.
+    """在命令进入审批提示之前，对其中的凭据做脱敏。
 
-    Tirith's *findings* are already redacted, but the gateway approval prompt
-    is built from the raw command string, so a credential-shaped value Tirith
-    flagged would otherwise be echoed verbatim to the chat platform (#48456).
-    Uses ``redact_sensitive_text(force=True)`` — the same Tirith-grade redactor
-    — so the prompt honors redaction even when ``security.redact_secrets`` is
-    off. Module-level so the wiring is unit-testable (the call site is a deeply
-    nested gateway closure that cannot be driven directly).
+    Tirith 的 *findings* 已经脱敏过，但网关的审批提示是用原始命令字符串
+    构建的，所以 Tirith 标记出的、形如凭据的值原本会被原样回显到聊天
+    平台上 (#48456)。这里用 ``redact_sensitive_text(force=True)`` —— 与
+    Tirith 同级别的脱敏器 —— 这样即便 ``security.redact_secrets`` 关闭，
+    提示也会照常脱敏。放在模块级是为了让这层接入可被单元测试（调用点
+    是一个深层嵌套的网关闭包，无法直接驱动）。
     """
     from agent.redact import redact_sensitive_text
 
@@ -312,7 +306,7 @@ def _redact_approval_command(cmd: "str | None") -> str:
 
 
 def _gateway_provider_error_reply(text: str) -> str:
-    """Map raw provider/API errors to a short user-safe Telegram reply."""
+    """把原始的 provider/API 错误映射成简短的、对用户安全的 Telegram 回复。"""
     if _GATEWAY_AUTH_ERROR_RE.search(text):
         return (
             "⚠️ Provider authentication failed. Check the configured credentials; "
@@ -347,34 +341,32 @@ _GATEWAY_PROVIDER_ERROR_SHAPE_RE = re.compile(
 
 
 def _looks_like_gateway_provider_error(text: str) -> bool:
-    """True when text is infrastructure/provider failure, not normal content.
+    """当文本是基础设施/provider 失败、而非正常内容时返回 True。
 
-    Two heuristics combined so the rewrite only fires on actual provider
-    error envelopes, not on assistant prose that happens to mention an
-    HTTP status code:
+    组合两条启发式，确保改写只在真正的 provider 错误信封上触发，而不会
+    在恰好提到某个 HTTP 状态码的助手正文上触发：
 
-    1. The text is short — real provider errors are 1–3 lines of envelope
-       text; assistant answers are usually longer.
-    2. AND the error marker appears at the start of the message (optionally
-       behind a punctuation/symbol prefix), not buried mid-paragraph in an
-       explanation like "HTTP 404 means 'not found' — ...".
+    1. 文本很短 —— 真正的 provider 错误是 1–3 行信封文本；助手回答通常
+       更长。
+    2. 并且错误标记出现在消息开头（可前置标点/符号前缀），而不是埋在
+       段落中间的解释里，例如 "HTTP 404 means 'not found' — ..."。
     """
     if not text:
         return False
     body = str(text).strip()
-    # Provider failure envelopes are short. Assistant answers that happen
-    # to mention HTTP status codes ("HTTP 404 means...") tend to be longer.
+    # provider 失败信封都很短。而恰好提到 HTTP 状态码的助手回答
+    # ("HTTP 404 means...") 通常更长。
     if len(body) > 400 or body.count("\n") > 4:
         return False
     return bool(_GATEWAY_PROVIDER_ERROR_SHAPE_RE.search(body))
 
 
 def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
-    """Sanitize final gateway replies before sending them to high-noise chats.
+    """在把网关最终回复发往高噪音聊天之前做一次净化。
 
-    Telegram is Bob's mobile inbox, so it should receive concise, safe provider
-    failure categories instead of raw HTTP bodies, request IDs, or policy text.
-    Other platforms keep the existing behaviour for now.
+    Telegram 是 Bob 的移动收件箱，因此它应当收到简短、安全的 provider
+    失败分类，而不是原始的 HTTP body、request ID 或策略文本。其他平台
+    目前保持原有行为。
     """
     if not text:
         return text
@@ -388,7 +380,7 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
 
 
 def _prepare_gateway_status_message(platform: Any, event_type: str, message: str) -> Optional[str]:
-    """Filter/sanitize agent status callbacks before platform delivery."""
+    """在投递到平台之前，对 agent 状态回调做过滤/净化。"""
     text = str(message or "").strip()
     if not text:
         return None
@@ -404,26 +396,25 @@ def _prepare_gateway_status_message(platform: Any, event_type: str, message: str
 
 
 def render_notice_line(notice) -> str:
-    """Render an AgentNotice to a single plaintext line for messaging platforms.
+    """把一个 AgentNotice 渲染成用于消息平台的单行纯文本。
 
-    Messaging has no persistent status bar (unlike the TUI), so a notice is a
-    one-shot standalone push. The notice policy already bakes the level glyph
-    (⚠ / • / ✕ / ✓) into the text, and the TUI + CLI REPL render that text
-    verbatim — so we emit it as-is here too. Prepending a per-level glyph would
-    DOUBLE it ("⚠ ⚠ Credits 90% used", "⛔ ✕ Credit access paused"). Plaintext
-    only — no markdown — so it renders uniformly across Telegram/Discord/Slack/
-    SMS without per-platform escaping. Fail-soft: a malformed/empty notice
-    degrades to "" rather than raising on the agent's callback path.
+    消息平台没有常驻状态栏（不像 TUI），所以 notice 是一次性的独立推送。
+    notice 策略已经把级别符号（⚠ / • / ✕ / ✓）烘进文本里，而 TUI + CLI
+    REPL 是逐字渲染这段文本的 —— 所以这里也照样原样输出。再加一个按级别
+    的前缀符号会重复一次（"⚠ ⚠ Credits 90% used"、"⛔ ✕ Credit access
+    paused"）。只输出纯文本 —— 不用 markdown —— 这样在
+    Telegram/Discord/Slack/SMS 上都能统一渲染，无需按平台做转义。失败软化：
+    格式错误/空的 notice 会降级为 ""，而不是在 agent 的回调路径上抛异常。
     """
     return str(getattr(notice, "text", "") or "").strip()
 
 
 async def _send_or_update_status_coro(adapter, chat_id, status_key, content, metadata):
-    """Route a status message through adapter.send_or_update_status when supported.
+    """在适配器支持时，通过 adapter.send_or_update_status 路由状态消息。
 
-    Issue #30045: adapters that implement send_or_update_status (currently
-    Telegram) edit the previous bubble for the same status_key instead of
-    appending a new one. Adapters without the method fall back to plain send.
+    Issue #30045：实现了 send_or_update_status 的适配器（目前是
+    Telegram）会编辑同一个 status_key 对应的上一个气泡，而不是追加新气泡。
+    没有该方法的适配器会回退到普通的 send。
     """
     sender = getattr(adapter, "send_or_update_status", None)
     if callable(sender):
@@ -432,7 +423,7 @@ async def _send_or_update_status_coro(adapter, chat_id, status_key, content, met
 
 
 def _resolve_progress_thread_id(platform: Any, source_thread_id: Any, event_message_id: Any) -> Optional[str]:
-    """Return thread/root ID that progress/status bubbles should target."""
+    """返回进度/状态气泡应当发送到的 thread/root ID。"""
     platform_value = getattr(platform, "value", platform)
     platform_key = str(platform_value or "").lower()
     if source_thread_id:
@@ -443,7 +434,7 @@ def _resolve_progress_thread_id(platform: Any, source_thread_id: Any, event_mess
 
 
 def _has_platform_display_override(user_config: dict, platform_key: str, setting: str) -> bool:
-    """Return True when display.platforms.<platform> explicitly sets setting."""
+    """当 display.platforms.<platform> 显式设置了 setting 时返回 True。"""
     display = user_config.get("display") if isinstance(user_config, dict) else None
     if not isinstance(display, dict):
         return False
@@ -463,12 +454,11 @@ def _resolve_gateway_display_bool(
     platform: Any = None,
     require_platform_override_for: set[Any] | None = None,
 ) -> bool:
-    """Resolve a boolean display setting with optional platform-only opt-in.
+    """解析一个布尔型 display 设置，可选地要求按平台显式开启。
 
-    Some display features expose assistant scratch text rather than deliberate
-    user-facing output.  For high-noise threaded chat surfaces such as
-    Mattermost, a global opt-in is too broad: they must be enabled with an
-    explicit display.platforms.<platform>.<setting> override.
+    某些 display 功能暴露的是助手的草稿文本，而不是面向用户的正式输出。
+    对于 Mattermost 这类高噪音、带 thread 的聊天场景，全局开启范围太宽：
+    必须用显式的 display.platforms.<platform>.<setting> 覆盖才能启用。
     """
     current_platform = _gateway_platform_value(platform or platform_key)
     platform_only = {
@@ -494,10 +484,10 @@ def _resolve_gateway_display_bool(
 
 
 def _telegramize_command_mentions(text: str, platform: Any) -> str:
-    """Rewrite slash-command mentions to Telegram-valid command names.
+    """把斜杠命令的提及改写成 Telegram 合法的命令名。
 
-    Telegram Bot API command names allow only lowercase letters, digits, and
-    underscores.  Keep other platform renderings unchanged, but normalize
+    Telegram Bot API 的命令名只允许小写字母、数字和下划线。其他平台的
+    渲染保持不变，但要做归一化
     Telegram help text so command mentions remain clickable/valid there.
     """
     platform_value = getattr(platform, "value", platform)
@@ -513,44 +503,40 @@ def _telegramize_command_mentions(text: str, platform: Any) -> str:
     return _TELEGRAM_COMMAND_MENTION_RE.sub(_replace, text)
 
 
-# Only auto-continue interrupted gateway turns while the interruption is fresh.
-# Stale tool-tail/resume markers can otherwise revive an unrelated old task
-# after a gateway restart when the user's next message starts new work.
+# 只在中断还"新鲜"时才自动继续被中断的网关轮次。否则陈旧的
+# tool-tail/resume 标记会在网关重启后、用户下一条消息开始新工作时，把
+# 一个不相关的旧任务重新拉起来。
 #
-# The freshness signal is the timestamp of the last transcript row, which
-# ``hermes_state.get_messages`` carries on every persisted message.  This
-# handles the two auto-continue cases uniformly:
-#   * resume_pending (gateway restart/shutdown watchdog marked the session)
-#   * tool-tail     (last persisted message is a tool result the agent
-#                    never got to reply to)
-# In both cases "when did we last do anything on this transcript" is the
-# correct freshness question, so one signal replaces two divergent ones.
+# 新鲜度信号是最后一条 transcript 行的时间戳，``hermes_state.get_messages``
+# 会在每条持久化消息上带上它。这样能统一处理两种自动继续场景：
+#   * resume_pending（网关重启/关停看门狗标记了会话）
+#   * tool-tail    （最后一条持久化消息是 agent 还没来得及回复的 tool 结果）
+# 在两种场景下，"我们上次在这条 transcript 上做事情是什么时候"都是正确的
+# 新鲜度问题，因此一个信号取代了两个分叉的信号。
 #
-# Default window: 1 hour.  This comfortably covers ``agent.gateway_timeout``
-# (30 min default) plus runtime slack — a legitimate long-running turn that
-# gets interrupted near its timeout boundary and is resumed shortly after
-# is still classified fresh.  Override via
-# ``config.yaml`` ``agent.gateway_auto_continue_freshness``.
+# 默认窗口：1 小时。这能从容覆盖 ``agent.gateway_timeout``（默认 30 分钟）
+# 加上运行时余量 —— 一个合法的长跑轮次如果在接近超时边界时被打断、并在
+# 不久后恢复，仍然算作新鲜。可通过
+# ``config.yaml`` 的 ``agent.gateway_auto_continue_freshness`` 覆盖。
 _AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT = 60 * 60
 
 
 def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
-    """Best-effort conversion of stored gateway timestamps to epoch seconds.
+    """尽力把存储的网关时间戳转换成 epoch 秒。
 
-    Missing/unparseable timestamps return None so legacy transcripts keep the
-    historical auto-continue behaviour instead of being silently dropped.
-    Accepts: datetime, epoch seconds (int/float), epoch milliseconds (when
-    the magnitude exceeds year-2286), ISO-8601 strings (with or without a
-    trailing ``Z``), and numeric strings.
+    缺失/无法解析的时间戳返回 None，这样老的 transcript 会保留历史的
+    自动继续行为，而不是被悄悄丢弃。接受：datetime、epoch 秒
+    (int/float)、epoch 毫秒（当数值超过 2286 年时）、ISO-8601 字符串
+    （带或不带末尾的 ``Z``）、以及数字字符串。
     """
     if value is None:
         return None
     if isinstance(value, datetime):
         return value.timestamp()
-    if isinstance(value, bool):  # bool is a subclass of int — skip it
+    if isinstance(value, bool):  # bool 是 int 的子类 —— 跳过它
         return None
     if isinstance(value, (int, float)):
-        # Some platform events use milliseconds; Hermes state rows use seconds.
+        # 一些平台事件用毫秒；Hermes 状态行用秒。
         return float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
     if isinstance(value, str):
         text = value.strip()
@@ -569,14 +555,13 @@ def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
 
 
 def _auto_continue_freshness_window() -> float:
-    """Return the configured auto-continue freshness window in seconds.
+    """返回配置好的自动继续新鲜度窗口（秒）。
 
-    Reads ``HERMES_AUTO_CONTINUE_FRESHNESS`` (bridged from
-    ``config.yaml`` ``agent.gateway_auto_continue_freshness`` at gateway
-    startup, same pattern as ``HERMES_AGENT_TIMEOUT``).  Falls back to the
-    module default when unset or malformed.  Non-positive values disable
-    the freshness gate (restores the pre-fix "always fresh" behaviour for
-    users who want to opt out).
+    读取 ``HERMES_AUTO_CONTINUE_FRESHNESS``（在网关启动时从
+    ``config.yaml`` 的 ``agent.gateway_auto_continue_freshness`` 桥接过来，
+    与 ``HERMES_AGENT_TIMEOUT`` 同一套模式）。未设置或格式错误时回退到
+    模块默认值。非正值会禁用新鲜度闸门（为想退出的用户恢复修复前的
+    "始终新鲜"行为）。
     """
     raw = os.environ.get("HERMES_AUTO_CONTINUE_FRESHNESS")
     if raw is None or raw == "":
@@ -588,10 +573,10 @@ def _auto_continue_freshness_window() -> float:
 
 
 def _float_env(name: str, default: float) -> float:
-    """Read an env var as float, falling back to ``default`` on typos/empty.
+    """把一个环境变量读成 float，在写错/为空时回退到 ``default``。
 
-    A misconfigured env var (e.g. ``HERMES_AGENT_TIMEOUT=abc``) must not
-    crash the gateway or an agent turn.  Unset/empty also falls back.
+    配置错误的环境变量（如 ``HERMES_AGENT_TIMEOUT=abc``）绝不能让网关或
+    agent 轮次崩溃。未设置/为空时同样回退。
     """
     raw = os.environ.get(name)
     if raw is None or raw == "":
@@ -608,14 +593,13 @@ def _is_fresh_gateway_interruption(
     now: Optional[float] = None,
     window_secs: Optional[float] = None,
 ) -> bool:
-    """Return True when an interruption marker is fresh enough to auto-continue.
+    """当中断标记足够新鲜、可以自动继续时返回 True。
 
-    Unknown timestamps are treated as fresh for backward compatibility with
-    legacy transcripts (pre-dating timestamp persistence) and with in-memory
-    test scaffolding that constructs history entries without timestamps.
+    未知时间戳被视作新鲜，以向后兼容老的 transcript（早于时间戳持久化的
+    那些），以及兼容那些不带时间戳构造历史条目的内存测试脚手架。
 
-    A non-positive ``window_secs`` disables the gate (always fresh), which
-    restores the pre-fix behaviour for users who opt out via config.
+    非正的 ``window_secs`` 会禁用闸门（始终新鲜），为通过 config 退出的
+    用户恢复修复前的行为。
     """
     window = (
         float(window_secs)
@@ -631,34 +615,31 @@ def _is_fresh_gateway_interruption(
     return current - timestamp <= window
 
 
-# Assistant-message fields that must survive transcript replay so multi-turn
-# reasoning context, prefix-cache hits, and provider-specific echo
-# requirements all behave the same on the gateway as they do in the CLI.
+# 这些 assistant 消息字段必须在 transcript 回放时保留下来，这样多轮推理
+# 上下文、prefix-cache 命中、以及 provider 专有的回显要求在网关上和
+# 在 CLI 中表现一致。
 #
-# ``reasoning`` and ``reasoning_details`` were the original three preserved
-# by PR #2974 (schema v6).  ``reasoning_content``, ``codex_reasoning_items``,
-# ``codex_message_items``, and ``finish_reason`` were added to the DB later
-# but the gateway's replay whitelist was never expanded to match — so any
-# pure-text assistant turn (no ``tool_calls``) silently dropped them on
-# replay, regressing the CLI-vs-gateway behavioural parity.
+# ``reasoning`` 和 ``reasoning_details`` 是 PR #2974（schema v6）原本保留的
+# 三个字段中的两个。``reasoning_content``、``codex_reasoning_items``、
+# ``codex_message_items`` 和 ``finish_reason`` 是后来加到 DB 里的，但网关
+# 的回放白名单一直没有同步扩展 —— 于是任何纯文本 assistant 轮次（没有
+# ``tool_calls``）在回放时都会悄悄丢掉它们，造成 CLI 与网关行为不一致的
+# 退化。
 #
-# Why each field matters on replay:
-#   * ``reasoning`` / ``reasoning_content``: provider-facing thinking text.
-#     ``_copy_reasoning_content_for_api`` promotes ``reasoning`` →
-#     ``reasoning_content`` at send time, but only when the strings happen to
-#     match.  Carrying the original ``reasoning_content`` verbatim avoids
-#     reconstruction loss for providers that return them as distinct fields
-#     (DeepSeek/Kimi/Moonshot thinking modes).
-#   * ``reasoning_details``: opaque structured array (signature,
-#     encrypted_content) used by OpenRouter/Anthropic to maintain reasoning
-#     continuity across turns.
-#   * ``codex_reasoning_items``: encrypted reasoning blobs for the OpenAI
-#     Codex Responses API.
-#   * ``codex_message_items``: exact assistant message items with ``phase``.
-#     OpenAI docs: "preserve and resend phase on all assistant messages —
-#     dropping it can degrade performance."  Required for prefix cache hits.
-#   * ``finish_reason``: informational; cheap to keep so transcripts replay
-#     identically across CLI and gateway.
+# 各字段在回放时为何重要：
+#   * ``reasoning`` / ``reasoning_content``：面向 provider 的思考文本。
+#     ``_copy_reasoning_content_for_api`` 会在发送时把 ``reasoning`` 提升
+#     为 ``reasoning_content``，但仅当两个字符串恰好匹配时才提升。原样
+#     保留原始 ``reasoning_content`` 可以避免对那些把它们作为独立字段返回
+#     的 provider（DeepSeek/Kimi/Moonshot 的 thinking 模式）造成重建损失。
+#   * ``reasoning_details``：不透明的结构化数组（signature、
+#     encrypted_content），OpenRouter/Anthropic 用它来维持跨轮推理连续性。
+#   * ``codex_reasoning_items``：OpenAI Codex Responses API 的加密推理 blob。
+#   * ``codex_message_items``：带 ``phase`` 的精确 assistant 消息条目。
+#     OpenAI 文档："在所有 assistant 消息上保留并重发 phase —— 丢掉它可能
+#     降低性能。"是命中 prefix cache 所必需的。
+#   * ``finish_reason``：信息性的；保留成本低，使 transcript 在 CLI 和
+#     网关上回放一致。
 _ASSISTANT_REPLAY_FIELDS: tuple[str, ...] = (
     "reasoning",
     "reasoning_content",
@@ -670,21 +651,18 @@ _ASSISTANT_REPLAY_FIELDS: tuple[str, ...] = (
 
 
 def _build_replay_entry(role: str, content: Any, msg: Dict[str, Any]) -> Dict[str, Any]:
-    """Build a replay entry for a non-tool-calling message, preserving the
-    assistant fields the agent's API builders rely on for multi-turn fidelity.
+    """为非工具调用消息构造回放条目，保留 agent 的 API 构造器所依赖、用于
+    多轮保真度的 assistant 字段。
 
-    Lifted out of the inline ``run_sync`` closure so the field whitelist can
-    be unit-tested in isolation.  Mirrors the ``_ASSISTANT_REPLAY_FIELDS``
-    contract above.
+    从内联的 ``run_sync`` 闭包里抽出来，这样字段白名单可以被单独单元测试。
+    与上面的 ``_ASSISTANT_REPLAY_FIELDS`` 契约保持一致。
 
-    Empty values: most fields are dropped when falsy (matching the original
-    PR #2974 behaviour) since an empty list/string for those carries no
-    information.  The exception is ``reasoning_content``: DeepSeek/Kimi
-    thinking-mode replay treats an empty string as a meaningful sentinel
-    that ``_copy_reasoning_content_for_api`` upgrades to a single space.
-    Dropping it here would make the gateway send no ``reasoning_content`` at
-    all on the next turn, which can cause HTTP 400 from strict thinking
-    providers.
+    空值：大多数字段在 falsy 时会被丢掉（匹配原始 PR #2974 行为），因为对
+    这些字段来说，空列表/空字符串不带任何信息。例外是
+    ``reasoning_content``：DeepSeek/Kimi 的 thinking 模式回放会把空字符串
+    当作有意义的哨兵值，``_copy_reasoning_content_for_api`` 会把它升级成
+    一个空格。如果在这里把它丢掉，网关在下一轮就完全不发
+    ``reasoning_content``，这会导致严格的 thinking provider 返回 HTTP 400。
     """
     entry: Dict[str, Any] = {"role": role, "content": content}
     if role == "assistant":
@@ -693,7 +671,7 @@ def _build_replay_entry(role: str, content: Any, msg: Dict[str, Any]) -> Dict[st
                 continue
             _rval = msg.get(_rkey)
             if _rkey == "reasoning_content":
-                # Preserve empty-string sentinel for thinking-mode replay.
+                # 为 thinking 模式回放保留空字符串哨兵值。
                 if _rval is None:
                     continue
             elif not _rval:
@@ -708,26 +686,24 @@ _CURRENT_ADDRESSED_MESSAGE_HEADER = "[Current addressed message - answer only th
 
 
 def _uses_telegram_observed_group_context(channel_prompt: Optional[str]) -> bool:
-    """Return True for Telegram group turns that may include observed chatter.
+    """当 Telegram 群组轮次可能包含观察到的闲聊时返回 True。
 
-    Telegram's observe-unmentioned mode persists skipped group chatter so a
-    later @mention can see it. Those rows must not replay as ordinary user
-    turns: a weak wake word like ``@bot cambio`` should not make the model treat
-    old unmentioned chatter as pending work. The Telegram adapter marks these
-    turns with a channel prompt; this helper keeps the run-path check explicit
-    and unit-testable.
+    Telegram 的 observe-unmentioned 模式会把跳过的群聊持久化下来，这样
+    之后的 @mention 就能看到它。这些行绝不能作为普通用户轮次回放：一个
+    弱唤醒词比如 ``@bot cambio`` 不应让模型把旧的、未被提及的闲聊当成待
+    办工作。Telegram 适配器会用 channel prompt 标记这些轮次；这个 helper
+    让运行路径上的检查保持显式且可单元测试。
     """
 
     return bool(channel_prompt and _TELEGRAM_OBSERVED_CONTEXT_PROMPT_MARKER in channel_prompt)
 
 
 def _message_timestamps_enabled(user_config: Optional[dict]) -> bool:
-    """True when gateway.message_timestamps.enabled is opted in.
+    """当 gateway.message_timestamps.enabled 被显式开启时返回 True。
 
-    Default OFF: injecting a ``[Tue 2026-04-28 13:40:53 CEST]`` prefix onto
-    every user message changes what the model sees for all gateway users, so
-    it must be explicitly enabled in config.yaml under
-    ``gateway.message_timestamps.enabled``.
+    默认关闭：在每条用户消息前注入 ``[Tue 2026-04-28 13:40:53 CEST]`` 前缀
+    会改变模型对所有网关用户看到的内容，因此必须在 config.yaml 的
+    ``gateway.message_timestamps.enabled`` 下显式开启。
     """
     if not isinstance(user_config, dict):
         return False
@@ -737,7 +713,7 @@ def _message_timestamps_enabled(user_config: Optional[dict]) -> bool:
     mt = gw.get("message_timestamps")
     if isinstance(mt, dict):
         return bool(mt.get("enabled", False))
-    # Allow a bare ``message_timestamps: true`` shorthand.
+    # 允许裸的 ``message_timestamps: true`` 简写。
     return bool(mt)
 
 
@@ -747,17 +723,17 @@ def _build_gateway_agent_history(
     channel_prompt: Optional[str] = None,
     inject_timestamps: bool = False,
 ) -> tuple[List[Dict[str, Any]], Optional[str]]:
-    """Convert stored gateway transcript rows into agent replay messages.
+    """把存储的网关 transcript 行转换成 agent 回放消息。
 
-    Observed Telegram group rows are returned as API-only context for the
-    current addressed message instead of being replayed as normal prior user
-    turns.  Keeping that context out of ``conversation_history`` avoids
-    consecutive-user repair merging it with the live user turn and then hiding
-    the current message behind ``history_offset`` during persistence.
+    观察到的 Telegram 群组行会作为仅用于 API 的上下文返回，给当前被
+    addressing 的消息用，而不是作为普通的历史用户轮次回放。把这段上下文
+    排除在 ``conversation_history`` 之外，可以避免"连续用户消息修复"把它和
+    当前实时的用户轮次合并、进而在持久化时把它藏到 ``history_offset``
+    后面。
 
-    When ``inject_timestamps`` is True (gateway.message_timestamps.enabled),
-    each replayed user message is rendered with a single human-readable
-    timestamp prefix from its stored metadata.
+    当 ``inject_timestamps`` 为 True（gateway.message_timestamps.enabled）
+    时，每条回放的用户消息会根据其存储的 metadata 渲染一个人类可读的
+    时间戳前缀。
     """
 
     from hermes_time import get_timezone as _get_msg_tz
@@ -775,12 +751,12 @@ def _build_gateway_agent_history(
         if not role:
             continue
 
-        # Skip metadata entries (tool definitions, session info) -- these are
-        # for transcript logging, not for the LLM.
+        # 跳过 metadata 条目（工具定义、session 信息）—— 这些是给
+        # transcript 日志用的，不是给 LLM 用的。
         if role in {"session_meta",}:
             continue
 
-        # Skip system messages -- the agent rebuilds its own system prompt.
+        # 跳过 system 消息 —— agent 会自己重建它的 system prompt。
         if role == "system":
             continue
 
@@ -791,8 +767,8 @@ def _build_gateway_agent_history(
             observed_group_context.append(str(content).strip())
             continue
 
-        # Rich agent messages (tool_calls, tool results) must be passed through
-        # intact so the API sees valid assistant→tool sequences.
+        # 富 agent 消息（tool_calls、tool 结果）必须原样透传，这样 API 才能
+        # 看到合法的 assistant→tool 序列。
         has_tool_calls = "tool_calls" in msg
         has_tool_call_id = "tool_call_id" in msg
         is_tool_message = role == "tool"
@@ -801,31 +777,29 @@ def _build_gateway_agent_history(
             clean_msg = {k: v for k, v in msg.items() if k not in {"timestamp", "observed"}}
             agent_history.append(clean_msg)
         elif content:
-            # Strip gateway-injected auto-continue notes that were persisted
-            # as part of user messages during interrupted turns.  Keep the
-            # user's real text after the note, but never replay the recovery
-            # instruction itself — that is what caused infinite re-execution
-            # loops for interrupted long-running tools.
+            # 剥离在中断轮次中作为 user 消息一部分持久化的、网关注入的
+            # auto-continue 注记。保留注记之后用户的真实文本，但绝不重放
+            # 恢复指令本身 —— 正是它导致了中断的长耗时工具陷入无限重执行
+            # 循环。
             if role == "user":
                 content = _strip_auto_continue_noise(content)
                 if not content:
                     continue
-            # Simple text message - just need role and content.
+            # 简单文本消息 —— 只需要 role 和 content。
             if msg.get("mirror"):
                 mirror_src = msg.get("mirror_source", "another session")
                 content = f"[Delivered from {mirror_src}] {content}"
             entry = _build_replay_entry(role, content, msg)
             agent_history.append(entry)
 
-    # Strip interrupted tool-call tails so the LLM doesn't re-execute
-    # tools that were killed mid-flight.
+    # 剥离被中断的 tool-call 尾部，避免 LLM 重新执行那些在中途被杀掉的工具。
     agent_history = _strip_interrupted_tool_tails(agent_history)
 
-    # Strip a dangling assistant(tool_calls) tail with no tool answers —
-    # the signature of a SIGKILL mid-tool-call (e.g. the tool itself ran
-    # `docker restart`/`kill` and took the gateway down before the result
-    # was persisted). Without this the model re-issues the unanswered call
-    # on resume and loops the restart forever (#49201).
+    # 剥离一个没有 tool 回答的悬挂 assistant(tool_calls) 尾部 ——
+    # 这是 tool-call 中途遭遇 SIGKILL 的典型特征（例如工具自身执行了
+    # `docker restart`/`kill`，在结果持久化之前就把网关干掉了）。
+    # 不做处理的话，模型会在恢复时重新发起那个未应答的调用，从而
+    # 永远循环重启（#49201）。
     agent_history = _strip_dangling_tool_call_tail(agent_history)
 
     observed_context = "\n".join(observed_group_context).strip() or None
@@ -833,7 +807,7 @@ def _build_gateway_agent_history(
 
 
 def _wrap_current_message_with_observed_context(message: Any, observed_context: Optional[str]) -> Any:
-    """Prepend observed Telegram context to the API-only current user turn."""
+    """将观察到的 Telegram 上下文前置到仅 API 可见的当前 user 轮次中。"""
 
     if not observed_context:
         return message
@@ -859,12 +833,11 @@ def _wrap_current_message_with_observed_context(message: Any, observed_context: 
 
 
 def _last_transcript_timestamp(history: Optional[List[Dict[str, Any]]]) -> Any:
-    """Return the ``timestamp`` of the last usable transcript row, if any.
+    """返回最后一个可用 transcript 行的 ``timestamp``（如果有的话）。
 
-    Skips metadata-only rows (``session_meta``, system injections) that are
-    dropped before being handed to the agent.  Returns ``None`` when no
-    usable row carries a timestamp — callers should treat that as "fresh"
-    for backward compatibility.
+    会跳过纯元数据行（``session_meta``、系统注入），这些行在交给 agent 之前
+    就会被丢弃。当没有可用行带有时间戳时返回 ``None`` —— 调用方出于向后兼容
+    应将其视为“新鲜的”。
     """
     if not history:
         return None
@@ -877,26 +850,25 @@ def _last_transcript_timestamp(history: Optional[List[Dict[str, Any]]]) -> Any:
         ts = msg.get("timestamp")
         if ts is not None:
             return ts
-        # First non-meta row without a timestamp — legacy transcript row.
-        # Returning None lets the caller fall through to the legacy-fresh path.
+        # 第一个没有时间戳的非元数据行 —— 旧版 transcript 行。
+        # 返回 None 让调用方落入 legacy-fresh 路径。
         return None
     return None
 
 
-# Tool results can contain literal MEDIA: examples in docs, logs, or other
-# ordinary outputs. Only tools that intentionally create deliverable media
-# artifacts should be eligible for automatic append when the model omits them
-# from the final gateway reply.
+# Tool 结果中可能包含字面的 MEDIA: 示例（出现在文档、日志或其他普通输出里）。
+# 只有那些有意创建可投递媒体制品的工具，才应在模型于最终网关回复中遗漏它们时
+# 被纳入自动追加的候选范围。
 _AUTO_APPEND_MEDIA_TOOL_NAMES = {
     "text_to_speech",
     "text_to_speech_tool",
     "image_generate",
 }
 
-# ---- helpers: detect interrupted tool tails & auto-continue noise ----------
+# ---- 辅助函数：检测中断的 tool 尾部与 auto-continue 噪声 ----------
 
 def _is_interrupted_tool_result(content: Any) -> bool:
-    """Return True if a tool result indicates the tool was interrupted."""
+    """如果某个 tool 结果表明该工具被中断了，返回 True。"""
     if not isinstance(content, str):
         return False
     lowered = content.lower()
@@ -910,13 +882,13 @@ def _is_interrupted_tool_result(content: Any) -> bool:
 def _strip_interrupted_tool_tails(
     agent_history: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Strip interrupted assistant→tool sequences from replay history.
+    """从 replay 历史中剥离被中断的 assistant→tool 序列。
 
-    Older interrupted gateway turns can be followed by a queued real user
-    message, so the interrupted assistant/tool block is not necessarily the
-    final tail by the time we rebuild replay history.  Remove any contiguous
-    assistant(tool_calls) + tool-result block that contains an interrupted tool
-    result, while preserving successful tool-call sequences intact.
+    较早的被中断的网关轮次后面可能跟着一条排队的真实 user 消息，
+    因此当我们重建 replay 历史时，被中断的 assistant/tool 块未必是
+    最后的尾部。这里会移除任何包含中断 tool 结果的连续
+    assistant(tool_calls) + tool-result 块，同时完整保留成功的
+    tool-call 序列。
     """
     if not agent_history:
         return agent_history
@@ -956,26 +928,24 @@ def _strip_interrupted_tool_tails(
 def _strip_dangling_tool_call_tail(
     agent_history: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Strip a trailing ``assistant(tool_calls)`` block left with NO answers.
+    """剥离一个没有任何回答的尾部 ``assistant(tool_calls)`` 块。
 
-    When a tool call itself kills the gateway process (``docker restart``,
-    ``systemctl restart``, ``kill``, ``hermes gateway restart``), the process
-    is terminated by SIGKILL *mid-call* — before the tool result is ever
-    written and before the orderly shutdown rewind
-    (``_drop_trailing_empty_response_scaffolding``) can run.  The last thing
-    persisted is the ``assistant`` message that issued the ``tool_calls``,
-    with zero matching ``tool`` rows.
+    当某个 tool call 自身终结了网关进程（``docker restart``、
+    ``systemctl restart``、``kill``、``hermes gateway restart``）时，进程会在
+    *调用过程中*被 SIGKILL 终止 —— 此时 tool 结果尚未写入，有序关闭时的
+    回卷（``_drop_trailing_empty_response_scaffolding``）也来不及运行。
+    最后被持久化的是发起 ``tool_calls`` 的那条 ``assistant`` 消息，
+    且没有任何匹配的 ``tool`` 行。
 
-    On resume the model sees an unanswered tool call at the tail and naturally
-    re-issues it — which restarts the gateway again, producing the infinite
-    reboot loop in #49201.  ``_strip_interrupted_tool_tails`` does not catch
-    this because there is no tool result to inspect for an interrupt marker.
+    恢复时，模型看到尾部有一个未应答的 tool call，自然会重新发起它 ——
+    这会再次重启网关，从而产生 #49201 中的无限重启循环。
+    ``_strip_interrupted_tool_tails`` 抓不到这种情况，因为根本没有 tool 结果
+    可供检查中断标记。
 
-    This strips that dangling tail at the source so there is nothing for the
-    model to re-execute.  It only acts when the tail is an
-    ``assistant(tool_calls)`` whose calls have NO corresponding ``tool``
-    results — a completed assistant→tool pair (any tool answers present) is
-    left untouched so genuine mid-progress tool loops still resume.
+    这里在源头就剥离掉这个悬挂的尾部，使模型没有东西可重新执行。它只会在
+    尾部是一个其调用没有对应 ``tool`` 结果的 ``assistant(tool_calls)`` 时
+    生效 —— 一个已完成的 assistant→tool 对（存在任意 tool 回答）会被原样
+    保留，从而让真正进行中的 tool 循环仍能恢复。
     """
     if not agent_history:
         return agent_history
@@ -1002,8 +972,8 @@ _AUTO_CONTINUE_FALLBACK_PREFIX = "[System note: A new message"
 
 
 def _is_auto_continue_noise(content: Any) -> bool:
-    """Return True if this user-message content is a gateway-injected
-    auto-continue note that should NOT be replayed as a real user turn."""
+    """如果这条 user 消息内容是一条网关注入的 auto-continue 注记（不应作为真实 user 轮次重放），
+    则返回 True。"""
     if not isinstance(content, str):
         return False
     return (
@@ -1013,12 +983,11 @@ def _is_auto_continue_noise(content: Any) -> bool:
 
 
 def _strip_auto_continue_noise(content: Any) -> Any:
-    """Remove persisted gateway auto-continue note prefix from user text.
+    """从 user 文本中移除已持久化的网关 auto-continue 注记前缀。
 
-    Older gateway builds prepended the recovery note directly to the user
-    message, so the transcript row can contain both the synthetic note and
-    the user's real question.  Strip one or more leading synthetic notes while
-    preserving any real text that follows.
+    较早的网关构建会把恢复注记直接前置到 user 消息上，因此该 transcript 行
+    可能同时包含合成的注记和用户的真实问题。这里会剥离一个或多个开头的合成
+    注记，同时保留其后的任何真实文本。
     """
     if not _is_auto_continue_noise(content):
         return content
@@ -1030,18 +999,17 @@ def _strip_auto_continue_noise(content: Any) -> Any:
         text = text[end + 1 :].lstrip()
     return text
 
-# Tools in this set return their deliverable artifact as a JSON payload with a
-# local-file path field rather than a literal ``MEDIA:`` tag (e.g. image_generate
-# returns ``{"success": true, "image": "/abs/path.png"}``). The auto-append path
-# extracts the path from these fields so delivery is deterministic and does not
-# depend on the model restating the path in its final reply.
+# 此集合中的工具以 JSON 载荷形式返回其可投递制品，其中带有本地文件路径字段，
+# 而不是字面的 ``MEDIA:`` 标记（例如 image_generate 返回
+# ``{"success": true, "image": "/abs/path.png"}``）。auto-append 路径会从这些
+# 字段中提取路径，使投递是确定性的，不依赖于模型在其最终回复中重述该路径。
 _JSON_MEDIA_TOOL_PATH_FIELDS = ("host_image", "image", "agent_visible_image")
 
 
-# Extension-anchored MEDIA: matcher for tool results. Mirrors the dispatch-site
-# pattern so a bare ``MEDIA:`` token in prose (no deliverable extension) is never
-# auto-appended. Kept local to the auto-append path; the producer-tool allowlist
-# below is the primary guard, this is the secondary precision guard.
+# 基于扩展名锚定的 tool 结果 MEDIA: 匹配器。与分派处的模式一致，因此
+# 散文中单纯的 ``MEDIA:`` token（无可投递扩展名）永远不会被自动追加。
+# 仅限于 auto-append 路径内部使用；下方的生产者工具白名单是主要防护，
+# 这是次要的精度防护。
 _TOOL_MEDIA_RE = re.compile(
     r'MEDIA:((?:[A-Za-z]:[/\\]|/|~\/)\S+\.(?:png|jpe?g|gif|webp|'
     r'mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|'
@@ -1056,27 +1024,25 @@ def _collect_auto_append_media_tags(
     history_offset: int = 0,
     history_media_paths: Optional[set] = None,
 ) -> tuple[List[str], bool]:
-    """Collect real media tags from current-turn producer-tool results only.
+    """仅从当前轮次的生产者工具结果中收集真实的 media 标签。
 
-    Two layered guards keep stale/example MEDIA: strings out of the reply:
+    两层防护确保过时/示例的 MEDIA: 字符串不会进入回复：
 
-    1. Producer-tool allowlist: only tools that intentionally emit deliverable
-       artifacts (TTS) are eligible. Documentation, logs, and search results can
-       contain example strings such as MEDIA:/absolute/path/to/file, which must
-       never be delivered as attachments. (Fixes the original report behind #16721.)
-    2. Current-turn isolation: only messages produced this turn are scanned, so a
-       tool result from an earlier turn (still present in the full message list)
-       cannot leak onto a later text-only reply (#34608).
+    1. 生产者工具白名单：只有有意产出可投递制品（TTS）的工具才符合条件。
+       文档、日志和搜索结果中可能包含示例字符串，例如
+       MEDIA:/absolute/path/to/file，绝不能将其作为附件投递。
+       （修复 #16721 背后的原始报告。）
+    2. 当前轮次隔离：只扫描本轮次产出的消息，因此来自更早轮次的 tool 结果
+       （仍存在于完整消息列表中）不会泄漏到后续的纯文本回复上（#34608）。
 
-    Mid-run context compression can rewrite/shrink the message list below the
-    original history length. When that happens the slice boundary is no longer
-    trustworthy, so fall back to scanning every message and rely on
-    ``history_media_paths`` for dedup, preserving the compression-safe behaviour
-    of #160. The producer-tool allowlist still applies on the fallback path.
+    运行中途的上下文压缩可能会重写/缩减消息列表，使其低于原始历史长度。
+    此时切片边界不再可信，因此回退为扫描所有消息，并依赖
+    ``history_media_paths`` 去重，从而保留 #160 的压缩安全行为。
+    生产者工具白名单在回退路径上依然生效。
     """
     history_media_paths = history_media_paths or set()
-    # Only trust the slice boundary when the message list still contains the
-    # full history prefix. Otherwise scan everything (compression-safe fallback).
+    # 只有当消息列表仍包含完整的历史前缀时才信任切片边界。
+    # 否则扫描所有消息（压缩安全回退）。
     if history_offset and len(messages) >= history_offset:
         new_messages = messages[history_offset:]
     else:
@@ -1103,9 +1069,9 @@ def _collect_auto_append_media_tags(
             continue
         content = str(msg.get("content") or "")
         tool_name = tool_name_by_call_id.get(call_id)
-        # JSON-payload tools (image_generate) return a local-file path in a
-        # known field rather than a MEDIA: tag. Extract it so delivery is
-        # deterministic even when the model omits the path from its reply.
+        # JSON 载荷工具（image_generate）在已知字段中返回本地文件路径，
+        # 而非 MEDIA: 标记。提取它使投递是确定性的，即使模型在回复中
+        # 遗漏了该路径也没关系。
         if tool_name == "image_generate" and "MEDIA:" not in content:
             try:
                 payload = json.loads(content)
@@ -1133,18 +1099,17 @@ def _collect_auto_append_media_tags(
 
 
 def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
-    """Collect every media path already delivered in prior tool results.
+    """收集已在过往 tool 结果中投递过的每个 media 路径。
 
-    Used to dedup auto-appended MEDIA tags so the same file is not re-sent on
-    later turns. Must cover BOTH delivery shapes:
-      * ``MEDIA:<path>`` text tags in tool results, and
-      * ``image_generate`` JSON-payload paths (``host_image`` / ``image`` /
-        ``agent_visible_image``), which carry no MEDIA: tag.
+    用于对自动追加的 MEDIA 标签去重，使同一个文件不会在后续轮次中被重复发送。
+    必须覆盖两种投递形态：
+      * tool 结果中的 ``MEDIA:<path>`` 文本标签，以及
+      * ``image_generate`` 的 JSON 载荷路径（``host_image`` / ``image`` /
+        ``agent_visible_image``），它们不携带 MEDIA: 标记。
 
-    Missing the JSON-payload shape caused #46627: after a compression
-    boundary the auto-append fallback rescans full history, re-discovers an
-    earlier ``image_generate`` result whose path was never in the dedup set,
-    and re-emits the MEDIA tag every turn.
+    漏掉 JSON 载荷形态会导致 #46627：在压缩边界之后，auto-append 回退路径会
+    重新扫描完整历史，重新发现一个更早的 ``image_generate`` 结果，其路径从未
+    出现在去重集合中，于是每轮都重新发出该 MEDIA 标签。
     """
     paths: set = set()
     tool_name_by_call_id: Dict[str, str] = {}
@@ -1181,22 +1146,21 @@ def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
     return paths
 
 # ---------------------------------------------------------------------------
-# SSL certificate auto-detection for NixOS and other non-standard systems.
-# Must run BEFORE any HTTP library (discord, aiohttp, etc.) is imported.
+# 为 NixOS 及其他非标准系统自动检测 SSL 证书。
+# 必须在任何 HTTP 库（discord、aiohttp 等）被导入之前运行。
 # ---------------------------------------------------------------------------
 def _ensure_ssl_certs() -> None:
-    """Set SSL_CERT_FILE if the system doesn't expose CA certs to Python.
+    """当系统未向 Python 暴露 CA 证书时，设置 SSL_CERT_FILE。
 
-    Windows startup paths (Desktop, Scheduled Tasks, installer children) can
-    occasionally inherit a stale SSL_CERT_FILE. Returning just because the
-    variable is present makes every later httpx/OpenAI client construction fail
-    with FileNotFoundError from ssl.load_verify_locations(). Treat a missing
-    path as unset and fall back to certifi instead.
+    Windows 启动路径（桌面、计划任务、安装程序子进程）偶尔会继承一个过期的
+    SSL_CERT_FILE。仅因为该变量存在就直接返回，会导致后续每次
+    httpx/OpenAI 客户端构造都因 ssl.load_verify_locations() 抛出
+    FileNotFoundError 而失败。这里将缺失的路径视为未设置，并回退到 certifi。
     """
     configured_cert = os.environ.get("SSL_CERT_FILE")
     if configured_cert:
         if os.path.exists(configured_cert):
-            return  # user already configured it to a real file
+            return  # 用户已将其配置为一个真实文件
         logging.getLogger(__name__).warning(
             "Ignoring stale SSL_CERT_FILE=%r because the path does not exist",
             configured_cert,
@@ -1205,14 +1169,14 @@ def _ensure_ssl_certs() -> None:
 
     import ssl
 
-    # 1. Python's compiled-in defaults
+    # 1. Python 编译期内置的默认值
     paths = ssl.get_default_verify_paths()
     for candidate in (paths.cafile, paths.openssl_cafile):
         if candidate and os.path.exists(candidate):
             os.environ["SSL_CERT_FILE"] = candidate
             return
 
-    # 2. certifi (ships its own Mozilla bundle)
+    # 2. certifi（自带 Mozilla 证书束）
     try:
         import certifi
         os.environ["SSL_CERT_FILE"] = certifi.where()
@@ -1220,7 +1184,7 @@ def _ensure_ssl_certs() -> None:
     except ImportError:
         pass
 
-    # 3. Common distro / macOS locations
+    # 3. 常见的发行版 / macOS 位置
     for candidate in (
         "/etc/ssl/certs/ca-certificates.crt",               # Debian/Ubuntu/Gentoo
         "/etc/pki/tls/certs/ca-bundle.crt",                 # RHEL/CentOS 7
@@ -1236,11 +1200,11 @@ def _ensure_ssl_certs() -> None:
             return
 
 def _home_target_env_var(platform_name: str) -> str:
-    """Return the configured home-target env var for a platform.
+    """返回某个平台的已配置 home 目标环境变量。
 
-    Consults built-in ``_HOME_TARGET_ENV_VARS`` first, then the plugin
-    registry via ``cron.scheduler._resolve_home_env_var``, then falls back
-    to ``<PLATFORM>_HOME_CHANNEL`` for unknown names.
+    先查询内置的 ``_HOME_TARGET_ENV_VARS``，再通过
+    ``cron.scheduler._resolve_home_env_var`` 查询插件注册表，
+    最后对未知名称回退到 ``<PLATFORM>_HOME_CHANNEL``。
     """
     from cron.scheduler import _resolve_home_env_var
 
@@ -1251,12 +1215,12 @@ def _home_target_env_var(platform_name: str) -> str:
 
 
 def _home_thread_env_var(platform_name: str) -> str:
-    """Return the optional thread/topic env var for a platform home target."""
+    """返回平台 home 目标的可选 thread/topic 环境变量。"""
     return f"{_home_target_env_var(platform_name)}_THREAD_ID"
 
 
 def _restart_notification_pending() -> bool:
-    """Return True when a /restart completion marker is waiting to be delivered."""
+    """当有一个 /restart 完成标记正等待投递时，返回 True。"""
     return (_hermes_home / ".restart_notify.json").exists()
 
 
@@ -1265,7 +1229,7 @@ def _planned_restart_notification_path() -> Path:
 
 
 def _planned_restart_notification_pending() -> bool:
-    """Return True when a non-chat planned restart should notify home channels."""
+    """当一个非聊天计划内重启应当通知 home 频道时，返回 True。"""
     return _planned_restart_notification_path().exists()
 
 
@@ -1273,47 +1237,47 @@ def _clear_planned_restart_notification() -> None:
     _planned_restart_notification_path().unlink(missing_ok=True)
 
 
-# Mark this process as a gateway so cli.py's module-level load_cli_config()
-# knows not to clobber TERMINAL_CWD if lazily imported.
+# 将本进程标记为 gateway，这样 cli.py 的模块级 load_cli_config() 在被惰性
+# 导入时就知道不要覆盖 TERMINAL_CWD。
 os.environ["_HERMES_GATEWAY"] = "1"
 
 _ensure_ssl_certs()
 
-# Add parent directory to path
+# 将父目录加入 path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Resolve Hermes home directory (respects HERMES_HOME override)
+# 解析 Hermes home 目录（遵循 HERMES_HOME 覆盖）
 from hermes_constants import get_hermes_home
 from utils import atomic_json_write, atomic_yaml_write, base_url_host_matches, is_truthy_value
 _hermes_home = get_hermes_home()
 
-# Load environment variables from ~/.hermes/.env first.
-# User-managed env files should override stale shell exports on restart.
-from dotenv import load_dotenv  # noqa: F401  # backward-compat for tests that monkeypatch this symbol
+# 先从 ~/.hermes/.env 加载环境变量。
+# 用户管理的 env 文件应当在重启时覆盖过期的 shell 导出。
+from dotenv import load_dotenv  # noqa: F401  # 为 monkeypatch 此符号的测试提供向后兼容
 from hermes_cli.env_loader import load_hermes_dotenv
 _env_path = _hermes_home / '.env'
 load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
 
 def _reload_runtime_env_preserving_config_authority() -> None:
-    """Reload .env for fresh credentials without letting stale .env override config.
+    """重新加载 .env 以获取新凭证，同时不让过期的 .env 覆盖 config。
 
-    Gateway processes are long-lived, so per-turn code reloads ~/.hermes/.env to
-    pick up rotated API keys. config.yaml remains authoritative for agent budget
-    settings such as agent.max_turns; otherwise a stale HERMES_MAX_ITERATIONS in
-    .env can replace the startup bridge on later turns.
+    网关进程是长期存活的，因此每轮代码会重新加载 ~/.hermes/.env 以获取已轮换的
+    API key。config.yaml 对 agent 预算设置（例如 agent.max_turns）保持权威性；
+    否则 .env 中一个过期的 HERMES_MAX_ITERATIONS 会在后续轮次中替换掉启动时
+    的桥接值。
 
-    In multiplex mode this is a NO-OP for the credential reload: secrets come
-    from the per-turn ``set_secret_scope`` (installed by ``_profile_runtime_scope``)
-    which loads the routed profile's ``.env`` into an isolated mapping. Mutating
-    the process-global ``os.environ`` here would defeat that isolation and leak
-    the default profile's keys to every profile's turns and subprocesses.
+    在 multiplex 模式下，这对凭证重载是一个空操作：密钥来自每轮的
+    ``set_secret_scope``（由 ``_profile_runtime_scope`` 安装），它将路由到的
+    profile 的 ``.env`` 加载到一个隔离的映射中。在这里修改进程全局的
+    ``os.environ`` 会破坏这种隔离，并将默认 profile 的 key 泄漏给每个 profile
+    的轮次和子进程。
     """
     from agent.secret_scope import is_multiplex_active
     if is_multiplex_active():
-        # Credentials are resolved from the active profile's secret scope, not
-        # os.environ. Still honor config.yaml's agent.max_turns bridge below
-        # using the scoped home, but never reload .env into global env.
+        # 凭证从活动 profile 的 secret scope 解析，而非 os.environ。
+        # 下面仍使用 scoped home 来兑现 config.yaml 的 agent.max_turns 桥接，
+        # 但绝不把 .env 重新加载进全局 env。
         _bridge_max_turns_from_config(_hermes_home)
         return
 
@@ -1325,7 +1289,7 @@ def _reload_runtime_env_preserving_config_authority() -> None:
 
 
 def _bridge_max_turns_from_config(home: "Path") -> None:
-    """Bridge config.yaml agent.max_turns into HERMES_MAX_ITERATIONS (a global)."""
+    """将 config.yaml 的 agent.max_turns 桥接到 HERMES_MAX_ITERATIONS（一个全局变量）。"""
     config_path = home / 'config.yaml'
     if not config_path.exists():
         return
@@ -1335,10 +1299,10 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
             cfg = _yaml.safe_load(f) or {}
         from hermes_cli.config import _expand_env_vars
         cfg = _expand_env_vars(cfg)
-        # Managed scope: keep administrator-pinned values authoritative on every
-        # turn too. This per-turn reload re-bridges config→env, so without the
-        # overlay a managed agent.max_turns / timezone / redact_secrets would be
-        # replaced by the user's value after the first turn. Fail-open.
+        # 托管 scope：让管理员锁定的值在每一轮都保持权威。这个每轮重载会
+        # 重新桥接 config→env，因此如果没有该 overlay，托管的
+        # agent.max_turns / timezone / redact_secrets 在第一轮之后就会被
+        # 用户的值替换。失败时放行。
         try:
             from hermes_cli import managed_scope
             cfg = managed_scope.apply_managed_overlay(cfg)
@@ -1353,7 +1317,7 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
 
 
 def _current_max_iterations() -> int:
-    """Return the current per-turn iteration budget after runtime env refresh."""
+    """返回运行时 env 刷新后当前每轮的迭代预算。"""
     _reload_runtime_env_preserving_config_authority()
     try:
         return int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
@@ -1364,13 +1328,12 @@ def _current_max_iterations() -> int:
 from contextlib import contextmanager as _contextmanager
 
 
-# Platforms that bind a host TCP port (HTTP/webhook listeners). In a profile
-# multiplexer the default profile owns the single shared listener and serves
-# every profile through the /p/<profile>/ URL prefix, so a SECONDARY profile
-# enabling one of these is always a misconfiguration: it would try to bind a
-# port already held by the default's listener. We hard-error on it rather than
-# silently dropping the adapter (see _start_one_profile_adapters).
-# Stored as platform .value strings since the Platform enum is imported below.
+# 绑定宿主机 TCP 端口的平台（HTTP/webhook 监听器）。在 profile 多路复用器中，
+# 默认 profile 拥有唯一的共享监听器，并通过 /p/<profile>/ URL 前缀为每个
+# profile 提供服务，因此一个启用这些平台的次级 profile 必然是配置错误：
+# 它会试图绑定一个已被默认 profile 监听器占用的端口。我们对其硬报错，
+# 而不是静默丢弃该适配器（见 _start_one_profile_adapters）。
+# 以 platform .value 字符串形式存储，因为 Platform 枚举在下方才导入。
 _PORT_BINDING_PLATFORM_VALUES = frozenset({
     "webhook",
     "api_server",
@@ -1383,32 +1346,29 @@ _PORT_BINDING_PLATFORM_VALUES = frozenset({
 
 
 class MultiplexConfigError(RuntimeError):
-    """A profile multiplexer config is invalid (fail-fast at startup).
+    """profile 多路复用器配置无效（启动时快速失败）。
 
-    Distinct from a transient adapter-connect failure: a transient error is
-    logged and the gateway stays alive to retry, but a config error means the
-    operator must fix config.yaml, so it aborts startup cleanly.
+    不同于瞬态适配器连接失败：瞬态错误会被记录且网关保持存活以重试，
+    但配置错误意味着运维人员必须修复 config.yaml，因此它会干净地中止启动。
     """
 
 
 @_contextmanager
 def _profile_runtime_scope(profile_home: "Path"):
-    """Scope config/skills/memory AND credentials to a profile for one turn.
+    """将 config/skills/memory 以及凭证都限定到某个 profile 上，持续一轮。
 
-    Combines the two seams the multiplexer needs:
-      1. ``set_hermes_home_override`` — redirects ``get_hermes_home()`` (config,
-         skills, memory, SOUL, sessions) to the profile's home. Contextvar, so
-         it propagates into the agent worker thread via ``copy_context()``.
-      2. ``set_secret_scope`` — installs the profile's ``.env`` secrets as the
-         authoritative credential source, so ``get_secret`` reads this profile's
-         keys and never the process-global ``os.environ`` (which in a
-         multiplexer may hold another profile's values).
+    组合了多路复用器需要的两个接缝：
+      1. ``set_hermes_home_override`` —— 将 ``get_hermes_home()``（config、
+         skills、memory、SOUL、sessions）重定向到该 profile 的 home。它是
+         contextvar，因此会通过 ``copy_context()`` 传播进 agent worker 线程。
+      2. ``set_secret_scope`` —— 将该 profile 的 ``.env`` 密钥安装为权威
+         凭证来源，使 ``get_secret`` 读取此 profile 的 key，而绝不读进程全局的
+         ``os.environ``（在多路复用器中它可能持有另一个 profile 的值）。
 
-    Only used on the multiplexed inbound path. Single-profile gateways never
-    enter this scope, so their behavior is unchanged. Loading the profile's
-    ``.env`` here does NOT mutate ``os.environ`` — ``build_profile_secret_scope``
-    returns an isolated dict — which is what keeps subprocesses (MCP, kanban)
-    from inheriting cross-profile secrets.
+    仅在多路复用的入站路径上使用。单 profile 网关从不进入此 scope，因此其
+    行为不变。在这里加载 profile 的 ``.env`` 不会修改 ``os.environ`` ——
+    ``build_profile_secret_scope`` 返回的是一个隔离的 dict —— 这正是防止
+    子进程（MCP、kanban）继承跨 profile 密钥的关键。
     """
     from hermes_constants import set_hermes_home_override, reset_hermes_home_override
     from agent.secret_scope import (
@@ -1429,34 +1389,33 @@ def _profile_runtime_scope(profile_home: "Path"):
 _DOCKER_VOLUME_SPEC_RE = re.compile(r"^(?P<host>.+):(?P<container>/[^:]+?)(?::(?P<options>[^:]+))?$")
 _DOCKER_MEDIA_OUTPUT_CONTAINER_PATHS = {"/output", "/outputs"}
 
-# Bridge config.yaml values into the environment so os.getenv() picks them up.
-# config.yaml is authoritative for terminal settings — overrides .env.
+# 将 config.yaml 的值桥接到环境中，以便 os.getenv() 能读取到它们。
+# config.yaml 对终端设置是权威的 —— 会覆盖 .env。
 _config_path = _hermes_home / 'config.yaml'
 if _config_path.exists():
     try:
         import yaml as _yaml
         with open(_config_path, encoding="utf-8") as _f:
             _cfg = _yaml.safe_load(_f) or {}
-        # Expand ${ENV_VAR} references before bridging to env vars.
+        # 在桥接到 env 变量之前展开 ${ENV_VAR} 引用。
         from hermes_cli.config import _expand_env_vars
         _cfg = _expand_env_vars(_cfg)
-        # Managed scope: overlay administrator-pinned values BEFORE bridging to
-        # env vars, so a managed timezone / redact_secrets / max_turns / terminal
-        # setting wins over the user's value at the env layer too. This bridge
-        # reads config.yaml directly (not via load_config), so without the
-        # overlay every HERMES_*/TERMINAL_* env var below would carry the user's
-        # value even when an administrator pinned it. Fail-open via the helper.
+        # 托管 scope：在桥接到 env 变量之前先 overlay 管理员锁定的值，
+        # 使托管的 timezone / redact_secrets / max_turns / terminal 设置在
+        # env 层也胜过用户的值。此桥接直接读取 config.yaml（不经过 load_config），
+        # 因此若没有该 overlay，下方每个 HERMES_*/TERMINAL_* env 变量都会
+        # 承载用户的值，即便管理员已锁定它。通过 helper 失败放行。
         try:
             from hermes_cli import managed_scope
             _cfg = managed_scope.apply_managed_overlay(_cfg)
         except Exception:
             pass
-        # Top-level simple values (fallback only — don't override .env)
+        # 顶层简单值（仅作兜底 —— 不覆盖 .env）
         for _key, _val in _cfg.items():
             if isinstance(_val, (str, int, float, bool)) and _key not in os.environ:
                 os.environ[_key] = str(_val)
-        # Terminal config is nested — bridge to TERMINAL_* env vars.
-        # config.yaml overrides .env for these since it's the documented config path.
+        # 终端配置是嵌套的 —— 桥接到 TERMINAL_* env 变量。
+        # config.yaml 对这些设置覆盖 .env，因为它是文档化的配置路径。
         _terminal_cfg = _cfg.get("terminal", {})
         if _terminal_cfg and isinstance(_terminal_cfg, dict):
             _terminal_env_map = {
@@ -1491,42 +1450,38 @@ if _config_path.exists():
             for _cfg_key, _env_var in _terminal_env_map.items():
                 if _cfg_key in _terminal_cfg:
                     _val = _terminal_cfg[_cfg_key]
-                    # Skip cwd placeholder values (".", "auto", "cwd") — the
-                    # gateway resolves these to Path.home() later (line ~255).
-                    # Writing the raw placeholder here would just be noise.
-                    # Only bridge explicit absolute paths from config.yaml.
+                    # 跳过 cwd 占位值（"."、"auto"、"cwd"）—— 网关稍后会
+                    # 把它们解析为 Path.home()（约第 255 行）。在这里写入原始
+                    # 占位值只会制造噪音。只桥接 config.yaml 中的显式绝对路径。
                     if _cfg_key == "cwd" and str(_val) in {".", "auto", "cwd"}:
                         continue
-                    # Expand shell tilde in cwd so subprocess.Popen never
-                    # receives a literal "~/" which the kernel rejects.
+                    # 展开 cwd 中的 shell 波浪号，使 subprocess.Popen 永远不会
+                    # 收到一个会被内核拒绝的字面 "~/"。
                     if _cfg_key == "cwd" and isinstance(_val, str):
                         _val = os.path.expanduser(_val)
                     if isinstance(_val, (list, dict)):
                         os.environ[_env_var] = json.dumps(_val)
                     else:
                         os.environ[_env_var] = str(_val)
-        # Compression config is read directly from config.yaml by run_agent.py
-        # and auxiliary_client.py — no env var bridging needed.
-        # Auxiliary model/direct-endpoint overrides (vision, web_extract,
-        # approval, plus any plugin-registered auxiliary tasks).
-        # Each task has provider/model/base_url/api_key; bridge non-default
-        # values to env vars named AUXILIARY_<KEY_UPPER>_*. The legacy
-        # hard-coded list (vision/web_extract/approval) is replaced by a
-        # dynamic loop so plugin-registered tasks benefit from the same
-        # config→env bridging without core knowing about each one.
+        # 压缩配置由 run_agent.py 和 auxiliary_client.py 直接从 config.yaml 读取
+        # —— 无需桥接到 env 变量。
+        # 辅助模型/直接端点覆盖（vision、web_extract、approval，以及任何
+        # 插件注册的辅助任务）。每个任务有 provider/model/base_url/api_key；
+        # 将非默认值桥接到名为 AUXILIARY_<KEY_UPPER>_* 的 env 变量。原先写死的
+        # 列表（vision/web_extract/approval）被替换为一个动态循环，使插件注册
+        # 的任务也能享受同样的 config→env 桥接，而核心无需逐个了解它们。
         _auxiliary_cfg = _cfg.get("auxiliary", {})
         if _auxiliary_cfg and isinstance(_auxiliary_cfg, dict):
-            # Built-in tasks that previously had explicit env-var bridging.
-            # Kept here as the canonical bridged set; plugin tasks are added
-            # below via the plugin auxiliary registry.
+            # 之前有显式 env 变量桥接的内置任务。
+            # 在此作为规范的桥接集合保留；插件任务通过下方的插件辅助注册表添加。
             _aux_bridged_keys = {"vision", "web_extract", "approval"}
             try:
                 from hermes_cli.plugins import get_plugin_auxiliary_tasks
                 for _entry in get_plugin_auxiliary_tasks():
                     _aux_bridged_keys.add(_entry["key"])
             except Exception:
-                # Plugin discovery failure must not break gateway startup;
-                # built-in bridging stays intact.
+                # 插件发现失败绝不能中断网关启动；
+                # 内置桥接保持不变。
                 pass
 
             for _task_key in _aux_bridged_keys:
@@ -1546,12 +1501,10 @@ if _config_path.exists():
                     os.environ[f"AUXILIARY_{_upper}_BASE_URL"] = _base_url
                 if _api_key:
                     os.environ[f"AUXILIARY_{_upper}_API_KEY"] = _api_key
-        # config.yaml is the documented, authoritative source for these
-        # settings — it unconditionally wins over .env values. Previously
-        # the guards below read `if X not in os.environ` and let stale
-        # .env entries (e.g. HERMES_MAX_ITERATIONS=60 written by an old
-        # `hermes setup` run) silently shadow the user's current config.
-        # See PR #18413 / the 60-vs-500 max_turns incident.
+        # config.yaml 是这些设置的文档化权威来源 —— 它无条件胜过 .env 的值。
+        # 此前下方的守卫读取的是 `if X not in os.environ`，会让过期的 .env 条目
+        # （例如某次旧 `hermes setup` 写入的 HERMES_MAX_ITERATIONS=60）静默地
+        # 遮蔽用户当前的配置。参见 PR #18413 / 那次 60 对 500 的 max_turns 事故。
         _agent_cfg = _cfg.get("agent", {})
         if _agent_cfg and isinstance(_agent_cfg, dict):
             if "max_turns" in _agent_cfg:
@@ -1576,17 +1529,17 @@ if _config_path.exists():
                 os.environ["HERMES_GATEWAY_BUSY_TEXT_MODE"] = str(_display_cfg["busy_text_mode"])
             if "busy_ack_enabled" in _display_cfg:
                 os.environ["HERMES_GATEWAY_BUSY_ACK_ENABLED"] = str(_display_cfg["busy_ack_enabled"])
-        # Timezone: bridge config.yaml → HERMES_TIMEZONE env var.
+        # 时区：桥接 config.yaml → HERMES_TIMEZONE env 变量。
         _tz_cfg = _cfg.get("timezone", "")
         if _tz_cfg and isinstance(_tz_cfg, str):
             os.environ["HERMES_TIMEZONE"] = _tz_cfg.strip()
-        # Security settings
+        # 安全设置
         _security_cfg = _cfg.get("security", {})
         if isinstance(_security_cfg, dict):
             _redact = _security_cfg.get("redact_secrets")
             if _redact is not None:
                 os.environ["HERMES_REDACT_SECRETS"] = str(_redact).lower()
-        # Gateway settings (media delivery allowlist + recency trust + strict mode)
+        # 网关设置（media 投递白名单 + 近期文件信任 + 严格模式）
         _gateway_cfg = _cfg.get("gateway", {})
         if isinstance(_gateway_cfg, dict):
             _strict = _gateway_cfg.get("strict")
@@ -1613,13 +1566,11 @@ if _config_path.exists():
             if _trust_recent_seconds is not None:
                 os.environ["HERMES_MEDIA_TRUST_RECENT_SECONDS"] = str(_trust_recent_seconds)
     except Exception as _bridge_err:
-        # Previously this was silent (`except Exception: pass`), which
-        # hid partial bridge failures and let .env defaults shadow
-        # config.yaml values — users observed max_turns=500 in config
-        # but a 60-iteration cap in practice. Surface the failure to
-        # stderr so operators see it even though `logger` is not yet
-        # initialized at module-import time (logger is defined further
-        # down this module).
+        # 此前这里是静默的（`except Exception: pass`），这会隐藏部分桥接失败，
+        # 并让 .env 默认值遮蔽 config.yaml 的值 —— 用户在 config 里看到
+        # max_turns=500，实际却被限制为 60 次迭代。将失败信息输出到 stderr，
+        # 以便运维人员能看到，即便在模块导入时 `logger` 尚未初始化
+        # （logger 在本模块更下方才定义）。
         print(
             f"  Warning: config.yaml → env bridge failed: "
             f"{type(_bridge_err).__name__}: {_bridge_err}",
@@ -1631,7 +1582,7 @@ if _config_path.exists():
             file=sys.stderr,
         )
 
-# Apply IPv4 preference if configured (before any HTTP clients are created).
+# 如果已配置则应用 IPv4 偏好（在任何 HTTP 客户端创建之前）。
 try:
     from hermes_constants import apply_ipv4_preference
     _network_cfg = (_cfg if '_cfg' in dir() else {}).get("network", {})
@@ -1640,31 +1591,31 @@ try:
 except Exception as _bootstrap_exc:
     print(f"  Warning: IPv4 preference application failed: {_bootstrap_exc}", file=sys.stderr)
 
-# Validate config structure early — log warnings so gateway operators see problems
+# 尽早校验配置结构 —— 记录警告，让网关运维人员能发现问题
 try:
     from hermes_cli.config import print_config_warnings
     print_config_warnings()
 except Exception as _bootstrap_exc:
     print(f"  Warning: config validation failed: {_bootstrap_exc}", file=sys.stderr)
 
-# Warn if user has deprecated MESSAGING_CWD / TERMINAL_CWD in .env
+# 当用户在 .env 中使用了已废弃的 MESSAGING_CWD / TERMINAL_CWD 时给出警告
 try:
     from hermes_cli.config import warn_deprecated_cwd_env_vars
     warn_deprecated_cwd_env_vars()
 except Exception as _bootstrap_exc:
     print(f"  Warning: deprecation check failed: {_bootstrap_exc}", file=sys.stderr)
 
-# Gateway runs in quiet mode - suppress debug output and use cwd directly (no temp dirs)
+# 网关以安静模式运行 —— 抑制调试输出，并直接使用 cwd（不使用临时目录）
 os.environ["HERMES_QUIET"] = "1"
 
-# Enable interactive exec approval for dangerous commands on messaging platforms
+# 在消息平台上为危险命令启用交互式 exec 审批
 os.environ["HERMES_EXEC_ASK"] = "1"
 
-# Set terminal working directory for messaging platforms.
-# config.yaml terminal.cwd is the canonical source (bridged to TERMINAL_CWD
-# by the config bridge above).  When it's unset or a placeholder, default
-# to home directory.  MESSAGING_CWD is accepted as a backward-compat
-# fallback (deprecated — the warning above tells users to migrate).
+# 为消息平台设置终端工作目录。
+# config.yaml 的 terminal.cwd 是规范来源（已由上方的配置桥接桥接到
+# TERMINAL_CWD）。当它未设置或是占位值时，默认使用 home 目录。
+# MESSAGING_CWD 作为向后兼容的兜底被接受（已废弃 —— 上方的警告会提示
+# 用户迁移）。
 _configured_cwd = os.environ.get("TERMINAL_CWD", "")
 if not _configured_cwd or _configured_cwd in {".", "auto", "cwd"}:
     _fallback = os.getenv("MESSAGING_CWD") or str(Path.home())
@@ -1717,25 +1668,21 @@ from gateway.whatsapp_identity import (
 logger = logging.getLogger(__name__)
 
 
-# Sentinel placed into _running_agents immediately when a session starts
-# processing, *before* any await.  Prevents a second message for the same
-# session from bypassing the "already running" guard during the async gap
-# between the guard check and actual agent creation.
+# 当某个 session 开始处理时，在任何 await 之前，立即放入 _running_agents 的
+# 哨兵对象。防止同一 session 的第二条消息在“已在运行”守卫检查与实际 agent
+# 创建之间的 async 间隙中绕过该守卫。
 _AGENT_PENDING_SENTINEL = object()
 
 
 def _resolve_runtime_agent_kwargs() -> dict:
-    """Resolve provider credentials for gateway-created AIAgent instances.
+    """为网关创建的 AIAgent 实例解析 provider 凭证。
 
-    Provider is read from ``config.yaml`` ``model.provider`` (the single
-    source of truth). ``resolve_runtime_provider()`` falls through to env
-    var lookups internally for legacy compatibility, but the gateway does
-    not consult environment variables for behavioral config — config.yaml
-    is authoritative.
+    Provider 从 ``config.yaml`` 的 ``model.provider`` 读取（唯一事实来源）。
+    ``resolve_runtime_provider()`` 内部会向下落到 env 变量查询以兼容旧版本，
+    但网关不会为行为配置查阅环境变量 —— config.yaml 是权威的。
 
-    If the primary provider fails with an authentication error, attempt to
-    resolve credentials using the fallback provider chain from config.yaml
-    before giving up.
+    如果主 provider 因认证错误而失败，则在放弃之前，尝试使用 config.yaml 的
+    fallback provider 链来解析凭证。
     """
     from hermes_cli.runtime_provider import (
         resolve_runtime_provider,
@@ -1747,10 +1694,9 @@ def _resolve_runtime_agent_kwargs() -> dict:
     try:
         runtime = resolve_runtime_provider()
     except AuthError as auth_exc:
-        # Distinguish a transient rate-limit/quota cap (credentials are fine,
-        # re-auth cannot help) from a genuine auth failure (expired/revoked
-        # token). Both fall through to the fallback chain, but the log message
-        # must not mislabel a quota exhaustion as an auth failure (#32790).
+        # 区分瞬态的限流/配额上限（凭证没问题，重新认证也帮不上忙）与真正的
+        # 认证失败（过期/撤销的 token）。两者都会向下落到 fallback 链，但日志
+        # 消息绝不能把配额耗尽误标为认证失败（#32790）。
         if is_rate_limited_auth_error(auth_exc):
             logger.warning("Primary provider rate-limited (429): %s — trying fallback", auth_exc)
         else:
@@ -1774,9 +1720,8 @@ def _resolve_runtime_agent_kwargs() -> dict:
         mt = model_cfg.get("max_tokens")
         if isinstance(mt, int):
             max_tokens = mt
-    # Fall back to a per-provider output cap (custom_providers max_output_tokens)
-    # only when the documented global model.max_tokens isn't set, so the global
-    # key always wins.
+    # 只有当文档化的全局 model.max_tokens 未设置时，才回退到按 provider 的
+    # 输出上限（custom_providers 的 max_output_tokens），从而保证全局 key 总是胜出。
     if max_tokens is None:
         _runtime_mot = runtime.get("max_output_tokens")
         if isinstance(_runtime_mot, int) and _runtime_mot > 0:
@@ -1795,7 +1740,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
 
 
 def _try_resolve_fallback_provider() -> dict | None:
-    """Attempt to resolve credentials from the fallback_model/fallback_providers config."""
+    """尝试从 fallback_model/fallback_providers 配置解析凭证。"""
     from hermes_cli.runtime_provider import resolve_runtime_provider
     try:
         import yaml as _y
@@ -1821,10 +1766,9 @@ def _try_resolve_fallback_provider() -> dict | None:
                     explicit_base_url=entry.get("base_url"),
                     explicit_api_key=explicit_api_key,
                 )
-                # Log the literal `provider` key from config, not the resolved
-                # runtime category — an Ollama fallback resolves through the
-                # OpenAI-compatible path and would otherwise be logged as
-                # "openrouter", contradicting the operator's config (#32790).
+                # 记录 config 中字面的 `provider` key，而非解析后的运行时类别 ——
+                # 一个 Ollama fallback 会通过 OpenAI 兼容路径解析，否则会被记录为
+                # "openrouter"，与运维人员的配置相矛盾（#32790）。
                 logger.info(
                     "Fallback provider resolved: %s model=%s",
                     entry.get("provider") or runtime.get("provider"),
@@ -1849,12 +1793,11 @@ def _try_resolve_fallback_provider() -> dict | None:
 
 
 def _build_media_placeholder(event) -> str:
-    """Build a text placeholder for media-only events so they aren't dropped.
+    """为纯 media 事件构造一个文本占位符，避免它们被丢弃。
 
-    When a photo/document is queued during active processing and later
-    dequeued, only .text is extracted.  If the event has no caption,
-    the media would be silently lost.  This builds a placeholder that
-    the vision enrichment pipeline will replace with a real description.
+    当照片/文档在活跃处理期间被排队、随后再出队时，只会提取 .text。
+    如果事件没有 caption，media 就会被静默丢失。这里构造一个占位符，
+    vision 富化管线稍后会用真实描述替换它。
     """
     parts = []
     media_urls = getattr(event, "media_urls", None) or []
@@ -1873,16 +1816,15 @@ def _build_media_placeholder(event) -> str:
 
 
 def _build_document_context_note(display_name: str, agent_path: str, mtype: str) -> str:
-    """Context note prepended to a user turn when they attach a document.
+    """当用户附加文档时，前置到 user 轮次的上下文注记。
 
-    Text documents (``text/*``) have their content inlined upstream by the
-    platform adapter, so the note just confirms that and records the path.
+    文本文档（``text/*``）的内容已在上游被平台适配器内联，因此该注记只是
+    确认这一点并记录路径。
 
-    Binary documents (PDF, DOCX, XLSX, …) cannot be inlined as text. The note
-    must tell the agent to *extract* the text itself before answering — earlier
-    wording ("Ask the user what they'd like you to do with it") steered the
-    model into punting back to the user, which is why attached PDFs/DOCX looked
-    "unreadable" to the agent even though it has the tools to read them.
+    二进制文档（PDF、DOCX、XLSX……）无法作为文本内联。该注记必须告诉 agent
+    在回答之前自行*提取*文本 —— 早先的措辞（“询问用户希望如何处理它”）会把
+    模型引导回退给用户，这正是为什么附加的 PDF/DOCX 在 agent 看来是“不可读的”，
+    尽管它拥有读取它们的工具。
     """
     if mtype.startswith("text/"):
         return (
@@ -1911,7 +1853,7 @@ def _format_duration(seconds: float) -> str:
 
 
 async def _probe_audio_duration(path: str) -> Optional[str]:
-    """Best-effort duration probe. Returns formatted MM:SS / HH:MM:SS, or None on failure."""
+    """尽力而为的时长探测。返回格式化的 MM:SS / HH:MM:SS，失败则返回 None。"""
     ext = os.path.splitext(path)[1].lower()
 
     if ext == ".wav":
@@ -1953,11 +1895,10 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
 
 
 def _dequeue_pending_event(adapter, session_key: str) -> MessageEvent | None:
-    """Consume and return the full pending event for a session.
+    """消费并返回某个 session 的完整 pending 事件。
 
-    Queued follow-ups must preserve their media metadata so they can re-enter
-    the normal image/STT/document preprocessing path instead of being reduced
-    to a placeholder string.
+    排队的后续消息必须保留其 media 元数据，以便它们能重新进入正常的
+    image/STT/文档预处理路径，而不是被降级为一个占位字符串。
     """
     return adapter.get_pending_message(session_key)
 
@@ -1982,7 +1923,7 @@ _CONTROL_INTERRUPT_MESSAGES = frozenset(
 
 
 def _is_control_interrupt_message(message: Optional[str]) -> bool:
-    """Return True when an interrupt message is internal control flow."""
+    """当某条中断消息属于内部控制流时，返回 True。"""
     if not message:
         return False
     normalized = " ".join(str(message).strip().split()).lower()
@@ -1990,23 +1931,21 @@ def _is_control_interrupt_message(message: Optional[str]) -> bool:
 
 
 def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None]:
-    """Derive the /command slug and declared frontmatter name from a SKILL.md.
+    """从 SKILL.md 推导出 /command slug 以及声明的 frontmatter 名称。
 
-    Matches the exact normalization used by
-    :func:`agent.skill_commands.scan_skill_commands` so the slug here is the
-    same string a user types after the leading ``/`` (e.g. a skill with
-    frontmatter ``name: Stable Diffusion Image Generation`` resolves to
-    ``stable-diffusion-image-generation`` — NOT the parent directory name,
-    which is commonly shorter/different, e.g. ``stable-diffusion``).
+    与 :func:`agent.skill_commands.scan_skill_commands` 所用的精确归一化
+    保持一致，使此处的 slug 就是用户在开头 ``/`` 之后输入的同一字符串
+    （例如一个 frontmatter 为 ``name: Stable Diffusion Image Generation``
+    的 skill 会解析为 ``stable-diffusion-image-generation`` —— 而不是父目录
+    名，父目录名通常更短/不同，例如 ``stable-diffusion``）。
 
-    Using the directory name silently broke :func:`_check_unavailable_skill`
-    for every skill whose directory name drifted from its frontmatter name
-    (19 such skills on a standard install as of 2026-05), causing a generic
-    "unknown command" response where a "disabled — enable with …" or
-    "not installed — install with …" hint was expected.
+    使用目录名会悄悄破坏每一个目录名与 frontmatter 名称不一致的 skill 的
+    :func:`_check_unavailable_skill`（截至 2026-05，在标准安装中有 19 个这样的
+    skill），导致在应当给出“已禁用 —— 用 …… 启用”或“未安装 —— 用 …… 安装”
+    提示的地方，却返回了一个通用的“未知命令”响应。
 
-    Returns ``(slug, declared_name)`` or ``(None, None)`` when the file
-    can't be read or lacks a ``name:`` in its frontmatter.
+    当文件无法读取或其 frontmatter 中缺少 ``name:`` 时，返回
+    ``(slug, declared_name)`` 或 ``(None, None)``。
     """
     try:
         content = skill_md.read_text(encoding="utf-8", errors="replace")
@@ -2022,7 +1961,7 @@ def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None
         line = line.strip()
         if line.startswith("name:"):
             raw = line.split(":", 1)[1].strip()
-            # Strip YAML quote wrappers if present
+            # 如有 YAML 引号包裹则剥离
             if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'"}:
                 raw = raw[1:-1]
             declared_name = raw.strip()
@@ -2030,7 +1969,7 @@ def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None
     if not declared_name:
         return None, None
     slug = declared_name.lower().replace(" ", "-").replace("_", "-")
-    # Mirror _SKILL_INVALID_CHARS and _SKILL_MULTI_HYPHEN from skill_commands
+    # 镜像 skill_commands 中的 _SKILL_INVALID_CHARS 和 _SKILL_MULTI_HYPHEN
     import re as _re
     slug = _re.sub(r"[^a-z0-9-]", "", slug)
     slug = _re.sub(r"-{2,}", "-", slug).strip("-")
@@ -2040,27 +1979,26 @@ def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None
 
 
 def _check_unavailable_skill(command_name: str) -> str | None:
-    """Check if a command matches a known-but-inactive skill.
+    """检查某个命令是否匹配一个已知但未激活的 skill。
 
-    Returns a helpful message if the skill exists but is disabled or only
-    available as an optional install. Returns None if no match found.
+    如果该 skill 存在但被禁用，或仅作为可选安装提供，则返回一条有帮助的消息。
+    如果没有匹配则返回 None。
 
-    The slug for each on-disk skill is derived from its frontmatter ``name:``
-    (via :func:`_skill_slug_from_frontmatter`), NOT from its containing
-    directory name — because the two can differ (e.g. directory
-    ``stable-diffusion`` + frontmatter ``Stable Diffusion Image Generation``
-    yields slug ``stable-diffusion-image-generation``). Matching on
-    directory name would miss that slug entirely and fall through to the
-    generic "unknown command" path.
+    每个磁盘上 skill 的 slug 是从其 frontmatter 的 ``name:`` 推导出来的
+    （通过 :func:`_skill_slug_from_frontmatter`），而非来自其所在目录名 ——
+    因为两者可能不同（例如目录 ``stable-diffusion`` + frontmatter
+    ``Stable Diffusion Image Generation`` 会产生 slug
+    ``stable-diffusion-image-generation``）。按目录名匹配会完全错过该 slug，
+    并落入通用的“未知命令”路径。
     """
-    # Normalize: command uses hyphens, skill names may use hyphens or underscores
+    # 归一化：command 使用连字符，skill 名可能使用连字符或下划线
     normalized = command_name.lower().replace("_", "-")
     try:
         from tools.skills_tool import _get_disabled_skill_names
         from agent.skill_utils import get_all_skills_dirs, is_excluded_skill_path
         disabled = _get_disabled_skill_names()
 
-        # Check disabled skills across all dirs (local + external)
+        # 检查所有目录（本地 + 外部）中被禁用的 skill
         for skills_dir in get_all_skills_dirs():
             if not skills_dir.exists():
                 continue
@@ -2070,15 +2008,15 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 slug, declared_name = _skill_slug_from_frontmatter(skill_md)
                 if not slug or not declared_name:
                     continue
-                # disabled is keyed by the declared frontmatter name (what
-                # skills.disabled / skills.platform_disabled store).
+                # disabled 以声明的 frontmatter 名称为 key（即
+                # skills.disabled / skills.platform_disabled 所存储的内容）。
                 if slug == normalized and declared_name in disabled:
                     return (
                         f"The **{command_name}** skill is installed but disabled.\n"
                         f"Enable it with: `hermes skills config`"
                     )
 
-        # Check optional skills (shipped with repo but not installed)
+        # 检查可选 skill（随仓库分发但未安装）
         from hermes_constants import get_optional_skills_dir
         repo_root = Path(__file__).resolve().parent.parent
         optional_dir = get_optional_skills_dir(repo_root / "optional-skills")
@@ -2090,7 +2028,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 if not slug:
                     continue
                 if slug == normalized:
-                    # Build install path: official/<category>/<name>
+                    # 构造安装路径：official/<category>/<name>
                     rel = skill_md.parent.relative_to(optional_dir)
                     parts = list(rel.parts)
                     install_path = f"official/{'/'.join(parts)}"
@@ -2104,12 +2042,12 @@ def _check_unavailable_skill(command_name: str) -> str | None:
 
 
 def _platform_config_key(platform: "Platform") -> str:
-    """Map a Platform enum to its config.yaml key (LOCAL→"cli", rest→enum value)."""
+    """将 Platform 枚举映射到其 config.yaml 的 key（LOCAL→"cli"，其余→枚举值）。"""
     return "cli" if platform == Platform.LOCAL else platform.value
 
 
 def _teams_pipeline_plugin_enabled() -> bool:
-    """Return True when the standalone Teams pipeline plugin is enabled."""
+    """当独立的 Teams pipeline 插件被启用时，返回 True。"""
     config = _load_gateway_config()
     enabled = cfg_get(config, "plugins", "enabled", default=[])
     if not isinstance(enabled, list):
@@ -2118,25 +2056,23 @@ def _teams_pipeline_plugin_enabled() -> bool:
 
 
 def _load_gateway_config() -> dict:
-    """Load and parse ~/.hermes/config.yaml, returning {} on any error.
+    """加载并解析 ~/.hermes/config.yaml，出错时返回 {}。
 
-    Uses the module-level ``_hermes_home`` (so tests that monkeypatch it
-    still see their fixture) and shares the mtime-keyed raw-yaml cache
-    from ``hermes_cli.config.read_raw_config`` when the paths match.
+    使用模块级的 ``_hermes_home``（这样 monkeypatch 它的测试仍能看到
+    fixture），并在路径匹配时共享 ``hermes_cli.config.read_raw_config`` 中
+    基于 mtime 的原始 yaml 缓存。
 
-    Managed scope is overlaid on the result (via the shared helper) so the
-    gateway honors administrator-pinned values — neither read_raw_config nor a
-    direct yaml.safe_load carries the managed merge on its own. Fail-open.
+    托管 scope 会通过共享 helper 叠加到结果上，使网关兑现管理员锁定的值 ——
+    read_raw_config 和直接的 yaml.safe_load 自身都不包含托管合并。失败放行。
     """
     config_path = _hermes_home / 'config.yaml'
     raw: dict = {}
     used_canonical = False
     try:
         from hermes_cli.config import get_config_path, read_raw_config
-        # Fast path: if _hermes_home agrees with the canonical config
-        # location, reuse the shared cache. Otherwise fall through to a
-        # direct read (keeps test fixtures with a monkeypatched
-        # _hermes_home working).
+        # 快速路径：如果 _hermes_home 与规范的 config 位置一致，
+        # 则复用共享缓存。否则向下落到直接读取（保持 monkeypatch 了
+        # _hermes_home 的测试 fixture 仍能工作）。
         if config_path == get_config_path():
             raw = read_raw_config()
             used_canonical = True
@@ -2153,10 +2089,10 @@ def _load_gateway_config() -> dict:
             logger.debug("Could not load gateway config from %s", config_path)
             raw = {}
 
-    # Overlay managed scope. read_raw_config() returns the user's raw YAML
-    # WITHOUT the managed merge (that lives in load_config/_load_config_impl),
-    # so the overlay is required on both paths for the gateway to honor pinned
-    # values. Helper is fail-open and a no-op when no managed scope exists.
+    # 叠加托管 scope。read_raw_config() 返回的是用户的原始 YAML，不含托管合并
+    # （那部分存在于 load_config/_load_config_impl 中），因此在两条路径上都需要
+    # 该 overlay，网关才能兑现锁定的值。helper 失败放行，且在没有托管 scope 时
+    # 是空操作。
     try:
         from hermes_cli import managed_scope
         raw = managed_scope.apply_managed_overlay(raw if isinstance(raw, dict) else {})
@@ -2166,15 +2102,15 @@ def _load_gateway_config() -> dict:
 
 
 def _load_gateway_runtime_config() -> dict:
-    """Load gateway config for runtime reads, expanding supported ``${VAR}`` refs.
+    """为运行时读取加载网关配置，并展开受支持的 ``${VAR}`` 引用。
 
-    Runtime helpers should honor the same env-template expansion documented for
-    ``config.yaml`` while still respecting tests that monkeypatch
-    ``gateway.run._hermes_home``. Build on ``_load_gateway_config()`` rather
-    than calling the canonical loader directly so both behaviors stay aligned.
+    运行时 helper 应当兑现与 ``config.yaml`` 文档一致的环境模板展开，
+    同时仍尊重那些 monkeypatch 了 ``gateway.run._hermes_home`` 的测试。
+    基于 ``_load_gateway_config()`` 构建，而非直接调用规范加载器，以使
+    两种行为保持一致。
 
-    Expansion failures are intentionally NOT swallowed — silently returning
-    the unexpanded dict would mask the very bug this helper exists to fix.
+    展开失败被有意地不被吞掉 —— 静默返回未展开的 dict 会掩盖这个 helper
+    存在正是为了修复的那个 bug。
     """
     cfg = _load_gateway_config()
     if not isinstance(cfg, dict) or not cfg:
@@ -2186,11 +2122,10 @@ def _load_gateway_runtime_config() -> dict:
 
 
 def _resolve_gateway_model(config: dict | None = None) -> str:
-    """Read model from config.yaml — single source of truth.
+    """从 config.yaml 读取 model —— 唯一事实来源。
 
-    Without this, temporary AIAgent instances (e.g. /compress) fall
-    back to the hardcoded default which fails when the active provider is
-    openai-codex.
+    没有它的话，临时的 AIAgent 实例（例如 /compress）会回退到写死的默认值，
+    而当活动 provider 是 openai-codex 时该默认值会失败。
     """
     cfg = config if config is not None else _load_gateway_config()
     model_cfg = cfg.get("model", {})
@@ -2202,14 +2137,14 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
 
 
 def _resolve_hermes_bin() -> Optional[list[str]]:
-    """Resolve the Hermes update command as argv parts.
+    """将 Hermes 更新命令解析为 argv 各部分。
 
-    Tries in order:
-    1. ``shutil.which("hermes")`` — standard PATH lookup
-    2. ``sys.executable -m hermes_cli.main`` — fallback when Hermes is running
-       from a venv/module invocation and the ``hermes`` shim is not on PATH
+    依次尝试：
+    1. ``shutil.which("hermes")`` —— 标准 PATH 查找
+    2. ``sys.executable -m hermes_cli.main`` —— 当 Hermes 从 venv/模块调用运行
+       且 ``hermes`` 垫片不在 PATH 上时的兜底
 
-    Returns argv parts ready for quoting/joining, or ``None`` if neither works.
+    返回可用于引用/拼接的 argv 部分，若两者都不可用则返回 ``None``。
     """
     import shutil
 
@@ -2229,17 +2164,16 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
 
 
 def _parse_session_key(session_key: str) -> "dict | None":
-    """Parse a session key into its component parts.
+    """将一个 session key 解析为其组成部分。
 
-    Session keys follow the format
-    ``agent:main:{platform}:{chat_type}:{chat_id}[:{extra}...]``.
-    Returns a dict with ``platform``, ``chat_type``, ``chat_id``, and
-    optionally ``thread_id`` keys, or None if the key doesn't match.
+    Session key 遵循格式
+    ``agent:main:{platform}:{chat_type}:{chat_id}[:{extra}...]``。
+    返回一个包含 ``platform``、``chat_type``、``chat_id``，以及可选的
+    ``thread_id`` key 的 dict；若 key 不匹配则返回 None。
 
-    The 6th element is only returned as ``thread_id`` for chat types where
-    it is unambiguous (``dm`` and ``thread``).  For group/channel sessions
-    the suffix may be a user_id (per-user isolation) rather than a
-    thread_id, so we leave ``thread_id`` out to avoid mis-routing.
+    第 6 个元素仅在不产生歧义的聊天类型（``dm`` 和 ``thread``）下才作为
+    ``thread_id`` 返回。对于群组/频道 session，后缀可能是一个 user_id
+    （按用户隔离）而非 thread_id，因此我们省略 ``thread_id`` 以免错误路由。
     """
     parts = session_key.split(":")
     if len(parts) >= 5 and parts[0] == "agent" and parts[1] == "main":
@@ -2255,7 +2189,7 @@ def _parse_session_key(session_key: str) -> "dict | None":
 
 
 def _format_gateway_process_notification(evt: dict) -> "str | None":
-    """Format a watch pattern event from completion_queue into a [IMPORTANT:] message."""
+    """将来自 completion_queue 的 watch 模式事件格式化为 [IMPORTANT:] 消息。"""
     evt_type = evt.get("type", "completion")
     _sid = evt.get("session_id", "unknown")
     _cmd = evt.get("command", "unknown")
@@ -2279,7 +2213,7 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
         return text
 
     if evt_type == "async_delegation":
-        # Reuse the shared rich formatter (self-contained task-source block).
+        # 复用共享的富格式化器（自包含的 task-source 块）。
         from tools.process_registry import format_process_notification
         return format_process_notification(evt)
 
@@ -2287,14 +2221,13 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
 
 
 def _drain_gateway_watch_events(completion_queue) -> "list[dict]":
-    """Drain gateway-owned watch events without spinning on requeued events.
+    """排空网关拥有的 watch 事件，且不会因重新入队的事件而空转。
 
-    Watch events are handled by the post-turn gateway drain. Process
-    completions are owned by their per-process watcher task, and async
-    delegation completions are owned by ``_async_delegation_watcher``.
-    Requeueing async events inside ``while not queue.empty()`` would make the
-    loop non-terminating, so detach the current batch first, then requeue any
-    events this drain does not own after the queue is empty.
+    Watch 事件由轮次后的网关排空来处理。进程完成由各自的 per-process
+    watcher 任务拥有，而异步委派完成由 ``_async_delegation_watcher`` 拥有。
+    在 ``while not queue.empty()`` 内部把异步事件重新入队会使循环无法终止，
+    因此先把当前这批摘出来，然后在队列空了之后再把这个排空不负责的事件
+    重新入队。
     """
     watch_events: list[dict] = []
     requeue: list[dict] = []
@@ -2308,15 +2241,15 @@ def _drain_gateway_watch_events(completion_queue) -> "list[dict]":
             watch_events.append(evt)
         elif evt_type == "async_delegation":
             requeue.append(evt)
-        # else: process completion events are handled by the watcher task
+        # else：进程完成事件由 watcher 任务处理
     for evt in requeue:
         completion_queue.put(evt)
     return watch_events
 
 
-# Module-level weak reference to the active GatewayRunner instance.
-# Used by tools (e.g. send_message) that need to route through a live
-# adapter for plugin platforms.  Set in GatewayRunner.__init__().
+# 模块级的弱引用，指向活动的 GatewayRunner 实例。
+# 供那些需要通过一个活跃适配器路由的插件平台工具（例如 send_message）使用。
+# 在 GatewayRunner.__init__() 中设置。
 import weakref as _weakref
 _gateway_runner_ref: _weakref.ref = lambda: None
 
@@ -2327,17 +2260,15 @@ def _normalize_empty_agent_response(
     *,
     history_len: int = 0,
 ) -> str:
-    """Normalize empty/None agent responses into user-facing messages.
+    """将空/None 的 agent 响应归一化为面向用户的消息。
 
-    Consolidates the existing ``failed`` handler and adds a catch-all for
-    the case where the agent did work (api_calls > 0) but returned no text.
-    Fix for #18765.
+    整合既有的 ``failed`` 处理器，并为 agent 做了工作（api_calls > 0）却返回
+    无文本的情况增加一个兜底。修复 #18765。
 
-    Also surfaces a retry hint when the agent never ran at all
-    (api_calls == 0) for a non-interrupted, non-failed turn -- this is the
-    silent-drop pattern observed after ``/stop`` where the next user
-    message hits a stale generation token and returns an empty result,
-    leaving the platform with nothing to send. (#31884)
+    当 agent 在一个非中断、非失败的轮次中根本没运行（api_calls == 0）时，
+    也会给出重试提示 —— 这正是 ``/stop`` 之后观察到的静默丢弃模式：下一条
+    user 消息命中一个过期的 generation token 并返回空结果，使平台无内容可发
+    送。（#31884）
     """
     if response:
         return response
@@ -2370,11 +2301,10 @@ def _normalize_empty_agent_response(
             "This may be a transient error — try sending your message again."
         )
 
-    # api_calls == 0, not failed, not interrupted: the agent never ran for
-    # this turn. This is the post-/stop generation-race pattern where the
-    # gateway would otherwise silently drop the turn (response=0 chars) and
-    # the user sees no reply at all. Surface a short retry hint so the
-    # message isn't lost in silence. (#31884)
+    # api_calls == 0，未失败、未中断：agent 本轮根本没运行。这是 /stop 之后
+    # 的 generation 竞态模式，若不处理网关会静默丢弃该轮次（response=0 字符），
+    # 用户完全看不到回复。给出一条简短的重试提示，避免消息无声无息地丢失。
+    # （#31884）
     if (
         api_calls == 0
         and not agent_result.get("interrupted")
@@ -2390,13 +2320,12 @@ def _normalize_empty_agent_response(
 
 
 def _should_clear_resume_pending_after_turn(agent_result: dict) -> bool:
-    """Return True only when a gateway turn really completed successfully.
+    """仅当某个网关轮次真正成功完成时才返回 True。
 
-    Restart recovery uses ``resume_pending`` as a durable marker for sessions
-    interrupted during gateway drain.  A soft interrupt can still bubble out as
-    a syntactically normal agent result with an empty final response; clearing
-    the marker in that case loses the recovery signal and startup auto-resume
-    has nothing to schedule.
+    重启恢复使用 ``resume_pending`` 作为在网关 drain 期间被中断的 session 的
+    持久标记。一个软中断仍可能以一个语法上正常的、最终响应为空的 agent 结果
+    冒泡出来；在那种情况下清除标记会丢失恢复信号，使启动时的自动恢复无东西
+    可调度。
     """
     if not isinstance(agent_result, dict):
         return False
@@ -2413,16 +2342,16 @@ def _preserve_queued_followup_history_offset(
     current_result: dict,
     followup_result: dict,
 ) -> dict:
-    """Carry the outer history offset through queued follow-up drains.
+    """将外层的 history offset 带过排队的 follow-up 排空。
 
-    ``_process_message_background()`` persists transcript rows only once, after the
-    entire in-band queued-follow-up chain returns.  Each recursive ``_run_agent()``
-    call advances ``history_offset`` to the history it received, so without
-    correction the outermost persistence step sees only the *last* queued turn as
-    "new" and silently drops earlier turns from the same drain chain.
+    ``_process_message_background()`` 只在整个 in-band 排队 follow-up 链返回之后
+    持久化一次 transcript 行。每次递归的 ``_run_agent()`` 调用都会把
+    ``history_offset`` 推进到它所收到的历史，因此若不修正，最外层的持久化步骤
+    只会把*最后*一个排队轮次视为“新的”，从而静默丢弃同一 drain 链中较早的
+    轮次。
 
-    Preserve the earliest (outermost) history offset so the final transcript slice
-    still includes every queued turn that ran during the chain.
+    保留最早（最外层）的 history offset，使最终的 transcript 切片仍包含该链中
+    运行过的每一个排队轮次。
     """
     if not isinstance(followup_result, dict):
         return followup_result
@@ -2442,52 +2371,43 @@ def _preserve_queued_followup_history_offset(
 
 
 async def _dispose_unused_adapter(adapter: "BasePlatformAdapter | None") -> None:
-    """Best-effort dispose for an adapter that never made it onto ``self.adapters``.
+    """对一个从未进入 ``self.adapters`` 的适配器进行尽力而为的 dispose。
 
-    The reconnect watcher in ``GatewayRunner._platform_reconnect_watcher``
-    constructs a fresh adapter on every retry attempt. When the connect
-    call fails — for any of the three reasons (non-retryable error,
-    retryable error, exception during connect) — the adapter is dropped
-    without ever being installed, so nothing else will call its
-    ``disconnect()``. Any resources the adapter opened in ``__init__``
-    (e.g. ``APIServerAdapter`` opens a SQLite ``ResponseStore`` that
-    holds 2 fds — the db file and its WAL sidecar) stay open until
-    garbage collection sweeps the unreachable object, which Python's
-    cyclic GC does not do promptly for asyncio-bound objects with
-    native handles. The cumulative leak is 2 fds × every retry at the
-    300s backoff cap ≈ 12 fds/hour, and the default 2560-fd ulimit
-    is exhausted in ~12h of continuous failure, after which every
-    open() call on the gateway raises ``OSError: [Errno 24] Too many
-    open files`` and the gateway becomes a zombie (#37011).
+    ``GatewayRunner._platform_reconnect_watcher`` 中的重连 watcher 在每次重试
+    时都会构造一个全新的适配器。当 connect 调用失败时 —— 无论出于三种原因中的
+    哪一种（不可重试错误、可重试错误、connect 期间抛出异常）—— 该适配器都会
+    被丢弃且从未被安装，因此没有别的东西会调用它的 ``disconnect()``。该适配器
+    在 ``__init__`` 中打开的任何资源（例如 ``APIServerAdapter`` 会打开一个持有
+    2 个 fd 的 SQLite ``ResponseStore`` —— db 文件及其 WAL 边车）会一直开着，
+    直到垃圾回收清扫这个不可达对象，而 Python 的循环 GC 对带有原生句柄的
+    asyncio 绑定对象并不会及时处理。累积泄漏为 2 fds × 300s backoff 上限下的
+    每次重试 ≈ 12 fds/小时，默认的 2560-fd ulimit 在约 12 小时的持续失败后被
+    耗尽，此后网关上每次 open() 调用都会抛出
+    ``OSError: [Errno 24] Too many open files``，网关沦为僵尸（#37011）。
 
-    This helper centralises the dispose-with-suppression so the three
-    failure paths in the reconnect watcher can all call it without
-    each one having to know that ``disconnect()`` may itself raise
-    on a half-constructed adapter.
+    本 helper 集中了带抑制的 dispose，使重连 watcher 中的三条失败路径都能
+    调用它，而无需每条路径都自己知道 ``disconnect()`` 在半构造的适配器上可能
+    抛出异常。
 
-    ``adapter`` may be ``None``: the reconnect watcher initialises
-    ``adapter = None`` before the ``try`` so the ``except Exception``
-    arm can dispose a half-constructed object, and also early-returns
-    here when ``_create_adapter()`` returned ``None``.
+    ``adapter`` 可以为 ``None``：重连 watcher 在 ``try`` 之前把
+    ``adapter = None`` 初始化，以便 ``except Exception`` 分支能 dispose 一个
+    半构造的对象；同时当 ``_create_adapter()`` 返回 ``None`` 时也会在此提前
+    返回。
     """
     if adapter is None:
         return
     try:
         await adapter.disconnect()
     except Exception:
-        # Half-constructed adapters (e.g. APIServerAdapter that
-        # crashed during aiohttp app setup) can raise from
-        # disconnect() on objects that never finished initializing.
-        # We must not let that escape and abort the watcher loop.
+        # 半构造的适配器（例如在 aiohttp app 设置期间崩溃的 APIServerAdapter）
+        # 可能会在从未完成初始化的对象上从 disconnect() 抛出异常。
+        # 我们绝不能让它逃逸并中止 watcher 循环。
         #
-        # On Python 3.8+, ``asyncio.CancelledError`` inherits from
-        # ``BaseException`` (not ``Exception``), so this ``except
-        # Exception`` does not swallow task cancellation. We don't
-        # re-raise explicitly because the watcher loop intentionally
-        # treats dispose failures as best-effort: a failed ``disconnect``
-        # call should not take down the reconnect watcher that
-        # itself is what's keeping the gateway alive during a partial
-        # outage.
+        # 在 Python 3.8+ 上，``asyncio.CancelledError`` 继承自
+        # ``BaseException``（而非 ``Exception``），因此这个 ``except
+        # Exception`` 不会吞掉任务取消。我们不显式重抛，因为 watcher 循环
+        # 有意将 dispose 失败视为尽力而为：一次失败的 ``disconnect`` 调用
+        # 不应拖垮那个本身就是部分中断期间维持网关存活的重连 watcher。
         logger.debug(
             "Adapter dispose raised on unowned adapter %r",
             getattr(adapter, "name", type(adapter).__name__),
@@ -2497,14 +2417,12 @@ async def _dispose_unused_adapter(adapter: "BasePlatformAdapter | None") -> None
 
 class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
     """
-    Main gateway controller.
+    网关主控制器。
 
-    Manages the lifecycle of all platform adapters and routes
-    messages to/from the agent.
+    管理所有平台适配器的生命周期，并在 agent 之间双向路由消息。
     """
 
-    # Class-level defaults so partial construction in tests doesn't
-    # blow up on attribute access.
+    # 类级默认值，使测试中的部分构造不会因属性访问而崩溃。
     _running_agents_ts: Dict[str, float] = {}
     _busy_input_mode: str = "interrupt"
     _busy_text_mode: str = "interrupt"
@@ -2524,27 +2442,27 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     def __init__(self, config: Optional[GatewayConfig] = None):
         global _gateway_runner_ref
         self.config = config or load_gateway_config()
-        # Mark the process as a profile multiplexer when configured. This flips
-        # agent.secret_scope.get_secret() to fail-closed on any unscoped
-        # credential read, so a missed migration crashes loudly instead of
-        # leaking a cross-profile value (Workstream A). Inert when off.
+        # 当已配置时，将进程标记为 profile 多路复用器。这会使
+        # agent.secret_scope.get_secret() 在任何未限定作用域的凭证读取上
+        # 失败关闭，从而让遗漏的迁移 loudly 崩溃，而不是泄漏跨 profile 的值
+        # （Workstream A）。关闭时无效。
         try:
             from agent.secret_scope import set_multiplex_active
             set_multiplex_active(bool(getattr(self.config, "multiplex_profiles", False)))
         except Exception:
             logger.debug("could not set multiplex-active flag", exc_info=True)
         self.adapters: Dict[Platform, BasePlatformAdapter] = {}
-        # Multi-profile multiplexing: adapters for NON-default profiles live
-        # here, keyed by profile name then Platform. self.adapters stays the
-        # default/active profile's map so the ~93 existing self.adapters[...]
-        # sites are untouched when multiplexing is off (this dict is empty).
-        # Populated by _start_secondary_profile_adapters().
+        # 多 profile 多路复用：非默认 profile 的适配器存放在这里，以 profile
+        # 名称为一级 key、Platform 为二级 key。self.adapters 始终是默认/活动
+        # profile 的映射，因此约 93 处既有的 self.adapters[...] 引用在多路复用
+        # 关闭时（此 dict 为空）不受影响。
+        # 由 _start_secondary_profile_adapters() 填充。
         self._profile_adapters: Dict[str, Dict[Platform, BasePlatformAdapter]] = {}
         self._warn_if_docker_media_delivery_is_risky()
         _gateway_runner_ref = _weakref.ref(self)
 
-        # Load ephemeral config from config.yaml / env vars.
-        # Both are injected at API-call time only and never persisted.
+        # 从 config.yaml / env 变量加载 ephemeral 配置。
+        # 两者仅在 API 调用时注入，从不持久化。
         self._prefill_messages = self._load_prefill_messages()
         self._ephemeral_system_prompt = self._load_ephemeral_system_prompt()
         self._reasoning_config = self._load_reasoning_config()
@@ -2556,7 +2474,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._provider_routing = self._load_provider_routing()
         self._fallback_model = self._load_fallback_model()
 
-        # Wire process registry into session store for reset protection
+        # 将 process registry 接入 session store 以提供 reset 保护
         from tools.process_registry import process_registry
         self.session_store = SessionStore(
             self.config.sessions_dir, self.config,
@@ -2572,15 +2490,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._exit_code: Optional[int] = None
         self._draining = False
         self._restart_requested = False
-        # Set by shutdown_signal_handler when a SIGTERM/SIGINT arrived
-        # WITHOUT a planned-stop / takeover marker — i.e. an unexpected
-        # external signal (container/s6 SIGTERM on `docker restart` or
-        # image upgrade, OOM-killer, bare `kill`). Distinct from an
-        # operator-requested stop, which writes a marker first. Used by
-        # _stop_impl to decide whether to persist gateway_state=stopped
-        # (see issue #42675): an unexpected signal must NOT persist
-        # "stopped", or container_boot refuses to auto-start the gateway
-        # on the next boot.
+        # 由 shutdown_signal_handler 在收到 SIGTERM/SIGINT 但没有计划停止 /
+        # 接管标记时设置 —— 即一个意外的外部信号（`docker restart` 或镜像升级时
+        # 容器/s6 发出的 SIGTERM、OOM-killer、裸 `kill`）。它不同于运维人员主动
+        # 请求的停止（后者会先写一个标记）。_stop_impl 用它来决定是否持久化
+        # gateway_state=stopped（见 issue #42675）：意外信号绝不能持久化
+        # “stopped”，否则 container_boot 会拒绝在下次启动时自动启动网关。
         self._signal_initiated_shutdown = False
         self._restart_task_started = False
         self._restart_detached = False
@@ -2588,112 +2503,101 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._restart_command_source: Optional[SessionSource] = None
         self._stop_task: Optional[asyncio.Task] = None
         
-        # Track running agents per session for interrupt support
-        # Key: session_key, Value: AIAgent instance
+        # 为支持中断，按 session 跟踪正在运行的 agent
+        # Key: session_key, Value: AIAgent 实例
         self._running_agents: Dict[str, Any] = {}
-        self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
+        self._running_agents_ts: Dict[str, float] = {}  # 每个 session 的开始时间戳
         self._active_session_leases: Dict[str, Any] = {}
-        self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
-        # Last successfully-resolved (non-empty) model, keyed by session. Used
-        # as a fallback when a fresh config read transiently returns an empty
-        # model (e.g. an mtime-keyed config-cache miss during a post-interrupt
-        # recovery turn). Without this, the agent is built with model="" and
-        # every API call fails HTTP 400 "No models provided" — the session goes
-        # silent until the user manually re-sends. See #35314. ``"*"`` holds a
-        # process-wide last-known-good for sessions seen for the first time.
+        self._pending_messages: Dict[str, str] = {}  # 中断期间排队的消息
+        # 每个 session 上最后一次成功解析（非空）的 model，作为兜底使用。当一次
+        # 新鲜的 config 读取瞬态返回空 model 时（例如中断后恢复轮次期间 mtime
+        # 键控的 config-cache 未命中）使用。没有它，agent 会以 model="" 构造，
+        # 每个 API 调用都会以 HTTP 400 "No models provided" 失败 —— session 会
+        # 陷入沉默，直到用户手动重发。参见 #35314。``"*"`` 保存一个进程级的、
+        # 针对首次见到的 session 的 last-known-good。
         self._last_resolved_model: Dict[str, str] = {}
-        # Overflow buffer for explicit /queue commands.  The adapter-level
-        # _pending_messages dict is a single slot per session (designed for
-        # "next-turn" follow-ups where repeated sends collapse into one
-        # event).  /queue has different semantics: each invocation must
-        # produce its own full agent turn, in FIFO order, with no merging.
-        # When the slot is occupied, additional /queue items land here and
-        # are promoted one-at-a-time after each run's drain.  Cleared on
-        # /new and /reset.  /model and other mid-session operations
-        # preserve the queue.
+        # 显式 /queue 命令的溢出缓冲区。适配器级的 _pending_messages dict 是每个
+        # session 的单槽（为“下一轮”的 follow-up 设计，重复发送会合并成一个事件）。
+        # /queue 语义不同：每次调用都必须产生自己完整的 agent 轮次，按 FIFO 顺序，
+        # 不合并。当该槽被占用时，额外的 /queue 项落入这里，并在每次运行的 drain
+        # 之后逐个提升。在 /new 和 /reset 时清空。/model 及其他会话中途的操作
+        # 保留该队列。
         self._queued_events: Dict[str, List[MessageEvent]] = {}
         self._pending_native_image_paths_by_session: Dict[str, List[str]] = {}
-        self._busy_ack_ts: Dict[str, float] = {}  # last busy-ack timestamp per session (debounce)
+        self._busy_ack_ts: Dict[str, float] = {}  # 每个 session 最后一次 busy-ack 时间戳（去抖）
         self._session_run_generation: Dict[str, int] = {}
-        # Startup restore gate: while restart-interrupted sessions are being
-        # auto-resumed, real inbound messages are queued instead of competing
-        # with the synthetic resume turns for the same session.  The queued
-        # events drain only after all startup resume tasks have finished.
+        # 启动恢复闸门：当重启中断的 session 正在被自动恢复时，真实的入站消息会被
+        # 排队，而不是与同一 session 的合成恢复轮次竞争。排队的事件只在所有启动
+        # 恢复任务完成后才排空。
         self._startup_restore_in_progress = False
         self._startup_restore_queue: List[MessageEvent] = []
         self._startup_restore_tasks: List[asyncio.Task] = []
-        # LRU cache of live SessionSources keyed by session_key. Used by
-        # fallback routing paths (shutdown notifications, synthetic
-        # background-process events) when the persisted origin is missing
-        # and _parse_session_key can't recover thread_id. Capped so it
-        # cannot grow unbounded over a long-running gateway lifetime.
+        # 以 session_key 为键的活跃 SessionSource 的 LRU 缓存。当持久化的来源
+        # 缺失且 _parse_session_key 无法恢复 thread_id 时，由兜底路由路径
+        # （关闭通知、合成的后台进程事件）使用。设了上限，使其在长期运行的网关
+        # 生命周期内不会无限增长。
         self._session_sources: "OrderedDict[str, SessionSource]" = OrderedDict()
         self._session_sources_max = 512
 
-        # Cache AIAgent instances per session to preserve prompt caching.
-        # Without this, a new AIAgent is created per message, rebuilding the
-        # system prompt (including memory) every turn — breaking prefix cache
-        # and costing ~10x more on providers with prompt caching (Anthropic).
+        # 按 session 缓存 AIAgent 实例，以保留 prompt caching。
+        # 没有它的话，每条消息都会创建一个新的 AIAgent，每轮都重建 system prompt
+        # （包括 memory）—— 这会破坏前缀缓存，在支持 prompt caching 的 provider
+        # （Anthropic）上开销约 10 倍。
         # Key: session_key, Value: (AIAgent, config_signature_str)
         #
-        # OrderedDict so _enforce_agent_cache_cap() can pop the least-recently-
-        # used entry (move_to_end() on cache hits, popitem(last=False) for
-        # eviction).  Hard cap via _AGENT_CACHE_MAX_SIZE, idle TTL enforced
-        # from _session_expiry_watcher().
+        # 使用 OrderedDict，以便 _enforce_agent_cache_cap() 能弹出最近最少使用的
+        # 条目（命中时 move_to_end()，驱逐时 popitem(last=False)）。硬上限由
+        # _AGENT_CACHE_MAX_SIZE 设定，空闲 TTL 由 _session_expiry_watcher() 执行。
         import threading as _threading
         self._agent_cache: "OrderedDict[str, tuple]" = OrderedDict()
         self._agent_cache_lock = _threading.Lock()
 
-        # Per-session model overrides from /model command.
-        # Key: session_key, Value: dict with model/provider/api_key/base_url/api_mode
+        # 来自 /model 命令的按 session model 覆盖。
+        # Key: session_key, Value: 含 model/provider/api_key/base_url/api_mode 的 dict
         self._session_model_overrides: Dict[str, Dict[str, str]] = {}
-        # Per-session reasoning effort overrides from /reasoning.
-        # Key: session_key, Value: parsed reasoning config dict.
+        # 来自 /reasoning 的按 session reasoning effort 覆盖。
+        # Key: session_key, Value: 解析后的 reasoning 配置 dict。
         self._session_reasoning_overrides: Dict[str, Dict[str, Any]] = {}
         self._kanban_notifier_profile = self._active_profile_name()
-        # Teams meeting pipeline runtime (bound later when msgraph_webhook adapter exists).
+        # Teams meeting pipeline 运行时（稍后在 msgraph_webhook 适配器存在时绑定）。
         self._teams_pipeline_runtime = None
         self._teams_pipeline_runtime_error: Optional[str] = None
-        # Track pending exec approvals per session
+        # 按 session 跟踪待处理的 exec 审批
         # Key: session_key, Value: {"command": str, "pattern_key": str, ...}
         self._pending_approvals: Dict[str, Dict[str, Any]] = {}
 
-        # Track platforms that failed to connect for background reconnection.
-        # Key: Platform enum, Value: {"config": platform_config, "attempts": int, "next_retry": float}
+        # 跟踪连接失败的平台，用于后台重连。
+        # Key: Platform 枚举, Value: {"config": platform_config, "attempts": int, "next_retry": float}
         self._failed_platforms: Dict[Platform, Dict[str, Any]] = {}
 
-        # Track pending /update prompt responses per session.
-        # Key: session_key, Value: True when a prompt is waiting for user input.
+        # 按 session 跟踪待处理的 /update 提示响应。
+        # Key: session_key, 当有提示正等待用户输入时 Value 为 True。
         self._update_prompt_pending: Dict[str, bool] = {}
 
-        # Slash-confirm state lives in tools.slash_confirm (module-level),
-        # so platform adapters can resolve callbacks without a backref to
-        # this runner.  Keep a local counter for confirm_id generation so
-        # IDs stay compact (button callback_data has a 64-byte cap on
-        # some platforms).
+        # Slash-confirm 状态存放在 tools.slash_confirm（模块级），使平台适配器
+        # 无需回引本 runner 即可解析回调。保留一个本地计数器用于 confirm_id 生成，
+        # 使 ID 保持紧凑（某些平台上 button callback_data 有 64 字节上限）。
         import itertools as _itertools
         self._slash_confirm_counter = _itertools.count(1)
 
-        # Persistent Honcho managers keyed by gateway session key.
-        # This preserves write_frequency="session" semantics across short-lived
-        # per-message AIAgent instances.
+        # 以网关 session key 为键的持久化 Honcho 管理器。
+        # 这在短命的、按消息创建的 AIAgent 实例之间保留了
+        # write_frequency="session" 语义。
 
 
 
-        # Ensure tirith security scanner is available (downloads if needed)
+        # 确保 tirith 安全扫描器可用（需要时下载）
         try:
             from tools.tirith_security import ensure_installed
             ensure_installed(log_failures=False)
         except Exception:
-            pass  # Non-fatal — fail-open at scan time if unavailable
+            pass  # 非致命 —— 不可用时在扫描时放行
 
-        # Startup heads-up (#30882): a gateway in manual approval mode with no
-        # automated risk assessor (tirith disabled AND no auxiliary.approval
-        # model) can only gate dangerous commands / execute_code scripts via
-        # live in-chat approval. With approval routing fixed, those actions now
-        # fail closed (block) rather than silently auto-running — surface that
-        # so operators knowingly enable tirith or configure auxiliary.approval
-        # for unattended gateways.
+        # 启动提示（#30882）：处于手动审批模式且没有自动化风险评估器（tirith 被禁用
+        # 且没有 auxiliary.approval model）的网关，只能通过聊天中的实时审批来把关
+        # 危险命令 / execute_code 脚本。随着审批路由修复，这些动作现在会失败关闭
+        # （阻止）而不是静默自动运行 —— 将这一点显现出来，以便运维人员有意识地
+        # 为无人值守的网关启用 tirith 或配置 auxiliary.approval。
         try:
             from hermes_cli.config import load_config as _load_full_config
             _appr_cfg = _load_full_config()
@@ -2714,26 +2618,23 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             logger.debug("approvals.mode startup check skipped", exc_info=True)
 
-        # Initialize session database for session_search tool support
+        # 为 session_search 工具支持初始化 session 数据库
         self._session_db = None
         try:
             from hermes_state import SessionDB
             self._session_db = SessionDB()
         except Exception as e:
-            # WARNING (not DEBUG) so the failure appears in errors.log — matches
-            # cli.py's handling of the same init path.  Users hitting NFS-mounted
-            # HERMES_HOME silently lost /resume, /title, /history, /branch, and
-            # session search without this.  The underlying cause (usually
-            # "locking protocol" from NFS) is now also captured by
-            # hermes_state.get_last_init_error() for slash-command error strings.
+            # 用 WARNING（而非 DEBUG），使失败出现在 errors.log 中 —— 与 cli.py 对
+            # 同一初始化路径的处理一致。没有这个的话，使用 NFS 挂载的 HERMES_HOME
+            # 的用户会静默丢失 /resume、/title、/history、/branch 和 session 搜索。
+            # 根本原因（通常是 NFS 的 "locking protocol"）现在也会被
+            # hermes_state.get_last_init_error() 捕获，用于 slash 命令的错误字符串。
             logger.warning("SQLite session store not available: %s", e)
 
-        # Opportunistic state.db maintenance: prune ended sessions older
-        # than sessions.retention_days + optional VACUUM. Tracks last-run
-        # in state_meta so it only actually executes once per
-        # sessions.min_interval_hours.  Gateway is long-lived so blocking
-        # a few seconds once per day is acceptable; failures are logged
-        # but never raised.
+        # 机会性的 state.db 维护：清理早于 sessions.retention_days 的已结束
+        # session + 可选的 VACUUM。在 state_meta 中跟踪上次运行时间，使其真正
+        # 执行的频率不超过每 sessions.min_interval_hours 一次。网关是长期存活的，
+        # 因此每天阻塞几秒是可以接受的；失败会被记录但绝不抛出。
         if self._session_db is not None:
             try:
                 from hermes_cli.config import load_config as _load_full_config
@@ -2748,9 +2649,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception as exc:
                 logger.debug("state.db auto-maintenance skipped: %s", exc)
 
-        # Opportunistic shadow-repo cleanup — deletes orphan/stale
-        # checkpoint repos under ~/.hermes/checkpoints/.  Opt-in via
-        # checkpoints.auto_prune, idempotent via .last_prune marker.
+        # 机会性的 shadow-repo 清理 —— 删除 ~/.hermes/checkpoints/ 下的孤立/过期
+        # checkpoint 仓库。通过 checkpoints.auto_prune 选择开启，通过 .last_prune
+        # 标记保证幂等。
         try:
             from hermes_cli.config import load_config as _load_full_config
             _ckpt_cfg = (_load_full_config().get("checkpoints") or {})
@@ -2765,42 +2666,41 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception as exc:
             logger.debug("checkpoint auto-maintenance skipped: %s", exc)
 
-        # DM pairing store for code-based user authorization
+        # 用于基于代码的用户授权的 DM pairing 存储
         from gateway.pairing import PairingStore
         self.pairing_store = PairingStore()
-        
-        # Event hook system
+
+        # 事件钩子系统
         from gateway.hooks import HookRegistry
         self.hooks = HookRegistry()
 
-        # Per-chat voice reply mode: "off" | "voice_only" | "all"
+        # 按聊天的语音回复模式："off" | "voice_only" | "all"
         self._voice_mode: Dict[str, str] = self._load_voice_modes()
-        # Recent voice transcripts per (guild,user) for duplicate suppression.
-        # Protects against the same utterance being emitted twice by the voice
-        # capture / STT pipeline, which otherwise produces a second delayed reply.
+        # 每个 (guild,user) 的近期语音 transcript，用于重复抑制。
+        # 防止同一段语音被 voice 捕获 / STT 管线发送两次，否则会产生第二条延迟回复。
         self._recent_voice_transcripts: Dict[tuple[int, int], List[tuple[float, str]]] = {}
 
-        # Track background tasks to prevent garbage collection mid-execution
+        # 跟踪后台任务，防止其在执行中途被垃圾回收
         self._background_tasks: set = set()
 
-        # scale-to-zero (Phase 0, F13): gateway-scoped "last inbound seen" clock.
-        # There is no such clock today (only a per-agent _last_activity_ts), so the
-        # idle predicate needs this. Stamped in _handle_message (the single inbound
-        # chokepoint all adapters call); seeded to "now" so a fresh gateway isn't
-        # considered idle from epoch. The scale-to-zero watcher (started only when
-        # the instance is opted in + relay-only + has a wakeUrl) reads it.
+        # scale-to-zero（Phase 0，F13）：网关作用域的“最后看到入站消息”时钟。
+        # 目前没有这样的时钟（只有按 agent 的 _last_activity_ts），所以空闲判定
+        # 需要它。在 _handle_message（所有适配器都调用的唯一入站咽喉点）中打戳；
+        # 初始化为“now”，使一个刚启动的网关不会从 epoch 起就被视为空闲。
+        # scale-to-zero watcher（仅当实例已 opt-in + 仅 relay + 拥有 wakeUrl 时
+        # 启动）会读取它。
         self._last_inbound_at: float = time.time()
-        # Set after a wake (re-arm cooldown, 0.F) so we don't immediately re-go
-        # dormant before the drained backlog has a chance to update the clock.
+        # 在一次唤醒之后设置（重新进入冷却，0.F），这样我们不会在排空的积压
+        # 任务有机会更新时钟之前就立即重新进入休眠。
         self._scale_to_zero_cooldown_until: float = 0.0
 
 
     def _wire_teams_pipeline_runtime(self) -> None:
-        """Bind the Teams meeting pipeline runtime to Graph webhook ingress.
+        """将 Teams meeting pipeline 运行时绑定到 Graph webhook 入站。
 
-        No-op when the msgraph_webhook adapter isn't running or the
-        teams_pipeline plugin isn't enabled — lets the gateway start cleanly
-        whether or not the user has opted into the pipeline.
+        当 msgraph_webhook 适配器未运行或
+        teams_pipeline 插件未启用时为空操作 —— 让网关无论用户是否选择加入
+        该 pipeline 都能干净地启动。
         """
         if Platform.MSGRAPH_WEBHOOK not in self.adapters:
             return
@@ -2827,13 +2727,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
 
     def _warn_if_docker_media_delivery_is_risky(self) -> None:
-        """Warn when Docker-backed gateways lack an explicit export mount.
+        """当 Docker 后端的网关缺少显式的导出挂载时给出警告。
 
-        MEDIA delivery happens in the gateway process, so paths emitted by the model
-        must be readable from the host. A plain container-local path like
-        `/workspace/report.txt` or `/output/report.txt` often exists only inside
-        Docker, so users commonly need a dedicated export mount such as
-        `host-dir:/output`.
+        MEDIA 投递发生在网关进程中，因此模型发出的路径必须能从宿主机读取。
+        一个普通的容器内路径，如 `/workspace/report.txt` 或 `/output/report.txt`，
+        通常只存在于 Docker 内部，因此用户通常需要一个专门的导出挂载，例如
+        `host-dir:/output`。
         """
         if os.getenv("TERMINAL_ENV", "").strip().lower() != "docker":
             return
@@ -2875,22 +2774,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
 
 
-    # -- Setup skill availability ----------------------------------------
+    # -- 安装 skill 可用性 ----------------------------------------
 
     def _has_setup_skill(self) -> bool:
-        """Check if the hermes-agent-setup skill is installed."""
+        """检查 hermes-agent-setup skill 是否已安装。"""
         try:
             from tools.skill_manager_tool import _find_skill
             return _find_skill("hermes-agent-setup") is not None
         except Exception:
             return False
 
-    # -- Voice mode persistence ------------------------------------------
+    # -- 语音模式持久化 ------------------------------------------
 
     _VOICE_MODE_PATH = _hermes_home / "gateway_voice_mode.json"
 
     def _voice_key(self, platform: Platform, chat_id: str) -> str:
-        """Return a platform-namespaced key for voice mode state."""
+        """返回一个带平台命名空间的、用于语音模式状态的 key。"""
         return f"{platform.value}:{chat_id}"
 
     def _load_voice_modes(self) -> Dict[str, str]:
@@ -2908,7 +2807,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if mode not in valid_modes:
                 continue
             key = str(chat_id)
-            # Skip legacy unprefixed keys (warn and skip)
+            # 跳过旧版无前缀的 key（警告并跳过）
             if ":" not in key:
                 logger.warning(
                     "Skipping legacy unprefixed voice mode key %r during migration. "
@@ -2929,13 +2828,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             logger.warning("Failed to save voice modes: %s", e)
 
     def _set_adapter_auto_tts_disabled(self, adapter, chat_id: str, disabled: bool) -> None:
-        """Update an adapter's in-memory auto-TTS suppression set if present."""
+        """如果存在，更新适配器内存中的 auto-TTS 抑制集合。"""
         disabled_chats = getattr(adapter, "_auto_tts_disabled_chats", None)
         if not isinstance(disabled_chats, set):
             return
         if disabled:
             disabled_chats.add(chat_id)
-            # ``/voice off`` also clears any explicit enable — it's a hard override.
+            # ``/voice off`` 也会清除任何显式启用 —— 它是一个硬覆盖。
             enabled_chats = getattr(adapter, "_auto_tts_enabled_chats", None)
             if isinstance(enabled_chats, set):
                 enabled_chats.discard(chat_id)
@@ -2943,17 +2842,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             disabled_chats.discard(chat_id)
 
     def _set_adapter_auto_tts_enabled(self, adapter, chat_id: str, enabled: bool) -> None:
-        """Update an adapter's per-chat auto-TTS opt-in set if present.
+        """如果存在，更新适配器的按聊天 auto-TTS opt-in 集合。
 
-        Used for ``/voice on``/``/voice tts`` where the user explicitly wants
-        auto-TTS even when ``voice.auto_tts`` is False globally.
+        用于 ``/voice on``/``/voice tts``，此时用户即使在全局
+        ``voice.auto_tts`` 为 False 时也明确想要 auto-TTS。
         """
         enabled_chats = getattr(adapter, "_auto_tts_enabled_chats", None)
         if not isinstance(enabled_chats, set):
             return
         if enabled:
             enabled_chats.add(chat_id)
-            # An explicit opt-in clears any stale /voice off for this chat.
+            # 显式 opt-in 会清除该聊天任何过期的 /voice off。
             disabled_chats = getattr(adapter, "_auto_tts_disabled_chats", None)
             if isinstance(disabled_chats, set):
                 disabled_chats.discard(chat_id)
@@ -2961,12 +2860,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             enabled_chats.discard(chat_id)
 
     def _sync_voice_mode_state_to_adapter(self, adapter) -> None:
-        """Restore persisted /voice state into a live platform adapter.
+        """将持久化的 /voice 状态恢复到一个活跃的平台适配器中。
 
-        Populates three fields from config + ``self._voice_mode``:
-          - ``_auto_tts_default``: global default from ``voice.auto_tts``
-          - ``_auto_tts_enabled_chats``: chats with mode ``voice_only``/``all``
-          - ``_auto_tts_disabled_chats``: chats with mode ``off``
+        从 config + ``self._voice_mode`` 填充三个字段：
+          - ``_auto_tts_default``：来自 ``voice.auto_tts`` 的全局默认值
+          - ``_auto_tts_enabled_chats``：模式为 ``voice_only``/``all`` 的聊天
+          - ``_auto_tts_disabled_chats``：模式为 ``off`` 的聊天
         """
         platform = getattr(adapter, "platform", None)
         if not isinstance(platform, Platform):
@@ -2977,8 +2876,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if not isinstance(disabled_chats, set) and not isinstance(enabled_chats, set):
             return
 
-        # Push the global voice.auto_tts default (config.yaml) onto the adapter.
-        # Lazy import to avoid adding a module-level dep from gateway → hermes_cli.
+        # 将全局 voice.auto_tts 默认值（config.yaml）推送到适配器上。
+        # 惰性导入，以避免增加 gateway → hermes_cli 的模块级依赖。
         try:
             from hermes_cli.config import load_config as _load_full_config
             _full_cfg = _load_full_config()
@@ -3035,7 +2934,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
 
     def _adapter_disconnect_timeout_secs(self) -> float:
-        """Return the per-adapter disconnect timeout used during shutdown."""
+        """返回关闭期间使用的每个适配器 disconnect 超时时间。"""
         raw = os.getenv("HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT", "").strip()
         if raw:
             try:
@@ -3050,7 +2949,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return _ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT
 
     def _platform_connect_timeout_secs(self) -> float:
-        """Return the per-platform connect timeout used during startup/retry."""
+        """返回启动/重试期间使用的每个平台 connect 超时时间。"""
         raw = os.getenv("HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "").strip()
         if raw:
             try:
@@ -3065,7 +2964,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return _PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT
 
     async def _connect_adapter_with_timeout(self, adapter, platform) -> bool:
-        """Connect an adapter without allowing one platform to block others."""
+        """连接一个适配器，且不让单个平台阻塞其他平台。"""
         timeout = self._platform_connect_timeout_secs()
         if timeout <= 0:
             return await adapter.connect()
@@ -3093,7 +2992,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return self._exit_code
 
     def _session_key_for_source(self, source: SessionSource) -> str:
-        """Resolve the current session key for a source, honoring gateway config when available."""
+        """为某个 source 解析当前 session key，并在可用时遵循网关配置。"""
         if hasattr(self, "session_store") and self.session_store is not None:
             try:
                 session_key = self.session_store._generate_session_key(source)
@@ -3102,9 +3001,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception:
                 pass
         config = getattr(self, "config", None)
-        # Mirror SessionStore._resolve_profile_for_key so this fallback path
-        # produces the same namespace as the primary path: None (legacy
-        # agent:main) unless multiplexing is on, then the active profile.
+        # 镜像 SessionStore._resolve_profile_for_key，使此兜底路径产生与主路径
+        # 相同的命名空间：None（旧版 agent:main），除非开启了多路复用，此时为
+        # 活动 profile。
         _profile = None
         if getattr(config, "multiplex_profiles", False):
             if source.profile:
@@ -3123,7 +3022,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
 
     def _telegram_topic_mode_enabled(self, source: SessionSource) -> bool:
-        """Return whether Telegram DM topic mode is active for this chat."""
+        """返回该聊天的 Telegram DM topic 模式是否处于活动状态。"""
         if source.platform != Platform.TELEGRAM or source.chat_type != "dm":
             return False
         session_db = getattr(self, "_session_db", None)
@@ -3137,18 +3036,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             logger.debug("Failed to read Telegram topic mode state", exc_info=True)
             return False
-        # Only honor a real True from the SessionDB. Any other value
-        # (including MagicMock instances from test fixtures that didn't
-        # opt into topic mode) means topic mode is off for this chat.
+        # 只接受来自 SessionDB 的真正 True。任何其他值（包括来自未选择开启
+        # topic 模式的测试 fixture 的 MagicMock 实例）都意味着该聊天的
+        # topic 模式关闭。
         return raw is True
 
-    # Telegram's General (pinned top) topic in forum-enabled private chats.
-    # Bot API behavior varies: some clients omit message_thread_id for
-    # General, others send "1". Treat both as "root" for lobby/lane purposes.
+    # Telegram 在启用了 forum 的私聊中的 General（置顶的顶部）topic。
+    # Bot API 行为不一：某些客户端对 General 省略 message_thread_id，
+    # 另一些发送 "1"。在 lobby/lane 用途上把两者都视为“根”。
     _TELEGRAM_GENERAL_TOPIC_IDS = frozenset({"", "1"})
 
     def _is_telegram_topic_root_lobby(self, source: SessionSource) -> bool:
-        """True for the main Telegram DM (or General topic) when topic mode has made it a lobby."""
+        """当 topic 模式已把主 Telegram DM（或 General topic）变为 lobby 时返回 True。"""
         if source.platform != Platform.TELEGRAM or source.chat_type != "dm":
             return False
         if not self._telegram_topic_mode_enabled(source):
@@ -3157,7 +3056,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return tid in self._TELEGRAM_GENERAL_TOPIC_IDS
 
     def _is_telegram_topic_lane(self, source: SessionSource) -> bool:
-        """True for a user-created Telegram private-chat topic lane."""
+        """当为用户创建的 Telegram 私聊 topic lane 时返回 True。"""
         if source.platform != Platform.TELEGRAM or source.chat_type != "dm":
             return False
         if not self._telegram_topic_mode_enabled(source):
@@ -3170,11 +3069,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     _TELEGRAM_LOBBY_REMINDER_COOLDOWN_S = 30.0
 
     def _should_send_telegram_lobby_reminder(self, source: SessionSource) -> bool:
-        """Rate-limit root-DM lobby reminders to one message per cooldown window.
+        """将根 DM lobby 提醒限流为每个冷却窗口一条消息。
 
-        A user who forgets multi-session mode is enabled and types several
-        prompts in the root DM would otherwise get a reminder for every
-        message. Cap it so the first one lands and the rest stay quiet.
+        否则，一个忘记已开启多会话模式的用户在根 DM 中连续输入多条提示时，
+        会对每条消息都收到一条提醒。将其限制为只有第一条会发送，其余保持安静。
         """
         if not hasattr(self, "_telegram_lobby_reminder_ts"):
             self._telegram_lobby_reminder_ts = {}
@@ -3222,7 +3120,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         source: SessionSource,
         session_entry,
     ) -> None:
-        """Persist the Telegram topic -> Hermes session binding for topic lanes."""
+        """为 topic lane 持久化 Telegram topic -> Hermes session 的绑定。"""
         session_db = getattr(self, "_session_db", None)
         if session_db is None or not source.chat_id or not source.thread_id:
             return
@@ -3241,15 +3139,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         *,
         reason: str,
     ) -> None:
-        """Update the topic binding to point at ``session_entry.session_id``.
+        """更新 topic 绑定，使其指向 ``session_entry.session_id``。
 
-        Telegram topic lanes persist a (chat_id, thread_id) -> session_id row
-        so reopening a topic in a fresh process resumes the right Hermes
-        session. When compression rotates ``session_entry.session_id`` mid-turn,
-        the binding goes stale and the next inbound message in that topic
-        reloads the oversized parent transcript instead of the compressed
-        child, retriggering preflight compression — sometimes in a loop
-        (#20470, #29712, #33414).
+        Telegram topic lane 持久化一行 (chat_id, thread_id) -> session_id，
+        以便在全新进程中重新打开某个 topic 时能恢复到正确的 Hermes session。
+        当压缩在轮次中途轮换 ``session_entry.session_id`` 时，绑定会过期，
+        该 topic 的下一条入站消息会重新加载过大的父 transcript 而非压缩后的
+        子项，从而重新触发预压缩 —— 有时会陷入循环
+        （#20470、#29712、#33414）。
         """
         if not self._is_telegram_topic_lane(source):
             return
@@ -3264,16 +3161,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self,
         source: SessionSource,
     ) -> Optional[str]:
-        """Pin DM-topic routing to the user's last-active topic.
+        """将 DM-topic 路由固定到用户最后活动的 topic。
 
-        Telegram can omit ``message_thread_id`` or surface General (``1``)
-        for some topic-mode DM replies. In those lobby-shaped cases, keep the
-        conversation attached to the user's most-recent bound topic.
+        Telegram 在某些 topic 模式的 DM 回复中可能省略 ``message_thread_id``
+        或呈现 General（``1``）。在这些形似 lobby 的情况下，把对话保持附加在
+        用户最近绑定的 topic 上。
 
-        Do not rewrite a non-lobby, previously-unbound thread id: a newly
-        created Telegram DM topic is also "unknown" until the first inbound
-        message is recorded, and rewriting it would send that brand-new topic's
-        answer into an older lane. Returns None to leave the source alone.
+        不要重写一个非 lobby、之前未绑定的 thread id：一个新创建的 Telegram
+        DM topic 在第一条入站消息被记录之前也是“未知”的，重写它会把那个全新
+        topic 的回答送进一个更早的 lane。返回 None 表示不动 source。
         """
         if (
             source.platform != Platform.TELEGRAM
@@ -3286,10 +3182,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         inbound = str(source.thread_id or "")
         is_lobby = not inbound or inbound in self._TELEGRAM_GENERAL_TOPIC_IDS
         if not is_lobby:
-            # A non-lobby, unknown thread_id is most likely the first message in
-            # a brand-new Telegram DM topic. Preserve it so it can be recorded
-            # as a new independent lane below instead of hijacking the latest
-            # existing topic binding.
+            # 一个非 lobby、未知的 thread_id 极可能是某个全新 Telegram DM topic
+            # 的第一条消息。保留它，使其能在下方被记录为一条新的独立 lane，
+            # 而不是劫持最近既有的 topic 绑定。
             return None
         session_db = getattr(self, "_session_db", None)
         if session_db is None:
@@ -3304,7 +3199,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if not bindings:
             return None
         user_id = str(source.user_id)
-        for b in bindings:  # newest-first
+        for b in bindings:  # 从新到旧
             if str(b.get("user_id") or "") == user_id:
                 recovered = str(b.get("thread_id") or "")
                 if recovered and recovered != inbound:
@@ -3316,21 +3211,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self,
         source: SessionSource,
     ) -> SessionSource:
-        """Apply Telegram DM topic recovery to a source for session-key purposes.
+        """对用于 session-key 目的的 source 应用 Telegram DM topic 恢复。
 
-        ``_handle_message_with_agent`` rewrites ``source.thread_id`` via
-        ``_recover_telegram_topic_thread_id`` *before* deriving the session
-        key for a normal message turn (a lobby/stripped reply gets pinned to
-        the user's last-active topic).  Session-scoped command handlers like
-        ``/model`` and ``/reasoning`` derive their override key from the raw
-        inbound ``event.source``, which skips that recovery — so the override
-        is stored under a different key than the next message turn reads,
-        and the override is silently dropped on Telegram forum topics and
-        after compression session splits (#30479).
+        ``_handle_message_with_agent`` 在为一次普通消息轮次推导 session key
+        *之前*，通过 ``_recover_telegram_topic_thread_id`` 重写
+        ``source.thread_id``（一个 lobby/被剥离的回复会被固定到用户最后活动
+        的 topic）。会话作用域的命令处理器，如 ``/model`` 和 ``/reasoning``，
+        从原始入站 ``event.source`` 推导其覆盖 key，这跳过了该恢复 —— 因此
+        覆盖被存储在与下一次消息轮次读取所用的不同 key 下，导致覆盖在
+        Telegram forum topic 上以及压缩 session 分裂之后被静默丢弃
+        （#30479）。
 
-        Returns a recovery-normalized copy when a rewrite applies, otherwise
-        the original source unchanged.  Always derive the override storage key
-        from the result so storage and read use an identical key.
+        当重写适用时返回一个恢复归一化后的副本，否则返回原始 source 不变。
+        始终从结果推导覆盖存储 key，使存储和读取使用相同的 key。
         """
         try:
             recovered = self._recover_telegram_topic_thread_id(source)
@@ -3347,11 +3240,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_key: Optional[str] = None,
         user_config: Optional[dict] = None,
     ) -> tuple[str, dict]:
-        """Resolve model/runtime for a session, honoring session-scoped /model overrides.
+        """为某个 session 解析 model/运行时，并遵循会话作用域的 /model 覆盖。
 
-        If the session override already contains a complete provider bundle
-        (provider/api_key/base_url/api_mode), prefer it directly instead of
-        resolving fresh global runtime state first.
+        如果 session 覆盖已包含一个完整的 provider 捆绑包
+        （provider/api_key/base_url/api_mode），则直接优先使用它，
+        而不是先去解析新鲜的全局运行时状态。
         """
         resolved_session_key = session_key
         if not resolved_session_key and source is not None:
@@ -3378,8 +3271,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     override_runtime.get("provider"),
                 )
                 return override_model, override_runtime
-            # Override exists but has no api_key — fall through to env-based
-            # resolution and apply model/provider from the override on top.
+            # 覆盖存在但没有 api_key —— 向下落到基于 env 的解析，
+            # 并在其上应用覆盖中的 model/provider。
             logger.debug(
                 "Session model override (no api_key, fallback): session=%s config_model=%s override_model=%s",
                 resolved_session_key or "", model, override_model,
@@ -3405,10 +3298,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 resolved_session_key, model, runtime_kwargs
             )
 
-        # When the config has no model.default but a provider was resolved
-        # (e.g. user ran `hermes auth add openai-codex` without `hermes model`),
-        # fall back to the provider's first catalog model so the API call
-        # doesn't fail with "model must be a non-empty string".
+        # 当 config 没有 model.default 但已解析出一个 provider 时
+        # （例如用户运行了 `hermes auth add openai-codex` 但没跑 `hermes model`），
+        # 回退到该 provider 目录中的第一个 model，使 API 调用不会以
+        # "model must be a non-empty string" 失败。
         if not model and runtime_kwargs.get("provider"):
             try:
                 from hermes_cli.models import get_default_model_for_provider
@@ -3421,14 +3314,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception:
                 pass
 
-        # Final safety net (#35314): if resolution still produced an empty
-        # model — e.g. a transient config-cache miss during a post-interrupt
-        # recovery turn returned an empty user_config — reuse the last model we
-        # successfully resolved for this session (or, failing that, the most
-        # recent one resolved process-wide). Building an agent with model=""
-        # makes every API call fail HTTP 400 "No models provided" and the
-        # session goes silent until the user manually re-sends. ``getattr``
-        # guards against bare test runners built via ``object.__new__``.
+        # 最终安全网（#35314）：如果解析仍然产生了一个空 model —— 例如中断后
+        # 恢复轮次期间一次瞬态 config-cache 未命中返回了空的 user_config —— 则
+        # 复用我们为此 session 最后成功解析的 model（若没有，则用进程范围内最近
+        # 解析的那个）。用 model="" 构建 agent 会使每个 API 调用都以 HTTP 400
+        # "No models provided" 失败，session 陷入沉默直到用户手动重发。``getattr``
+        # 防御那些通过 ``object.__new__`` 构建的裸测试 runner。
         _last_good = getattr(self, "_last_resolved_model", None)
         if _last_good is not None:
             if not model:
@@ -3442,7 +3333,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     )
                     model = _recovered
             elif model:
-                # Cache the good resolution for future recovery turns.
+                # 缓存这个好的解析结果，供将来的恢复轮次使用。
                 if resolved_session_key:
                     _last_good[resolved_session_key] = model
                 _last_good["*"] = model
@@ -3450,12 +3341,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return model, runtime_kwargs
 
     def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
-        """Build the effective model/runtime config for a single turn.
+        """为单个轮次构建生效的 model/runtime 配置。
 
-        Always uses the session's primary model/provider.  If `/fast` is
-        enabled and the model supports Priority Processing / Anthropic fast
-        mode, attach `request_overrides` so the API call is marked
-        accordingly.
+        始终使用 session 的主 model/provider。如果 `/fast` 已启用且该 model
+        支持 Priority Processing / Anthropic fast 模式，则附加
+        `request_overrides`，使 API 调用被相应标记。
         """
         from hermes_cli.models import resolve_fast_mode_overrides
 
@@ -3495,10 +3385,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return route
 
     async def _handle_adapter_fatal_error(self, adapter: BasePlatformAdapter) -> None:
-        """React to an adapter failure after startup.
+        """对启动后的适配器失败作出反应。
 
-        If the error is retryable (e.g. network blip, DNS failure), queue the
-        platform for background reconnection instead of giving up permanently.
+        如果错误是可重试的（例如网络抖动、DNS 失败），则将该平台排队等待
+        后台重连，而不是永久放弃。
         """
         logger.error(
             "Fatal %s adapter error (%s): %s",
@@ -3506,10 +3396,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             adapter.fatal_error_code or "unknown",
             adapter.fatal_error_message or "unknown error",
         )
-        # Phase 7 Unit 7d-B: a relay credential revoked by opt-out is not an
-        # error to retry — render it as a clean "disabled" state, not red
-        # "fatal"/"retrying". (The code is set non-retryable, so it also drops
-        # out of the reconnect queue below.)
+        # Phase 7 Unit 7d-B：被 opt-out 撤销的 relay 凭证不是可重试的错误 ——
+        # 将其渲染为干净的“已禁用”状态，而非红色的“fatal”/“retrying”。
+        # （该 code 被设为不可重试，因此也会在下方从重连队列中退出。）
         if adapter.fatal_error_code == "relay_disabled":
             platform_state = "disabled"
         elif adapter.fatal_error_retryable:
@@ -3531,7 +3420,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 self.adapters.pop(adapter.platform, None)
                 self.delivery_router.adapters = self.adapters
 
-        # Queue retryable failures for background reconnection
+        # 将可重试的失败排队等待后台重连
         if adapter.fatal_error_retryable:
             platform_config = self.config.platforms.get(adapter.platform)
             if platform_config and adapter.platform not in self._failed_platforms:
@@ -3554,16 +3443,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 logger.error("No connected messaging platforms remain. Shutting down gateway cleanly.")
             await self.stop()
         elif not self.adapters and self._failed_platforms:
-            # All platforms are down and queued for background reconnection.
-            # Keep the gateway alive so:
-            #   • cron jobs still run
-            #   • the reconnect watcher can recover platforms when the
-            #     underlying problem clears (proxy comes back, user runs
-            #     `hermes whatsapp`, etc.)
-            # We used to exit-with-failure here to trigger systemd restart,
-            # but that converted a transient outage into a restart loop and
-            # killed in-process state every time. The reconnect watcher
-            # already handles long-running recovery — let it do its job.
+            # 所有平台都已下线并排队等待后台重连。
+            # 保持网关存活，以便：
+            #   • cron 任务仍能运行
+            #   • 当底层问题清除时（代理恢复、用户运行 `hermes whatsapp` 等），
+            #     重连 watcher 能恢复平台
+            # 我们过去在这里以失败退出来触发 systemd 重启，但那会把一次瞬态中断
+            # 变成重启循环，并每次都杀掉进程内状态。重连 watcher 已经能处理
+            # 长时间运行的重连 —— 让它做自己的工作。
             logger.warning(
                 "No connected messaging platforms remain, but %d platform(s) "
                 "queued for reconnection — gateway staying alive, watcher will "
@@ -3579,19 +3466,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     def _running_agent_count(self) -> int:
         return len(self._running_agents)
 
-    # ── scale-to-zero idle detection / dormant-quiesce (Phase 0) ──────────────
-    # The gateway-side BEHAVIOUR that consumes the relay scale-to-zero primitives
-    # (gateway-gateway Phase 5). Pure logic lives in gateway/scale_to_zero.py; the
-    # methods here bind it to the live runner/transport. See ~/nous/specs/
-    # scale-to-zero (decisions.md) for the design + the F12/F14 distinctions.
+    # ── scale-to-zero 空闲检测 / 休眠静默（Phase 0）──────────────
+    # 这是消费 relay scale-to-zero 原语（gateway-gateway Phase 5）的网关侧行为。
+    # 纯逻辑位于 gateway/scale_to_zero.py；这里的方法将其绑定到活跃的
+    # runner/transport。设计及 F12/F14 的区别见 ~/nous/specs/
+    # scale-to-zero（decisions.md）。
 
     def _scale_to_zero_has_live_background_work(self) -> bool:
-        """Live background work that must block a suspend (D3/F7).
+        """必须阻止挂起的活跃后台工作（D3/F7）。
 
-        Backgrounded delegate_task / kanban / terminal(background=true) are NOT
-        counted by _running_agent_count(), but suspending mid-flight loses them.
-        Checks the runner's own tracked tasks + the process registry's running
-        processes + any pending process-completion watchers.
+        后台化的 delegate_task / kanban / terminal(background=true) 不会被
+        _running_agent_count() 计入，但在执行中途挂起会丢失它们。检查 runner
+        自身跟踪的任务 + process registry 中正在运行的进程 + 任何待处理的
+        进程完成 watcher。
         """
         if any(not t.done() for t in self._background_tasks):
             return True
@@ -3628,7 +3515,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return parse_idle_timeout_seconds(raw)
 
     def _scale_to_zero_should_arm(self) -> bool:
-        """Whether to start the idle watcher (D1/D11/§3.4(1))."""
+        """是否启动空闲 watcher（D1/D11/§3.4(1)）。"""
         from gateway.relay import relay_wake_url
         from gateway.scale_to_zero import (
             messaging_is_relay_only_or_absent,
@@ -3661,13 +3548,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
 
     def _scale_to_zero_note_real_inbound(self) -> None:
-        """Stamp real inbound and restore lifecycle after a dormant wake.
+        """在一次休眠唤醒之后，为真实入站打戳并恢复生命周期。
 
-        The watcher marks runtime status `draining` as it quiesces the relay, but
-        dormancy is not the stop/restart drain path: the process remains alive and
-        should present as running once real traffic wakes it and re-enters the
-        gateway. Internal completion/replay events intentionally do not call this
-        helper, so they do not keep an otherwise idle gateway awake.
+        watcher 在静默 relay 时会把运行时状态标记为 `draining`，但休眠并非
+        stop/restart 的 drain 路径：进程仍然存活，且一旦真实流量唤醒它并重新
+        进入网关，就应当呈现为 running。内部的 completion/replay 事件有意地不
+        调用此 helper，因此它们不会让一个原本空闲的网关保持清醒。
         """
         self._last_inbound_at = time.time()
         if getattr(self, "_scale_to_zero_cooldown_until", 0.0) > 0:
@@ -3678,7 +3564,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             self._scale_to_zero_cooldown_until = 0.0
 
     def _relay_adapter_for_dormancy(self):
-        """Return the connected RELAY adapter, if any (the one go_dormant targets)."""
+        """返回已连接的 RELAY 适配器（如果有的话，即 go_dormant 的目标）。"""
         try:
             from gateway.platforms.base import Platform
         except Exception:  # noqa: BLE001
@@ -3686,23 +3572,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return self.adapters.get(Platform.RELAY)
 
     async def _scale_to_zero_watcher(self, interval: float = 30.0) -> None:
-        """Watch for idle and drive the relay dormant so the platform can suspend.
+        """监视空闲并驱动 relay 进入休眠，使平台可以挂起。
 
-        Started ONLY when _scale_to_zero_should_arm() (opted in via the Labs
-        HERMES_SCALE_TO_ZERO stamp + relay-only/absent messaging + a wakeUrl).
-        On a sustained idle window it runs the DORMANT sequence (D12/F12/F14):
-          - mark runtime status `draining` (composes with the existing state
-            machine, §3.4(6); does NOT set _running=False),
-          - relay adapter.go_dormant() — going_idle->ack + supervisor-preserving
-            socket close (NOT disconnect(), NOT the run.py stop path),
-          - deliberately NO mark_resume_pending (D13 — suspend preserves RAM).
-        The process stays alive; the platform (Fly autostop:"suspend") suspends
-        the now-traffic-idle machine and autostart wakes it on the wakeUrl poke,
-        at which point the preserved reconnect supervisor re-dials and the
-        connector drains the buffered backlog. After driving dormant we set a
-        re-arm cooldown so a wake's drained backlog isn't immediately re-quiesced.
+        仅当 _scale_to_zero_should_arm() 为真时启动（通过 Labs
+        HERMES_SCALE_TO_ZERO 标记 opt-in + 仅 relay/无消息平台 + 一个 wakeUrl）。
+        在持续的空闲窗口上，它运行 DORMANT 序列（D12/F12/F14）：
+          - 标记运行时状态为 `draining`（与既有状态机组合，§3.4(6)；不设置
+            _running=False），
+          - relay adapter.go_dormant() —— going_idle->ack + 保留 supervisor 的
+            socket 关闭（不是 disconnect()，也不是 run.py 的 stop 路径），
+          - 故意不调用 mark_resume_pending（D13 —— 挂起会保留 RAM）。
+        进程保持存活；平台（Fly autostop:"suspend"）挂起这台现已流量空闲的
+        机器，并在 wakeUrl 触碰时 autostart 唤醒它，此时保留的重连 supervisor
+        重新拨号，连接器排空缓冲的积压任务。驱动进入休眠后，我们设置一个
+        重新进入冷却，使一次唤醒排空的积压不会立即被再次静默。
         """
-        await asyncio.sleep(min(interval, 30.0))  # let startup settle
+        await asyncio.sleep(min(interval, 30.0))  # 让启动稳定下来
         while self._running:
             try:
                 await asyncio.sleep(interval)
@@ -3733,13 +3618,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         await result
                 except Exception:  # noqa: BLE001 - dormancy is best-effort
                     logger.debug("scale-to-zero: go_dormant failed", exc_info=True)
-                # 0.F: after a wake the drained inbound updates _last_inbound_at,
-                # but give it a window so we don't immediately re-go-dormant on the
-                # same idle reading before traffic lands.
+                # 0.F：唤醒后排空的入站会更新 _last_inbound_at，但给它一个窗口，
+                # 以免在流量落地之前就基于同一个空闲读数立即再次进入休眠。
                 self._scale_to_zero_cooldown_until = time.time() + max(interval, 60.0)
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001 - the watcher must never crash the gateway
+            except Exception:  # noqa: BLE001 - watcher 绝不能让网关崩溃
                 logger.debug("scale-to-zero watcher iteration error", exc_info=True)
 
     def _status_action_label(self) -> str:
@@ -3749,24 +3633,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return "restarting" if self._restart_requested else "shutting down"
 
     def _queue_during_drain_enabled(self) -> bool:
-        # Both "queue" and "steer" modes imply the user doesn't want messages
-        # to be lost during restart — queue them for the newly-spawned gateway
-        # process to pick up.  "interrupt" mode drops them (current behaviour).
+        # "queue" 和 "steer" 两种模式都意味着用户不希望消息在重启期间丢失 ——
+        # 将它们排队，等待新创建的网关进程来拾取。"interrupt" 模式会丢弃它们
+        # （当前行为）。
         return self._restart_requested and self._busy_input_mode in {"queue", "steer"}
 
-    # -------- /queue FIFO helpers --------------------------------------
-    # /queue must produce one full agent turn per invocation, in FIFO
-    # order, with no merging.  The adapter's _pending_messages dict is a
-    # single "next-up" slot (shared with photo-burst follow-ups), so we
-    # use it for the head of the queue and an overflow list for the
-    # tail.  Enqueue puts new items in the slot when free, otherwise in
-    # the overflow.  Promotion (called after each run's drain) moves the
-    # next overflow item into the slot so the following recursion picks
-    # it up.  Clearing happens on /new and /reset via
-    # _handle_reset_command.
+    # -------- /queue FIFO 辅助函数 --------------------------------------
+    # /queue 必须每次调用产生一个完整的 agent 轮次，按 FIFO 顺序，不合并。
+    # 适配器的 _pending_messages dict 是单个“下一个”槽（与照片连拍 follow-up
+    # 共享），因此我们用它作为队列头部，并用一个溢出列表存放尾部。入队在槽空闲时
+    # 把新项放入槽，否则放入溢出。提升（在每次运行的 drain 之后调用）把下一个
+    # 溢出项移入槽，使随后的递归能拾取它。清空通过 _handle_reset_command 在
+    # /new 和 /reset 时发生。
 
     def _enqueue_fifo(self, session_key: str, queued_event: "MessageEvent", adapter: Any) -> None:
-        """Append a /queue event to the FIFO chain for a session."""
+        """将一个 /queue 事件追加到某个 session 的 FIFO 链上。"""
         if adapter is None:
             return
         pending_slot = getattr(adapter, "_pending_messages", None)
@@ -3787,16 +3668,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         adapter: Any,
         pending_event: Optional["MessageEvent"],
     ) -> Optional["MessageEvent"]:
-        """Promote the next overflow item after the slot was drained.
+        """在槽被排空之后，提升下一个溢出项。
 
-        Called at the drain site after _dequeue_pending_event consumed
-        (or failed to consume) the slot.  If there's an overflow item:
-          - When pending_event is None (slot was empty), return the
-            overflow head as the new pending_event.
-          - When pending_event already exists (slot was populated by an
-            interrupt follow-up or similar), stage the overflow head in
-            the slot so the NEXT recursion picks it up.
-        Returns the (possibly updated) pending_event for drain to use.
+        在 _dequeue_pending_event 消费（或未能消费）该槽之后，于 drain 处调用。
+        如果存在一个溢出项：
+          - 当 pending_event 为 None（槽为空）时，返回溢出头部作为新的
+            pending_event。
+          - 当 pending_event 已存在（槽被某个中断 follow-up 等填充）时，把
+            溢出头部暂存进槽，使下一次递归拾取它。
+        返回（可能已更新的）pending_event 供 drain 使用。
         """
         queued_events = getattr(self, "_queued_events", None)
         if not queued_events:
@@ -3812,12 +3692,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if adapter is not None and hasattr(adapter, "_pending_messages"):
             adapter._pending_messages[session_key] = next_queued
         else:
-            # No adapter — push back so we don't silently drop the item.
+            # 无适配器 —— 推回，以免静默丢弃该项。
             queued_events.setdefault(session_key, []).insert(0, next_queued)
         return pending_event
 
     def _queue_depth(self, session_key: str, *, adapter: Any = None) -> int:
-        """Total pending /queue items for a session — slot + overflow."""
+        """某个 session 的待处理 /queue 项总数 —— 槽 + 溢出。"""
         queued_events = getattr(self, "_queued_events", None) or {}
         depth = len(queued_events.get(session_key, []))
         if adapter is not None and session_key in getattr(adapter, "_pending_messages", {}):
@@ -3826,21 +3706,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _is_goal_continuation_event(event_or_text: Any) -> bool:
-        """Return True for synthetic /goal continuation turns.
+        """对合成的 /goal 续进轮次返回 True。
 
-        Goal continuations are normal queued user-role events, so pause/clear
-        must distinguish them from real user /queue messages before removing or
-        suppressing them.
+        Goal 续进是正常的排队 user 角色事件，因此 pause/clear 在移除或抑制它们
+        之前，必须把它们与真实的用户 /queue 消息区分开来。
         """
         text = getattr(event_or_text, "text", event_or_text) or ""
         return str(text).startswith("[Continuing toward your standing goal]\nGoal:")
 
     def _clear_goal_pending_continuations(self, session_key: str, adapter: Any) -> int:
-        """Remove queued synthetic /goal continuations for one session.
+        """移除某个 session 已排队的合成 /goal 续进。
 
-        User-issued /goal pause/clear can race with a continuation already
-        queued by the judge.  Remove only synthetic goal continuations while
-        preserving normal /queue and user follow-up events.
+        用户发起的 /goal pause/clear 可能与 judge 已经排队的一个续进发生竞态。
+        仅移除合成的 goal 续进，同时保留正常的 /queue 和用户 follow-up 事件。
         """
         removed = 0
         pending_slot = getattr(adapter, "_pending_messages", None) if adapter is not None else None
@@ -3931,20 +3809,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             pass
 
     # ------------------------------------------------------------------
-    # Per-platform circuit breaker (pause/resume) — used by the reconnect
-    # watcher when a retryable failure recurs past a threshold, and by the
-    # /platform pause|resume slash command for manual control.
+    # 按平台的断路器（pause/resume）—— 当可重试失败反复超过阈值时由重连
+    # watcher 使用，并由 /platform pause|resume slash 命令用于手动控制。
     # ------------------------------------------------------------------
     def _pause_failed_platform(self, platform, *, reason: str = "") -> None:
-        """Mark a queued platform as paused — keep it in ``_failed_platforms``
-        but stop the reconnect watcher from hammering it.
+        """将一个排队的平台标记为已暂停 —— 把它保留在 ``_failed_platforms``
+        中，但停止重连 watcher 对它的反复冲击。
 
-        Used by ``/platform pause <name>`` for manual operator intervention.
-        Paused platforms are surfaced in ``/platform list`` and resumed with
-        ``/platform resume <name>``.  Note: the reconnect watcher does NOT
-        auto-pause — retryable (network/DNS) failures keep retrying at the
-        backoff cap indefinitely so a transient outage self-heals without
-        manual intervention.
+        由 ``/platform pause <name>`` 用于运维人员手动干预。已暂停的平台会
+        显示在 ``/platform list`` 中，并用 ``/platform resume <name>`` 恢复。
+        注意：重连 watcher 不会自动暂停 —— 可重试的（网络/DNS）失败会无限地
+        在 backoff 上限处持续重试，使瞬态中断无需手动干预即可自愈。
         """
         info = getattr(self, "_failed_platforms", {}).get(platform)
         if info is None:
@@ -3953,8 +3828,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return
         info["paused"] = True
         info["pause_reason"] = reason or "auto-paused after repeated failures"
-        # Push next_retry far enough out that even if "paused" is missed
-        # by a stale code path, the watcher won't fire on it.
+        # 把 next_retry 推得足够远，使得即使某个过期代码路径漏看了 "paused"，
+        # watcher 也不会触发它。
         info["next_retry"] = float("inf")
         try:
             self._update_platform_runtime_status(
@@ -3974,9 +3849,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
 
     def _resume_paused_platform(self, platform) -> bool:
-        """Unpause a platform — reset its attempt counter and schedule an
-        immediate retry.  Returns True if the platform was paused and is
-        now queued; False if it wasn't paused (or wasn't in the queue).
+        """取消暂停一个平台 —— 重置其尝试计数器并安排一次立即重试。
+        如果该平台之前已暂停且现在已入队则返回 True；如果它未暂停
+        （或不在队列中）则返回 False。
         """
         info = getattr(self, "_failed_platforms", {}).get(platform)
         if info is None:
@@ -3986,7 +3861,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         info["paused"] = False
         info.pop("pause_reason", None)
         info["attempts"] = 0
-        info["next_retry"] = time.monotonic()  # retry on next watcher tick
+        info["next_retry"] = time.monotonic()  # 在下一次 watcher tick 时重试
         try:
             self._update_platform_runtime_status(
                 platform.value,
@@ -4001,12 +3876,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_prefill_messages() -> List[Dict[str, Any]]:
-        """Load ephemeral prefill messages from config or env var.
-        
-        Checks HERMES_PREFILL_MESSAGES_FILE env var first, then falls back to
-        the top-level prefill_messages_file key in ~/.hermes/config.yaml.
-        agent.prefill_messages_file is accepted as a legacy fallback.
-        Relative paths are resolved from ~/.hermes/.
+        """从 config 或 env 变量加载 ephemeral prefill 消息。
+
+        先检查 HERMES_PREFILL_MESSAGES_FILE env 变量，然后回退到
+        ~/.hermes/config.yaml 中的顶层 prefill_messages_file key。
+        agent.prefill_messages_file 作为旧版兜底被接受。
+        相对路径从 ~/.hermes/ 解析。
         """
         file_path = os.getenv("HERMES_PREFILL_MESSAGES_FILE", "")
         if not file_path:
@@ -4035,10 +3910,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_ephemeral_system_prompt() -> str:
-        """Load ephemeral system prompt from config or env var.
-        
-        Checks HERMES_EPHEMERAL_SYSTEM_PROMPT env var first, then falls back to
-        agent.system_prompt in ~/.hermes/config.yaml.
+        """从 config 或 env 变量加载 ephemeral system prompt。
+
+        先检查 HERMES_EPHEMERAL_SYSTEM_PROMPT env 变量，然后回退到
+        ~/.hermes/config.yaml 中的 agent.system_prompt。
         """
         prompt = os.getenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "")
         if prompt:
@@ -4048,11 +3923,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_reasoning_config() -> dict | None:
-        """Load reasoning effort from config.yaml.
+        """从 config.yaml 加载 reasoning effort。
 
-        Reads agent.reasoning_effort from config.yaml. Valid: "none",
-        "minimal", "low", "medium", "high", "xhigh". Returns None to use
-        default (medium).
+        读取 config.yaml 中的 agent.reasoning_effort。有效值："none"、
+        "minimal"、"low"、"medium"、"high"、"xhigh"。返回 None 表示使用默认值
+        （medium）。
         """
         from hermes_constants import parse_reasoning_effort
         cfg = _load_gateway_runtime_config()
@@ -4064,10 +3939,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _parse_reasoning_command_args(raw_args: str) -> tuple[str, bool]:
-        """Parse `/reasoning` args into `(value, persist_global)`.
+        """将 `/reasoning` 参数解析为 `(value, persist_global)`。
 
-        `/reasoning <level>` is session-scoped by default. `--global` may be
-        supplied in any position to persist the change to config.yaml.
+        `/reasoning <level>` 默认是会话作用域的。`--global` 可以出现在任意位置，
+        用于将更改持久化到 config.yaml。
         """
         import shlex
 
@@ -4094,7 +3969,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         source: Optional[SessionSource] = None,
         session_key: Optional[str] = None,
     ) -> dict | None:
-        """Resolve reasoning effort for a session, honoring session overrides."""
+        """为某个 session 解析 reasoning effort，遵循会话覆盖。"""
         resolved_session_key = session_key
         if not resolved_session_key and source is not None:
             try:
@@ -4112,7 +3987,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_key: str,
         reasoning_config: Optional[dict],
     ) -> None:
-        """Set or clear the session-scoped reasoning override."""
+        """设置或清除会话作用域的 reasoning 覆盖。"""
         if not session_key:
             return
         if not hasattr(self, "_session_reasoning_overrides"):
@@ -4124,11 +3999,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_service_tier() -> str | None:
-        """Load Priority Processing setting from config.yaml.
+        """从 config.yaml 加载 Priority Processing 设置。
 
-        Reads agent.service_tier from config.yaml. Accepted values mirror the CLI:
-        "fast"/"priority"/"on" => "priority", while "normal"/"off" disables it.
-        Returns None when unset or unsupported.
+        读取 config.yaml 中的 agent.service_tier。接受的值与 CLI 一致：
+        "fast"/"priority"/"on" => "priority"，而 "normal"/"off" 会禁用它。
+        未设置或不支持时返回 None。
         """
         cfg = _load_gateway_runtime_config()
         raw = str(cfg_get(cfg, "agent", "service_tier", default="") or "").strip()
@@ -4143,7 +4018,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_show_reasoning() -> bool:
-        """Load show_reasoning toggle from config.yaml display section."""
+        """从 config.yaml 的 display 段加载 show_reasoning 开关。"""
         cfg = _load_gateway_runtime_config()
         return is_truthy_value(
             cfg_get(cfg, "display", "show_reasoning"),
@@ -4152,7 +4027,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_busy_input_mode() -> str:
-        """Load gateway drain-time busy-input behavior from config/env."""
+        """从 config/env 加载网关 drain 期间的 busy-input 行为。"""
         mode = os.getenv("HERMES_GATEWAY_BUSY_INPUT_MODE", "").strip().lower()
         if not mode:
             cfg = _load_gateway_runtime_config()
@@ -4165,16 +4040,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_busy_text_mode() -> str:
-        """Resolve normal busy TEXT follow-up behavior.
+        """解析正常的 busy 文本 follow-up 行为。
 
-        ``busy_input_mode`` is the single source of truth (default
-        ``interrupt``). The legacy ``busy_text_mode`` knob is honored only
-        when a user explicitly set it, so existing queue setups keep
-        working; new installs follow ``busy_input_mode``. Returns one of
-        ``interrupt`` | ``queue`` (``steer`` is handled upstream by
-        ``busy_input_mode`` and maps to non-queue text handling here).
+        ``busy_input_mode`` 是唯一事实来源（默认 ``interrupt``）。旧版
+        ``busy_text_mode`` 旋钮仅在用户显式设置时才被遵循，因此既有的
+        queue 配置仍能工作；新安装遵循 ``busy_input_mode``。返回
+        ``interrupt`` | ``queue`` 之一（``steer`` 由上游的
+        ``busy_input_mode`` 处理，在此映射为非 queue 的文本处理）。
         """
-        # Legacy explicit override wins for backward compat.
+        # 旧版的显式覆盖胜出，以保持向后兼容。
         legacy = os.getenv("HERMES_GATEWAY_BUSY_TEXT_MODE", "").strip().lower()
         if not legacy:
             cfg = _load_gateway_runtime_config()
@@ -4183,13 +4057,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return "interrupt"
         if legacy == "queue":
             return "queue"
-        # No explicit legacy knob → follow busy_input_mode.
+        # 没有显式的旧版旋钮 → 遵循 busy_input_mode。
         input_mode = GatewayRunner._load_busy_input_mode()
         return "queue" if input_mode == "queue" else "interrupt"
 
     @staticmethod
     def _load_restart_drain_timeout() -> float:
-        """Load graceful gateway restart/stop drain timeout in seconds."""
+        """加载优雅的网关 restart/stop drain 超时时间（秒）。"""
         raw = os.getenv("HERMES_RESTART_DRAIN_TIMEOUT", "").strip()
         if not raw:
             cfg = _load_gateway_runtime_config()
@@ -4208,13 +4082,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_background_notifications_mode() -> str:
-        """Load background process notification mode from config or env var.
+        """从 config 或 env 变量加载后台进程通知模式。
 
-        Modes:
-          - ``all``    — push running-output updates *and* the final message (default)
-          - ``result`` — only the final completion message (regardless of exit code)
-          - ``error``  — only the final message when exit code is non-zero
-          - ``off``    — no watcher messages at all
+        模式：
+          - ``all``    —— 推送运行中的输出更新*以及*最终消息（默认）
+          - ``result`` —— 仅最终完成消息（不论退出码）
+          - ``error``  —— 仅在退出码非零时的最终消息
+          - ``off``    —— 完全不发送 watcher 消息
         """
         mode = os.getenv("HERMES_BACKGROUND_NOTIFICATIONS", "")
         if not mode:
@@ -4236,7 +4110,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_provider_routing() -> dict:
-        """Load OpenRouter provider routing preferences from config.yaml."""
+        """从 config.yaml 加载 OpenRouter provider routing 偏好。"""
         try:
             import yaml as _y
             cfg_path = _hermes_home / "config.yaml"
@@ -4250,11 +4124,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _load_fallback_model() -> list | None:
-        """Load fallback provider chain from config.yaml.
+        """从 config.yaml 加载 fallback provider 链。
 
-        Returns the merged effective chain from ``fallback_providers`` plus any
-        legacy ``fallback_model`` entries. ``fallback_providers`` stays first
-        when both keys are present.
+        返回 ``fallback_providers`` 与任意旧版 ``fallback_model`` 条目合并后
+        的生效链。当两个 key 都存在时，``fallback_providers`` 排在前面。
         """
         try:
             import yaml as _y
@@ -4277,7 +4150,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         }
 
     def _get_max_concurrent_sessions(self) -> Optional[int]:
-        """Return the configured active chat session cap, if enabled."""
+        """返回已配置的活动聊天 session 上限（如果启用）。"""
         try:
             from hermes_cli.active_sessions import resolve_max_concurrent_sessions
 
@@ -4286,7 +4159,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return None
 
     def _active_session_limit_message(self, session_key: str) -> Optional[str]:
-        """Return a user-facing rejection when starting a new session exceeds the cap."""
+        """当开启新 session 超过上限时，返回一条面向用户的拒绝消息。"""
         max_sessions = self._get_max_concurrent_sessions()
         if max_sessions is None:
             return None
@@ -4305,7 +4178,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_key: str,
         source: SessionSource,
     ) -> tuple[Any, Optional[str]]:
-        """Claim a cross-process active-session slot for a new gateway turn."""
+        """为一次新的网关轮次，认领一个跨进程的 active-session 槽。"""
         if session_key in getattr(self, "_running_agents", {}):
             return None, None
         local_limit_message = self._active_session_limit_message(session_key)
@@ -4331,29 +4204,25 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     @staticmethod
     def _agent_has_active_subagents(running_agent: Any) -> bool:
-        """Return True when *running_agent* is currently driving subagents
-        via the ``delegate_task`` tool.
+        """当 *running_agent* 正在通过 ``delegate_task`` 工具驱动子 agent 时
+        返回 True。
 
-        Background (#30170): ``AIAgent.interrupt()`` cascades through the
-        parent's ``_active_children`` list and calls ``interrupt()`` on
-        every child synchronously, which aborts in-flight subagent work
-        and produces a fallback cascade with no actionable signal.
-        Demoting ``busy_input_mode='interrupt'`` to ``queue`` semantics
-        whenever this helper returns True protects subagent work from
-        conversational follow-ups while leaving the explicit ``/stop``
-        path (which goes through ``_interrupt_and_clear_session``)
-        untouched. Safe-by-default: returns False on any attribute or
-        lock error so a missing/broken parent never blocks the existing
-        interrupt path.
+        背景（#30170）：``AIAgent.interrupt()`` 会级联遍历父级的
+        ``_active_children`` 列表，并同步对每个子级调用 ``interrupt()``，
+        这会中止进行中的子 agent 工作并产生一个无可操作信号的 fallback 级联。
+        每当此 helper 返回 True 时，把 ``busy_input_mode='interrupt'`` 降级为
+        ``queue`` 语义，可以保护子 agent 工作免受对话式 follow-up 影响，同时
+        保持显式 ``/stop`` 路径（它走 ``_interrupt_and_clear_session``）不变。
+        默认安全：在任何属性或锁错误时返回 False，使一个缺失/损坏的父级
+        永远不会阻塞既有的 interrupt 路径。
         """
         if running_agent is None or running_agent is _AGENT_PENDING_SENTINEL:
             return False
         children = getattr(running_agent, "_active_children", None)
-        # AIAgent always initialises this as a concrete list (see
-        # agent/agent_init.py). Reject anything that isn't a real
-        # collection — this guards against ``MagicMock()._active_children``
-        # auto-creating a truthy stub in tests and triggering the demotion
-        # against an agent that doesn't actually have subagents.
+        # AIAgent 总是把它初始化为一个具体的 list（见
+        # agent/agent_init.py）。拒绝任何不是真实集合的东西 —— 这可以防御
+        # 测试中 ``MagicMock()._active_children`` 自动创建一个 truthy 的桩，
+        # 从而对一个实际上没有子 agent 的 agent 触发降级。
         if not isinstance(children, (list, tuple, set)):
             return False
         if not children:
@@ -4367,26 +4236,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             return False
 
-    # Hard cap on per-session pending follow-ups for busy_input_mode=queue
-    # (and the draining/steer-fallback/subagent-demotion paths that share
-    # this entry point).  Without a cap, a stuck agent + a rapid-fire user
-    # could grow the overflow list unboundedly.  32 turns of queued
-    # follow-ups is far beyond any realistic conversational backlog while
-    # still small enough to never threaten memory.
+    # 针对 busy_input_mode=queue（以及共享此入口的 draining/steer-fallback/
+    # subagent-demotion 路径）的、按 session 待处理 follow-up 的硬上限。没有
+    # 上限的话，一个卡住的 agent + 一个连发的用户可能让溢出列表无限增长。
+    # 32 轮排队的 follow-up 已远超任何现实的对话积压，同时仍小到绝不会威胁内存。
     _BUSY_QUEUE_MAX_PENDING = 32
 
     def _queue_or_replace_pending_event(self, session_key: str, event: MessageEvent) -> None:
         adapter = self.adapters.get(event.source.platform)
         if not adapter:
             return
-        # #28503 — Previously this called ``merge_pending_message_event``
-        # with the default ``merge_text=False``, which silently OVERWROTE
-        # the single pending slot when consecutive text messages arrived
-        # in ``busy_input_mode: queue``. Route through the FIFO
-        # infrastructure shared with ``/queue`` so each follow-up gets
-        # its own turn in arrival order. Photo bursts still merge into
-        # the head slot via ``merge_pending_message_event`` (album
-        # semantics); everything else appends to the overflow tail.
+        # #28503 —— 此前这里以默认的 ``merge_text=False`` 调用
+        # ``merge_pending_message_event``，当连续的文本消息在
+        # ``busy_input_mode: queue`` 下到达时，会静默地覆盖单个 pending 槽。
+        # 现在通过与 ``/queue`` 共享的 FIFO 基础设施路由，使每个 follow-up
+        # 按到达顺序获得自己的轮次。照片连拍仍通过 ``merge_pending_message_event``
+        # 合并进头部槽（album 语义）；其他一切都追加到溢出尾部。
         pending_slot = getattr(adapter, "_pending_messages", None)
         existing = pending_slot.get(session_key) if isinstance(pending_slot, dict) else None
         if existing is not None and (
@@ -4395,7 +4260,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             or bool(getattr(existing, "media_urls", None))
             or bool(getattr(event, "media_urls", None))
         ):
-            # Preserve photo-burst / media-merge semantics for the head slot.
+            # 为头部槽保留照片连拍 / media 合并语义。
             merge_pending_message_event(
                 adapter._pending_messages,
                 session_key,
@@ -4415,11 +4280,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._enqueue_fifo(session_key, event, adapter)
 
     async def _handle_active_session_busy_message(self, event: MessageEvent, session_key: str) -> bool:
-        # --- Authorization gate (#17775) ---
-        # The cold path (_handle_message) checks _is_user_authorized before
-        # creating a session.  The busy path must enforce the same check;
-        # otherwise unauthorized users in shared threads (Slack/Telegram/Discord)
-        # can inject messages into an active session they don't own.
+        # --- 授权闸门（#17775）---
+        # 冷路径（_handle_message）在创建 session 之前会检查 _is_user_authorized。
+        # busy 路径必须执行同样的检查；否则共享线程（Slack/Telegram/Discord）中
+        # 未授权的用户可以把消息注入一个不属于他们的活动 session。
         if not self._is_user_authorized(event.source):
             logger.warning(
                 "Dropping message from unauthorized user in active session: "
@@ -4429,9 +4293,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 event.source.platform.value if event.source.platform else "unknown",
                 session_key,
             )
-            return True  # handled (silently dropped); do not fall through
+            return True  # 已处理（静默丢弃）；不要向下落
 
-        # --- Draining case (gateway restarting/stopping) ---
+        # --- Draining 场景（网关正在重启/停止）---
         if self._draining:
             adapter = self.adapters.get(event.source.platform)
             if not adapter:
@@ -4459,15 +4323,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
             return True
 
-        # Normal busy case (agent actively running a task)
+        # 正常 busy 场景（agent 正在主动运行某个任务）
         adapter = self.adapters.get(event.source.platform)
         if not adapter:
-            return False  # let default path handle it
+            return False  # 让默认路径处理它
 
-        # --- Internal synthetic events must never interrupt/steer ---
-        # Async-delegation completions (delegate_task(background=true)) and
-        # background-process completions (terminal notify_on_complete) re-enter
-        # the originating session as internal MessageEvents. When the session
+        # --- 内部合成事件绝不能 interrupt/steer ---
+        # 异步委派完成（delegate_task(background=true)）和后台进程完成
+        # （terminal notify_on_complete）作为内部 MessageEvent 重新进入发起的
+        # session。当该 session
         # is busy, treating them like a user TEXT message means interrupt-mode
         # (the default busy_text_mode) aborts the active turn AND sends a "⚡
         # Interrupting current task" ack — exactly the opposite of the design
@@ -4489,18 +4353,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         ):
             return False
 
-        # Steer mode: inject mid-run via running_agent.steer() instead of
-        # queueing + interrupting.  If the agent isn't running yet
-        # (sentinel) or lacks steer(), or the payload is empty, fall back
-        # to queue semantics so nothing is lost.
-        # #30170 — Subagent protection. ``AIAgent.interrupt()`` cascades
-        # to every entry in the parent's ``_active_children`` list and
-        # aborts in-flight ``delegate_task`` work. Demote ``interrupt``
-        # to ``queue`` when the parent is currently driving subagents so
-        # a conversational follow-up doesn't destroy minutes of subagent
-        # work. Explicit ``/stop`` and ``/new`` slash commands go through
-        # ``_interrupt_and_clear_session`` and are unaffected — the
-        # operator still has a way to force-cancel everything.
+        # Steer 模式：通过 running_agent.steer() 在运行中途注入，而不是排队 +
+        # 中断。如果 agent 尚未运行（哨兵）或缺少 steer()，或载荷为空，则回退到
+        # queue 语义以免丢失任何东西。
+        # #30170 —— 子 agent 保护。``AIAgent.interrupt()`` 会级联到父级
+        # ``_active_children`` 列表中的每一项，并中止进行中的
+        # ``delegate_task`` 工作。当父级当前正在驱动子 agent 时，把 ``interrupt``
+        # 降级为 ``queue``，使一个对话式 follow-up 不会毁掉数分钟的子 agent 工作。
+        # 显式的 ``/stop`` 和 ``/new`` slash 命令走 ``_interrupt_and_clear_session``，
+        # 不受影响 —— 运维人员仍然有办法强制取消一切。
         demoted_for_subagents = (
             effective_mode == "interrupt"
             and self._agent_has_active_subagents(running_agent)
@@ -4528,60 +4389,55 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     logger.warning("Gateway steer failed for session %s: %s", session_key, exc)
                     steered = False
             if not steered:
-                # Fall back to queue (merge into pending messages, no interrupt)
+                # 回退到 queue（合并进 pending 消息，不中断）
                 effective_mode = "queue"
 
-        # Store the message so it's processed as the next turn after the
-        # current run finishes (or is interrupted).  Skip this for a
-        # successful steer — the text already landed inside the run and
-        # must NOT also be replayed as a next-turn user message.
+        # 存储该消息，使其在当前运行结束（或被中断）后作为下一轮被处理。
+        # 对一次成功的 steer 跳过此步 —— 文本已落在运行内部，绝不能再作为
+        # 下一轮的 user 消息重放。
         #
-        # Route through _queue_or_replace_pending_event (the same FIFO
-        # infrastructure used by busy queue-mode and /queue) rather than a
-        # raw merge_pending_message_event(merge_text=True). The raw merge
-        # newline-joins consecutive TEXT follow-ups into a SINGLE pending
-        # turn, destroying message boundaries — so two separate user
-        # messages sent while the agent was busy (interrupt mode, or a
-        # steer that fell back to queue) arrived as one mashed-together
-        # turn (#43066 sub-bug 2). The FIFO path gives each text its own
-        # turn in arrival order while still preserving photo-burst / album
-        # merge semantics for media.
+        # 通过 _queue_or_replace_pending_event（busy queue-mode 和 /queue 使用的
+        # 同一套 FIFO 基础设施）路由，而不是原始的
+        # merge_pending_message_event(merge_text=True)。原始合并会用换行符把
+        # 连续的 TEXT follow-up 连接成单个 pending 轮次，破坏消息边界 —— 因此
+        # agent 忙碌时发送的两条独立用户消息（interrupt 模式，或回退到 queue 的
+        # steer）会作为一条拼在一起的轮次到达（#43066 子 bug 2）。FIFO 路径让
+        # 每条文本按到达顺序获得自己的轮次，同时仍为 media 保留照片连拍 / album
+        # 合并语义。
         if not steered:
             self._queue_or_replace_pending_event(session_key, event)
 
         is_queue_mode = effective_mode == "queue"
         is_steer_mode = effective_mode == "steer"
 
-        # If not in queue/steer mode, interrupt the running agent immediately.
-        # This aborts in-flight tool calls and causes the agent loop to exit
-        # at the next check point.
+        # 如果不在 queue/steer 模式，立即中断正在运行的 agent。
+        # 这会中止进行中的 tool call，并使 agent 循环在下一个检查点退出。
         if effective_mode == "interrupt" and running_agent and running_agent is not _AGENT_PENDING_SENTINEL:
             try:
                 running_agent.interrupt(event.text)
             except Exception:
-                pass  # don't let interrupt failure block the ack
+                pass  # 不让 interrupt 失败阻塞 ack
 
-        # Check if busy ack is disabled — skip sending but still process the input.
-        # Placed before debounce so we don't stamp a "last ack" timestamp that was
-        # never actually delivered.
+        # 检查 busy ack 是否被禁用 —— 跳过发送但仍处理输入。
+        # 放在去抖之前，这样我们不会打上一个从未真正投递的“上次 ack”时间戳。
         busy_ack_enabled = os.environ.get("HERMES_GATEWAY_BUSY_ACK_ENABLED", "true").lower() == "true"
         if not busy_ack_enabled:
             logger.debug("Busy ack suppressed for session %s", session_key)
-            return True  # input still processed, just no ack sent
+            return True  # 输入仍被处理，只是不发 ack
 
-        # Debounce: only send an acknowledgment once every 30 seconds per session
-        # to avoid spamming the user when they send multiple messages quickly
+        # 去抖：每个 session 每 30 秒只发送一次确认，避免用户快速发送多条消息时
+        # 被刷屏
         _BUSY_ACK_COOLDOWN = 30
         now = time.time()
         last_ack = self._busy_ack_ts.get(session_key, 0)
         if now - last_ack < _BUSY_ACK_COOLDOWN:
-            return True  # interrupt sent (if not queue), ack already delivered recently
+            return True  # 已发送 interrupt（若非 queue），ack 最近已投递
 
         self._busy_ack_ts[session_key] = now
 
-        # Build a status-rich acknowledgment. Mobile chat defaults keep this
-        # terse; detailed iteration/tool state is still available in logs and
-        # can be opted in per platform via display.platforms.<platform>.busy_ack_detail.
+        # 构建一条状态丰富的确认。移动端聊天默认保持简洁；详细的迭代/工具状态
+        # 仍可在日志中查看，并可通过 display.platforms.<platform>.busy_ack_detail
+        # 按平台 opt-in。
         from gateway.display_config import resolve_display_setting
         status_parts = []
         busy_ack_detail_enabled = bool(
@@ -4618,9 +4474,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 f"Your message arrives after the next tool call."
             )
         elif is_queue_mode and demoted_for_subagents:
-            # #30170 — explain the demotion so the user knows their
-            # follow-up didn't accidentally kill the subagent and
-            # discovers `/stop` as the explicit escape hatch.
+            # #30170 —— 解释这次降级，让用户知道他们的 follow-up 没有意外
+            # 杀死子 agent，并发现 `/stop` 这个显式逃生口。
             message = (
                 f"⏳ Subagent working{status_detail} — your message is queued for "
                 f"when it finishes (use /stop to cancel everything)."
@@ -4636,10 +4491,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 f"I'll respond to your message shortly."
             )
 
-        # First-touch onboarding: the very first time a user sends a message
-        # while the agent is busy, append a one-time hint explaining the
-        # queue/interrupt knob.  Flag is persisted to config.yaml so it never
-        # fires again on this install.
+        # 首次接触 onboarding：当用户第一次在 agent 忙碌时发送消息，追加一条
+        # 一次性提示，解释 queue/interrupt 旋钮。该标记被持久化到 config.yaml，
+        # 因此在此安装上再也不会触发。
         try:
             from agent.onboarding import (
                 BUSY_INPUT_FLAG,
@@ -4724,11 +4578,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 logger.debug("Failed interrupting agent during shutdown: %s", e)
 
     async def _notify_active_sessions_of_shutdown(self) -> None:
-        """Send shutdown/restart notifications to active chats and home channels.
+        """向活动聊天和 home 频道发送 shutdown/restart 通知。
 
-        Called at the very start of stop() — adapters are still connected so
-        messages can be delivered. Best-effort: individual send failures are
-        logged and swallowed so they never block the shutdown sequence.
+        在 stop() 的最开头调用 —— 此时适配器仍处于连接状态，因此消息可以
+        投递。尽力而为：单个发送失败会被记录并吞掉，因此它们永远不会阻塞
+        关闭序列。
         """
         active = self._snapshot_running_agents()
         restart_source = self._restart_command_source if self._restart_requested else None
@@ -4765,8 +4619,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 chat_id = str(source.chat_id)
                 thread_id = source.thread_id
             else:
-                # Fall back to parsing the session key when no persisted
-                # origin is available (legacy sessions/tests).
+                # 当没有持久化的来源可用时（旧版 session/测试），回退到解析
+                # session key。
                 _parsed = _parse_session_key(session_key)
                 if not _parsed:
                     continue
@@ -4774,9 +4628,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 chat_id = _parsed["chat_id"]
                 thread_id = _parsed.get("thread_id")
 
-            # Deduplicate only identical delivery targets. Thread/topic-aware
-            # platforms can share a parent chat while still routing to distinct
-            # destinations via metadata.
+            # 只对完全相同的投递目标去重。支持 thread/topic 的平台可以共享一个父
+            # 聊天，同时仍通过 metadata 路由到不同的目标。
             dedup_key = (platform_str, chat_id, str(thread_id) if thread_id else None)
             if dedup_key in notified:
                 continue
@@ -4840,11 +4693,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             logger.debug("Skipping home-channel shutdown notifications for in-chat restart")
             return
 
-        # Snapshot adapters up front: adapter.send() can hit a fatal error
-        # path that pops the adapter from self.adapters (see _handle_fatal
-        # elsewhere), which would otherwise trigger
-        # ``RuntimeError: dictionary changed size during iteration`` —
-        # observed in a user report during gateway shutdown.
+        # 预先快照适配器：adapter.send() 可能命中一个致命错误路径，从而把
+        # 适配器从 self.adapters 中弹出（见别处的 _handle_fatal），否则会触发
+        # ``RuntimeError: dictionary changed size during iteration`` ——
+        # 在一次用户报告的网关关闭期间观察到。
         for platform, adapter in list(self.adapters.items()):
             home = self.config.get_home_channel(platform)
             if not home or not home.chat_id:
@@ -4898,29 +4750,25 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     def _finalize_shutdown_agents(self, active_agents: Dict[str, Any]) -> None:
         for agent in active_agents.values():
-            # Persist any in-flight transcript to the SQLite session store
-            # before teardown (#13121).  An agent forcibly interrupted by the
-            # drain-timeout escalation may never reach
-            # ``turn_finalizer.finalize_turn`` (the only place that flushes the
-            # turn to state.db) — e.g. it was blocked in a tool call that did
-            # not abort within the post-interrupt grace window.  Its in-flight
-            # tool rounds live only in the in-memory ``_session_messages``
-            # (refreshed per tool round in ``conversation_loop`` but never
-            # written to SQLite mid-turn), so the immediate pre-restart turn is
-            # silently dropped from ``load_transcript()`` on resume.  Flushing
-            # here closes that gap; the resume_pending / fresh-tool-tail
-            # branches in ``_handle_message_with_agent`` already expect a
-            # transcript whose tail may be a pending tool result.  The flush is
-            # idempotent (identity-tracked in ``_flush_messages_to_session_db``),
-            # so agents that DID finish gracefully re-flush nothing.
+            # 在拆除之前，把任何进行中的 transcript 持久化到 SQLite session store
+            # （#13121）。一个被 drain-timeout 升级强制中断的 agent 可能永远到不了
+            # ``turn_finalizer.finalize_turn``（唯一把轮次刷到 state.db 的地方）——
+            # 例如它阻塞在一个未在中断后宽限窗口内中止的 tool call 中。其进行中
+            # 的 tool 轮次只存在于内存的 ``_session_messages`` 中（在
+            # ``conversation_loop`` 中按 tool 轮次刷新，但从不在轮次中途写入
+            # SQLite），因此重启前的那一轮会在恢复时的 ``load_transcript()`` 中
+            # 被静默丢弃。在这里刷新可以弥合这个缺口；``_handle_message_with_agent``
+            # 中的 resume_pending / fresh-tool-tail 分支本来就预期 transcript 的
+            # 尾部可能是一个 pending 的 tool 结果。该刷新是幂等的（在
+            # ``_flush_messages_to_session_db`` 中按身份跟踪），因此确实优雅结束的
+            # agent 不会重新刷新任何东西。
             try:
                 _flush = getattr(agent, "_flush_messages_to_session_db", None)
                 _session_messages = getattr(agent, "_session_messages", None)
                 if callable(_flush) and isinstance(_session_messages, list) and _session_messages:
-                    # Strip private empty-response retry scaffolding from the
-                    # tail first, mirroring the graceful ``_persist_session``
-                    # path, so a resumed turn doesn't replay synthetic recovery
-                    # nudges.
+                    # 先从尾部剥离私有的空响应重试脚手架，与优雅的
+                    # ``_persist_session`` 路径一致，使恢复的轮次不会重放合成的
+                    # 恢复提示。
                     _strip = getattr(
                         agent, "_drop_trailing_empty_response_scaffolding", None
                     )
@@ -4950,12 +4798,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         agent: Any,
         executor_task: Optional[Any],
     ) -> bool:
-        """Only emit the heartbeat while this task still owns the live run.
+        """仅当此任务仍拥有该活跃运行时才发出心跳。
 
-        Guards against a stale ``running: delegate_task`` heartbeat outliving the
-        run that started it: stop once the executor finishes, the agent is gone,
-        or the session key has been rebound to a different live agent (e.g. the
-        user sent ``/new`` and a fresh agent took the slot mid-run, #12029).
+        防止一个过期的 ``running: delegate_task`` 心跳比启动它的运行活得更久：
+        一旦 executor 完成、agent 消失，或 session key 已被重新绑定到另一个
+        活跃 agent（例如用户发送了 ``/new`` 且一个全新 agent 在运行中途占据了
+        该槽，#12029），就停止。
         """
         if agent is None:
             return False
@@ -4971,16 +4819,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return
         try:
             if hasattr(agent, "shutdown_memory_provider"):
-                # Pass the agent's own conversation transcript so memory
-                # providers' ``on_session_end`` hooks see the real messages
-                # instead of the empty default (#15165). ``_session_messages``
-                # is set on ``AIAgent`` (run_agent.py:1518) and refreshed at
-                # the end of every ``run_conversation`` turn via
-                # ``_persist_session``; on an agent built through
-                # ``object.__new__`` (test stubs) the attribute may be
-                # absent, so ``getattr`` with a ``None`` default keeps the
-                # call signature-compatible with the pre-fix behaviour
-                # (``shutdown_memory_provider(messages=None)``).
+                # 传入 agent 自身的对话 transcript，使 memory provider 的
+                # ``on_session_end`` 钩子能看到真实消息，而非空的默认值
+                # （#15165）。``_session_messages`` 在 ``AIAgent`` 上设置
+                # （run_agent.py:1518），并在每个 ``run_conversation`` 轮次结束时
+                # 通过 ``_persist_session`` 刷新；在通过 ``object.__new__`` 构建的
+                # agent（测试桩）上该属性可能缺失，因此带 ``None`` 默认值的
+                # ``getattr`` 使调用签名与修复前的行为兼容
+                # （``shutdown_memory_provider(messages=None)``）。
                 session_messages = getattr(agent, "_session_messages", None)
                 if isinstance(session_messages, list):
                     agent.shutdown_memory_provider(session_messages)
@@ -4988,33 +4834,31 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     agent.shutdown_memory_provider()
         except Exception:
             pass
-        # Close tool resources (terminal sandboxes, browser daemons,
-        # background processes, httpx clients) to prevent zombie
-        # process accumulation.
+        # 关闭工具资源（终端沙箱、浏览器守护进程、后台进程、httpx 客户端），
+        # 以防僵尸进程累积。
         try:
             if hasattr(agent, "close"):
                 agent.close()
         except Exception:
             pass
-        # Auxiliary async clients (session_search/web/vision/etc.) live in a
-        # process-global cache and are created inside worker threads. Clean up
-        # any entries whose event loop is now dead so their httpx transports do
-        # not accumulate across gateway turns.
+        # 辅助 async 客户端（session_search/web/vision 等）存在于进程全局缓存中，
+        # 并在 worker 线程内创建。清理任何事件循环现已死亡的条目，使其 httpx
+        # transport 不会在网关轮次间累积。
         try:
             from agent.auxiliary_client import cleanup_stale_async_clients
             cleanup_stale_async_clients()
         except Exception:
             pass
 
-    _STUCK_LOOP_THRESHOLD = 3  # restarts while active before auto-suspend
+    _STUCK_LOOP_THRESHOLD = 3  # 自动挂起前处于活动状态的重启次数
     _STUCK_LOOP_FILE = ".restart_failure_counts"
 
     def _increment_restart_failure_counts(self, active_session_keys: set) -> None:
-        """Increment restart-failure counters for sessions active at shutdown.
+        """为关闭时仍处于活动状态的 session 递增 restart-failure 计数器。
 
-        Persists to a JSON file so counters survive across restarts.
-        Sessions NOT in active_session_keys are removed (they completed
-        successfully, so the loop is broken).
+        持久化到一个 JSON 文件，使计数器在重启后仍存在。不在
+        active_session_keys 中的 session 会被移除（它们已成功完成，因此循环已
+        打破）。
         """
         import json
 
@@ -5024,12 +4868,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             counts = {}
 
-        # Increment active sessions, remove inactive ones (loop broken)
+        # 递增活动 session，移除非活动的（循环已打破）
         new_counts = {}
         for key in active_session_keys:
             new_counts[key] = counts.get(key, 0) + 1
-        # Keep any entries that are still above 0 even if not active now
-        # (they might become active again next restart)
+        # 即使现在不活动，也保留任何仍大于 0 的条目
+        # （它们可能在下次重启时再次变为活动）
 
         try:
             atomic_json_write(path, new_counts, indent=None)
@@ -5037,11 +4881,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             pass
 
     def _suspend_stuck_loop_sessions(self) -> int:
-        """Suspend sessions that have been active across too many restarts.
+        """挂起那些在过多重启期间一直处于活动状态的 session。
 
-        Returns the number of sessions suspended.  Called on gateway startup
-        AFTER suspend_recently_active() to catch the stuck-loop pattern:
-        session loads → agent gets stuck → gateway restarts → repeat.
+        返回被挂起的 session 数量。在网关启动时、suspend_recently_active() 之后
+        调用，以捕获卡死循环模式：
+        session 加载 → agent 卡住 → 网关重启 → 重复。
         """
         import json
 
@@ -5077,7 +4921,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception:
                 pass
 
-        # Clear the file — counters start fresh after suspension
+        # 清除该文件 —— 挂起后计数器重新开始
         try:
             path.unlink(missing_ok=True)
         except Exception:
@@ -5086,9 +4930,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return suspended
 
     def _clear_restart_failure_count(self, session_key: str) -> None:
-        """Clear the restart-failure counter for a session that completed OK.
+        """为已正常完成的 session 清除 restart-failure 计数器。
 
-        Called after a successful agent turn to signal the loop is broken.
+        在一次成功的 agent 轮次之后调用，以表示循环已被打破。
         """
         import json
 
@@ -5117,11 +4961,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         current_pid = os.getpid()
 
-        # On Windows there's no bash/setsid chain — spawn a tiny Python
-        # watcher directly via sys.executable instead.  The watcher polls
-        # current_pid, waits for our exit, then runs `hermes gateway
-        # restart` with detach flags so the respawn survives the CLI
-        # that triggered the /restart command closing its console.
+        # 在 Windows 上没有 bash/setsid 链 —— 直接通过 sys.executable 派生一个
+        # 微小的 Python watcher。该 watcher 轮询 current_pid，等待我们退出，
+        # 然后带 detach 标志运行 `hermes gateway restart`，使重新拉起的进程能
+        # 在触发 /restart 命令的 CLI 关闭其控制台后存活。
         if sys.platform == "win32":
             import textwrap
             from hermes_cli._subprocess_compat import windows_detach_popen_kwargs
@@ -5135,9 +4978,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 deadline = time.monotonic() + 120
 
                 def _alive(p):
-                    # On Windows, os.kill(pid, 0) is NOT a no-op — it maps to
-                    # GenerateConsoleCtrlEvent(0, pid) (bpo-14484). Use the
-                    # Win32 handle-based existence check instead.
+                    # 在 Windows 上，os.kill(pid, 0) 不是空操作 —— 它映射到
+                    # GenerateConsoleCtrlEvent(0, pid)（bpo-14484）。改用基于
+                    # Win32 句柄的存在性检查。
                     if os.name == 'nt':
                         import ctypes
                         k32 = ctypes.windll.kernel32
@@ -5177,9 +5020,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 """
             ).strip()
             watcher_env = os.environ.copy()
-            # This watcher is intentionally outside the running gateway. If it
-            # inherits the gateway marker, `hermes gateway restart` refuses to
-            # run as a self-restart loop guard and the gateway stays stopped.
+            # 这个 watcher 有意地位于正在运行的网关之外。如果它继承了网关标记，
+            # `hermes gateway restart` 会作为自重启循环守卫拒绝运行，网关就会
+            # 保持停止状态。
             watcher_env.pop("_HERMES_GATEWAY", None)
             project_root = Path(__file__).resolve().parent.parent
             venv_dir = Path(watcher_env.get("VIRTUAL_ENV") or project_root / "venv")
@@ -5204,11 +5047,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             f"while kill -0 {current_pid} 2>/dev/null; do sleep 0.2; done; "
             f"{cmd} gateway restart"
         )
-        # Same marker scrub as the Windows watcher above: this watcher runs
-        # `hermes gateway restart` from outside the gateway, but it inherits
-        # _HERMES_GATEWAY=1 from us, and the CLI's self-restart loop guard
-        # refuses to run when that marker is set — silently (DEVNULL), so the
-        # gateway stops and never comes back.
+        # 与上方 Windows watcher 相同的标记清除：此 watcher 从网关外部运行
+        # `hermes gateway restart`，但它从我们这里继承了 _HERMES_GATEWAY=1，
+        # 而 CLI 的自重启循环守卫在该标记被设置时拒绝运行 —— 且是静默的
+        # （DEVNULL），因此网关会停止且再也回不来。
         watcher_env = os.environ.copy()
         watcher_env.pop("_HERMES_GATEWAY", None)
         setsid_bin = shutil.which("setsid")
@@ -5230,14 +5072,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
 
     def _launch_systemd_restart_shortcut(self) -> None:
-        """Best-effort helper to bypass systemd's automatic restart delay.
+        """尽力而为的 helper，用于绕过 systemd 的自动重启延迟。
 
-        For planned in-chat restarts, the gateway exits cleanly so systemd does
-        not record a failure.  However, units with RestartSteps still count
-        automatic restarts and can delay repeated /restart tests.  A transient
-        user service survives our cgroup teardown and explicitly starts the
-        gateway as soon as this PID exits, while the unit keeps its normal
-        backoff for real crash loops.
+        对于计划内的聊天内重启，网关会干净退出，因此 systemd 不会记录失败。
+        但是，带 RestartSteps 的 unit 仍会计数自动重启，并可能延迟重复的
+        /restart 测试。一个瞬态 user service 能在我们的 cgroup 拆除后存活，
+        并在此 PID 退出时立即显式启动网关，同时该 unit 对真正的崩溃循环仍保留
+        其正常的 backoff。
         """
         if sys.platform != "linux" or not os.environ.get("INVOCATION_ID"):
             return
@@ -5323,11 +5164,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         task.add_done_callback(self._background_tasks.discard)
         return True
 
-    # Drain-timeout reasons set by _stop_impl() when a still-running turn is
-    # force-interrupted; "restart_interrupted" is set by
-    # SessionStore.suspend_recently_active() on crash recovery (no
-    # .clean_shutdown marker).  All three mean "the agent was mid-turn and
-    # we killed it" — eligible for startup auto-resume.
+    # 由 _stop_impl() 在某个仍在运行的轮次被强制中断时设置的 drain-timeout 原因；
+    # "restart_interrupted" 由 SessionStore.suspend_recently_active() 在崩溃恢复时
+    # 设置（无 .clean_shutdown 标记）。这三者都意味着“agent 在轮次中途且我们
+    # 杀掉了它” —— 符合启动时自动恢复的条件。
     _AUTO_RESUME_REASONS = frozenset(
         {"restart_timeout", "shutdown_timeout", "restart_interrupted"}
     )
@@ -5338,14 +5178,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         event: MessageEvent,
         session_key: str,
     ) -> None:
-        """Dispatch one synthetic startup resume and wait for its agent turn.
+        """派发一个合成的启动恢复事件，并等待其 agent 轮次结束。
 
-        ``BasePlatformAdapter.handle_message()`` returns after it installs the
-        adapter-level guard and spawns the background processing task.  Startup
-        restore needs a stronger boundary: inbound messages must stay queued
-        until the resumed agent turn itself has finished, otherwise a user
-        message can race the restore turn immediately after ``handle_message``
-        returns.
+        ``BasePlatformAdapter.handle_message()`` 在安装适配器级守卫并派生后台
+        处理任务之后返回。启动恢复需要更强的边界：入站消息必须保持排队，直到
+        恢复的 agent 轮次本身完成，否则一条用户消息可能在 ``handle_message``
+        返回后立即与恢复轮次发生竞态。
         """
         try:
             await adapter.handle_message(event)
@@ -5354,10 +5192,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if task is not None:
                 await asyncio.shield(task)
         finally:
-            # _schedule_resume_pending_sessions pre-claims the runner slot
-            # before spawning this task.  If adapter.handle_message raises
-            # before _handle_message takes ownership, release that pre-claim;
-            # otherwise the real run's normal cleanup owns the slot.
+            # _schedule_resume_pending_sessions 在派生此任务之前会预先认领
+            # runner 槽。如果 adapter.handle_message 在 _handle_message 接管
+            # 所有权之前抛出异常，则释放该预认领；否则由真正运行的正常清理
+            # 持有该槽。
             if self._running_agents.get(session_key) is _AGENT_PENDING_SENTINEL:
                 self._release_running_agent_state(session_key)
 
@@ -5378,7 +5216,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             pass
 
     async def _drain_startup_restore_queue(self) -> int:
-        """Replay inbound messages queued while startup auto-resume ran."""
+        """重放在启动自动恢复期间排队的入站消息。"""
         drained = 0
         queue = getattr(self, "_startup_restore_queue", None)
         if queue is None:
@@ -5393,8 +5231,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     getattr(getattr(source, "platform", None), "value", None),
                 )
                 continue
-            # Mark this replay so _handle_message does not queue it again while
-            # the restore gate remains closed for any fresh inbound arrivals.
+            # 标记此次重放，使 _handle_message 在恢复闸门对任何新入站到达仍关闭时
+            # 不会再次将其排队。
             try:
                 setattr(event, "_hermes_startup_restore_replay", True)
             except Exception:
@@ -5421,27 +5259,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             logger.info("Drained %d inbound message(s) queued during startup restore", drained)
 
     def _schedule_resume_pending_sessions(self, platform=None) -> int:
-        """Auto-continue fresh restart-interrupted sessions after startup.
+        """在启动后自动续进新鲜的、被重启中断的 session。
 
-        ``resume_pending`` already preserves the transcript AND the existing
-        ``_is_resume_pending`` branch in ``_handle_message_with_agent``
-        injects a reason-aware recovery system note on the next turn.  This
-        method closes the UX gap by synthesizing that next turn once
-        adapters are back online — the event text is empty so the existing
-        injection path owns the wording and we never double up.
+        ``resume_pending`` 已经保留了 transcript，且 ``_handle_message_with_agent``
+        中既有的 ``_is_resume_pending`` 分支会在下一轮注入一条带原因的恢复
+        system note。此方法通过在适配器重新上线后合成那一轮来弥补 UX 缺口 ——
+        事件文本为空，因此既有的注入路径负责措辞，我们绝不会重复。
 
-        Adapters that are not yet ready (adapter missing from
-        ``self.adapters``) are skipped silently; their sessions stay
-        ``resume_pending`` and will auto-resume on the next real user
-        message, or when the platform reconnects — the reconnect watcher
-        calls this again scoped to that ``platform``.
+        尚未就绪的适配器（``self.adapters`` 中缺失）会被静默跳过；其 session
+        保持 ``resume_pending``，并会在下一条真实用户消息或平台重连时自动恢复
+        —— 重连 watcher 会以该 ``platform`` 为范围再次调用此方法。
 
-        ``platform`` (a ``Platform``) restricts the pass to sessions that
-        originated on that platform.  The reconnect path passes it so a
-        platform coming back online retries only its own sessions and never
-        re-touches another platform's in-flight recoveries.  Sessions whose
-        agent is already running are skipped regardless, so a session
-        scheduled at startup is never resumed a second time.
+        ``platform``（一个 ``Platform``）将此次遍历限制为起源于该平台的 session。
+        重连路径会传入它，使一个重新上线的平台只重试自己的 session，且绝不
+        再次触碰另一个平台进行中的恢复。agent 已在运行的 session 无论如何都会
+        被跳过，因此在启动时已调度的 session 绝不会被恢复第二次。
         """
         window = _auto_continue_freshness_window()
         try:
@@ -5466,8 +5298,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if marker is not None and (now - marker).total_seconds() > window:
                 continue
 
-            # Already being resumed (e.g. scheduled at startup and still
-            # in-flight) — don't synthesize a second continuation turn.
+            # 已在恢复中（例如启动时已调度且仍在进行中）—— 不要合成第二个
+            # 续进轮次。
             if entry.session_key in self._running_agents:
                 continue
 
@@ -5481,18 +5313,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
                 continue
 
-            # Claim the session slot *before* spawning the task so that an
-            # inbound message arriving between task creation and the task's
-            # first await (where _process_message_background sets the real
-            # sentinel) sees the slot as occupied and queues behind it
-            # instead of spinning up a duplicate AIAgent (#45456).
+            # 在派生任务*之前*认领 session 槽，使一条在任务创建与任务第一次
+            # await（_process_message_background 在那里设置真正的哨兵）之间到达
+            # 的入站消息看到该槽已被占用，从而排在它后面，而不是又创建一个
+            # 重复的 AIAgent（#45456）。
             self._running_agents[entry.session_key] = _AGENT_PENDING_SENTINEL
             self._running_agents_ts[entry.session_key] = time.time()
             self._persist_active_agents()
 
-            # Empty-text internal event — the _is_resume_pending branch in
-            # _handle_message_with_agent prepends the proper reason-aware
-            # system note before the turn runs.
+            # 空文本的内部事件 —— _handle_message_with_agent 中的
+            # _is_resume_pending 分支会在轮次运行之前前置正确的带原因的
+            # system note。
             event = MessageEvent(
                 text="",
                 message_type=MessageType.TEXT,
@@ -5521,9 +5352,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
     async def start(self) -> bool:
         """
-        Start the gateway and all configured platform adapters.
-        
-        Returns True if at least one adapter connected successfully.
+        启动网关及所有已配置的平台适配器。
+
+        如果至少有一个适配器成功连接，则返回 True。
         """
         logger.info("Starting Hermes Gateway...")
         try:
@@ -5532,11 +5363,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             self._gateway_loop = None
         logger.info("Session storage: %s", self.config.sessions_dir)
 
-        # Sanity-check that systemd's TimeoutStopSec covers our drain
-        # window.  When the user upgraded hermes-agent without re-running
-        # ``hermes setup``, their unit file may still encode the old
-        # default — in which case SIGKILL hits mid-drain and looks like
-        # a phantom kill in the journal.  Best-effort, never raises.
+        # 健全性检查 systemd 的 TimeoutStopSec 是否覆盖我们的 drain 窗口。
+        # 当用户升级了 hermes-agent 却没重新运行 ``hermes setup`` 时，其 unit
+        # 文件可能仍编码着旧默认值 —— 此时 SIGKILL 会在 drain 中途命中，并在
+        # journal 中看起来像一次幽灵 kill。尽力而为，绝不抛出。
         try:
             from gateway.shutdown_forensics import check_systemd_timing_alignment
             _alignment = check_systemd_timing_alignment(self._restart_drain_timeout)
@@ -5553,9 +5383,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
         except Exception as _e:
             logger.debug("check_systemd_timing_alignment failed: %s", _e)
-        # Log the resolved max_iterations budget so operators can verify the
-        # config.yaml → env bridge did the right thing at a glance (instead
-        # of silently running at a stale .env value for weeks).
+        # 记录已解析的 max_iterations 预算，以便运维人员能一眼验证
+        # config.yaml → env 桥接做对了（而不是在过期的 .env 值上静默运行数周）。
         try:
             _effective_max_iter = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
             logger.info(

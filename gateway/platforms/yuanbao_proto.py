@@ -76,7 +76,7 @@ MODULE = {
 }
 
 # biz 层服务/方法映射
-# TS client uses the short name 'yuanbao_openclaw_proxy' (not the full package path)
+# TS 客户端使用短名 'yuanbao_openclaw_proxy'（非完整包路径）
 _BIZ_PKG = "yuanbao_openclaw_proxy"
 BIZ_SERVICES = {
     "InboundMessagePush": f"{_BIZ_PKG}.InboundMessagePush",
@@ -123,7 +123,7 @@ def next_seq_no() -> int:
 # Protobuf wire-format 基础工具（手写，不依赖 google.protobuf）
 # ============================================================
 
-# wire types
+# wire 类型
 WT_VARINT = 0
 WT_64BIT = 1
 WT_LEN = 2
@@ -273,7 +273,7 @@ def _get_repeated_bytes(fdict: dict, fn: int) -> list[bytes]:
 # ConnMsg 层编解码
 # ============================================================
 #
-# ConnMsg protobuf schema (conn.json):
+# ConnMsg protobuf schema（conn.json）：
 #   message Head {
 #     uint32 cmd_type = 1;
 #     string cmd      = 2;
@@ -336,12 +336,12 @@ def encode_conn_msg(msg_type: int, seq_no: int, data: bytes) -> bytes:
     """
     编码 ConnMsg（简化接口，对应任务要求的签名）。
 
-    Args:
+    参数：
         msg_type: cmd_type（CMD_TYPE 枚举值）
         seq_no:   序列号
         data:     内层 payload bytes（业务 protobuf）
 
-    Returns:
+    返回：
         ConnMsg 编码后的 bytes
     """
     head_bytes = _encode_head(
@@ -362,7 +362,7 @@ def decode_conn_msg(data: bytes) -> dict:
     """
     解码 ConnMsg，返回 {msg_type, seq_no, data, head}。
 
-    Returns:
+    返回：
         {
           "msg_type": int,      # cmd_type
           "seq_no":   int,
@@ -430,13 +430,13 @@ def encode_biz_msg(service: str, method: str, req_id: str, body: bytes) -> bytes
     """
     将业务 payload 包装为 ConnMsg bytes。
 
-    Args:
+    参数：
         service: 模块名（head.module），如 "yuanbao_openclaw_proxy"
         method:  命令字（head.cmd），如 "send_c2c_message"
         req_id:  消息 ID（head.msg_id）
         body:    已编码的业务 protobuf bytes
 
-    Returns:
+    返回：
         ConnMsg bytes（可直接发送到 WebSocket）
     """
     return encode_conn_msg_full(
@@ -453,7 +453,7 @@ def decode_biz_msg(data: bytes) -> dict:
     """
     解码 ConnMsg bytes，返回业务层信息。
 
-    Returns:
+    返回：
         {
           "service":     str,    # head.module
           "method":      str,    # head.cmd
@@ -492,17 +492,17 @@ def decode_biz_msg(data: bytes) -> dict:
 #   field 10: url (string)
 #   field 11: file_size (uint32)
 #   field 12: file_name (string)
-#   field 999: ext_map (map<string, string>)  ← extension info for WeChat chat-history forwarding
-#       protobuf map is wire-encoded as a repeated message entry; each entry has:
+#   field 999: ext_map (map<string, string>)  ← 微信聊天记录转发的扩展信息
+#       protobuf map 在 wire 层编码为 repeated message 条目；每个条目含：
 #         field 1: key (string)
 #         field 2: value (string)
-#       key format: wexin_forward_msg_[forward_msg_id]_[userid]
-#       value: base64(ForwardMsgData protobuf)  ← NOT JSON; it is base64-encoded
-#              protobuf bytes that must be parsed with decode_forward_msg_data().
+#       key 格式：wexin_forward_msg_[forward_msg_id]_[userid]
+#       value: base64(ForwardMsgData protobuf)  ← 不是 JSON；而是 base64 编码的
+#              protobuf bytes，必须用 decode_forward_msg_data() 解析。
 
 
 def _encode_map_entry(key: str, value: str) -> bytes:
-    """Encode a single entry of a protobuf map<string, string> (field 1 key, field 2 value)."""
+    """编码 protobuf map<string, string> 的单个条目（field 1 为 key，field 2 为 value）。"""
     buf = b""
     if key:
         buf += _encode_field(1, WT_LEN, _encode_string(str(key)))
@@ -512,7 +512,7 @@ def _encode_map_entry(key: str, value: str) -> bytes:
 
 
 def _decode_map_entry(data: bytes) -> tuple[str, str]:
-    """Decode a single entry of a protobuf map<string, string>, returning (key, value)."""
+    """解码 protobuf map<string, string> 的单个条目，返回 (key, value)。"""
     fdict = _fields_to_dict(_parse_fields(data))
     return _get_string(fdict, 1), _get_string(fdict, 2)
 
@@ -541,7 +541,7 @@ def _encode_msg_content(content: dict) -> bytes:
         if url:
             img_buf += _encode_field(5, WT_LEN, _encode_string(url))
         buf += _encode_field(8, WT_LEN, _encode_message(img_buf))
-    # ext_map (map<string, string>, field 999) — repeated message entries
+    # ext_map（map<string, string>，field 999）—— repeated message 条目
     ext_map = content.get("ext_map")
     if isinstance(ext_map, dict):
         for k, v in ext_map.items():
@@ -579,7 +579,7 @@ def _decode_msg_content(data: bytes) -> dict:
             imgs.append(img)
     if imgs:
         content["image_info_array"] = imgs
-    # ext_map (field 999) — decode repeated map entries into a plain dict
+    # ext_map（field 999）—— 将 repeated map 条目解码为普通 dict
     ext_map: dict[str, str] = {}
     for entry_bytes in _get_repeated_bytes(fdict, 999):
         k, v = _decode_map_entry(entry_bytes)
@@ -626,9 +626,9 @@ def _encode_log_ext(trace_id: str) -> bytes:
 
 
 def _decode_im_msg_seq(data: bytes) -> dict:
-    """Decode a single ImMsgSeq sub-message (field 17 of InboundMessagePush).
+    """解码单个 ImMsgSeq 子消息（InboundMessagePush 的 field 17）。
 
-    ImMsgSeq proto fields:
+    ImMsgSeq proto 字段：
       1: msg_seq (uint64)
       2: msg_id  (string)
     """
@@ -648,7 +648,7 @@ def _decode_log_ext(data: bytes) -> dict:
 # 入站消息解析
 # ============================================================
 #
-# InboundMessagePush fields:
+# InboundMessagePush 字段：
 #   1: callback_command (string)
 #   2: from_account (string)
 #   3: to_account (string)
@@ -675,10 +675,10 @@ def decode_inbound_push(data: bytes) -> Optional[dict]:
     """
     解析入站消息推送的 biz payload（InboundMessagePush proto bytes）。
 
-    Args:
+    参数：
         data: ConnMsg.data 字段的 bytes（即 biz payload）
 
-    Returns:
+    返回：
         {
           "from_account":  str,
           "to_account":    str (可选),
@@ -747,17 +747,17 @@ def decode_inbound_push(data: bytes) -> Optional[dict]:
 
 
 # ============================================================
-# WeChat forwarded chat-history parsing (ForwardMsgData)
+# WeChat 转发聊天记录解析（ForwardMsgData）
 # ============================================================
 #
-# The value of ext_map["wexin_forward_msg_<id>_<userid>"] is a base64-encoded
-# ForwardMsgData protobuf (NOT JSON). Structure (verified against live captures):
+# ext_map["wexin_forward_msg_<id>_<userid>"] 的值是 base64 编码的
+# ForwardMsgData protobuf（不是 JSON）。结构（已对照真实抓包数据验证）：
 #
 #   message ForwardMsgData {
-#     uint32 sub_type   = 1;   // 1 = WeChat chat-history forward
+#     uint32 sub_type   = 1;   // 1 = 微信聊天记录转发
 #     uint32 begin_time = 2;
 #     uint32 end_time   = 3;
-#     string nick_name  = 4;   // forwarder's WeChat nickname
+#     string nick_name  = 4;   // 转发者的微信昵称
 #     repeated ForwardMsg msg = 5;
 #   }
 #   message ForwardMsg {
@@ -767,7 +767,7 @@ def decode_inbound_push(data: bytes) -> Optional[dict]:
 #     repeated MsgContent msgContent = 4;
 #   }
 #   message MsgContent {
-#     uint32 type = 1;                  // 1=TEXT, 2=MULTIMEDIA, 3=nested forward
+#     uint32 type = 1;                  // 1=TEXT，2=MULTIMEDIA，3=嵌套转发
 #     string text = 2;                  // type==1
 #     repeated Multimedia multimedia = 3;  // type==2
 #   }
@@ -778,13 +778,13 @@ def decode_inbound_push(data: bytes) -> Optional[dict]:
 #     uint32 file_size = 5;
 #     uint32 width     = 6;
 #     uint32 height    = 7;
-#     string media_id  = 15;  // can be used directly as a ybres RID
+#     string media_id  = 15;  // 可直接作为 ybres RID 使用
 #     string res_type  = 24;
 #   }
 
 
 def _decode_forward_multimedia(data: bytes) -> dict:
-    """Decode a single Multimedia sub-message into the dict shape expected by _format_multimedia."""
+    """解码单个 Multimedia 子消息，返回 _format_multimedia 所期望的 dict 结构。"""
     fdict = _fields_to_dict(_parse_fields(data))
     media: dict = {}
     mtype = _get_string(fdict, 1)
@@ -806,7 +806,7 @@ def _decode_forward_multimedia(data: bytes) -> dict:
 
 
 def _decode_forward_msg_content(data: bytes) -> dict:
-    """Decode a single MsgContent sub-message into {type, text?, multimedia?}."""
+    """解码单个 MsgContent 子消息为 {type, text?, multimedia?}。"""
     fdict = _fields_to_dict(_parse_fields(data))
     content: dict = {"type": _get_varint(fdict, 1)}
     text = _get_string(fdict, 2)
@@ -821,7 +821,7 @@ def _decode_forward_msg_content(data: bytes) -> dict:
 
 
 def _decode_forward_msg(data: bytes) -> dict:
-    """Decode a single ForwardMsg sub-message into {sender, plainText, msgContent}."""
+    """解码单个 ForwardMsg 子消息为 {sender, plainText, msgContent}。"""
     fdict = _fields_to_dict(_parse_fields(data))
     return {
         "sender": _get_string(fdict, 1),
@@ -834,15 +834,14 @@ def _decode_forward_msg(data: bytes) -> dict:
 
 
 def decode_forward_msg_data(data: bytes) -> Optional[dict]:
-    """Parse ForwardMsgData protobuf bytes (the base64-decoded ext_map value).
+    """解析 ForwardMsgData protobuf bytes（即 base64 解码后的 ext_map 值）。
 
-    Args:
-        data: ForwardMsgData protobuf bytes, after base64 decoding.
+    参数：
+        data: base64 解码后的 ForwardMsgData protobuf bytes。
 
-    Returns:
-        A dict matching the structure consumed by
-        ``ForwardedRecordsParseMiddleware.build_forward_text``
-        (``sub_type`` / ``nick_name`` / ``msg`` list); ``None`` on parse failure.
+    返回：
+        一个 dict，结构匹配 ``ForwardedRecordsParseMiddleware.build_forward_text``
+        所消费的格式（``sub_type`` / ``nick_name`` / ``msg`` 列表）；解析失败返回 ``None``。
     """
     try:
         fdict = _fields_to_dict(_parse_fields(data))
@@ -899,9 +898,9 @@ def _encode_forward_msg(msg: dict) -> bytes:
 
 
 def encode_forward_msg_data(data: dict) -> bytes:
-    """Encode ForwardMsgData protobuf bytes (inverse of ``decode_forward_msg_data``).
+    """编码 ForwardMsgData protobuf bytes（``decode_forward_msg_data`` 的逆操作）。
 
-    Mainly used to build mock / test data; production code never needs to encode this.
+    主要用于构造 mock / 测试数据；生产代码不需要编码此结构。
     """
     buf = _encode_field(1, WT_VARINT, _encode_varint(int(data.get("sub_type", 0))))
     for fn, key in [(2, "begin_time"), (3, "end_time")]:
@@ -917,7 +916,7 @@ def encode_forward_msg_data(data: dict) -> bytes:
 
 
 # ============================================================
-# Outbound message encoding
+# 出站消息编码
 # ============================================================
 def _encode_send_c2c_req(
     to_account: str,
@@ -930,9 +929,9 @@ def _encode_send_c2c_req(
     trace_id: str = "",
 ) -> bytes:
     """
-    Encode a SendC2CMessageReq biz payload.
+    编码 SendC2CMessageReq biz payload。
 
-    SendC2CMessageReq fields:
+    SendC2CMessageReq 字段：
       1: msg_id (string)
       2: to_account (string)
       3: from_account (string)
@@ -975,9 +974,9 @@ def _encode_send_group_req(
     trace_id: str = "",
 ) -> bytes:
     """
-    Encode a SendGroupMessageReq biz payload.
+    编码 SendGroupMessageReq biz payload。
 
-    SendGroupMessageReq fields:
+    SendGroupMessageReq 字段：
       1: msg_id (string)
       2: group_code (string)
       3: from_account (string)
@@ -1022,22 +1021,22 @@ def encode_send_c2c_message(
     trace_id: str = "",
 ) -> bytes:
     """
-    Encode a C2C send-message request and return the full ConnMsg bytes
-    (ready to be sent over WebSocket).
+    编码 C2C 发送消息请求，返回完整的 ConnMsg bytes
+    （可直接通过 WebSocket 发送）。
 
-    Args:
-        to_account:   recipient account
-        msg_body:     list of message-body elements; each item is
-                      {"msg_type": str, "msg_content": dict}.
-                      Example: [{"msg_type": "TIMTextElem", "msg_content": {"text": "hello"}}]
-        from_account: sender account (the bot account)
-        msg_id:       unique message ID (req_id is used when empty)
-        msg_random:   random number for de-duplication
-        msg_seq:      message sequence number (optional)
-        group_code:   filled in for the "private chat originating from a group" case
-        trace_id:     trace ID for request tracing
+    参数：
+        to_account:   接收方账号
+        msg_body:     消息体元素列表；每一项为
+                      {"msg_type": str, "msg_content": dict}。
+                      示例：[{"msg_type": "TIMTextElem", "msg_content": {"text": "hello"}}]
+        from_account: 发送方账号（bot 账号）
+        msg_id:       唯一消息 ID（为空时使用 req_id）
+        msg_random:   用于去重的随机数
+        msg_seq:      消息序列号（可选）
+        group_code:   “源自群聊的私聊”场景下填写
+        trace_id:     用于请求追踪的 trace ID
 
-    Returns:
+    返回：
         ConnMsg bytes
     """
     biz_bytes = _encode_send_c2c_req(
@@ -1074,21 +1073,21 @@ def encode_send_group_message(
     trace_id: str = "",
 ) -> bytes:
     """
-    Encode a group send-message request and return the full ConnMsg bytes
-    (ready to be sent over WebSocket).
+    编码群发送消息请求，返回完整的 ConnMsg bytes
+    （可直接通过 WebSocket 发送）。
 
-    Args:
-        group_code:   group ID
-        msg_body:     list of message-body elements
-        from_account: sender account (the bot account)
-        msg_id:       unique message ID
-        to_account:   targeted recipient (usually empty)
-        random:       random string for de-duplication
-        msg_seq:      message sequence number
-        ref_msg_id:   ID of the referenced (quoted) message
-        trace_id:     trace ID for request tracing
+    参数：
+        group_code:   群 ID
+        msg_body:     消息体元素列表
+        from_account: 发送方账号（bot 账号）
+        msg_id:       唯一消息 ID
+        to_account:   目标接收方（通常为空）
+        random:       用于去重的随机字符串
+        msg_seq:      消息序列号
+        ref_msg_id:   被引用（回复）消息的 ID
+        trace_id:     用于请求追踪的 trace ID
 
-    Returns:
+    返回：
         ConnMsg bytes
     """
     biz_bytes = _encode_send_group_req(
@@ -1132,7 +1131,7 @@ def encode_auth_bind(
     """
     构造 auth-bind 请求 ConnMsg bytes。
 
-    AuthBindReq fields:
+    AuthBindReq 字段：
       1: biz_id (string)
       2: auth_info (message AuthInfo: uid=1, source=2, token=3)
       3: device_info (message DeviceInfo: app_version=1, app_operation_system=2, instance_id=10, bot_version=24)
@@ -1247,7 +1246,7 @@ def encode_send_group_heartbeat(
     ts = send_time or int(_time.time() * 1000)
     buf = (
         _encode_field(1, WT_LEN, _encode_string(from_account))
-        + _encode_field(2, WT_LEN, _encode_string(""))  # to_account empty for group
+        + _encode_field(2, WT_LEN, _encode_string(""))  # 群场景下 to_account 留空
         + _encode_field(3, WT_LEN, _encode_string(group_code))
         + _encode_field(4, WT_VARINT, _encode_varint(ts))
         + _encode_field(5, WT_VARINT, _encode_varint(heartbeat))
@@ -1301,7 +1300,7 @@ def decode_query_group_info_rsp(data: bytes) -> Optional[dict]:
         uint32 group_size            = 4;
       }
 
-    Returns:
+    返回：
         解码后的 dict，或 None（解析失败）
     """
     try:
@@ -1313,7 +1312,7 @@ def decode_query_group_info_rsp(data: bytes) -> Optional[dict]:
         if msg:
             result["message"] = msg
 
-        # field 3 = nested GroupInfo message
+        # field 3 = 嵌套的 GroupInfo message
         gi_entries = fdict.get(3, [])
         gi_bytes = gi_entries[0][1] if gi_entries else b""
         if gi_bytes and isinstance(gi_bytes, (bytes, bytearray)):
@@ -1381,7 +1380,7 @@ def decode_get_group_member_list_rsp(data: bytes) -> Optional[dict]:
       4: join_time    (uint32)
       5: name_card    (string)  — 群昵称
 
-    Returns:
+    返回：
         {
           "code": int,
           "message": str,

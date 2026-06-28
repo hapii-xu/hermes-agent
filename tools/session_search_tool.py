@@ -1,49 +1,44 @@
 #!/usr/bin/env python3
 """
-Session Search Tool - Long-Term Conversation Recall
+会话搜索工具 - 长期对话回溯
 
-Single-shape tool with three calling modes (inferred from args, no explicit
-mode parameter):
+单一形态工具，有三种调用模式（由参数推断，没有显式的 mode 参数）：
 
-  1. DISCOVERY — pass ``query``. Runs FTS5, dedupes hits by session lineage,
-     returns top N sessions each with: snippet, ±5 message window around the
-     match, plus bookend_start (first 3 user+assistant msgs of session) and
-     bookend_end (last 3). Zero LLM cost.
+  1. 发现（DISCOVERY） —— 传入 ``query``。运行 FTS5，按会话血缘对命中去重，
+     返回前 N 个会话，每个会话附带：片段、匹配位置周围 ±5 条消息的窗口，
+     外加 bookend_start（会话最早的 3 条 user+assistant 消息）和
+     bookend_end（最后的 3 条）。零 LLM 开销。
 
-  2. SCROLL — pass ``session_id`` + ``around_message_id``. Returns a window
-     of ±window messages centered on the anchor, no FTS5, no bookends. To
-     scroll forward / backward, re-anchor on the last / first message id of
-     the returned window.
+  2. 滚动（SCROLL） —— 传入 ``session_id`` + ``around_message_id``。返回以
+     锚点为中心、±window 条消息的窗口，不跑 FTS5，没有 bookend。要向前/向后
+     滚动，把返回窗口最后/第一条消息的 id 重新作为锚点。
 
-  3. BROWSE — no args. Returns recent sessions chronologically (titles,
-     previews, timestamps).
+  3. 浏览（BROWSE） —— 不传参数。按时间顺序返回最近的会话（标题、预览、
+     时间戳）。
 
-All three modes operate on the SQLite session DB via the FTS5 index and
-the get_anchored_view / get_messages_around primitives in hermes_state.
-No LLM calls anywhere — every shape returns actual messages from the DB.
+三种模式都通过 FTS5 索引以及 hermes_state 中的 get_anchored_view /
+get_messages_around 原语操作 SQLite 会话数据库。任何地方都没有 LLM 调用 ——
+每种形态返回的都是数据库里的真实消息。
 
-History: PR #20238 (JabberELF) seeded a fast/summary dual-mode split; the
-toolkit expansion in PR #26419 (yoniebans) added the anchored drill-down,
-bookends, and sort. This module merges all of that into a single calling
-shape with no mode parameter, no summary LLM path, and explicit scroll
-support.
+历史：PR #20238（JabberELF）奠定了 fast/summary 双模式拆分；PR #26419
+（yoniebans）的工具集扩展加入了锚点下钻、bookend 和排序。本模块把所有这些
+合并为单一调用形态，没有 mode 参数，没有 summary LLM 路径，并显式支持滚动。
 """
 
 import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-# Sources that are excluded from session browsing/searching by default.
-# Third-party integrations tag their sessions with HERMES_SESSION_SOURCE=tool;
-# delegate subagent runs are tagged "subagent" — neither belongs in the
-# user's session history.
+# 默认从会话浏览/搜索中排除的来源。第三方集成用 HERMES_SESSION_SOURCE=tool
+# 标记它们的会话；委派子 agent 运行被标记为 "subagent" —— 两者都不属于用户的
+# 会话历史。
 _HIDDEN_SESSION_SOURCES = ("subagent", "tool")
 
 
 def _format_timestamp(ts: Union[int, float, str, None]) -> str:
-    """Convert a Unix timestamp (float/int) or ISO string to a human-readable date.
+    """把 Unix 时间戳（float/int）或 ISO 字符串转换为人类可读的日期。
 
-    Returns "unknown" for None, str(ts) if conversion fails.
+    None 时返回 "unknown"，转换失败时返回 str(ts)。
     """
     if ts is None:
         return "unknown"
@@ -66,7 +61,7 @@ def _format_timestamp(ts: Union[int, float, str, None]) -> str:
 
 
 def _resolve_to_parent(db, session_id: str) -> str:
-    """Walk parent_session_id chain to the lineage root. Falls back to input on errors."""
+    """沿 parent_session_id 链走到血缘根。出错时回退到输入。"""
     if not session_id:
         return session_id
     visited = set()
@@ -88,7 +83,7 @@ def _resolve_to_parent(db, session_id: str) -> str:
 
 
 def _shape_message(m: Dict[str, Any], anchor_id: Optional[int] = None) -> Dict[str, Any]:
-    """Slim a message row for the tool response. Keeps content even if empty."""
+    """精简一条消息行用于工具响应。即使内容为空也保留 content。"""
     entry = {
         "id": m.get("id"),
         "role": m.get("role"),
@@ -103,19 +98,18 @@ def _shape_message(m: Dict[str, Any], anchor_id: Optional[int] = None) -> Dict[s
         entry["tool_call_id"] = m.get("tool_call_id")
     if anchor_id is not None and m.get("id") == anchor_id:
         entry["anchor"] = True
-    # Strip None values to keep payload tight, but always keep content
-    # (absent content is meaningful — tool-call-only assistant turns).
+    # 去掉 None 值以保持载荷紧凑，但总是保留 content
+    # （缺失的 content 是有意义的 —— 仅含工具调用的 assistant 轮次）。
     return {k: v for k, v in entry.items() if v is not None or k in ("content",)}
 
 
 def _resolve_profile_db(profile: str):
-    """Open another profile's ``state.db`` read-only, or None for the current one.
+    """以只读方式打开另一个 profile 的 ``state.db``，或 None 表示用当前的。
 
-    The desktop's ``@session:<profile>/<id>`` links always carry the source
-    profile, so a linked session from profile B can be read while the agent
-    runs in profile A. ``read_only=True`` (mode=ro) takes no write lock — safe
-    to point at a live profile's DB, including our own. Returns None when no
-    profile is given (use the caller's default db).
+    桌面端的 ``@session:<profile>/<id>`` 链接总是携带来源 profile，所以当
+    agent 运行在 profile A 时也能读取来自 profile B 的链接会话。
+    ``read_only=True``（mode=ro）不取写锁 —— 指向一个活跃 profile 的 DB 是
+    安全的，包括我们自己的。未提供 profile 时返回 None（用调用方的默认 db）。
     """
     if profile is None or not str(profile).strip():
         return None
@@ -132,13 +126,12 @@ def _resolve_profile_db(profile: str):
 
 
 def _locate_session_db(session_id: str):
-    """Scan every profile's ``state.db`` (read-only) for a session id.
+    """（只读地）扫描每个 profile 的 ``state.db``，查找某个会话 id。
 
-    Returns ``(db, profile_name)`` for the first profile that owns the id, or
-    ``(None, None)``. Session ids are globally unique (timestamp + random hex),
-    so the first hit is authoritative. This is the safety net for linked-session
-    reads where the model dropped the owning profile from the link and passed a
-    bare id — we find it wherever it actually lives instead of failing.
+    返回第一个拥有该 id 的 profile 的 ``(db, profile_name)``，或
+    ``(None, None)``。会话 id 全局唯一（时间戳 + 随机 hex），所以首个命中
+    即具权威性。这是链接会话读取的安全网：当模型从链接里丢掉了所属 profile、
+    只传了一个裸 id 时 —— 我们在它实际所在之处找到它，而不是直接失败。
     """
     from pathlib import Path
 
@@ -176,12 +169,11 @@ def _locate_session_db(session_id: str):
 
 
 def _read_session(db, session_id: str, head: int = 20, tail: int = 10) -> str:
-    """Read shape: dump a whole session by id (head + tail when large).
+    """读取形态：按 id 转储整个会话（大时取 head + tail）。
 
-    Serves the linked-session case — the user dropped an @session reference and
-    the agent wants the transcript. Bounded payload: small sessions return in
-    full, large ones return the first ``head`` and last ``tail`` messages with a
-    pointer to scroll the middle.
+    服务于链接会话场景 —— 用户丢进来一个 @session 引用，agent 想要其转录。
+    有界载荷：小会话完整返回，大会话返回前 ``head`` 条和最后 ``tail`` 条消息，
+    并给出一个用来滚动中间部分的指针。
     """
     try:
         meta = db.get_session(session_id) or {}
@@ -225,13 +217,13 @@ def _read_session(db, session_id: str, head: int = 20, tail: int = 10) -> str:
 
 
 def _list_recent_sessions(db, limit: int, current_session_id: str = None) -> str:
-    """Return metadata for the most recent sessions (no LLM calls, no FTS5)."""
+    """返回最近会话的元数据（无 LLM 调用、无 FTS5）。"""
     try:
         sessions = db.list_sessions_rich(
             limit=limit + 5,
             exclude_sources=list(_HIDDEN_SESSION_SOURCES),
             order_by_last_active=True,
-        )  # fetch extra so we can skip current
+        )  # 多取一些，以便跳过当前会话
 
         current_root = _resolve_to_parent(db, current_session_id) if current_session_id else None
 
@@ -240,7 +232,7 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None) -> str
             sid = s.get("id", "")
             if current_root and (sid == current_root or sid == current_session_id):
                 continue
-            # Skip child / delegation sessions
+            # 跳过子会话 / 委派会话
             if s.get("parent_session_id"):
                 continue
             results.append({
@@ -274,11 +266,10 @@ def _scroll(
     window: int = 5,
     current_session_id: str = None,
 ) -> str:
-    """Scroll shape: return a window of messages centered on an anchor.
+    """滚动形态：返回以锚点为中心的一窗消息。
 
-    No FTS5, no bookends — just the slice. The discovery shape's lineage
-    fixup is preserved: if the anchor doesn't live in the named session
-    but does live in a child session in the same lineage, rebind silently.
+    无 FTS5、无 bookend —— 就是这一片切片。发现形态的血缘修正被保留：如果
+    锚点不在具名会话里、但确实在同一血缘的子会话里，则静默重绑定。
     """
     if not isinstance(session_id, str) or not session_id.strip():
         return tool_error("scroll requires session_id", success=False)
@@ -289,7 +280,7 @@ def _scroll(
     except (TypeError, ValueError):
         return tool_error("scroll requires integer around_message_id", success=False)
 
-    # Window clamp [1, 20]
+    # 窗口截断到 [1, 20]
     if not isinstance(window, int):
         try:
             window = int(window)
@@ -297,8 +288,7 @@ def _scroll(
             window = 5
     window = max(1, min(window, 20))
 
-    # Reject scrolling inside the active session lineage — those messages are
-    # already in context.
+    # 拒绝在活动会话血缘内滚动 —— 那些消息已在上下文里。
     if current_session_id:
         a_root = _resolve_to_parent(db, session_id)
         c_root = _resolve_to_parent(db, current_session_id)
@@ -308,7 +298,7 @@ def _scroll(
                 success=False,
             )
 
-    # Session existence check
+    # 会话存在性检查
     try:
         session_meta = db.get_session(session_id) or {}
     except Exception as e:
@@ -317,7 +307,7 @@ def _scroll(
     if not session_meta:
         return tool_error(f"session_id not found: {session_id}", success=False)
 
-    # Fetch the window
+    # 取窗口
     try:
         view = db.get_messages_around(session_id, around_message_id, window=window)
     except Exception as e:
@@ -326,9 +316,8 @@ def _scroll(
 
     messages = view.get("window") or []
 
-    # Lineage rebind: caller may have paired a parent session_id with a
-    # message id that lives in a descendant (compaction / delegation creates
-    # child sessions). Locate the real owning session and refetch.
+    # 血缘重绑定：调用方可能把一个父 session_id 与某个位于后代（压缩 / 委派
+    # 会产生子会话）里的消息 id 配对。定位真正的归属会话并重新取数。
     rebind_warning = None
     if not messages:
         owning = None
@@ -399,7 +388,7 @@ def _discover(
     sort: Optional[str],
     current_session_id: str = None,
 ) -> str:
-    """Discovery shape: FTS5 + anchored window + bookends per hit. Single call."""
+    """发现形态：FTS5 + 锚点窗口 + 每个命中的 bookend。单次调用。"""
     role_list = role_filter if role_filter else ["user", "assistant"]
 
     try:
@@ -407,7 +396,7 @@ def _discover(
             query=query,
             role_filter=role_list,
             exclude_sources=list(_HIDDEN_SESSION_SOURCES),
-            limit=50,  # widen so dedup-by-lineage can find distinct sessions
+            limit=50,  # 扩大范围，使按血缘去重能找到不同会话
             offset=0,
             sort=sort,
         )
@@ -427,14 +416,14 @@ def _discover(
 
     current_lineage_root = _resolve_to_parent(db, current_session_id) if current_session_id else None
 
-    # Dedupe by lineage. Keep the raw owning session_id on the surviving
-    # row — only that pairs validly with the FTS5 match id for the anchored
-    # window. parent_session_id is exposed separately when different.
+    # 按血缘去重。把原始归属 session_id 保留在幸存的行上 —— 只有它才能与
+    # FTS5 命中 id 配对，取到有效的锚点窗口。当不同时，另行暴露
+    # parent_session_id。
     seen_sessions = {}
     for r in raw_results:
         raw_sid = r["session_id"]
         resolved_sid = _resolve_to_parent(db, raw_sid)
-        # Skip the current session lineage
+        # 跳过当前会话血缘
         if current_lineage_root and resolved_sid == current_lineage_root:
             continue
         if current_session_id and raw_sid == current_session_id:
@@ -498,25 +487,25 @@ def session_search(
     limit: int = 3,
     db=None,
     current_session_id: str = None,
-    # Scroll shape
+    # 滚动态
     session_id: str = None,
     around_message_id: int = None,
     window: int = 5,
-    # Discovery shape
+    # 发现态
     sort: str = None,
-    # Cross-profile (any shape)
+    # 跨 profile（任意态）
     profile: str = None,
 ) -> str:
-    """Single-shape tool. Mode inferred from which args are set.
+    """单一形态工具。模式由设置了哪些参数推断。
 
-    Discovery: pass ``query``.
-    Scroll:    pass ``session_id`` + ``around_message_id``.
-    Read:      pass ``session_id`` (no anchor) — dumps the whole session.
-    Browse:    pass nothing.
+    发现：传入 ``query``。
+    滚动：传入 ``session_id`` + ``around_message_id``。
+    读取：传入 ``session_id``（无锚点） —— 转储整个会话。
+    浏览：什么都不传。
 
-    Pass ``profile`` to read another profile's sessions (e.g. resolving an
-    ``@session:<profile>/<id>`` link). Scroll wins over read/discovery when an
-    anchor is set — the agent has asked for a specific slice.
+    传入 ``profile`` 可读取另一个 profile 的会话（例如解析一个
+    ``@session:<profile>/<id>`` 链接）。设置锚点时滚动优先于读取/发现 ——
+    因为 agent 已经请求了一个具体的切片。
     """
     if db is None:
         try:
@@ -527,11 +516,10 @@ def session_search(
             from hermes_state import format_session_db_unavailable
             return tool_error(format_session_db_unavailable(), success=False)
 
-    # Normalise a raw `@session:<profile>/<id>` link value passed as session_id.
-    # Session ids never contain "/", so a slash unambiguously means profile/id —
-    # always strip the prefix off the id, and adopt the embedded profile only
-    # when one wasn't passed explicitly. Handles every permutation the model
-    # might send (full value as id, with or without a separate profile=).
+    # 归一化作为 session_id 传入的裸 `@session:<profile>/<id>` 链接值。
+    # 会话 id 永远不含 "/"，所以一个斜号无歧义地表示 profile/id —— 总是从
+    # id 上剥掉前缀，并仅当未显式传入 profile 时才采用内嵌的 profile。
+    # 覆盖模型可能发送的每一种排列（把完整值当 id、带或不带单独的 profile=）。
     if isinstance(session_id, str) and "/" in session_id:
         emb_profile, _, emb_id = session_id.partition("/")
         if emb_id:
@@ -539,9 +527,9 @@ def session_search(
             if emb_profile and (profile is None or not str(profile).strip()):
                 profile = emb_profile
 
-    # Cross-profile read: swap in the named profile's DB (read-only) for every
-    # shape below. The current-session-lineage guards no longer apply across
-    # profiles, but they key off ids that won't collide, so they stay inert.
+    # 跨 profile 读取：为下方每一种形态换入具名 profile 的 DB（只读）。
+    # 当前会话血缘守卫在跨 profile 时不再适用，但它们以不会冲突的 id 为键，
+    # 所以保持惰性。
     if profile is not None and str(profile).strip():
         try:
             profile_db = _resolve_profile_db(profile)
@@ -551,7 +539,7 @@ def session_search(
             db = profile_db
             current_session_id = None
 
-    # Scroll shape takes precedence — explicit anchor beats any query.
+    # 滚动态优先 —— 显式锚点胜过任何 query。
     if (isinstance(session_id, str) and session_id.strip()) and around_message_id is not None:
         return _scroll(
             db=db,
@@ -561,16 +549,15 @@ def session_search(
             current_session_id=current_session_id,
         )
 
-    # Read shape: a session_id with no anchor → dump the whole session.
+    # 读取态：一个不带锚点的 session_id → 转储整个会话。
     if isinstance(session_id, str) and session_id.strip():
         sid = session_id.strip()
         result = _read_session(db, sid)
         if json.loads(result).get("success"):
             return result
 
-        # Miss in the target profile — the model may have dropped the owning
-        # profile from the link. Scan every profile and read it from wherever
-        # it lives, tagging the profile it was found in.
+        # 在目标 profile 中未命中 —— 模型可能从链接里丢掉了归属 profile。
+        # 扫描所有 profile，从它实际所在之处读取，并标记找到它的 profile。
         located, owner = _locate_session_db(sid)
         if located is not None:
             try:
@@ -582,7 +569,7 @@ def session_search(
                 return json.dumps(found, ensure_ascii=False)
         return result
 
-    # Limit clamp [1, 10]
+    # limit 截断到 [1, 10]
     if not isinstance(limit, int):
         try:
             limit = int(limit)
@@ -590,16 +577,16 @@ def session_search(
             limit = 3
     limit = max(1, min(limit, 10))
 
-    # Browse shape: no query → recent sessions.
+    # 浏览态：无 query → 最近会话。
     if not query or not isinstance(query, str) or not query.strip():
         return _list_recent_sessions(db, limit, current_session_id)
 
-    # Parse role_filter
+    # 解析 role_filter
     role_list: Optional[List[str]] = None
     if isinstance(role_filter, str) and role_filter.strip():
         role_list = [r.strip() for r in role_filter.split(",") if r.strip()]
 
-    # Normalise sort
+    # 归一化 sort
     sort_norm: Optional[str] = None
     if isinstance(sort, str):
         candidate = sort.strip().lower()
@@ -617,7 +604,7 @@ def session_search(
 
 
 def check_session_search_requirements() -> bool:
-    """Requires the SQLite state database."""
+    """需要 SQLite 状态数据库。"""
     try:
         from hermes_state import DEFAULT_DB_PATH
         return DEFAULT_DB_PATH.parent.exists()
@@ -773,7 +760,7 @@ SESSION_SEARCH_SCHEMA = {
 }
 
 
-# --- Registry ---
+# --- 注册 ---
 from tools.registry import registry, tool_error
 
 registry.register(

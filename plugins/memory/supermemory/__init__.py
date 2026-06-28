@@ -1,7 +1,7 @@
-"""Supermemory memory plugin using the MemoryProvider interface.
+"""基于 MemoryProvider 接口的 Supermemory 记忆插件。
 
-Provides semantic long-term memory with profile recall, semantic search,
-explicit memory tools, cleaned turn capture, and session-end conversation ingest.
+提供语义化长期记忆，包括画像回忆、语义搜索、
+显式记忆工具、清理后的轮次捕获以及会话结束时的对话摄入。
 """
 
 from __future__ import annotations
@@ -106,8 +106,8 @@ def _load_supermemory_config(hermes_home: str) -> dict:
         except Exception:
             logger.debug("Failed to parse %s", config_path, exc_info=True)
 
-    # Keep raw container_tag — template variables like {identity} are resolved
-    # in initialize(), and _sanitize_tag runs AFTER resolution.
+    # 保留原始 container_tag —— 模板变量如 {identity} 将在
+    # initialize() 中解析，而 _sanitize_tag 在解析之后运行。
     raw_tag = str(config.get("container_tag", _DEFAULT_CONTAINER_TAG)).strip()
     config["container_tag"] = raw_tag if raw_tag else _DEFAULT_CONTAINER_TAG
     config["auto_recall"] = _as_bool(config.get("auto_recall"), True)
@@ -129,7 +129,7 @@ def _load_supermemory_config(hermes_home: str) -> dict:
     except Exception:
         config["api_timeout"] = _DEFAULT_API_TIMEOUT
 
-    # Multi-container support
+    # 多容器支持
     config["enable_custom_container_tags"] = _as_bool(config.get("enable_custom_container_tags"), False)
     raw_containers = config.get("custom_containers", [])
     if isinstance(raw_containers, list):
@@ -277,9 +277,9 @@ class _SupermemoryClient:
         )
 
     def _merge_metadata(self, metadata: Optional[dict]) -> dict:
-        # sm_source routes Hermes writes into the "Hermes" Space in the Supermemory
-        # app so the user can filter / bulk-manage them per source agent. This is a
-        # functional routing key for the user, not vendor telemetry.
+        # sm_source 将 Hermes 的写入路由到 Supermemory 应用中的 "Hermes" Space，
+        # 以便用户可以按来源 agent 进行过滤/批量管理。这是面向用户的
+        # 功能性路由键，而非供应商遥测。
         merged = {"sm_source": "hermes", **(metadata or {})}
         legacy_source = merged.pop("source", None)
         if legacy_source and "type" not in merged:

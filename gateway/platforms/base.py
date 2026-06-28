@@ -1,8 +1,8 @@
 """
-Base platform adapter interface.
+平台适配器基础接口。
 
-All platform adapters (Telegram, Discord, WhatsApp, Weixin, and more) inherit from this
-and implement the required methods.
+所有平台适配器（Telegram、Discord、WhatsApp、Weixin 等）都继承自该接口，
+并实现所需的方法。
 """
 
 import asyncio
@@ -24,20 +24,20 @@ from utils import normalize_proxy_url
 
 logger = logging.getLogger(__name__)
 
-# Audio file extensions Hermes recognizes for native audio delivery.
-# Kept in sync with tools/send_message_tool.py and cron/scheduler.py via
-# should_send_media_as_audio() below.
+# Hermes 用于原生音频投递所识别的音频文件扩展名。
+# 通过下面的 should_send_media_as_audio() 与 tools/send_message_tool.py
+# 以及 cron/scheduler.py 保持同步。
 _AUDIO_EXTS = frozenset({'.ogg', '.opus', '.mp3', '.wav', '.m4a', '.flac'})
-# Telegram's Bot API sendAudio only accepts MP3 / M4A. Other audio
-# formats either need to go through sendVoice (Opus/OGG) or must be
-# delivered as a regular document.
+# Telegram 的 Bot API sendAudio 仅接受 MP3 / M4A。其它音频
+# 格式要么需要走 sendVoice（Opus/OGG），要么必须作为
+# 普通文档来投递。
 _TELEGRAM_AUDIO_ATTACHMENT_EXTS = frozenset({'.mp3', '.m4a'})
 _TELEGRAM_VOICE_EXTS = frozenset({'.ogg', '.opus'})
 _POST_DELIVERY_CALLBACK_TIMEOUT_SECONDS = 30.0
 
 
 def _platform_name(platform) -> str:
-    """Normalize a Platform enum / raw string into a lowercase name."""
+    """将 Platform 枚举 / 原始字符串统一规范为小写名称。"""
     value = getattr(platform, "value", platform)
     return str(value or "").lower()
 
@@ -53,14 +53,14 @@ def _float_env(name: str, default: float) -> float:
 
 
 def _thread_metadata_for_source(source, reply_to_message_id: str | None = None) -> dict | None:
-    """Build platform-aware thread metadata for adapter sends.
+    """为适配器的发送构建具备平台感知能力的 thread 元数据。
 
-    Most platforms route threaded sends with a generic ``thread_id`` metadata
-    value. Telegram private-chat topics created through Hermes' DM-topic helper
-    are exposed in updates as ``message_thread_id`` plus a reply anchor. Live
-    user-message replies route with ``message_thread_id`` + ``reply_to_message_id``;
-    synthetic/resumed sends that have no reply anchor fall back to Telegram's
-    ``direct_messages_topic_id`` when the Bot API supports it.
+    多数平台通过一个通用的 ``thread_id`` 元数据值来路由带 thread 的发送。
+    通过 Hermes 的 DM-topic 辅助工具创建的 Telegram 私聊 topic，在更新中
+    会以 ``message_thread_id`` 加上一个回复锚点的形式暴露。用户实时消息
+    的回复通过 ``message_thread_id`` + ``reply_to_message_id`` 路由；
+    没有回复锚点的合成/恢复发送，会在 Bot API 支持时回退到 Telegram 的
+    ``direct_messages_topic_id``。
     """
     thread_id = getattr(source, "thread_id", None)
     if thread_id is None:
@@ -78,27 +78,26 @@ def _thread_metadata_for_source(source, reply_to_message_id: str | None = None) 
 
 
 def _mark_notify_metadata(metadata: dict | None) -> dict:
-    """Clone metadata and mark a user-visible reply as notify-worthy."""
+    """克隆元数据，并把一条用户可见的回复标记为值得通知。"""
     notify_metadata = dict(metadata) if metadata else {}
     notify_metadata["notify"] = True
     return notify_metadata
 
 
 def _reply_anchor_for_event(event) -> str | None:
-    """Return reply_to id for platforms that need reply semantics.
+    """为需要回复语义的平台返回 reply_to id。
 
-    Telegram forum/supergroup topics should be routed by topic metadata, not by
-    replying to the triggering message. Hermes-created Telegram private-chat
-    topic lanes prefer replying to the triggering user message so the answer
-    stays attached to the active lane; synthetic/resumed sends fall back to
-    ``direct_messages_topic_id`` metadata when no message id is available.
+    Telegram 论坛/超级群的 topic 应通过 topic 元数据来路由，而不是通过
+    回复触发消息来路由。Hermes 创建的 Telegram 私聊 topic 通道更倾向于
+    回复触发的用户消息，这样回答能附着在活跃的通道上；在没有可用消息 id
+    时，合成/恢复的发送会回退到 ``direct_messages_topic_id`` 元数据。
     """
     source = getattr(event, "source", None)
     platform = _platform_name(getattr(source, "platform", None))
     thread_id = getattr(source, "thread_id", None)
     if platform == "telegram" and thread_id and getattr(source, "chat_type", None) == "dm":
-        # Reply to the triggering user message. Replying to Telegram's earlier
-        # topic seed/anchor can render the bot response outside the active lane.
+        # 回复触发的用户消息。如果回复 Telegram 较早的
+        # topic 种子/锚点，可能会让 bot 的回复出现在活跃通道之外。
         return getattr(event, "message_id", None) or getattr(event, "reply_to_message_id", None)
     if platform == "telegram" and thread_id:
         return None
@@ -108,17 +107,15 @@ def _reply_anchor_for_event(event) -> str | None:
 
 
 def should_send_media_as_audio(platform, ext: str, is_voice: bool = False) -> bool:
-    """Return True when a media file should use the platform's audio sender.
+    """当媒体文件应使用平台的音频发送器时返回 True。
 
-    Other platforms: every recognized audio extension routes through the
-    audio sender.
+    其它平台：每个被识别的音频扩展名都会通过音频发送器路由。
 
-    Telegram: the Bot API only accepts MP3/M4A for sendAudio and
-    Opus/OGG for sendVoice. Opus/OGG is only routed as audio when the
-    caller flagged ``is_voice=True`` (so we don't turn a regular audio
-    attachment into a voice bubble just because the file happens to be
-    Opus). Everything else falls through to document delivery by
-    returning ``False``.
+    Telegram：Bot API 的 sendAudio 只接受 MP3/M4A，sendVoice
+    只接受 Opus/OGG。仅当调用方设置 ``is_voice=True`` 时，Opus/OGG
+    才会被当作音频路由（这样我们就不会仅仅因为文件恰好是 Opus 就把
+    一个普通音频附件变成一个语音气泡）。其它所有情况都通过返回
+    ``False`` 落入文档投递路径。
     """
     normalized_ext = (ext or "").lower()
     if normalized_ext not in _AUDIO_EXTS:
@@ -131,29 +128,28 @@ def should_send_media_as_audio(platform, ext: str, is_voice: bool = False) -> bo
 
 
 def utf16_len(s: str) -> int:
-    """Count UTF-16 code units in *s*.
+    """统计 *s* 中的 UTF-16 码元数量。
 
-    Telegram's message-length limit (4 096) is measured in UTF-16 code units,
-    **not** Unicode code-points.  Characters outside the Basic Multilingual
-    Plane (emoji like 😀, CJK Extension B, musical symbols, …) are encoded as
-    surrogate pairs and therefore consume **two** UTF-16 code units each, even
-    though Python's ``len()`` counts them as one.
+    Telegram 的消息长度上限（4096）以 UTF-16 码元为单位计量，而
+    **不是** Unicode 码点。基本多文种平面（BMP）之外的字符（如 😀 这样的
+    emoji、CJK 扩展 B、音乐符号……）会被编码为代理对，因此每个字符会占用
+    **两个** UTF-16 码元，尽管 Python 的 ``len()`` 会把它们计为 1。
 
-    Ported from nearai/ironclaw#2304 which discovered the same discrepancy in
-    Rust's ``chars().count()``.
+    移植自 nearai/ironclaw#2304，该 issue 在 Rust 的
+    ``chars().count()`` 中发现了同样的差异。
     """
     return len(s.encode("utf-16-le")) // 2
 
 
 def _prefix_within_utf16_limit(s: str, limit: int) -> str:
-    """Return the longest prefix of *s* whose UTF-16 length ≤ *limit*.
+    """返回 *s* 中 UTF-16 长度 ≤ *limit* 的最长前缀。
 
-    Unlike a plain ``s[:limit]``, this respects surrogate-pair boundaries so
-    we never slice a multi-code-unit character in half.
+    与单纯的 ``s[:limit]`` 不同，本函数会尊重代理对边界，因此绝不会把一个
+    占多个码元的字符从中间切断。
     """
     if utf16_len(s) <= limit:
         return s
-    # Binary search for the longest safe prefix
+    # 二分查找最长的安全前缀
     lo, hi = 0, len(s)
     while lo < hi:
         mid = (lo + hi + 1) // 2
@@ -165,11 +161,11 @@ def _prefix_within_utf16_limit(s: str, limit: int) -> str:
 
 
 def _custom_unit_to_cp(s: str, budget: int, len_fn) -> int:
-    """Return the largest codepoint offset *n* such that ``len_fn(s[:n]) <= budget``.
+    """返回最大的码点偏移量 *n*，使得 ``len_fn(s[:n]) <= budget``。
 
-    Used by :meth:`BasePlatformAdapter.truncate_message` when *len_fn* measures
-    length in units different from Python codepoints (e.g. UTF-16 code units).
-    Falls back to binary search which is O(log n) calls to *len_fn*.
+    在 *len_fn* 使用与 Python 码点不同的单位计量长度时（例如 UTF-16 码元），
+    被 :meth:`BasePlatformAdapter.truncate_message` 使用。
+    回退到二分查找，调用 *len_fn* 的次数为 O(log n)。
     """
     if len_fn(s) <= budget:
         return len(s)
@@ -184,31 +180,31 @@ def _custom_unit_to_cp(s: str, budget: int, len_fn) -> int:
 
 
 def is_network_accessible(host: str) -> bool:
-    """Return True if *host* would expose the server beyond loopback.
+    """当 *host* 会使服务器暴露在 loopback 之外时返回 True。
 
-    Loopback addresses (127.0.0.1, ::1, IPv4-mapped ::ffff:127.0.0.1)
-    are local-only.  Unspecified addresses (0.0.0.0, ::) bind all
-    interfaces.  Hostnames are resolved; DNS failure fails closed.
+    Loopback 地址（127.0.0.1、::1、IPv4-mapped ::ffff:127.0.0.1）
+    仅限本地。未指定地址（0.0.0.0、::）会绑定所有接口。
+    主机名会被解析；DNS 失败时按失败（fail closed）处理。
     """
     try:
         addr = ipaddress.ip_address(host)
         if addr.is_loopback:
             return False
-        # ::ffff:127.0.0.1 — Python reports is_loopback=False for mapped
-        # addresses, so check the underlying IPv4 explicitly.
+        # ::ffff:127.0.0.1 —— 对于 mapped 地址，Python 报告 is_loopback=False，
+        # 因此需要显式检查其底层 IPv4。
         if getattr(addr, "ipv4_mapped", None) and addr.ipv4_mapped.is_loopback:
             return False
         return True
     except ValueError:
-        # when host variable is a hostname, we should try to resolve below
+        # 当 host 变量是一个主机名时，我们在下面尝试解析它
         pass
 
     try:
         resolved = _socket.getaddrinfo(
             host, None, _socket.AF_UNSPEC, _socket.SOCK_STREAM,
         )
-        # if the hostname resolves into at least one non-loopback address,
-        # then we consider it to be network accessible
+        # 如果主机名至少解析到一个非 loopback 地址，
+        # 我们就认为它是网络可达的
         for _family, _type, _proto, _canonname, sockaddr in resolved:
             addr = ipaddress.ip_address(sockaddr[0])
             if not addr.is_loopback:
@@ -219,11 +215,10 @@ def is_network_accessible(host: str) -> bool:
 
 
 def _detect_macos_system_proxy() -> str | None:
-    """Read the macOS system HTTP(S) proxy via ``scutil --proxy``.
+    """通过 ``scutil --proxy`` 读取 macOS 系统 HTTP(S) 代理。
 
-    Returns an ``http://host:port`` URL string if an HTTP or HTTPS proxy is
-    enabled, otherwise *None*.  Falls back silently on non-macOS or on any
-    subprocess error.
+    如果启用了 HTTP 或 HTTPS 代理，则返回 ``http://host:port`` URL 字符串，
+    否则返回 *None*。在非 macOS 平台或任何子进程错误时静默回退。
     """
     if sys.platform != "darwin":
         return None
@@ -241,7 +236,7 @@ def _detect_macos_system_proxy() -> str | None:
             key, _, val = line.partition(" : ")
             props[key.strip()] = val.strip()
 
-    # Prefer HTTPS, fall back to HTTP
+    # 优先 HTTPS，回退到 HTTP
     for enable_key, host_key, port_key in (
         ("HTTPSEnable", "HTTPSProxy", "HTTPSPort"),
         ("HTTPEnable", "HTTPProxy", "HTTPPort"),
@@ -324,10 +319,10 @@ def _no_proxy_entry_matches(entry: str, host: str, port: int | None = None) -> b
 
 
 def should_bypass_proxy(target_hosts: str | list[str] | tuple[str, ...] | set[str] | None) -> bool:
-    """Return True when NO_PROXY/no_proxy matches at least one target host.
+    """当 NO_PROXY/no_proxy 匹配至少一个目标 host 时返回 True。
 
-    Supports exact hosts, domain suffixes, wildcard suffixes, IP literals,
-    CIDR ranges, optional host:port entries, and ``*``.
+    支持精确主机名、域名后缀、通配符后缀、IP 字面量、
+    CIDR 范围、可选的 host:port 条目以及 ``*``。
     """
     entries = _no_proxy_entries()
     if not entries or not target_hosts:
@@ -350,15 +345,15 @@ def resolve_proxy_url(
     *,
     target_hosts: str | list[str] | tuple[str, ...] | set[str] | None = None,
 ) -> str | None:
-    """Return a proxy URL from env vars, or macOS system proxy.
+    """从环境变量或 macOS 系统代理返回一个代理 URL。
 
-    Check order:
-      0. *platform_env_var* (e.g. ``DISCORD_PROXY``) — highest priority
-      1. HTTPS_PROXY / HTTP_PROXY / ALL_PROXY (and lowercase variants)
-      2. macOS system proxy via ``scutil --proxy`` (auto-detect)
+    检查顺序：
+      0. *platform_env_var*（例如 ``DISCORD_PROXY``）——优先级最高
+      1. HTTPS_PROXY / HTTP_PROXY / ALL_PROXY（及其小写变体）
+      2. 通过 ``scutil --proxy`` 获取 macOS 系统代理（自动检测）
 
-    Returns *None* if no proxy is found, or if NO_PROXY/no_proxy matches one
-    of ``target_hosts``.
+    如果没有找到代理，或者 NO_PROXY/no_proxy 匹配了某个 ``target_hosts``，
+    则返回 *None*。
     """
     if platform_env_var:
         value = (os.environ.get(platform_env_var) or "").strip()
@@ -380,16 +375,15 @@ def resolve_proxy_url(
 
 
 def proxy_kwargs_for_bot(proxy_url: str | None) -> dict:
-    """Build kwargs for ``commands.Bot()`` / ``discord.Client()`` with proxy.
+    """为带代理的 ``commands.Bot()`` / ``discord.Client()`` 构建 kwargs。
 
-    Returns:
+    返回值：
       - SOCKS URL  → ``{"connector": ProxyConnector(..., rdns=True)}``
       - HTTP URL   → ``{"proxy": url}``
       - *None*     → ``{}``
 
-    ``rdns=True`` forces remote DNS resolution through the proxy — required
-    by many SOCKS implementations (Shadowrocket, Clash) and essential for
-    bypassing DNS pollution behind the GFW.
+    ``rdns=True`` 强制通过代理进行远程 DNS 解析——许多 SOCKS 实现
+    （Shadowrocket、Clash）需要这样做，对于绕过 GFW 内的 DNS 污染也至关重要。
     """
     if not proxy_url:
         return {}
@@ -410,19 +404,18 @@ def proxy_kwargs_for_bot(proxy_url: str | None) -> dict:
 
 
 def proxy_kwargs_for_aiohttp(proxy_url: str | None) -> tuple[dict, dict]:
-    """Build kwargs for standalone ``aiohttp.ClientSession`` with proxy.
+    """为独立的 ``aiohttp.ClientSession`` 构建带代理的 kwargs。
 
-    Returns ``(session_kwargs, request_kwargs)`` where:
-      - With aiohttp-socks → ``({"connector": ProxyConnector(...)}, {})``
-        for *all* proxy schemes (SOCKS **and** HTTP/HTTPS).
-      - HTTP without aiohttp-socks → ``({}, {"proxy": url})``.
-      - None → ``({}, {})``.
+    返回 ``(session_kwargs, request_kwargs)``，其中：
+      - 使用 aiohttp-socks 时 → 对于*所有*代理协议（SOCKS **以及** HTTP/HTTPS），
+        返回 ``({"connector": ProxyConnector(...)}, {})``。
+      - 不带 aiohttp-socks 的 HTTP → ``({}, {"proxy": url})``。
+      - None → ``({}, {})``。
 
-    Prefer the connector path: it works transparently with libraries
-    (like mautrix) that call ``session.request()`` without forwarding
-    per-request ``proxy=`` kwargs.
+    优先使用 connector 路径：它能与那些调用 ``session.request()``
+    但不转发 per-request ``proxy=`` kwargs 的库（如 mautrix）透明协作。
 
-    Usage::
+    用法::
 
         sess_kw, req_kw = proxy_kwargs_for_aiohttp(proxy_url)
         async with aiohttp.ClientSession(**sess_kw) as session:
@@ -448,10 +441,10 @@ def proxy_kwargs_for_aiohttp(proxy_url: str | None) -> tuple[dict, dict]:
 
 
 def is_host_excluded_by_no_proxy(hostname: str, no_proxy_value: str | None = None) -> bool:
-    """Return True when ``hostname`` matches a ``NO_PROXY`` entry.
+    """当 ``hostname`` 匹配某个 ``NO_PROXY`` 条目时返回 True。
 
-    Supports comma- or whitespace-separated entries with optional leading dots
-    and ``*.`` wildcards, which match both the apex domain and subdomains.
+    支持以逗号或空白分隔的条目，可带可选的前导点和 ``*.`` 通配符，
+    这些会同时匹配顶级域名及其子域名。
     """
     raw = no_proxy_value
     if raw is None:
@@ -502,7 +495,7 @@ GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE = (
 
 
 def safe_url_for_log(url: str, max_len: int = 80) -> str:
-    """Return a URL string safe for logs (no query/fragment/userinfo)."""
+    """返回适合日志输出的安全 URL 字符串（不含 query/fragment/userinfo）。"""
     if max_len <= 0:
         return ""
 
@@ -519,7 +512,7 @@ def safe_url_for_log(url: str, max_len: int = 80) -> str:
         return raw[:max_len]
 
     if parsed.scheme and parsed.netloc:
-        # Strip potential embedded credentials (user:pass@host).
+        # 剥除可能嵌入的凭据（user:pass@host）。
         netloc = parsed.netloc.rsplit("@", 1)[-1]
         base = f"{parsed.scheme}://{netloc}"
         path = parsed.path or ""
@@ -539,12 +532,12 @@ def safe_url_for_log(url: str, max_len: int = 80) -> str:
 
 
 async def _ssrf_redirect_guard(response):
-    """Re-validate each redirect target to prevent redirect-based SSRF.
+    """对每个重定向目标重新校验，以防止基于重定向的 SSRF。
 
-    Without this, an attacker can host a public URL that 302-redirects to
-    http://169.254.169.254/ and bypass the pre-flight is_safe_url() check.
+    如果没有这一层，攻击者可以托管一个公开 URL，将其 302 重定向到
+    http://169.254.169.254/，从而绕过 pre-flight 的 is_safe_url() 检查。
 
-    Must be async because httpx.AsyncClient awaits response event hooks.
+    必须是 async 的，因为 httpx.AsyncClient 会 await 响应事件钩子。
     """
     if response.is_redirect and response.next_request:
         redirect_url = str(response.next_request.url)
@@ -556,42 +549,39 @@ async def _ssrf_redirect_guard(response):
 
 
 # ---------------------------------------------------------------------------
-# Image cache utilities
+# 图片缓存辅助工具
 #
-# When users send images on messaging platforms, we download them to a local
-# cache directory so they can be analyzed by the vision tool (which accepts
-# local file paths). This avoids issues with ephemeral platform URLs
-# (e.g. Telegram file URLs expire after ~1 hour).
+# 当用户在消息平台上发送图片时，我们会把它们下载到一个本地缓存目录，
+# 以便 vision 工具（接受本地文件路径）分析。这样可以避免平台 URL
+# 过期带来的问题（例如 Telegram 的文件 URL 会在约 1 小时后过期）。
 # ---------------------------------------------------------------------------
 
-# Default location: {HERMES_HOME}/cache/images/ (legacy: image_cache/)
+# 默认位置：{HERMES_HOME}/cache/images/（旧版：image_cache/）
 IMAGE_CACHE_DIR = get_hermes_dir("cache/images", "image_cache")
 
 # ---------------------------------------------------------------------------
-# Inbound media size cap (#13145)
+# 入站媒体大小上限（#13145）
 #
-# Inbound image / audio / video payloads are buffered fully into process
-# memory before being written to the cache directory. With no cap, a single
-# large upload (Discord Nitro allows 500 MB) — or a remote URL in an inbound
-# message payload pointing at an arbitrarily large file — can spike RAM and
-# OOM-kill the gateway. The ``cache_*_from_bytes`` helpers (the shared funnel
-# every platform reaches eventually) and the ``cache_*_from_url`` downloaders
-# enforce this cap, so the protection holds regardless of which platform
-# adapter or code path produced the bytes.
+# 入站的图片 / 音频 / 视频载荷在被写入缓存目录之前，会完整地缓冲到
+# 进程内存中。如果没有上限，单次大上传（Discord Nitro 允许 500 MB）——
+# 或者入站消息载荷中一个指向任意大文件的远程 URL——都会让内存飙升，
+# 把网关 OOM 杀掉。``cache_*_from_bytes`` 辅助函数（每个平台最终都会
+# 走到的共享漏斗）以及 ``cache_*_from_url`` 下载器会强制执行这个上限，
+# 因此无论哪个平台适配器或代码路径产生了这些字节，这层保护都成立。
 #
-# Configurable via ``gateway.max_inbound_media_bytes`` in config.yaml.
-# ``0`` disables the cap. Default 128 MiB — generous enough for ordinary
-# photos/voice notes/short clips while still bounding a hostile upload.
+# 可通过 config.yaml 中的 ``gateway.max_inbound_media_bytes`` 配置。
+# ``0`` 表示禁用上限。默认 128 MiB——对普通照片/语音消息/短视频足够宽裕，
+# 同时仍能约束恶意上传。
 # ---------------------------------------------------------------------------
 DEFAULT_INBOUND_MEDIA_MAX_BYTES = 128 * 1024 * 1024
 
 
 def get_inbound_media_max_bytes() -> int:
-    """Return the max inbound image/audio/video bytes allowed in memory.
+    """返回允许载入内存的入站图片/音频/视频最大字节数。
 
-    Reads ``gateway.max_inbound_media_bytes`` from config.yaml. ``0`` (or a
-    negative / unparseable value) disables the cap. Non-fatal if config is
-    unreadable — falls back to the default.
+    从 config.yaml 读取 ``gateway.max_inbound_media_bytes``。``0``（或
+    负数 / 无法解析的值）表示禁用上限。如果配置不可读，也不是致命错误——
+    回退到默认值。
     """
     try:
         from hermes_cli.config import load_config as _load_config
@@ -613,11 +603,11 @@ def validate_inbound_media_size(
     media_type: str = "media",
     max_bytes: Optional[int] = None,
 ) -> None:
-    """Raise ``ValueError`` if an inbound media payload exceeds the cap.
+    """当入站媒体载荷超过上限时抛出 ``ValueError``。
 
-    A ``max_bytes`` of ``0`` (or the configured cap resolving to ``0``)
-    disables the check entirely. Passing ``max_bytes`` lets callers resolve
-    the limit once and reuse it across an incremental read.
+    ``max_bytes`` 为 ``0``（或解析出的配置上限为 ``0``）时
+    完全禁用该检查。传入 ``max_bytes`` 可让调用方解析一次上限，
+    然后在增量读取过程中复用。
     """
     limit = get_inbound_media_max_bytes() if max_bytes is None else max_bytes
     if limit and size > limit:
@@ -628,11 +618,11 @@ def validate_inbound_media_size(
 
 
 async def _read_httpx_body_with_limit(response, *, media_type: str) -> bytes:
-    """Read an httpx streaming response body without exceeding the media cap.
+    """读取 httpx 流式响应体，同时不超过媒体上限。
 
-    Rejects early on an oversized ``Content-Length`` header, then re-checks
-    the running total as chunks arrive so a lying/absent header can't smuggle
-    an unbounded body past the cap.
+    在 ``Content-Length`` 头声明的大小超限时及早拒绝，随后在分块到达时
+    重新检查累计总量，这样即便头部撒谎或缺失，也无法把一个无界的响应体
+    偷渡过上限。
     """
     max_bytes = get_inbound_media_max_bytes()
     content_length = response.headers.get("content-length")
@@ -659,13 +649,13 @@ async def _read_httpx_body_with_limit(response, *, media_type: str) -> bytes:
 
 
 def get_image_cache_dir() -> Path:
-    """Return the image cache directory, creating it if it doesn't exist."""
+    """返回图片缓存目录，如不存在则创建。"""
     IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return IMAGE_CACHE_DIR
 
 
 def _looks_like_image(data: bytes) -> bool:
-    """Return True if *data* starts with a known image magic-byte sequence."""
+    """当 *data* 以已知的图片魔数字节序列开头时返回 True。"""
     if len(data) < 4:
         return False
     if data[:8] == b"\x89PNG\r\n\x1a\n":
@@ -683,18 +673,18 @@ def _looks_like_image(data: bytes) -> bool:
 
 def cache_image_from_bytes(data: bytes, ext: str = ".jpg") -> str:
     """
-    Save raw image bytes to the cache and return the absolute file path.
+    将原始图片字节保存到缓存，并返回绝对文件路径。
 
     Args:
-        data: Raw image bytes.
-        ext:  File extension including the dot (e.g. ".jpg", ".png").
+        data: 原始图片字节。
+        ext:  含点号的文件扩展名（如 ".jpg"、".png"）。
 
     Returns:
-        Absolute path to the cached image file as a string.
+        缓存图片文件的绝对路径字符串。
 
     Raises:
-        ValueError: If *data* does not look like a valid image (e.g. an HTML
-            error page returned by the upstream server).
+        ValueError: 如果 *data* 看起来不是一个合法的图片（例如上游服务器
+            返回的 HTML 错误页面）。
     """
     validate_inbound_media_size(len(data), media_type="image")
     if not _looks_like_image(data):
@@ -712,21 +702,21 @@ def cache_image_from_bytes(data: bytes, ext: str = ".jpg") -> str:
 
 async def cache_image_from_url(url: str, ext: str = ".jpg", retries: int = 2) -> str:
     """
-    Download an image from a URL and save it to the local cache.
+    从 URL 下载图片并保存到本地缓存。
 
-    Retries on transient failures (timeouts, 429, 5xx) with exponential
-    backoff so a single slow CDN response doesn't lose the media.
+    在瞬时故障（超时、429、5xx）时以指数退避重试，这样一次缓慢的 CDN
+    响应不会让媒体丢失。
 
     Args:
-        url: The HTTP/HTTPS URL to download from.
-        ext: File extension including the dot (e.g. ".jpg", ".png").
-        retries: Number of retry attempts on transient failures.
+        url: 要下载的 HTTP/HTTPS URL。
+        ext: 含点号的文件扩展名（如 ".jpg"、".png"）。
+        retries: 针对瞬时故障的重试次数。
 
     Returns:
-        Absolute path to the cached image file as a string.
+        缓存图片文件的绝对路径字符串。
 
     Raises:
-        ValueError: If the URL targets a private/internal network (SSRF protection).
+        ValueError: 如果 URL 指向私有/内部网络（SSRF 防护）。
     """
     from tools.url_safety import is_safe_url
     if not is_safe_url(url):
@@ -775,9 +765,9 @@ async def cache_image_from_url(url: str, ext: str = ".jpg", retries: int = 2) ->
 
 def cleanup_image_cache(max_age_hours: int = 24) -> int:
     """
-    Delete cached images older than *max_age_hours*.
+    删除早于 *max_age_hours* 的缓存图片。
 
-    Returns the number of files removed.
+    返回被删除的文件数量。
     """
     import time
 
@@ -795,31 +785,31 @@ def cleanup_image_cache(max_age_hours: int = 24) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Audio cache utilities
+# 音频缓存辅助工具
 #
-# Same pattern as image cache -- voice messages from platforms are downloaded
-# here so the STT tool (OpenAI Whisper) can transcribe them from local files.
+# 与图片缓存相同的模式——来自平台的语音消息会下载到这里，
+# 以便 STT 工具（OpenAI Whisper）从本地文件转录。
 # ---------------------------------------------------------------------------
 
 AUDIO_CACHE_DIR = get_hermes_dir("cache/audio", "audio_cache")
 
 
 def get_audio_cache_dir() -> Path:
-    """Return the audio cache directory, creating it if it doesn't exist."""
+    """返回音频缓存目录，如不存在则创建。"""
     AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return AUDIO_CACHE_DIR
 
 
 def cache_audio_from_bytes(data: bytes, ext: str = ".ogg") -> str:
     """
-    Save raw audio bytes to the cache and return the absolute file path.
+    将原始音频字节保存到缓存，并返回绝对文件路径。
 
     Args:
-        data: Raw audio bytes.
-        ext:  File extension including the dot (e.g. ".ogg", ".mp3").
+        data: 原始音频字节。
+        ext:  含点号的文件扩展名（如 ".ogg"、".mp3"）。
 
     Returns:
-        Absolute path to the cached audio file as a string.
+        缓存音频文件的绝对路径字符串。
     """
     validate_inbound_media_size(len(data), media_type="audio")
     cache_dir = get_audio_cache_dir()
@@ -831,21 +821,21 @@ def cache_audio_from_bytes(data: bytes, ext: str = ".ogg") -> str:
 
 async def cache_audio_from_url(url: str, ext: str = ".ogg", retries: int = 2) -> str:
     """
-    Download an audio file from a URL and save it to the local cache.
+    从 URL 下载音频文件并保存到本地缓存。
 
-    Retries on transient failures (timeouts, 429, 5xx) with exponential
-    backoff so a single slow CDN response doesn't lose the media.
+    在瞬时故障（超时、429、5xx）时以指数退避重试，这样一次缓慢的 CDN
+    响应不会让媒体丢失。
 
     Args:
-        url: The HTTP/HTTPS URL to download from.
-        ext: File extension including the dot (e.g. ".ogg", ".mp3").
-        retries: Number of retry attempts on transient failures.
+        url: 要下载的 HTTP/HTTPS URL。
+        ext: 含点号的文件扩展名（如 ".ogg"、".mp3"）。
+        retries: 针对瞬时故障的重试次数。
 
     Returns:
-        Absolute path to the cached audio file as a string.
+        缓存音频文件的绝对路径字符串。
 
     Raises:
-        ValueError: If the URL targets a private/internal network (SSRF protection).
+        ValueError: 如果 URL 指向私有/内部网络（SSRF 防护）。
     """
     from tools.url_safety import is_safe_url
     if not is_safe_url(url):
@@ -893,10 +883,10 @@ async def cache_audio_from_url(url: str, ext: str = ".ogg", retries: int = 2) ->
 
 
 # ---------------------------------------------------------------------------
-# Video cache utilities
+# 视频缓存辅助工具
 #
-# Same pattern as image/audio cache -- videos from platforms are downloaded
-# here so the agent can reference them by local file path.
+# 与图片/音频缓存相同的模式——来自平台的视频会下载到这里，
+# 以便 agent 通过本地文件路径引用它们。
 # ---------------------------------------------------------------------------
 
 VIDEO_CACHE_DIR = get_hermes_dir("cache/videos", "video_cache")
@@ -911,13 +901,13 @@ SUPPORTED_VIDEO_TYPES = {
 
 
 def get_video_cache_dir() -> Path:
-    """Return the video cache directory, creating it if it doesn't exist."""
+    """返回视频缓存目录，如不存在则创建。"""
     VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return VIDEO_CACHE_DIR
 
 
 def cache_video_from_bytes(data: bytes, ext: str = ".mp4") -> str:
-    """Save raw video bytes to the cache and return the absolute file path."""
+    """将原始视频字节保存到缓存，并返回绝对文件路径。"""
     validate_inbound_media_size(len(data), media_type="video")
     cache_dir = get_video_cache_dir()
     filename = f"video_{uuid.uuid4().hex[:12]}{ext}"
@@ -927,10 +917,10 @@ def cache_video_from_bytes(data: bytes, ext: str = ".mp4") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Document cache utilities
+# 文档缓存辅助工具
 #
-# Same pattern as image/audio cache -- documents from platforms are downloaded
-# here so the agent can reference them by local file path.
+# 与图片/音频缓存相同的模式——来自平台的文档会下载到这里，
+# 以便 agent 通过本地文件路径引用它们。
 # ---------------------------------------------------------------------------
 
 DOCUMENT_CACHE_DIR = get_hermes_dir("cache/documents", "document_cache")
@@ -940,12 +930,11 @@ _HERMES_ROOT = get_default_hermes_root()
 MEDIA_DELIVERY_ALLOW_DIRS_ENV = "HERMES_MEDIA_ALLOW_DIRS"
 MEDIA_DELIVERY_TRUST_RECENT_ENV = "HERMES_MEDIA_TRUST_RECENT_FILES"
 MEDIA_DELIVERY_TRUST_RECENT_SECONDS_ENV = "HERMES_MEDIA_TRUST_RECENT_SECONDS"
-# Strict mode toggles the original allowlist+recency path-validation behavior.
-# Off by default — symmetric with inbound (we accept any document type the
-# user uploads), and with the denylist still blocking obvious credential /
-# system paths. Operators running public-facing gateways where prompt
-# injection from one user could exfiltrate the host's secrets to that same
-# user should set this to true.
+# 严格模式切换原始的 allowlist+recency 路径校验行为。
+# 默认关闭——与入站对称（我们接受用户上传的任何文档类型），
+# 同时 denylist 仍然会拦截明显的凭据 / 系统路径。运行面向公众网关的
+# 运维者，如果某个用户的 prompt 注入可能把宿主机的机密外泄给同一个用户，
+# 就应把此项设为 true。
 MEDIA_DELIVERY_STRICT_ENV = "HERMES_MEDIA_DELIVERY_STRICT"
 MEDIA_DELIVERY_SAFE_ROOTS = (
     IMAGE_CACHE_DIR,
@@ -958,8 +947,8 @@ MEDIA_DELIVERY_SAFE_ROOTS = (
     _HERMES_HOME / "video_cache",
     _HERMES_HOME / "document_cache",
     _HERMES_HOME / "browser_screenshots",
-    # Canonical cache layout — listed alongside the legacy *_cache dirs so
-    # generated artifacts deliver on installs that have both (#31733).
+    # 规范的缓存布局——与旧版的 *_cache 目录一并列出，这样在两者
+    # 同时存在的安装上也能投递生成的产物（#31733）。
     _HERMES_HOME / "cache" / "images",
     _HERMES_HOME / "cache" / "audio",
     _HERMES_HOME / "cache" / "videos",
@@ -967,21 +956,17 @@ MEDIA_DELIVERY_SAFE_ROOTS = (
     _HERMES_HOME / "cache" / "screenshots",
 )
 
-# Default recency window for trusting freshly-produced files (seconds).
-# The agent's actual work generally completes well inside 10 minutes; legitimate
-# build artifacts (PDFs from pandoc, plots from matplotlib, etc.) almost always
-# land seconds before delivery. Old system files (/etc/passwd, ~/.ssh/id_rsa,
-# stray credentials) have mtimes measured in days or months — well outside this
-# window — so prompt-injection paths pointing at pre-existing host files are
-# still rejected.
+# 默认的、用于信任新生成文件的 recency 时间窗口（秒）。
+# agent 的实际工作通常在 10 分钟内完成；合法的构建产物
+# （pandoc 生成的 PDF、matplotlib 生成的图表等）几乎总是在投递前几秒落地。
+# 旧系统文件（/etc/passwd、~/.ssh/id_rsa、散落的凭据）的 mtime 以天或月计——
+# 远在这个窗口之外——因此指向宿主机既有文件的 prompt 注入路径仍会被拒绝。
 _MEDIA_DELIVERY_TRUST_RECENT_DEFAULT_SECONDS = 600
 
-# Hard denylist applied even when a path would otherwise pass recency trust.
-# These prefixes hold credentials, system state, or process introspection that
-# should never be uploaded as a gateway attachment, regardless of how new the
-# file looks. The cache-dir allowlist still beats this — an operator-configured
-# allowed root can intentionally live under one of these prefixes (rare, but
-# their choice).
+# 硬性 denylist，即便某条路径原本能通过 recency 信任也照样适用。
+# 这些前缀存放着凭据、系统状态或进程内省信息，无论文件看起来多新，
+# 都绝不应作为网关附件上传。缓存目录的 allowlist 仍然优先于此——
+# 运维者配置的允许根目录可以有意位于这些前缀之下（罕见，但属其选择）。
 _MEDIA_DELIVERY_DENIED_PREFIXES = (
     "/etc",
     "/proc",
@@ -994,9 +979,8 @@ _MEDIA_DELIVERY_DENIED_PREFIXES = (
     "/var/run",
 )
 
-# Within $HOME we additionally deny common credential / config directories.
-# Resolved at check time against the live $HOME so containers and alt-home
-# setups work correctly.
+# 在 $HOME 内，我们额外禁止常见的凭据 / 配置目录。
+# 在校验时依据实时 $HOME 解析，这样容器和 alt-home 设置也能正常工作。
 _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS = (
     ".ssh",
     ".aws",
@@ -1011,7 +995,7 @@ _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS = (
 
 
 def _media_delivery_allowed_roots() -> List[Path]:
-    """Return roots from which model-emitted local media may be delivered."""
+    """返回允许投递模型生成的本地媒体的根目录。"""
     roots = [Path(root) for root in MEDIA_DELIVERY_SAFE_ROOTS]
     extra_roots = os.environ.get(MEDIA_DELIVERY_ALLOW_DIRS_ENV, "")
     for chunk in extra_roots.split(os.pathsep):
@@ -1026,9 +1010,9 @@ def _media_delivery_allowed_roots() -> List[Path]:
 
 
 def _media_delivery_recency_seconds() -> float:
-    """Return the recency window for trusting freshly-produced files.
+    """返回信任新生成文件的 recency 时间窗口。
 
-    0 disables recency-based trust entirely (pure-allowlist mode).
+    0 表示完全禁用基于 recency 的信任（纯 allowlist 模式）。
     """
     raw = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_ENV, "1").strip().lower()
     if raw in ("0", "false", "no", "off", ""):
@@ -1044,62 +1028,56 @@ def _media_delivery_recency_seconds() -> float:
 
 
 def _media_delivery_strict_mode() -> bool:
-    """Return True when path validation should require allowlist/recency match.
+    """当路径校验应要求匹配 allowlist/recency 时返回 True。
 
-    Off by default. In non-strict mode, ``validate_media_delivery_path``
-    accepts any existing regular file that isn't under the credential /
-    system-path denylist — restoring the pre-#29523 behavior for the
-    single-user case. Strict mode preserves the original
-    allowlist+recency-window logic for operators running public-facing
-    gateways where prompt injection from one user shouldn't be able to
-    exfiltrate the host's secrets to that same user.
+    默认关闭。在非严格模式下，``validate_media_delivery_path``
+    接受任何不在凭据 / 系统路径 denylist 下的既有普通文件——
+    这为单用户场景恢复了 #29523 之前的行为。严格模式为运行面向公众
+    网关的运维者保留了原始的 allowlist+recency 窗口逻辑，在这种场景下，
+    某个用户的 prompt 注入不应能把宿主机的机密外泄给同一个用户。
     """
     raw = os.environ.get(MEDIA_DELIVERY_STRICT_ENV, "0").strip().lower()
     return raw in ("1", "true", "yes", "on")
 
 
 def _media_delivery_denied_paths() -> List[Path]:
-    """Return absolute denylist paths under which delivery is never allowed."""
+    """返回绝不允许投递的绝对 denylist 路径。"""
     denied = [Path(p) for p in _MEDIA_DELIVERY_DENIED_PREFIXES]
     home = Path(os.path.expanduser("~"))
     for sub in _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS:
         denied.append(home / sub)
-    # The active Hermes profile and shared Hermes root both contain control
-    # files and credentials. Only cache subdirectories under them are
-    # explicitly allowlisted above (matched BEFORE this denylist in
-    # validate_media_delivery_path, so generated media still delivers).
+    # 活动的 Hermes profile 和共享的 Hermes root 都包含控制文件和凭据。
+    # 只有它们之下的缓存子目录在上面被显式 allowlist（在
+    # validate_media_delivery_path 中先于此 denylist 匹配，因此生成的媒体仍会投递）。
     #
-    # These are the per-file credential / secret stores that live at the
-    # HERMES_HOME root. The set mirrors the canonical read guard in
-    # agent/file_safety.py (get_read_block_error / build_write_denied_*) so the
-    # delivery (read/exfil) side can't trail the write side: a credential the
-    # agent is forbidden to write or read must also never be auto-attached to a
-    # chat reply. Enumerated explicitly per-file rather than denying the whole
-    # tree, so skills/, logs/, and ad-hoc agent-written files under ~/.hermes
-    # stay deliverable (see #32090, #34425).
+    # 这些是位于 HERMES_HOME 根目录下的逐文件凭据 / 机密存储。该集合
+    # 与 agent/file_safety.py（get_read_block_error / build_write_denied_*）
+    # 中的规范读取守卫保持一致，使投递（读取/外泄）侧不会滞后于写入侧：
+    # 一个禁止 agent 写入或读取的凭据也绝不应被自动附加到聊天回复中。
+    # 此处逐文件显式枚举而非整棵树禁止，这样 skills/、logs/ 以及 ~/.hermes 下
+    # agent 临时写入的文件仍可投递（见 #32090、#34425）。
     _ROOT_CREDENTIAL_FILES = (
         ".env",
         "auth.json",
         "auth.lock",
         "credentials",
         "config.yaml",
-        # Anthropic PKCE / OAuth refresh credential store.
+        # Anthropic PKCE / OAuth 刷新凭据存储。
         ".anthropic_oauth.json",
-        # Google Workspace skill: auto-refreshing OAuth token (mtime bumps
-        # every turn, which defeated the strict-mode recency window) plus the
-        # pending-exchange session/verifier file.
+        # Google Workspace skill：自动刷新的 OAuth token（mtime 每轮都会
+        # 更新，这曾让严格模式的 recency 窗口失效）以及待交换的
+        # session/verifier 文件。
         "google_token.json",
         "google_oauth_pending.json",
         os.path.join("auth", "google_oauth.json"),
-        # Webhook subscription HMAC secrets.
+        # Webhook 订阅的 HMAC 机密。
         "webhook_subscriptions.json",
-        # Bitwarden Secrets Manager plaintext disk cache.
+        # Bitwarden Secrets Manager 明文磁盘缓存。
         os.path.join("cache", "bws_cache.json"),
     )
-    # Directory trees whose every child is credential material. (MCP OAuth
-    # tokens under mcp-tokens/ are handled by the sibling targeted PR #37222;
-    # session/kanban SQLite stores by #41071 — kept out of this diff to avoid
-    # overlap.)
+    # 每个子节点都是凭据材料的目录树。（mcp-tokens/ 下的 MCP OAuth
+    # token 由同期的定向 PR #37222 处理；session/kanban 的 SQLite 存储由
+    # #41071 处理——为避免重叠，未纳入本次改动。）
     _ROOT_CREDENTIAL_DIRS = (
         "pairing",
     )
@@ -1112,18 +1090,16 @@ def _media_delivery_denied_paths() -> List[Path]:
 
 
 def _path_under_denied_prefix(resolved: Path) -> bool:
-    """Return True if ``resolved`` lives under a deny-listed system path.
+    """当 ``resolved`` 位于某个被 deny 的系统路径之下时返回 True。
 
-    One narrow exception: when a denied prefix IS the running user's own home,
-    the home itself is not treated as denied. ``/root`` is on the system-path
-    denylist so that a non-root gateway can't deliver another user's home, but
-    on a root-run gateway ``$HOME=/root`` and the operator's own deliverables
-    (``/root/work/proposal.docx``) live directly under it. The credential
-    sub-directories inside home (``~/.ssh``, ``~/.aws``, ...) and Hermes
-    secrets (``~/.hermes/.env``, ``auth.json``) are *separate, more-specific*
-    denied paths, so they stay blocked regardless of this exception — it can
-    only un-block a plain file sitting in the running user's home tree, never a
-    credential location or another user's home.
+    一个狭窄的例外：当某个被禁前缀恰好就是当前运行用户自己的 home 时，
+    home 本身不被视为被禁。``/root`` 在系统路径 denylist 中，是为了让
+    非 root 的网关无法投递另一个用户的 home；但在 root 运行的网关里
+    ``$HOME=/root``，运维者自己的可投递物（``/root/work/proposal.docx``）
+    就直接位于其下。home 内的凭据子目录（``~/.ssh``、``~/.aws``、……）
+    以及 Hermes 机密（``~/.hermes/.env``、``auth.json``）是*独立的、更具体的*
+    被禁路径，因此无论该例外如何都保持拦截——该例外只能放行位于当前
+    运行用户 home 树中的普通文件，绝不会放行某个凭据位置或另一个用户的 home。
     """
     try:
         home = Path(os.path.expanduser("~")).resolve(strict=False)
@@ -1136,8 +1112,8 @@ def _path_under_denied_prefix(resolved: Path) -> bool:
             continue
         if not (_path_is_within(resolved, resolved_denied) or resolved == resolved_denied):
             continue
-        # Allow the running user's own home tree; its credential sub-dirs are
-        # caught by their own (more-specific) denylist entries above.
+        # 放行当前运行用户自己的 home 树；其凭据子目录由上面各自
+        # （更具体的）denylist 条目捕获。
         if home is not None and resolved_denied == home:
             continue
         return True
@@ -1145,12 +1121,11 @@ def _path_under_denied_prefix(resolved: Path) -> bool:
 
 
 def _file_is_recently_produced(resolved: Path, window_seconds: float) -> bool:
-    """Return True if the file's mtime is within ``window_seconds`` of now.
+    """当文件的 mtime 距现在不超过 ``window_seconds`` 时返回 True。
 
-    Used as a session-scoped trust signal: agents almost always produce
-    delivery artifacts within seconds of asking to send them, while
-    prompt-injection paths pointing at pre-existing host files (/etc/passwd,
-    ~/.ssh/id_rsa) have mtimes measured in days or months.
+    用作 session 级的信任信号：agent 几乎总是在请求发送后几秒内产出投递物，
+    而指向宿主机既有文件（/etc/passwd、~/.ssh/id_rsa）的 prompt 注入路径
+    的 mtime 通常以天或月计。
     """
     if window_seconds <= 0:
         return False
@@ -1170,24 +1145,21 @@ def _path_is_within(path: Path, root: Path) -> bool:
 
 
 def validate_media_delivery_path(path: str) -> Optional[str]:
-    """Return a safe absolute file path for native media delivery, else None.
+    """为原生媒体投递返回一个安全的绝对文件路径，否则返回 None。
 
-    Default mode (single-user / private gateway): accept any existing regular
-    file that isn't under the credential / system-path denylist
-    (``_MEDIA_DELIVERY_DENIED_PREFIXES`` + ``~/.ssh``, ``~/.aws``, etc.).
-    This matches the symmetry of inbound delivery — Telegram/Discord/Slack
-    will hand the agent any file the user uploads, and the agent can hand
-    back any file that isn't a credential.
+    默认模式（单用户 / 私有网关）：接受任何不在凭据 / 系统路径
+    denylist（``_MEDIA_DELIVERY_DENIED_PREFIXES`` + ``~/.ssh``、``~/.aws``
+    等）之下的既有普通文件。这与入站投递的对称性一致——
+    Telegram/Discord/Slack 会把用户上传的任何文件交给 agent，而 agent
+    也可以把任何非凭据文件交还给用户。
 
-    Strict mode (opt-in via ``gateway.strict`` in ``config.yaml`` or
-    ``HERMES_MEDIA_DELIVERY_STRICT=1``): the file MUST live under a
-    Hermes-managed cache, under an operator-allowlisted root
-    (``HERMES_MEDIA_ALLOW_DIRS``), or be freshly produced inside the
-    configured recency window. Suitable for public-facing bots where
-    prompt injection from one user shouldn't be able to exfiltrate the
-    host's secrets to that same user.
+    严格模式（通过 ``config.yaml`` 中的 ``gateway.strict`` 或
+    ``HERMES_MEDIA_DELIVERY_STRICT=1`` 开启）：文件必须位于 Hermes 管理的
+    缓存下、位于运维者 allowlist 的根目录（``HERMES_MEDIA_ALLOW_DIRS``）下，
+    或者在配置的 recency 窗口内新生成。适用于面向公众的 bot，在这种场景下，
+    某个用户的 prompt 注入不应能把宿主机的机密外泄给同一个用户。
 
-    Symlinks are resolved before any containment / denylist check.
+    符号链接会在任何归属 / denylist 校验之前被解析。
     """
     if not path:
         return None
@@ -1215,8 +1187,7 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
     if not resolved.is_file():
         return None
 
-    # Cache / operator allowlist is always honored — these are unconditionally
-    # trusted regardless of mode.
+    # 缓存 / 运维者的 allowlist 始终生效——这些被无条件信任，与模式无关。
     for root in _media_delivery_allowed_roots():
         try:
             resolved_root = root.expanduser().resolve(strict=False)
@@ -1225,23 +1196,21 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
         if _path_is_within(resolved, resolved_root):
             return str(resolved)
 
-    # Non-strict mode (default): accept anything not on the denylist.
-    # The denylist still blocks /etc, /proc, ~/.ssh, ~/.aws, and the
-    # credential/secret stores under the Hermes root (~/.hermes/.env,
-    # auth.json, .anthropic_oauth.json, google_token.json, pairing/, ...) —
-    # so the obvious prompt-injection / credential-exfil sites
-    # (``MEDIA:/etc/passwd``, ``MEDIA:~/.ssh/id_rsa``,
-    # ``MEDIA:~/.hermes/google_token.json``) remain rejected.
+    # 非严格模式（默认）：接受任何不在 denylist 中的内容。
+    # denylist 仍然会拦截 /etc、/proc、~/.ssh、~/.aws，以及 Hermes 根目录下
+    # 的凭据/机密存储（~/.hermes/.env、auth.json、.anthropic_oauth.json、
+    # google_token.json、pairing/、……）——因此那些显而易见的 prompt 注入 /
+    # 凭据外泄入口（``MEDIA:/etc/passwd``、``MEDIA:~/.ssh/id_rsa``、
+    # ``MEDIA:~/.hermes/google_token.json``）仍然被拒绝。
     if not _media_delivery_strict_mode():
         if _path_under_denied_prefix(resolved):
             return None
         return str(resolved)
 
-    # Strict mode: fall back to recency-based trust for freshly-produced
-    # files (e.g. ``pandoc -o /tmp/report.pdf`` or
-    # ``write_file("/home/user/report.pdf", ...)``). System paths and
-    # credential locations remain blocked even when "recent" — see
-    # ``_MEDIA_DELIVERY_DENIED_PREFIXES`` for the denylist.
+    # 严格模式：对于新生成文件（例如 ``pandoc -o /tmp/report.pdf`` 或
+    # ``write_file("/home/user/report.pdf", ...)``），回退到基于 recency 的信任。
+    # 即便“最近”生成，系统路径和凭据位置仍然被拦截——denylist 见
+    # ``_MEDIA_DELIVERY_DENIED_PREFIXES``。
     window = _media_delivery_recency_seconds()
     if window > 0 and not _path_under_denied_prefix(resolved):
         if _file_is_recently_produced(resolved, window):
@@ -1250,14 +1219,13 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
     return None
 
 
-# Neutralise control chars and the Unicode line separators (NEL, LS, PS) that
-# str.splitlines() / log aggregators treat as breaks, so a model-emitted path
-# can't forge a second log line. Truncated to keep records bounded.
+# 中和控制字符以及被 str.splitlines() / 日志聚合器视为换行的 Unicode 行分隔符
+# （NEL、LS、PS），这样模型输出的路径就无法伪造出第二条日志行。截断以保持记录有界。
 _LOG_UNSAFE_CHARS = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
 
 
 def _log_safe_path(path: str) -> str:
-    """Return a single-line, length-bounded path for log output."""
+    """返回适合日志输出的、单行且有长度上限的路径。"""
     return _LOG_UNSAFE_CHARS.sub("?", str(path))[:200]
 
 
@@ -1288,14 +1256,13 @@ SUPPORTED_DOCUMENT_TYPES = {
 
 
 # ---------------------------------------------------------------------------
-# Text-injection extension allowlist
+# 文本注入扩展名 allowlist
 #
-# Files whose contents are safe to inline into the prompt (UTF-8 text) when
-# small enough. This is intentionally an extension/MIME gate, NOT a blind
-# UTF-8 decode: binary formats like PDF/zip/docx can begin with decodable
-# ASCII headers and must never be inlined. Any uploaded file is still cached
-# and surfaced to the agent regardless of whether it lands in this set —
-# this only controls inline-vs-path-pointer for the prompt.
+# 当文件足够小时，其内容可以安全地内联进 prompt（UTF-8 文本）。
+# 这里有意做的是扩展名/MIME 门控，而不是盲目 UTF-8 解码：
+# 像 PDF/zip/docx 这样的二进制格式可能以可解码的 ASCII 头部开头，
+# 绝不能被内联。任何上传的文件无论是否落在该集合内，都会被缓存并呈现给
+# agent——这仅控制 prompt 中是内联还是路径指针。
 # ---------------------------------------------------------------------------
 
 _TEXT_INJECT_EXTENSIONS = {
@@ -1315,14 +1282,12 @@ _TEXT_INJECT_EXTENSIONS = {
 
 
 # ---------------------------------------------------------------------------
-# Image document types
+# 图片文档类型
 #
-# Image extensions that platforms may deliver as "documents" rather than
-# native photo attachments (Telegram users uploading via the file picker,
-# clients that wrap stickers/screenshots as files, etc.). When we see one
-# of these, we route the bytes through the image cache and the normal
-# vision/photo handling path instead of rejecting them as unsupported
-# documents.
+# 平台可能以“文档”而非原生照片附件形式投递的图片扩展名（Telegram 用户通过
+# 文件选择器上传、把贴纸/截图包装成文件的客户端等）。当我们看到其中之一时，
+# 会把这些字节路由到图片缓存和正常的视觉/照片处理路径，而不是当作
+# 不支持的文档拒绝。
 # ---------------------------------------------------------------------------
 
 SUPPORTED_IMAGE_DOCUMENT_TYPES = {
@@ -1335,67 +1300,61 @@ SUPPORTED_IMAGE_DOCUMENT_TYPES = {
 
 
 # ---------------------------------------------------------------------------
-# Media-delivery extension allowlist — SINGLE SOURCE OF TRUTH
+# 媒体投递扩展名 allowlist —— 唯一事实来源
 #
-# Both extractors that turn response text into native attachments derive their
-# extension set from this tuple:
-#   * ``extract_media()``       — explicit ``MEDIA:<path>`` tags
-#   * ``extract_local_files()`` — bare absolute/home paths the agent mentions
+# 两个把响应文本转换为原生附件的提取器都从该元组派生各自的扩展名集合：
+#   * ``extract_media()``       —— 显式的 ``MEDIA:<path>`` 标签
+#   * ``extract_local_files()`` —— agent 提及的裸绝对/家目录路径
 #
-# Historically these two carried independently-maintained extension lists.
-# ``extract_media`` had a narrow list (no .md/.json/.yaml/.xml/.html/...) while
-# ``extract_local_files`` had a broad one. Combined with the unconditional
-# ``MEDIA:\\s*\\S+`` cleanup at the dispatch sites, that mismatch created a
-# silent black hole: a ``MEDIA:/report.md`` tag failed the narrow extract_media
-# match, got stripped from the body by the loose cleanup regex, and was then
-# invisible to extract_local_files — the file was never delivered (issue
-# #34517). Keeping one list eliminates the drift; building the cleanup regexes
-# from the same set means a tag is only stripped when its extension is one we
-# can actually deliver, so an unknown-extension path survives in the body
-# instead of vanishing.
+# 历史上这两者维护着各自独立的扩展名列表。``extract_media`` 列表很窄
+# （没有 .md/.json/.yaml/.xml/.html/...），而 ``extract_local_files``
+# 列表很宽。再加上分发点处无条件的 ``MEDIA:\\s*\\S+`` 清理，这种不一致
+# 制造了一个无声黑洞：一个 ``MEDIA:/report.md`` 标签没能通过窄列表的
+# extract_media 匹配，又被宽松的清理正则从正文中剥除，接着对
+# extract_local_files 不可见——文件永远不会被投递（issue #34517）。
+# 保持单一列表消除了这种漂移；从同一集合构造清理正则意味着：只有当
+# 标签的扩展名确实能投递时才剥除，因此未知扩展名的路径会在正文中保留，
+# 而不是凭空消失。
 #
-# Covers images (inline), video (inline where supported), audio (voice/audio),
-# documents/spreadsheets/presentations (send_document), archives, and rendered
-# web output. The dispatch partition (image vs video vs document) lives in
-# ``gateway/run.py``.
+# 覆盖图片（内联）、视频（受支持处内联）、音频（语音/音频）、
+# 文档/电子表格/演示文稿（send_document）、归档以及渲染后的 web 输出。
+# 分发划分（image vs video vs document）位于 ``gateway/run.py``。
 # ---------------------------------------------------------------------------
 
 MEDIA_DELIVERY_EXTS: Tuple[str, ...] = (
-    # Images (embed inline)
+    # 图片（内联嵌入）
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".svg",
-    # Video (embed inline where supported)
+    # 视频（受支持处内联嵌入）
     ".mp4", ".mov", ".avi", ".mkv", ".webm",
-    # Audio (delivered as voice/audio where supported)
+    # 音频（受支持处以语音/音频投递）
     ".mp3", ".wav", ".ogg", ".opus", ".m4a", ".flac",
-    # Documents (uploaded as file attachments)
+    # 文档（作为文件附件上传）
     ".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md", ".epub",
-    # Spreadsheets / data
+    # 电子表格 / 数据
     ".xlsx", ".xls", ".ods", ".csv", ".tsv", ".json", ".xml", ".yaml", ".yml",
-    # Presentations
+    # 演示文稿
     ".pptx", ".ppt", ".odp", ".key",
-    # Archives
+    # 归档
     ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".apk", ".ipa",
-    # Web / rendered output
+    # Web / 渲染输出
     ".html", ".htm",
 )
 
-# Regex alternation fragment of bare extensions (no leading dot), e.g.
-# ``png|jpe?g|...``. ``jpe?g`` collapses jpg/jpeg into one branch. Sorted
-# longest-first so the alternation never matches a shorter ext as a prefix of
-# a longer one (e.g. ``.tar`` before ``.tar.gz`` components).
+# 裸扩展名（无前导点）的正则 alternation 片段，例如 ``png|jpe?g|...``。
+# ``jpe?g`` 把 jpg/jpeg 合并成一个分支。按长度从长到短排序，这样 alternation
+# 就不会把一个较短的扩展名匹配成较长扩展名的前缀（例如 ``.tar`` 优先于
+# ``.tar.gz`` 的组成部分）。
 _MEDIA_EXT_ALTERNATION = "|".join(
     sorted((e.lstrip(".") for e in MEDIA_DELIVERY_EXTS), key=len, reverse=True)
 )
 
-# Anchored ``MEDIA:<path>`` cleanup pattern. Unlike the old loose
-# ``MEDIA:\\s*\\S+``, this only strips a tag whose path ends in a known
-# deliverable extension (optionally quoted/backticked). A ``MEDIA:`` tag with
-# an unknown extension is left in the text so it can still be picked up by the
-# bare-path detector (extract_local_files) downstream rather than silently
-# deleted. Shared by the non-streaming dispatch path and the streaming
-# consumer so both behave identically.
-# Path anchors: ``~/`` (Unix home-relative), ``/`` (Unix absolute),
-# ``X:\\`` or ``X:/`` (Windows drive-letter absolute — #34632).
+# 锚定的 ``MEDIA:<path>`` 清理模式。与旧的宽松 ``MEDIA:\\s*\\S+`` 不同，
+# 它只会剥除路径以已知可投递扩展名结尾（可选地被引号/反引号包裹）的标签。
+# 带未知扩展名的 ``MEDIA:`` 标签会保留在文本中，以便下游的裸路径检测器
+# （extract_local_files）仍能拾取它，而不是被静默删除。被非流式分发路径和
+# 流式 consumer 共享，使二者行为一致。
+# 路径锚点：``~/``（Unix 家目录相对路径）、``/``（Unix 绝对路径）、
+# ``X:\\`` 或 ``X:/``（Windows 盘符绝对路径 —— #34632）。
 MEDIA_TAG_CLEANUP_RE = re.compile(
     r'''[`"']?MEDIA:\s*'''
     r'''(?P<path>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|'''
@@ -1406,37 +1365,37 @@ MEDIA_TAG_CLEANUP_RE = re.compile(
 
 
 def get_document_cache_dir() -> Path:
-    """Return the document cache directory, creating it if it doesn't exist."""
+    """返回文档缓存目录，如不存在则创建。"""
     DOCUMENT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return DOCUMENT_CACHE_DIR
 
 
 def cache_document_from_bytes(data: bytes, filename: str) -> str:
     """
-    Save raw document bytes to the cache and return the absolute file path.
+    将原始文档字节保存到缓存，并返回绝对文件路径。
 
-    The cached filename preserves the original human-readable name with a
-    unique prefix: ``doc_{uuid12}_{original_filename}``.
+    缓存的文件名会保留原始可读名称，并加上唯一前缀：
+    ``doc_{uuid12}_{原始文件名}``。
 
     Args:
-        data: Raw document bytes.
-        filename: Original filename (e.g. "report.pdf").
+        data: 原始文档字节。
+        filename: 原始文件名（例如 "report.pdf"）。
 
     Returns:
-        Absolute path to the cached document file as a string.
+        缓存文档文件的绝对路径字符串。
 
     Raises:
-        ValueError: If the sanitized path escapes the cache directory.
+        ValueError: 如果净化后的路径逃逸出缓存目录。
     """
     cache_dir = get_document_cache_dir()
-    # Sanitize: strip directory components, null bytes, and control characters
+    # 净化：剥除目录成分、空字节和控制字符
     safe_name = Path(filename).name if filename else "document"
     safe_name = safe_name.replace("\x00", "").strip()
     if not safe_name or safe_name in {".", ".."}:
         safe_name = "document"
     cached_name = f"doc_{uuid.uuid4().hex[:12]}_{safe_name}"
     filepath = cache_dir / cached_name
-    # Final safety check: ensure path stays inside cache dir
+    # 最终安全检查：确保路径仍在缓存目录内
     if not filepath.resolve().is_relative_to(cache_dir.resolve()):
         raise ValueError(f"Path traversal rejected: {filename!r}")
     filepath.write_bytes(data)
@@ -1445,9 +1404,9 @@ def cache_document_from_bytes(data: bytes, filename: str) -> str:
 
 def cleanup_document_cache(max_age_hours: int = 24) -> int:
     """
-    Delete cached documents older than *max_age_hours*.
+    删除早于 *max_age_hours* 的缓存文档。
 
-    Returns the number of files removed.
+    返回被删除的文件数量。
     """
     import time
 
@@ -1465,32 +1424,31 @@ def cleanup_document_cache(max_age_hours: int = 24) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Unified media caching
+# 统一的媒体缓存
 #
-# One entry point for "I have raw attachment bytes from a platform — cache them
-# and tell me what I got." Classifies by extension/MIME against the shared
-# registries above, routes to the right cache_*_from_bytes helper, and returns
-# a small result the caller can store and/or describe in a transcript. Used by
-# both the addressed-message path and the observed-group-context path, on any
-# platform — not Telegram-specific.
+# “我拿到了来自平台的原始附件字节——缓存它们并告诉我得到了什么”的
+# 单一入口。按扩展名/MIME 对照上面共享的注册表分类，路由到正确的
+# cache_*_from_bytes 辅助函数，并返回一个小结果对象，调用方可以存储它
+# 和/或在 transcript 中描述。被 addressed-message 路径和
+# observed-group-context 路径共同使用，适用于任何平台——并非 Telegram 专用。
 # ---------------------------------------------------------------------------
 
 @dataclass
 class CachedMedia:
-    """Result of caching one attachment's bytes."""
+    """缓存一个附件字节的结果。"""
 
-    path: str                 # absolute cache path, agent-visible (sandbox-translated)
-    media_type: str           # MIME type recorded on the MessageEvent
+    path: str                 # 绝对缓存路径，agent 可见（已做沙箱翻译）
+    media_type: str           # 记录在 MessageEvent 上的 MIME 类型
     kind: str                 # "image" | "video" | "audio" | "document"
-    display_name: str         # human-readable name for transcript notes
+    display_name: str         # 用于 transcript 备注的可读名称
 
     def context_note(self) -> str:
-        """One-line transcript annotation pointing the agent at the file."""
+        """指向该文件的单行 transcript 标注。"""
         return f"[{self.kind} '{self.display_name}' saved at: {self.path}]"
 
 
 def _resolve_media_ext(filename: str, mime_type: str) -> str:
-    """Best-effort file extension from filename, then MIME fallback."""
+    """尽力从文件名推断扩展名，再回退到 MIME。"""
     if filename:
         ext = os.path.splitext(filename)[1].lower()
         if ext:
@@ -1516,14 +1474,13 @@ def cache_media_bytes(
     mime_type: str = "",
     default_kind: Optional[str] = None,
 ) -> Optional[CachedMedia]:
-    """Classify and cache raw attachment bytes; return a CachedMedia or None.
+    """对原始附件字节分类并缓存；返回一个 CachedMedia 或 None。
 
-    ``default_kind`` ("image"/"video"/"audio"/"document") biases classification
-    when the extension/MIME are ambiguous — e.g. a Telegram native photo whose
-    file has no usable name. Any non-image/video/audio file is cached as a
-    document and surfaced to the agent (arbitrary types get
-    ``application/octet-stream``); only images that fail validation
-    (``cache_image_from_bytes`` raises ValueError) return None.
+    ``default_kind``（"image"/"video"/"audio"/"document"）在扩展名/MIME
+    不明确时影响分类——例如一个没有可用文件名的 Telegram 原生照片。任何
+    非图片/视频/音频的文件都会作为文档缓存并呈现给 agent（任意类型都会得到
+    ``application/octet-stream``）；只有校验失败的图片
+    （``cache_image_from_bytes`` 抛出 ValueError）才会返回 None。
     """
     from tools.credential_files import to_agent_visible_cache_path
 
@@ -1559,13 +1516,12 @@ def cache_media_bytes(
         out_mime = mime if mime.startswith("audio/") else f"audio/{aud_ext.lstrip('.')}"
         return CachedMedia(to_agent_visible_cache_path(path), out_mime, "audio", display)
 
-    # Any other file type is cached and surfaced to the agent as a local path
-    # so it can be inspected with terminal / read_file / etc. Authorization to
-    # talk to the agent is the gate that matters — once a user is allowed to
-    # message it, the file-extension allowlist must not silently drop their
-    # uploads. Known extensions keep their precise MIME; everything else is
-    # tagged application/octet-stream (or the caller-supplied MIME) so the
-    # agent knows it's an arbitrary file and reaches for terminal tools.
+    # 任何其它文件类型都被缓存并以本地路径呈现给 agent，
+    # 以便用 terminal / read_file 等检查。授权与 agent 对话才是关键门槛——
+    # 一旦允许用户向 agent 发消息，文件扩展名 allowlist 就不应静默丢弃其
+    # 上传。已知扩展名保留其精确 MIME；其余一律标记为
+    # application/octet-stream（或调用方提供的 MIME），让 agent 知道这是一个
+    # 任意文件，转而使用 terminal 工具。
     fallback_name = filename or (f"document{ext}" if ext else "document.bin")
     path = cache_document_from_bytes(data, fallback_name)
     if ext in SUPPORTED_DOCUMENT_TYPES:
@@ -1576,7 +1532,7 @@ def cache_media_bytes(
 
 
 class MessageType(Enum):
-    """Types of incoming messages."""
+    """入站消息的类型。"""
     TEXT = "text"
     LOCATION = "location"
     PHOTO = "photo"
@@ -1585,11 +1541,11 @@ class MessageType(Enum):
     VOICE = "voice"
     DOCUMENT = "document"
     STICKER = "sticker"
-    COMMAND = "command"  # /command style
+    COMMAND = "command"  # /command 风格
 
 
 class ProcessingOutcome(Enum):
-    """Result classification for message-processing lifecycle hooks."""
+    """消息处理生命周期钩子的结果分类。"""
 
     SUCCESS = "success"
     FAILURE = "failure"
@@ -1599,88 +1555,85 @@ class ProcessingOutcome(Enum):
 @dataclass
 class MessageEvent:
     """
-    Incoming message from a platform.
-    
-    Normalized representation that all adapters produce.
+    来自某个平台的入站消息。
+
+    所有适配器都会产出的规范化表示。
     """
-    # Message content
+    # 消息内容
     text: str
     message_type: MessageType = MessageType.TEXT
-    
-    # Source information
+
+    # 来源信息
     source: SessionSource = None
-    
-    # Original platform data
+
+    # 原始平台数据
     raw_message: Any = None
     message_id: Optional[str] = None
 
-    # Platform-specific update identifier.  For Telegram this is the
-    # ``update_id`` from the PTB Update wrapper; other platforms currently
-    # ignore it.  Used by ``/restart`` to record the triggering update so the
-    # new gateway can advance the Telegram offset past it and avoid processing
-    # the same ``/restart`` twice if PTB's graceful-shutdown ACK times out
-    # ("Error while calling `get_updates` one more time to mark all fetched
-    # updates" in gateway.log).
+    # 平台特定的更新标识符。对于 Telegram，这是 PTB Update 包装器中的
+    # ``update_id``；其它平台目前忽略它。``/restart`` 用它记录触发该动作的
+    # 更新，以便新网关能把 Telegram offset 推进到它之后，避免在 PTB 的
+    # 优雅关闭 ACK 超时时重复处理同一条 ``/restart``
+    # （gateway.log 中会出现 "Error while calling `get_updates` one more
+    # time to mark all fetched updates"）。
     platform_update_id: Optional[int] = None
-    
-    # Media attachments
-    # media_urls: local file paths (for vision tool access)
+
+    # 媒体附件
+    # media_urls：本地文件路径（供 vision 工具访问）
     media_urls: List[str] = field(default_factory=list)
     media_types: List[str] = field(default_factory=list)
-    
-    # Reply context
+
+    # 回复上下文
     reply_to_message_id: Optional[str] = None
-    reply_to_text: Optional[str] = None  # Text of the replied-to message (for context injection)
+    reply_to_text: Optional[str] = None  # 被回复消息的文本（用于上下文注入）
     reply_to_author_id: Optional[str] = None
     reply_to_author_name: Optional[str] = None
-    reply_to_is_own_message: bool = False  # True when the user replied to this bot/assistant's message
-    
-    # Auto-loaded skill(s) for topic/channel bindings (e.g., Telegram DM Topics,
-    # Discord channel_skill_bindings).  A single name or ordered list.
+    reply_to_is_own_message: bool = False  # 当用户回复了本 bot/assistant 的消息时为 True
+
+    # 为 topic/channel 绑定自动加载的 skill（例如 Telegram DM Topics、
+    # Discord channel_skill_bindings）。单个名称或有序列表。
     auto_skill: Optional[str | list[str]] = None
 
-    # Per-channel ephemeral system prompt (e.g. Discord channel_prompts).
-    # Applied at API call time and never persisted to transcript history.
+    # 每个 channel 的临时系统 prompt（例如 Discord channel_prompts）。
+    # 在 API 调用时应用，从不持久化到 transcript 历史中。
     channel_prompt: Optional[str] = None
 
-    # Channel context recovered by history backfill (e.g. messages between
-    # bot turns that were missed due to require_mention).  Kept separate
-    # from ``text`` so the sender-prefix logic in run.py can operate on the
-    # trigger message alone, then prepend this context afterward.
+    # 由历史回填恢复的 channel 上下文（例如由于 require_mention 而错过的、
+    # bot 轮次之间的消息）。与 ``text`` 分开存放，这样 run.py 中的发送者前缀
+    # 逻辑可以只针对触发消息处理，之后再前置这段上下文。
     channel_context: Optional[str] = None
-    
-    # Internal flag — set for synthetic events (e.g. background process
-    # completion notifications) that must bypass user authorization checks.
+
+    # 内部标志——为合成事件（例如后台进程完成通知）设置，必须绕过用户授权检查。
     internal: bool = False
 
-    # Timestamps
+    # 时间戳
     timestamp: datetime = field(default_factory=datetime.now)
     
     def is_command(self) -> bool:
-        """Check if this is a command message (e.g., /new, /reset)."""
+        """检查这是否是一条命令消息（例如 /new、/reset）。"""
         return self.text.startswith("/")
     
     def get_command(self) -> Optional[str]:
-        """Extract command name if this is a command message."""
+        """如果是命令消息，则提取命令名。"""
         if not self.is_command():
             return None
-        # Split on space and get first word, strip the /
+        # 按空格切分取第一个词，去掉前导 /
         parts = self.text.split(maxsplit=1)
         raw = parts[0][1:].lower() if parts else None
         if raw and "@" in raw:
             raw = raw.split("@", 1)[0]
-        # Reject file paths: valid command names never contain /
+        # 拒绝文件路径：合法命令名绝不会包含 /
         if raw and "/" in raw:
             return None
         return raw
     
     def get_command_args(self) -> str:
-        """Get the arguments after a command."""
+        """获取命令之后的参数。"""
         if not self.is_command():
             return self.text
         parts = self.text.split(maxsplit=1)
         args = parts[1] if len(parts) > 1 else ""
-        # iOS auto-corrects -- to — (em dash) and - to – (en dash)
+        # iOS 会自动把 -- 改成 —（em dash），把 - 改成 –（en dash）
         args = args.replace("\u2014\u2014", "--").replace("\u2014", "--").replace("\u2013", "-")
         return args
 
@@ -1701,15 +1654,14 @@ _PLAINTEXT_GATEWAY_RESTART_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
-    """Rewrite a tiny set of DM plaintext admin phrases into slash commands.
+    """把一小撮 DM 明文管理短语改写成斜杠命令。
 
-    This keeps high-impact operational phrases like ``restart gateway`` out of
-    the LLM/tool path, where they can trigger a self-restart from inside the
-    currently running agent and leave the gateway stuck in ``draining`` while it
-    waits for that same agent to finish.
+    这样可以把像 ``restart gateway`` 这类高影响的运维短语排除在
+    LLM/tool 路径之外——在那里它们可能从当前运行的 agent 内部触发
+    自重启，导致网关卡在 ``draining`` 状态等待同一个 agent 结束。
 
-    Scope is intentionally narrow: DM text messages only, exact restart-style
-    phrases only. Group chats keep natural-language semantics.
+    作用范围有意收窄：仅限 DM 文本消息，仅限精确的 restart 风格短语。
+    群聊保留自然语言语义。
     """
     try:
         if event is None or event.message_type != MessageType.TEXT:
@@ -1730,55 +1682,47 @@ def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
 
 @dataclass
 class SendResult:
-    """Result of sending a message."""
+    """发送一条消息的结果。"""
     success: bool
     message_id: Optional[str] = None
     error: Optional[str] = None
     raw_response: Any = None
-    # Adapter-specific metadata.  Cross-layer contracts that affect delivery
-    # semantics must be documented at the producer and consumer sites.  Current
-    # known contract: Telegram edit overflow partials set
-    # raw_response["partial_overflow"] with delivered_chunks, total_chunks,
-    # last_message_id, delivered_prefix, and continuation_message_ids so the
-    # stream consumer can send the missing tail instead of marking a clipped
-    # response complete.
-    retryable: bool = False  # True for transient connection errors — base will retry automatically
-    # Server-requested retry delay in seconds (e.g. Telegram FloodWait retry_after).
-    # When present, _send_with_retry() honors this instead of its default backoff.
+    # 适配器特定的元数据。影响投递语义的跨层契约必须在生产者和消费端都记录。
+    # 当前已知契约：Telegram edit overflow 的分片会把
+    # delivered_chunks、total_chunks、last_message_id、delivered_prefix 和
+    # continuation_message_ids 写入 raw_response["partial_overflow"]，以便
+    # stream consumer 能补发缺失的尾部，而不是把一个被截断的响应标记为完成。
+    retryable: bool = False  # 对于瞬时连接错误为 True——base 会自动重试
+    # 服务器要求的重试延迟（秒）（例如 Telegram FloodWait 的 retry_after）。
+    # 存在时，_send_with_retry() 会优先采用它而非默认退避。
     retry_after: Optional[float] = None
-    # When the adapter had to split an oversized payload across multiple
-    # platform messages (e.g. Telegram edit_message overflow split-and-deliver),
-    # ``message_id`` is the LAST visible message id (so subsequent edits target
-    # the most recent chunk) and these are the additional message ids that
-    # made up the full payload, in send order.  Empty tuple for the common
-    # single-message case.
+    # 当适配器不得不把超大载荷拆分到多条平台消息时（例如 Telegram
+    # edit_message 溢出的 split-and-deliver），``message_id`` 是最后一条可见
+    # 消息 id（这样后续 edit 会瞄准最新的分片），而这些则是组成完整载荷的
+    # 额外消息 id，按发送顺序排列。常见的单消息场景下为空 tuple。
     continuation_message_ids: tuple = ()
-    # Machine-readable failure category (set only when ``success`` is False).
-    # ``error`` stays the human-readable detail string; ``error_kind`` lets
-    # consumers branch deterministically instead of substring-matching the raw
-    # provider message.  One of the values in :data:`SEND_ERROR_KINDS` or
-    # ``None`` (unset / not classified).  Producers should set this via
-    # :func:`classify_send_error`.
+    # 机器可读的失败类别（仅在 ``success`` 为 False 时设置）。
+    # ``error`` 仍是人类可读的细节字符串；``error_kind`` 让消费端可以
+    # 确定性地分支，而不是对原始 provider 消息做子串匹配。取值为
+    # :data:`SEND_ERROR_KINDS` 中的一个，或 ``None``（未设置 / 未分类）。
+    # 生产者应通过 :func:`classify_send_error` 设置它。
     error_kind: Optional[str] = None
 
 
-# Machine-readable send-failure categories.  Kept platform-neutral so every
-# adapter can populate ``SendResult.error_kind`` from the same vocabulary and
-# the gateway can decide — once, in one place — whether a failure is worth
-# surfacing to the user.
+# 机器可读的发送失败类别。保持平台中立，使每个适配器都能用同一套词汇
+# 填充 ``SendResult.error_kind``，并让网关能在一处统一决定某次失败是否
+# 值得呈现给用户。
 #
-#   too_long      content exceeded the platform's per-message size cap; the
-#                 adapter typically recovers via continuation/split, so this is
-#                 informational rather than a hard failure.
-#   bad_format    the platform rejected the message markup/entities (parse
-#                 error); a plain-text retry is the actionable fix.
-#   forbidden     the bot is blocked, kicked, or lacks permission to post to the
-#                 target — the bot CANNOT reach the user, so there is nowhere to
-#                 surface a notice.
-#   not_found     the target chat/thread/message no longer exists.
-#   rate_limited  the platform throttled the send (flood control).
-#   transient     a connection-level failure that is safe to retry.
-#   unknown       classification did not match any known shape.
+#   too_long      内容超出了平台单条消息的大小上限；适配器通常通过续发/拆分
+#                 恢复，因此这是提示性信息而非硬失败。
+#   bad_format    平台拒绝了消息的标记/entities（解析错误）；可行的修复是
+#                 纯文本重试。
+#   forbidden     bot 被屏蔽、踢出，或缺少向目标发消息的权限——bot 无法触达
+#                 用户，因此无处呈现通知。
+#   not_found     目标 chat/thread/message 已不存在。
+#   rate_limited  平台对发送做了限流（flood control）。
+#   transient     可安全重试的连接级失败。
+#   unknown       分类未匹配任何已知形态。
 SEND_ERROR_KINDS = frozenset(
     {
         "too_long",
@@ -1793,12 +1737,11 @@ SEND_ERROR_KINDS = frozenset(
 
 
 def classify_send_error(exc: Optional[BaseException], error_text: str = "") -> str:
-    """Map a send exception / error string to a :data:`SEND_ERROR_KINDS` value.
+    """把发送异常 / 错误字符串映射到某个 :data:`SEND_ERROR_KINDS` 值。
 
-    Platform-neutral: matches on the lowercased text of ``exc`` (and/or the
-    explicit ``error_text``) against the substrings the major messaging APIs
-    use.  Conservative — anything unrecognized returns ``"unknown"`` so callers
-    never mistake an unclassified failure for a benign one.
+    平台中立的实现：针对主要消息 API 所用的子串，对 ``exc``（和/或显式
+    ``error_text``）的小写文本做匹配。采取保守策略——任何无法识别的都返回
+    ``"unknown"``，使调用方绝不会把未分类的失败误当成良性失败。
     """
     parts = []
     if error_text:
@@ -1855,24 +1798,22 @@ def classify_send_error(exc: Optional[BaseException], error_text: str = "") -> s
 
 
 class EphemeralReply(str):
-    """System-notice reply that auto-deletes after a TTL.
+    """在 TTL 之后自动删除的系统通知回复。
 
-    Slash-command handlers in ``gateway/run.py`` can return this wrapper
-    instead of a plain string to request that the reply message be deleted
-    after ``ttl_seconds`` on platforms that support ``delete_message``.
+    ``gateway/run.py`` 中的斜杠命令处理器可以返回这个包装器，而不是普通
+    字符串，以请求在支持 ``delete_message`` 的平台上，回复消息在
+    ``ttl_seconds`` 后被删除。
 
-    Subclassing ``str`` keeps the wrapper transparent to anything that
-    treats handler return values as text (existing tests use ``in`` /
-    ``startswith`` / equality; the ``_process_message_background`` pipeline
-    extracts attachments from the string content).  ``isinstance(r,
-    EphemeralReply)`` still distinguishes ephemeral replies from plain
-    strings so the send path can schedule deletion.
+    继承 ``str`` 让该包装器对任何把处理器返回值当作文本处理的代码保持
+    透明（既有测试使用 ``in`` / ``startswith`` / 相等比较；
+    ``_process_message_background`` 流水线会从字符串内容中提取附件）。
+    ``isinstance(r, EphemeralReply)`` 仍能把临时回复与普通字符串区分开，
+    使发送路径可以安排删除。
 
-    Platforms that don't override :meth:`BasePlatformAdapter.delete_message`
-    silently ignore the TTL — the message is sent normally and left in
-    place.  When ``ttl_seconds`` is ``None``, the pipeline uses the
-    configured ``display.ephemeral_system_ttl`` default.  A default of ``0``
-    disables auto-deletion globally, preserving prior behavior.
+    未覆盖 :meth:`BasePlatformAdapter.delete_message` 的平台会静默忽略
+    TTL——消息照常发送并保留在原处。当 ``ttl_seconds`` 为 ``None`` 时，
+    流水线会使用配置的 ``display.ephemeral_system_ttl`` 默认值。默认值为
+    ``0`` 则全局禁用自动删除，保留旧行为。
     """
 
     ttl_seconds: Optional[int]
@@ -1884,11 +1825,10 @@ class EphemeralReply(str):
 
     @property
     def text(self) -> str:
-        """Return the underlying text.
+        """返回底层文本。
 
-        Provided for call sites that want an explicit string conversion,
-        though ``str(reply)`` and using ``reply`` directly where a string
-        is expected both work identically.
+        供希望显式转换为字符串的调用点使用；不过 ``str(reply)`` 以及在期望
+        字符串的地方直接使用 ``reply`` 效果完全相同。
         """
         return str.__str__(self)
 
@@ -1900,16 +1840,14 @@ def merge_pending_message_event(
     *,
     merge_text: bool = False,
 ) -> None:
-    """Store or merge a pending event for a session.
+    """存储或合并某个 session 的待处理事件。
 
-    Photo bursts/albums often arrive as multiple near-simultaneous PHOTO
-    events. Merge those into the existing queued event so the next turn sees
-    the whole burst.
+    照片连拍/相册通常以多个近乎同时到达的 PHOTO 事件出现。把这些合并进
+    已排队的事件中，使下一轮能看到整组连拍。
 
-    When ``merge_text`` is enabled, rapid follow-up TEXT events are appended
-    instead of replacing the pending turn. This is used for Telegram bursty
-    follow-ups so a multi-part user thought is not silently truncated to only
-    the last queued fragment.
+    当启用 ``merge_text`` 时，快速的后续 TEXT 事件会被追加，而不是替换
+    待处理轮次。这用于 Telegram 的突发式跟进，使多段式的用户想法不会
+    被静默截断为只剩最后排队的片段。
     """
     existing = pending_messages.get(session_key)
     if existing:
@@ -1955,13 +1893,11 @@ def merge_pending_message_event(
     pending_messages[session_key] = event
 
 
-# Error substrings that indicate a transient *connection* failure worth retrying.
-# "timeout" / "timed out" / "readtimeout" / "writetimeout" are intentionally
-# excluded: a read/write timeout on a non-idempotent call (e.g. send_message)
-# means the request may have reached the server — retrying risks duplicate
-# delivery.  "connecttimeout" is safe because the connection was never
-# established.  Platforms that know a timeout is safe to retry should set
-# SendResult.retryable = True explicitly.
+# 表示值得重试的瞬时*连接*失败的错误子串。
+# 有意排除 "timeout" / "timed out" / "readtimeout" / "writetimeout"：在
+# 非幂等调用（例如 send_message）上的读/写超时意味着请求可能已到达服务器——
+# 重试有重复投递的风险。"connecttimeout" 是安全的，因为连接从未建立。
+# 知道某次超时可安全重试的平台应显式设置 SendResult.retryable = True。
 _RETRYABLE_ERROR_PATTERNS = (
     "connecterror",
     "connectionerror",
@@ -1975,9 +1911,9 @@ _RETRYABLE_ERROR_PATTERNS = (
 )
 
 
-# Type for message handlers.  Handlers may return a plain string (normal
-# reply), an ``EphemeralReply`` to opt the reply into auto-deletion, or
-# ``None`` when the response was already delivered (e.g. via streaming).
+# 消息处理器的类型。处理器可以返回普通字符串（正常回复）、一个
+# ``EphemeralReply``（让回复参与自动删除），或 ``None``（当响应已投递，
+# 例如通过流式）。
 MessageHandler = Callable[[MessageEvent], Awaitable[Optional[Union[str, "EphemeralReply"]]]]
 
 
@@ -1986,14 +1922,13 @@ def resolve_channel_prompt(
     channel_id: str,
     parent_id: str | None = None,
 ) -> str | None:
-    """Resolve a per-channel ephemeral prompt from platform config.
+    """从平台配置解析每个 channel 的临时 prompt。
 
-    Looks up ``channel_prompts`` in the adapter's ``config.extra`` dict.
-    Prefers an exact match on *channel_id*; falls back to *parent_id*
-    (useful for forum threads / child channels inheriting a parent prompt).
+    在适配器的 ``config.extra`` 字典中查找 ``channel_prompts``。
+    优先精确匹配 *channel_id*；回退到 *parent_id*（适用于论坛 thread /
+    子 channel 继承父 prompt 的场景）。
 
-    Returns the prompt string, or None if no match is found.  Blank/whitespace-
-    only prompts are treated as absent.
+    返回 prompt 字符串，未匹配则返回 None。空白/纯空白的 prompt 视同不存在。
     """
     prompts = config_extra.get("channel_prompts") or {}
     if not isinstance(prompts, dict):
@@ -2016,24 +1951,22 @@ def resolve_channel_skills(
     channel_id: str,
     parent_id: str | None = None,
 ) -> list[str] | None:
-    """Resolve auto-loaded skill(s) for a channel/thread from platform config.
+    """从平台配置解析某 channel/thread 自动加载的 skill。
 
-    Looks up ``channel_skill_bindings`` in the adapter's ``config.extra`` dict.
+    在适配器的 ``config.extra`` 字典中查找 ``channel_skill_bindings``。
 
-    Config format::
+    配置格式::
 
         channel_skill_bindings:
-          - id: "C0123"          # Slack channel ID or Discord channel/forum ID
+          - id: "C0123"          # Slack channel ID 或 Discord channel/forum ID
             skills: ["skill-a", "skill-b"]
           - id: "D0ABCDE"
-            skill: "solo-skill"  # single string also accepted
+            skill: "solo-skill"  # 也接受单个字符串
 
-    Prefers an exact match on *channel_id*; falls back to *parent_id*
-    (useful for forum threads / Slack threads inheriting the parent channel's
-    binding).
+    优先精确匹配 *channel_id*；回退到 *parent_id*（适用于论坛 thread /
+    Slack thread 继承父 channel 绑定的场景）。
 
-    Returns a deduplicated list of skill names (order preserved), or None if
-    no match is found.
+    返回去重后的 skill 名称列表（保留顺序），未匹配则返回 None。
     """
     bindings = config_extra.get("channel_skill_bindings") or []
     if not isinstance(bindings, list) or not bindings:
@@ -2067,14 +2000,13 @@ def resolve_channel_skills(
 
 
 def _strip_media_directives(text: str) -> str:
-    """Strip internal delivery directives ([[audio_as_voice]], [[as_document]],
-    MEDIA:<path>) so they never render as visible text.
+    """剥除内部投递指令（[[audio_as_voice]]、[[as_document]]、MEDIA:<path>），
+    使它们绝不会渲染为可见文本。
 
-    Backstop only: run ``extract_media`` first. MEDIA cleanup uses the shared
-    ``MEDIA_TAG_CLEANUP_RE`` (only tags whose path has a known deliverable
-    extension are removed; an unknown-extension tag is intentionally left so the
-    bare-path detector downstream can still pick it up, per #34517). [[...]] is
-    exact.
+    仅作为兜底：应先运行 ``extract_media``。MEDIA 清理使用共享的
+    ``MEDIA_TAG_CLEANUP_RE``（只移除路径以已知可投递扩展名结尾的标签；
+    故意保留未知扩展名的标签，以便下游的裸路径检测器仍能拾取它，见 #34517）。
+    [[...]] 是精确匹配。
     """
     if not text:
         return text
@@ -2084,68 +2016,59 @@ def _strip_media_directives(text: str) -> str:
 
 class BasePlatformAdapter(ABC):
     """
-    Base class for platform adapters.
-    
-    Subclasses implement platform-specific logic for:
-    - Connecting and authenticating
-    - Receiving messages
-    - Sending messages/responses
-    - Handling media
+    平台适配器的基类。
+
+    子类为以下方面实现平台特定逻辑：
+    - 连接与认证
+    - 接收消息
+    - 发送消息/响应
+    - 处理媒体
     """
 
-    # Whether this platform renders triple-backtick fenced code blocks (i.e.
-    # ``format_message`` translates/preserves markdown fences into a real code
-    # block).  Capability flag for markdown-aware presentation choices.
-    # Default False (plain-text platforms); markdown-rendering adapters set True.
-    # Tool-progress uses this to render a terminal command as a bare fenced code
-    # block (no language tag — Slack mrkdwn would print the tag as a literal
-    # first code line).  Plain-text platforms fall back to the short truncated
-    # preview (see gateway/run.py progress_callback).
+    # 本平台是否渲染三反引号的 fenced 代码块（即 ``format_message`` 把
+    # markdown fence 翻译/保留为真正的代码块）。这是用于 markdown 感知呈现
+    # 选择的能力标志。默认 False（纯文本平台）；markdown 渲染型适配器设为 True。
+    # tool-progress 用它把一条 terminal 命令渲染为裸 fenced 代码块
+    # （不带语言标签——Slack mrkdwn 会把标签当作字面首行代码打印）。
+    # 纯文本平台回退到短的截断预览（见 gateway/run.py 的 progress_callback）。
     supports_code_blocks: bool = False
 
-    # Whether this adapter can deliver an ASYNC notification back to the agent
-    # AFTER a turn ends — i.e. wake a fresh turn to surface a background
-    # process completion (terminal notify_on_complete / watch_patterns) or a
-    # detached subagent result (delegate_task background=True).
+    # 本适配器能否在一轮结束*之后*把 ASYNC 通知投递回 agent——即唤醒一个
+    # 新轮次以呈现后台进程完成（terminal 的 notify_on_complete /
+    # watch_patterns）或一个分离的 subagent 结果（delegate_task background=True）。
     #
-    # True for adapters that hold a persistent outbound channel (Telegram,
-    # Discord, Slack, ... — they have a real ``send()`` and the gateway runs
-    # the watcher/drain loops). False for stateless request/response adapters
-    # (the API server): every route closes its channel when the turn ends, so
-    # there is nowhere to push a later completion. The gateway propagates this
-    # into the ``HERMES_SESSION_ASYNC_DELIVERY`` contextvar at session-bind
-    # time; tools read it via ``async_delivery_supported()`` and refuse to make
-    # a delivery promise they can't keep. A new stateless adapter only needs to
-    # set this to False to stay correct-by-default.
+    # 对于持有持久出站通道的适配器（Telegram、Discord、Slack、……——它们有
+    # 真正的 ``send()``，且网关运行 watcher/drain 循环）为 True。对于无状态
+    # request/response 适配器（API server）为 False：每个路由在轮次结束时都
+    # 关闭自己的通道，因此无处推送稍后的完成事件。网关在 session 绑定时把它
+    # 传播进 ``HERMES_SESSION_ASYNC_DELIVERY`` contextvar；工具通过
+    # ``async_delivery_supported()`` 读取它，并拒绝做出无法兑现的投递承诺。
+    # 一个新的无状态适配器只需把它设为 False 即可默认保持正确。
     supports_async_delivery: bool = True
 
-    # Whether this adapter's ``send()`` splits long content into multiple
-    # messages via ``truncate_message()``.  When True, the delivery router
-    # (gateway/delivery.py) skips gateway-level truncation and lets the
-    # adapter chunk natively — preserving full output on platforms that
-    # support multi-message delivery (Discord, Telegram, …).  Default False
-    # (conservative); adapters verified to chunk in ``send()`` set True.
+    # 本适配器的 ``send()`` 是否通过 ``truncate_message()`` 把长内容拆分成
+    # 多条消息。为 True 时，投递路由器（gateway/delivery.py）跳过网关层
+    # 截断，让适配器原生分块——在支持多消息投递的平台（Discord、Telegram、……）
+    # 上保留完整输出。默认 False（保守）；经核实会在 ``send()`` 中分块的适配器
+    # 设为 True。
     splits_long_messages: bool = False
 
-    # The command prefix users can always TYPE on this platform to reach
-    # Hermes commands.  Default "/" (most platforms deliver "/approve" etc.
-    # as plain message text).  Platforms where typing a leading "/" is
-    # intercepted or restricted by the client (Slack blocks native slash
-    # commands inside threads; Matrix clients reserve "/" for client-local
-    # commands) ship a "!" alias rewrite in their adapter and set this to
-    # "!" so user-facing instruction text ("Reply `!approve` ...") tells
-    # users the form that actually works everywhere.  Capability flag —
-    # shared prompt builders read it via getattr(adapter,
-    # "typed_command_prefix", "/"); no per-platform branching at call sites.
+    # 用户在本平台上始终可以“键入”以触达 Hermes 命令的命令前缀。默认 "/"
+    # （多数平台把 "/approve" 等当作普通消息文本投递）。对于键入前导 "/" 会被
+    # 客户端拦截或限制的平台（Slack 在 thread 内屏蔽原生斜杠命令；Matrix 客户端
+    # 把 "/" 留作客户端本地命令），其适配器会内置一个 "!" 别名改写，并把此项设为
+    # "!"，这样面向用户的指引文本（"Reply `!approve` ..."）就告诉用户那种在各处
+    # 都真正可用的形式。这是能力标志——共享 prompt 构建器通过
+    # getattr(adapter, "typed_command_prefix", "/") 读取它；调用点无需按平台分支。
     typed_command_prefix: str = "/"
 
     def __init__(self, config: PlatformConfig, platform: Platform):
         self.config = config
         self.platform = platform
         self._message_handler: Optional[MessageHandler] = None
-        # Optional hook (e.g. Telegram DM topic recovery) that rewrites
-        # ``event.source.thread_id`` before session keying. Returns the
-        # corrected thread_id or None to leave the source untouched.
+        # 可选的钩子（例如 Telegram DM topic 恢复），在 session keying 之前
+        # 改写 ``event.source.thread_id``。返回修正后的 thread_id，或返回
+        # None 以保持 source 不变。
         self._topic_recovery_fn: Optional[Callable[[Any], Optional[str]]] = None
         self._running = False
         self._fatal_error_code: Optional[str] = None
@@ -2153,21 +2076,19 @@ class BasePlatformAdapter(ABC):
         self._fatal_error_retryable = True
         self._fatal_error_handler: Optional[Callable[["BasePlatformAdapter"], Awaitable[None] | None]] = None
         
-        # Track active message handlers per session for interrupt support.
-        # _active_sessions stores the per-session interrupt Event; _session_tasks
-        # maps session → the specific Task currently processing it so that
-        # session-terminating commands (/stop, /new, /reset) can cancel the
-        # right task and release the adapter-level guard deterministically.
-        # Without the owner-task map, an old task's finally block could delete
-        # a newer task's guard, leaving stale busy state.
+        # 为支持中断，按 session 跟踪活动的消息处理器。
+        # _active_sessions 存放每个 session 的中断 Event；_session_tasks 把
+        # session 映射到当前正在处理它的具体 Task，使终止 session 的命令
+        # （/stop、/new、/reset）能取消正确的任务并确定性地释放适配器级守卫。
+        # 没有这个 owner-task 映射的话，旧任务的 finally 块可能删掉新任务的
+        # 守卫，留下陈旧的 busy 状态。
         self._active_sessions: Dict[str, asyncio.Event] = {}
         self._pending_messages: Dict[str, MessageEvent] = {}
         self._session_tasks: Dict[str, asyncio.Task] = {}
-        # Legacy busy_text_mode env var; when unset the runner syncs the
-        # resolved value (driven by busy_input_mode) onto the adapter after
-        # construction (gateway/run.py). Default to "interrupt" so a stray
-        # pre-sync read matches the single-knob default rather than silently
-        # queueing.
+        # 旧版 busy_text_mode 环境变量；未设置时，runner 会在构造之后
+        # （gateway/run.py）把解析后的值（由 busy_input_mode 驱动）同步到适配器。
+        # 默认为 "interrupt"，这样一次游离的 pre-sync 读取会匹配单旋钮默认值，
+        # 而不是静默排队。
         self._busy_text_mode: str = (
             os.environ.get("HERMES_GATEWAY_BUSY_TEXT_MODE", "interrupt").strip().lower()
             or "interrupt"
@@ -2179,103 +2100,93 @@ class BasePlatformAdapter(ABC):
             "HERMES_GATEWAY_BUSY_TEXT_HARD_CAP_SECONDS", 1.0
         )
         self._text_debounce: dict[str, TextDebounceState] = {}
-        # Background message-processing tasks spawned by handle_message().
-        # Gateway shutdown cancels these so an old gateway instance doesn't keep
-        # working on a task after --replace or manual restarts.
+        # 由 handle_message() 派生的后台消息处理任务。
+        # 网关关停时会取消它们，使旧的网关实例在 --replace 或手动重启之后
+        # 不会继续处理某个任务。
         self._background_tasks: set[asyncio.Task] = set()
-        # One-shot callbacks to fire after the main response is delivered.
-        # Keyed by session_key. Values are either a bare callback (legacy) or
-        # a ``(generation, callback)`` tuple so GatewayRunner can make deferred
-        # deliveries generation-aware and avoid stale runs clearing callbacks
-        # registered by a fresher run for the same session.
+        # 在主响应投递完成后触发的一次性回调。
+        # 以 session_key 为键。值既可以是裸回调（旧版），也可以是
+        # ``(generation, callback)`` 元组，使 GatewayRunner 能让延迟投递具备
+        # generation 感知，避免陈旧的运行清空同一 session 上由更新运行注册的回调。
         self._post_delivery_callbacks: Dict[str, Any] = {}
         self._expected_cancelled_tasks: set[asyncio.Task] = set()
         self._busy_session_handler: Optional[Callable[[MessageEvent, str], Awaitable[bool]]] = None
-        # Auto-TTS on voice input: ``_auto_tts_default`` is the global default
-        # (``voice.auto_tts`` in config.yaml, pushed by GatewayRunner on connect).
-        # Per-chat overrides live in two sets populated from ``_voice_mode``:
-        #   - ``_auto_tts_enabled_chats``: chat explicitly opted in via ``/voice on``
-        #     or ``/voice tts`` (mode is ``voice_only`` or ``all``). Fires even when
-        #     the global default is False.
-        #   - ``_auto_tts_disabled_chats``: chat explicitly opted out via
-        #     ``/voice off`` (mode is ``off``). Suppresses auto-TTS even when the
-        #     global default is True.
-        # The gate in _process_message() is:
-        #   fire if chat in _auto_tts_enabled_chats
-        #     OR (_auto_tts_default and chat not in _auto_tts_disabled_chats)
+        # 语音输入时自动 TTS：``_auto_tts_default`` 是全局默认值
+        # （config.yaml 中的 ``voice.auto_tts``，由 GatewayRunner 在连接时推入）。
+        # 每个 chat 的覆盖存放在两个集合中，从 ``_voice_mode`` 填充：
+        #   - ``_auto_tts_enabled_chats``：通过 ``/voice on`` 或 ``/voice tts``
+        #     显式开启的 chat（mode 为 ``voice_only`` 或 ``all``）。即便全局
+        #     默认为 False 也会触发。
+        #   - ``_auto_tts_disabled_chats``：通过 ``/voice off`` 显式关闭的 chat
+        #     （mode 为 ``off``）。即便全局默认为 True 也会抑制自动 TTS。
+        # _process_message() 中的门控为：
+        #   当 chat 在 _auto_tts_enabled_chats 中时触发
+        #     或（_auto_tts_default 为真且 chat 不在 _auto_tts_disabled_chats 中）
         self._auto_tts_default: bool = False
         self._auto_tts_enabled_chats: set = set()
         self._auto_tts_disabled_chats: set = set()
-        # Chats where typing indicator is paused (e.g. during approval waits).
-        # _keep_typing skips send_typing when the chat_id is in this set.
+        # 暂停了 typing 指示器的 chat（例如在等待审批期间）。
+        # 当 chat_id 在此集合中时，_keep_typing 会跳过 send_typing。
         self._typing_paused: set = set()
 
     @property
     def message_len_fn(self) -> Callable[[str], int]:
-        """Return the length function for measuring message size on this platform.
+        """返回本平台上用于度量消息大小的长度函数。
 
-        Override in adapters whose platform counts characters differently from
-        Python ``len`` (e.g. Telegram counts UTF-16 code units).
+        对于平台计数字符方式与 Python ``len`` 不同的适配器（例如 Telegram
+        按 UTF-16 码元计数），需在子类中覆盖。
         """
         return len
 
     @property
     def enforces_own_access_policy(self) -> bool:
-        """Whether this adapter gates inbound access before dispatch.
+        """本适配器是否在分发之前对入站访问做门控。
 
-        Some adapters (WeCom, Weixin, Yuanbao, QQBot, WhatsApp) implement a
-        documented config-driven access surface — ``dm_policy`` / ``group_policy`` /
-        ``allow_from`` / ``group_allow_from`` in ``PlatformConfig.extra`` — and
-        enforce it at intake: a message is dropped inside the adapter and never
-        reaches the gateway unless it already passed that policy.
+        某些适配器（WeCom、Weixin、Yuanbao、QQBot、WhatsApp）实现了一个
+        有文档记载、由配置驱动的访问界面——``PlatformConfig.extra`` 中的
+        ``dm_policy`` / ``group_policy`` / ``allow_from`` /
+        ``group_allow_from``——并在 intake 处强制执行：消息在适配器内部被丢弃，
+        除非已通过该策略，否则绝不会到达网关。
 
-        The gateway's env-based allowlist check runs *after* the adapter. When
-        no env allowlist is configured, the gateway consults this flag so it can
-        honor a config-only ``dm_policy: allowlist`` / ``allow_from`` (which the
-        adapter already enforced) instead of double-denying it. Crucially, the
-        flag alone is NOT "already authorized": these adapters default
-        ``dm_policy`` / ``group_policy`` to ``"open"``, which forwards every
-        sender, so the gateway trusts the adapter only when its effective policy
-        for the chat type is an actual ``"allowlist"`` restriction — never for
-        ``"open"`` (that would be the network-exposed fail-open SECURITY.md §2.6
-        forbids). Open access still requires an explicit
-        ``{PLATFORM}_ALLOW_ALL_USERS`` / ``GATEWAY_ALLOW_ALL_USERS`` opt-in.
+        网关基于 env 的 allowlist 检查在适配器*之后*运行。当没有配置 env
+        allowlist 时，网关会参考此标志，以便兑现仅配置式的
+        ``dm_policy: allowlist`` / ``allow_from``（适配器已强制执行），而不是
+        对其二次拒绝。关键在于，该标志本身并不等同于“已授权”：这些适配器把
+        ``dm_policy`` / ``group_policy`` 默认设为 ``"open"``，会转发每个发送者，
+        因此网关只有在适配器对该 chat 类型的有效策略是真正的
+        ``"allowlist"`` 限制时才信任它——绝不会信任 ``"open"``（那将是
+        SECURITY.md §2.6 所禁止的网络暴露 fail-open）。开放访问仍需要显式的
+        ``{PLATFORM}_ALLOW_ALL_USERS`` / ``GATEWAY_ALLOW_ALL_USERS`` opt-in。
 
-        Adapters that own their access policy override this to return ``True``.
-        Adapters that delegate access control to the gateway leave it ``False``
-        (the default).
+        拥有自身访问策略的适配器把它覆盖为返回 ``True``。把访问控制委托给
+        网关的适配器保持 ``False``（默认）。
         """
         return False
 
     @property
     def authorization_is_upstream(self) -> bool:
-        """Whether inbound on this adapter was already authorized UPSTREAM.
+        """本适配器上的入站是否已在 UPSTREAM 完成授权。
 
-        Distinct from ``enforces_own_access_policy``: that flag describes an
-        adapter that enforces a LOCAL, config-driven access surface
-        (``dm_policy: allowlist`` / ``allow_from``) the gateway can mirror. This
-        flag describes an adapter whose authorization is performed by a TRUSTED
-        UPSTREAM over an authenticated transport — there is no local policy to
-        consult, and the env allowlist (``{PLATFORM}_ALLOWED_USERS``) does not
-        apply because the sender identity isn't a platform account the operator
-        configures here.
+        与 ``enforces_own_access_policy`` 不同：那个标志描述的是一个执行
+        本地、配置驱动访问界面（``dm_policy: allowlist`` / ``allow_from``）
+        的适配器，网关可以镜像它。本标志描述的是其授权由一个受信任的
+        UPSTREAM 在已认证的 transport 上完成的适配器——没有本地策略可供
+        参考，env allowlist（``{PLATFORM}_ALLOWED_USERS``）也不适用，因为
+        发送者身份不是运维者在此配置的平台账号。
 
-        The relay adapter is the sole user: it fronts the Team Gateway
-        connector over a per-instance-authenticated WebSocket, and the connector
-        performs owner-only author-binding resolution BEFORE delivering — a
-        message only reaches this gateway because the connector resolved it to
-        THIS instance's bound user (``user_instance_binding``). The author id is
-        read off the event the connector observed, never gateway-asserted. So an
-        inbound relay event carries an authorization decision already made by a
-        trusted, authenticated upstream; default-denying it (no env allowlist ⇒
-        deny) is incorrect.
+        relay 适配器是唯一的使用者：它通过按实例认证的 WebSocket 接在
+        Team Gateway connector 之前，且 connector 在投递*之前*执行仅 owner 的
+        author-binding 解析——一条消息之所以能到达本网关，是因为 connector 把它
+        解析为*本*实例绑定的用户（``user_instance_binding``）。author id 是从
+        connector 观察到的事件中读取的，从不由网关断言。因此一条入站 relay
+        事件携带的授权决定已由受信任、已认证的 upstream 做出；对其默认拒绝
+        （无 env allowlist ⇒ 拒绝）是不正确的。
 
-        This is NOT a fail-open: it is authorization DELEGATED to a trusted
-        upstream that authenticated the transport (the relay WS secret) and
-        enforced owner-only binding, as opposed to authorization being ABSENT.
-        It only takes effect for an adapter that explicitly overrides this to
-        ``True``; every network-exposed direct adapter leaves it ``False`` and
-        the env-allowlist default-deny continues to apply unchanged.
+        这并不是 fail-open：这是把授权*委托*给一个认证了 transport
+        （relay WS secret）并强制了仅 owner 绑定的可信 upstream，与授权
+        *缺失*截然不同。它只对显式把它覆盖为 ``True`` 的适配器生效；每个
+        网络暴露的直连适配器都保持 ``False``，env-allowlist 的默认拒绝
+        继续原样适用。
         """
         return False
 
@@ -2284,17 +2195,15 @@ class BasePlatformAdapter(ABC):
         chat_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Whether this adapter supports native streaming-draft updates.
+        """本适配器是否支持原生的流式 draft 更新。
 
-        Telegram Bot API 9.5 introduced ``sendMessageDraft``, which renders an
-        animated streaming preview as the bot calls it repeatedly with the
-        same ``draft_id`` and growing text.  Adapters that implement
-        ``send_draft`` should return True here for the chat types where the
-        platform supports it (Telegram restricts drafts to private DMs).
+        Telegram Bot API 9.5 引入了 ``sendMessageDraft``，当 bot 用同一个
+        ``draft_id`` 和不断增长的文本反复调用它时，会渲染出动画式流式预览。
+        实现了 ``send_draft`` 的适配器，应在平台支持的 chat 类型上返回 True
+        （Telegram 把 draft 限制在私聊 DM 中）。
 
-        Default implementation returns False.  Stream consumers fall back to
-        the edit-based path (``send`` + ``edit_message``) when this returns
-        False or when ``send_draft`` raises.
+        默认实现返回 False。当此处返回 False 或 ``send_draft`` 抛出异常时，
+        stream consumer 回退到基于 edit 的路径（``send`` + ``edit_message``）。
         """
         return False
 
@@ -2303,38 +2212,32 @@ class BasePlatformAdapter(ABC):
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Whether the stream consumer should finalize a streamed reply by
-        sending a *fresh* final message (and deleting the preview) instead of
-        final-editing the preview.
+        """stream consumer 是否应通过发送一条*全新的*最终消息（并删除预览）
+        来终结流式回复，而不是对预览做 final-edit。
 
-        Some adapters can send richer final messages than their current edit
-        implementation supports. Telegram is the motivating case: Hermes sends
-        final replies through ``sendRichMessage`` but still finalizes streamed
-        previews through its existing MarkdownV2 edit path until Bot API 10.1's
-        ``rich_message`` edit parameter is wired directly. Such adapters
-        override this to ask the consumer to re-deliver the completed answer as
-        a new rich message and best-effort delete the stale preview, so the
-        final rendering matches the rich send path.
+        某些适配器能发送比其当前 edit 实现所支持的更丰富的最终消息。
+        Telegram 是驱动案例：Hermes 通过 ``sendRichMessage`` 发送最终回复，
+        但仍通过其既有的 MarkdownV2 edit 路径终结流式预览，直到 Bot API 10.1
+        的 ``rich_message`` edit 参数被直接接入。此类适配器覆盖此方法，
+        请求 consumer 把已完成答案作为新的 rich 消息重新投递，并尽力删除
+        陈旧预览，使最终渲染与 rich 发送路径一致。
 
-        Default implementation returns False — legacy platforms keep the
-        edit-in-place finalization path.
+        默认实现返回 False——遗留平台保持原地的 edit 终结路径。
         """
         return False
 
     def streaming_overflow_limit(self) -> Optional[int]:
-        """Max single-message length (in this adapter's ``message_len_fn``
-        units) the stream consumer may accumulate before it splits, when the
-        adapter can deliver a larger message than its legacy per-message limit.
+        """当适配器能投递比其旧版单条消息上限更大的消息时，stream consumer
+        在拆分前可累计的最大单条消息长度（以本适配器 ``message_len_fn`` 的
+        单位计）。
 
-        Telegram Bot API 10.1 Rich Messages accept up to 32,768 chars in a
-        single ``sendRichMessage`` / ``sendRichMessageDraft``, far above the
-        4,096 MarkdownV2 limit.  Adapters with such a richer send/draft path
-        override this so the consumer doesn't fragment a reply that fits one
-        rich message; the live edit preview is still bound by the platform's
-        edit limit, but the finalized reply (and DM draft preview) is delivered
-        whole.
+        Telegram Bot API 10.1 的 Rich Messages 在单条 ``sendRichMessage`` /
+        ``sendRichMessageDraft`` 中最多接受 32,768 字符，远高于 4,096 的
+        MarkdownV2 上限。具备此类更丰富 send/draft 路径的适配器覆盖此方法，
+        使 consumer 不会把一条本可放入单条 rich 消息的回复拆碎；实时 edit
+        预览仍受平台 edit 上限约束，但最终回复（以及 DM draft 预览）会完整投递。
 
-        Return ``None`` (default) to use ``MAX_MESSAGE_LENGTH``.
+        返回 ``None``（默认）表示使用 ``MAX_MESSAGE_LENGTH``。
         """
         return None
 
@@ -2345,46 +2248,40 @@ class BasePlatformAdapter(ABC):
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send or update an animated streaming-draft preview.
+        """发送或更新一个动画式流式 draft 预览。
 
-        Reuse the same ``draft_id`` (any non-zero int) across consecutive
-        calls within a single response so the platform animates the preview
-        rather than re-creating it.  Different responses must use different
-        ``draft_id`` values within the same chat to avoid animating over a
-        prior bubble.
+        在单次响应内的连续调用中复用同一个 ``draft_id``（任意非零 int），
+        使平台对预览做动画而不是重新创建它。不同的响应在同一 chat 内必须
+        使用不同的 ``draft_id`` 值，避免在之前的气泡上做动画。
 
-        Drafts have no message_id and cannot be edited, replied to, or
-        deleted via normal message APIs.  When the response finishes, the
-        caller delivers the final answer as a regular ``send`` and the
-        draft preview clears naturally on the client.
+        draft 没有 message_id，无法通过常规消息 API 编辑、回复或删除。
+        当响应完成时，调用方把最终答案作为常规 ``send`` 投递，draft 预览会在
+        客户端自然清除。
 
-        Default implementation raises NotImplementedError; adapters that
-        also return True from :meth:`supports_draft_streaming` must override.
+        默认实现抛出 NotImplementedError；同样从 :meth:`supports_draft_streaming`
+        返回 True 的适配器必须覆盖此方法。
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement send_draft"
         )
 
-    # ── Structured stream-event rendering ────────────────────────────────
+    # ── 结构化 stream-event 渲染 ────────────────────────────────
     #
-    # These methods let an adapter decide *how* to present each structured
-    # streaming event (see gateway/stream_events.py).  The default
-    # implementations reproduce the historical behavior exactly: assistant
-    # text/commentary/segment events delegate to the stream consumer, and
-    # tool events render the same "emoji tool_name: preview" chrome the
-    # gateway has always produced.  Adapters override these to be more native
-    # to their platform (e.g. Telegram streaming a MarkdownV2 ```bash``` block
-    # as a draft; iMessage eating tool chrome it cannot format).
+    # 这些方法让适配器决定*如何*呈现每个结构化流式事件（见
+    # gateway/stream_events.py）。默认实现原样复刻历史行为：assistant 的
+    # text/commentary/segment 事件委托给 stream consumer，tool 事件则渲染
+    # 网关一直产出的同款 "emoji tool_name: preview" 外观。适配器可覆盖这些
+    # 方法以更贴合自身平台（例如 Telegram 把 MarkdownV2 ```bash``` 块作为
+    # draft 流式输出；iMessage 吞掉它无法格式化的 tool 外观）。
     #
-    # The contract is presentation-only: nothing rendered here is persisted to
-    # conversation history.  History is owned by the agent; what an adapter
-    # chooses to "eat" must never change the bytes the agent stored.
+    # 契约仅限呈现：此处渲染的任何内容都不会持久化到对话历史。历史归 agent
+    # 所有；适配器选择"吞掉"的内容绝不能改变 agent 存储的字节。
 
     def render_message_event(self, event: Any, sink: Any) -> None:
-        """Render a MessageChunk / MessageStop / Commentary onto the sink.
+        """把 MessageChunk / MessageStop / Commentary 渲染到 sink 上。
 
-        Default: map onto the stream consumer's existing primitives, preserving
-        today's behavior 1:1.  ``sink`` is a GatewayStreamConsumer.
+        默认：映射到 stream consumer 既有的原语上，1:1 保留今日行为。
+        ``sink`` 是一个 GatewayStreamConsumer。
         """
         from gateway.stream_events import MessageChunk, MessageStop, Commentary
 
@@ -2392,9 +2289,9 @@ class BasePlatformAdapter(ABC):
             if event.text:
                 sink.on_delta(event.text)
         elif isinstance(event, MessageStop):
-            # An intermediate stop (text → tool → text) is a segment break;
-            # the terminal stop is signalled by the gateway via finish(),
-            # not here, so we only break segments on non-final stops.
+            # 中途的 stop（text → tool → text）是一个分段断点；
+            # 终止 stop 由网关通过 finish() 发出信号，而不是这里，
+            # 因此我们只在非最终 stop 时断开分段。
             if not event.final:
                 sink.on_segment_break()
         elif isinstance(event, Commentary):
@@ -2403,17 +2300,16 @@ class BasePlatformAdapter(ABC):
 
     def format_tool_event(self, event: Any, *, mode: str = "all",
                           preview_max_len: int = 40) -> Optional[str]:
-        """Return the rendered chrome for a ToolCallChunk, or None to eat it.
+        """返回 ToolCallChunk 渲染后的外观，或返回 None 以吞掉它。
 
-        Reproduces the gateway's historical tool-progress formatting: an emoji
-        for the tool, the tool name, and a short argument preview (or the full
-        args dict in ``verbose`` mode).  Adapters that cannot render tool chrome
-        (no message editing, plain-text only) should override to return None so
-        the event is dropped rather than spamming separate bubbles.
+        复刻网关历史的 tool-progress 格式：一个工具 emoji、工具名，以及一段
+        简短的参数预览（或在 ``verbose`` 模式下的完整 args 字典）。无法渲染
+        tool 外观的适配器（不支持消息编辑、仅纯文本）应覆盖为返回 None，使
+        事件被丢弃，而不是刷出多条单独气泡。
 
-        ``mode`` is the resolved tool-progress mode ("all" / "new" / "verbose");
-        ``preview_max_len`` mirrors the ``tool_preview_length`` config (0 means
-        "no cap" in verbose mode).
+        ``mode`` 是解析后的 tool-progress 模式（"all" / "new" / "verbose"）；
+        ``preview_max_len`` 对应 ``tool_preview_length`` 配置（verbose 模式下
+        0 表示"无上限"）。
         """
         from gateway.stream_events import ToolCallChunk
         if not isinstance(event, ToolCallChunk):
@@ -2433,8 +2329,8 @@ class BasePlatformAdapter(ABC):
                 return f"{emoji} {event.tool_name}: \"{event.preview}\""
             return f"{emoji} {event.tool_name}..."
 
-        # "all" / "new": short preview, capped (default 40 to keep gateway
-        # progress bubbles compact — they persist as permanent messages).
+        # "all" / "new"：简短预览，有上限（默认 40，以保持网关 progress 气泡
+        # 紧凑——它们会作为永久消息保留）。
         preview = event.preview
         if preview:
             cap = preview_max_len if preview_max_len > 0 else 40
@@ -2460,13 +2356,13 @@ class BasePlatformAdapter(ABC):
         return self._fatal_error_retryable
 
     def _should_auto_tts_for_chat(self, chat_id: str) -> bool:
-        """Whether auto-TTS on voice input should fire for ``chat_id``.
+        """语音输入时的自动 TTS 是否应对 ``chat_id`` 触发。
 
-        Decision layers (Issue #16007):
-          1. Explicit ``/voice on`` or ``/voice tts`` → always fire (even if
-             ``voice.auto_tts`` is False).
-          2. Explicit ``/voice off`` → never fire.
-          3. Fall back to the global ``voice.auto_tts`` config default.
+        决策层次（Issue #16007）：
+          1. 显式 ``/voice on`` 或 ``/voice tts`` → 始终触发（即便
+             ``voice.auto_tts`` 为 False）。
+          2. 显式 ``/voice off`` → 从不触发。
+          3. 回退到全局 ``voice.auto_tts`` 配置默认值。
         """
         if chat_id in self._auto_tts_enabled_chats:
             return True
@@ -2498,20 +2394,19 @@ class BasePlatformAdapter(ABC):
         self._write_runtime_status_safe("fatal", platform_state="fatal", error_code=code, error_message=message)
 
     def _write_runtime_status_safe(self, context: str, **kwargs) -> None:
-        """Write runtime status; log first failure per context at warning, rest at debug.
+        """写入运行时状态；每个 context 的首次失败以 warning 记录，其余以 debug 记录。
 
-        Status writes can fail on permissions, ENOSPC, missing status dir, etc.
-        A persistently failing status dir used to be silent (``except: pass``).
-        Logging every failure would spam the log on reconnect loops, so this
-        surfaces the first failure per (platform, context) at warning level and
-        downgrades subsequent failures to debug.
+        状态写入可能因权限、ENOSPC、status 目录缺失等原因失败。一个持续失败的
+        status 目录过去是静默的（``except: pass``）。每次失败都记日志会在重连
+        循环里刷屏，因此本方法按 (platform, context) 把首次失败以 warning 级别
+        呈现，后续失败降级到 debug。
         """
         try:
             from gateway.status import write_runtime_status
             write_runtime_status(platform=self.platform.value, **kwargs)
         except Exception as exc:
-            # Use getattr so object.__new__(...) test harnesses that skip __init__
-            # don't blow up on attribute access.
+            # 使用 getattr，这样跳过 __init__ 的 object.__new__(...) 测试桩
+            # 不会在属性访问时崩溃。
             logged = getattr(self, "_status_write_logged", None)
             if logged is None:
                 logged = set()
@@ -2538,7 +2433,7 @@ class BasePlatformAdapter(ABC):
             await result
 
     def _acquire_platform_lock(self, scope: str, identity: str, resource_desc: str) -> bool:
-        """Acquire a scoped lock for this adapter. Returns True on success."""
+        """为本适配器获取一个带作用域的锁。成功返回 True。"""
         from gateway.status import acquire_scoped_lock
         self._platform_lock_scope = scope
         self._platform_lock_identity = identity
@@ -2558,7 +2453,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     def _release_platform_lock(self) -> None:
-        """Release the scoped lock acquired by _acquire_platform_lock."""
+        """释放由 _acquire_platform_lock 获取的带作用域锁。"""
         identity = getattr(self, '_platform_lock_identity', None)
         if not identity:
             return
@@ -2568,20 +2463,19 @@ class BasePlatformAdapter(ABC):
 
     @property
     def name(self) -> str:
-        """Human-readable name for this adapter."""
+        """本适配器的人类可读名称。"""
         return self.platform.value.title()
-    
+
     @property
     def is_connected(self) -> bool:
-        """Check if adapter is currently connected."""
+        """检查适配器当前是否已连接。"""
         return self._running
-    
+
     def set_message_handler(self, handler: MessageHandler) -> None:
         """
-        Set the handler for incoming messages.
-        
-        The handler receives a MessageEvent and should return
-        an optional response string.
+        设置入站消息的处理器。
+
+        处理器接收一个 MessageEvent，并应返回一个可选的响应字符串。
         """
         self._message_handler = handler
 
@@ -2589,18 +2483,17 @@ class BasePlatformAdapter(ABC):
         self,
         fn: Optional[Callable[[Any], Optional[str]]],
     ) -> None:
-        """Install a thread_id-recovery hook (Telegram DM topic mode).
+        """安装一个 thread_id 恢复钩子（Telegram DM topic 模式）。
 
-        The hook is called with ``event.source`` before session keying;
-        a non-None return value replaces ``source.thread_id``. Pass
-        ``None`` to clear the hook.
+        该钩子在 session keying 之前以 ``event.source`` 调用；非 None 的返回值
+        会替换 ``source.thread_id``。传入 ``None`` 可清除钩子。
         """
-        # Guard against subclasses that initialize via ``object.__new__`` in
-        # tests and never run ``BasePlatformAdapter.__init__``.
+        # 防御那些在测试中通过 ``object.__new__`` 初始化、从不运行
+        # ``BasePlatformAdapter.__init__`` 的子类。
         self._topic_recovery_fn = fn  # type: ignore[attr-defined]
 
     def _apply_topic_recovery(self, event: MessageEvent) -> None:
-        """Rewrite ``event.source.thread_id`` in place if the hook returns one."""
+        """当钩子返回 thread_id 时，原地改写 ``event.source.thread_id``。"""
         recover = getattr(self, "_topic_recovery_fn", None)
         if recover is None:
             return
@@ -2620,33 +2513,32 @@ class BasePlatformAdapter(ABC):
             logger.debug("topic recovery rewrite failed", exc_info=True)
 
     def set_busy_session_handler(self, handler: Optional[Callable[[MessageEvent, str], Awaitable[bool]]]) -> None:
-        """Set an optional handler for messages arriving during active sessions."""
+        """为活动 session 期间到达的消息设置一个可选处理器。"""
         self._busy_session_handler = handler
-    
+
     def set_session_store(self, session_store: Any) -> None:
         """
-        Set the session store for checking active sessions.
-        
-        Used by adapters that need to check if a thread/conversation
-        has an active session before processing messages (e.g., Slack
-        thread replies without explicit mentions).
+        设置用于检查活动 session 的 session 存储。
+
+        供那些在处理消息之前需要检查某个 thread/会话是否有活动 session 的
+        适配器使用（例如 Slack thread 回复但未显式 @ 的情况）。
         """
         self._session_store = session_store
-    
+
     @abstractmethod
     async def connect(self) -> bool:
         """
-        Connect to the platform and start receiving messages.
-        
-        Returns True if connection was successful.
+        连接到平台并开始接收消息。
+
+        连接成功则返回 True。
         """
         pass
-    
+
     @abstractmethod
     async def disconnect(self) -> None:
-        """Disconnect from the platform."""
+        """从平台断开连接。"""
         pass
-    
+
     @abstractmethod
     async def send(
         self,
@@ -2656,25 +2548,23 @@ class BasePlatformAdapter(ABC):
         metadata: Optional[Dict[str, Any]] = None
     ) -> SendResult:
         """
-        Send a message to a chat.
-        
+        向某个 chat 发送一条消息。
+
         Args:
-            chat_id: The chat/channel ID to send to
-            content: Message content (may be markdown)
-            reply_to: Optional message ID to reply to
-            metadata: Additional platform-specific options
-        
+            chat_id: 要发送到的 chat/channel ID
+            content: 消息内容（可以是 markdown）
+            reply_to: 可选，要回复的消息 ID
+            metadata: 额外的平台特定选项
+
         Returns:
-            SendResult with success status and message ID
+            包含成功状态和消息 ID 的 SendResult
         """
         pass
 
-    # Default: the adapter treats ``finalize=True`` on edit_message as a
-    # no-op and is happy to have the stream consumer skip redundant final
-    # edits.  Subclasses that *require* an explicit finalize call to close
-    # out the message lifecycle (e.g. rich card / AI assistant surfaces
-    # such as DingTalk AI Cards) override this to True (class attribute or
-    # property) so the stream consumer knows not to short-circuit.
+    # 默认：适配器把 edit_message 上的 ``finalize=True`` 当作 no-op，并乐意让
+    # stream consumer 跳过冗余的 final edit。*要求*显式 finalize 调用来收尾
+    # 消息生命周期的子类（例如 rich card / AI assistant 呈现面，如钉钉 AI Cards）
+    # 把它覆盖为 True（类属性或 property），让 stream consumer 知道不要短路。
     REQUIRES_EDIT_FINALIZE: bool = False
 
     async def create_handoff_thread(
@@ -2682,24 +2572,20 @@ class BasePlatformAdapter(ABC):
         parent_chat_id: str,
         name: str,
     ) -> Optional[str]:
-        """Create a fresh thread under ``parent_chat_id`` for a session handoff.
+        """为 session handoff 在 ``parent_chat_id`` 之下创建一个新 thread。
 
-        Used by the gateway's handoff watcher when transferring a CLI
-        session to a thread-capable platform — the new thread isolates the
-        handed-off conversation from any pre-existing chat in the home
-        channel and gives users a clean per-handoff scrollback.
+        在把 CLI session 转移到支持 thread 的平台时，由网关的 handoff watcher
+        使用——新 thread 把被交接的对话与 home channel 中既有 chat 隔离开，
+        为用户提供干净的、按 handoff 区分的 scrollback。
 
-        Returns the new thread/topic id (as a string) on success, or
-        ``None`` if the platform doesn't support threading or the
-        attempt failed (permissions, topics-mode off, etc.). When ``None``
-        is returned the watcher falls back to using ``parent_chat_id``
-        directly.
+        成功时返回新的 thread/topic id（字符串），若平台不支持 threading 或
+        尝试失败（权限、topics-mode 关闭等）则返回 ``None``。返回 ``None`` 时，
+        watcher 回退到直接使用 ``parent_chat_id``。
 
-        Default implementation returns ``None`` — adapters that support
-        threads override this. See:
-          - Telegram: forum topics in groups, DM topics with bot API 9.4+
-          - Discord:  text-channel threads (1440-min auto-archive)
-          - Slack:    seed-message thread anchoring
+        默认实现返回 ``None``——支持 thread 的适配器覆盖此方法。参见：
+          - Telegram：群组内的 forum topics、bot API 9.4+ 的 DM topics
+          - Discord：text-channel threads（1440 分钟自动归档）
+          - Slack：seed-message thread 锚定
         """
         return None
 
@@ -2713,23 +2599,19 @@ class BasePlatformAdapter(ABC):
         finalize: bool = False,
     ) -> SendResult:
         """
-        Edit a previously sent message. Optional — platforms that don't
-        support editing return success=False and callers fall back to
-        sending a new message.
+        编辑一条已发送的消息。可选——不支持编辑的平台返回 success=False，
+        调用方回退到发送一条新消息。
 
-        ``finalize`` signals that this is the last edit in a streaming
-        sequence.  Most platforms (Telegram, Slack, Discord, Matrix,
-        etc.) treat it as a no-op because their edit APIs have no notion
-        of message lifecycle state — an edit is an edit.  Platforms that
-        render streaming updates with a distinct "in progress" state and
-        require explicit closure (e.g. rich card / AI assistant surfaces
-        such as DingTalk AI Cards) use it to finalize the message and
-        transition the UI out of the streaming indicator — those should
-        also set ``REQUIRES_EDIT_FINALIZE = True`` so callers route a
-        final edit through even when content is unchanged.  Callers
-        should set ``finalize=True`` on the final edit of a streamed
-        response (typically when ``got_done`` fires in the stream
-        consumer) and leave it ``False`` on intermediate edits.
+        ``finalize`` 表示这是流式序列中的最后一次 edit。多数平台
+        （Telegram、Slack、Discord、Matrix 等）把它当作 no-op，因为它们的
+        edit API 没有消息生命周期状态的概念——一次 edit 就是一次 edit。
+        对于那些用独立的"in progress"状态渲染流式更新、并要求显式收尾的
+        平台（例如 rich card / AI assistant 呈现面，如钉钉 AI Cards），用它
+        来 finalize 消息并把 UI 从流式指示器中切出——这些平台还应设置
+        ``REQUIRES_EDIT_FINALIZE = True``，使调用方即使在内容未变时也路由一次
+        final edit。调用方应在流式响应的最后一次 edit 上设置 ``finalize=True``
+        （通常在 stream consumer 的 ``got_done`` 触发时），中间 edit 保持
+        ``False``。
         """
         return SendResult(success=False, error="Not supported")
 
@@ -2739,27 +2621,23 @@ class BasePlatformAdapter(ABC):
         message_id: str,
     ) -> bool:
         """
-        Delete a previously sent message.  Optional — platforms that don't
-        support deletion return ``False`` and callers fall back to leaving
-        the message in place.
+        删除一条已发送的消息。可选——不支持删除的平台返回 ``False``，
+        调用方回退到保留该消息。
 
-        Used by the stream consumer's fresh-final cleanup path (see
-        openclaw/openclaw#72038) to remove long-lived preview messages
-        after sending the completed reply as a fresh message so the
-        platform's visible timestamp reflects completion time.
+        供 stream consumer 的 fresh-final 清理路径使用（见
+        openclaw/openclaw#72038），在把完成回复作为新消息发送之后，移除
+        长寿命的预览消息，使平台的可见时间戳反映完成时间。
 
-        Returns ``True`` on successful deletion, ``False`` otherwise.
-        Subclasses should override for platforms with a deletion API
-        (e.g. Telegram ``deleteMessage``).
+        成功删除返回 ``True``，否则返回 ``False``。对于具备删除 API 的平台
+        （例如 Telegram 的 ``deleteMessage``），子类应覆盖此方法。
         """
         return False
 
     def _get_ephemeral_system_ttl_default(self) -> int:
-        """Read ``display.ephemeral_system_ttl`` from config.
+        """从配置读取 ``display.ephemeral_system_ttl``。
 
-        Returns the TTL in seconds to use when an :class:`EphemeralReply`
-        does not specify one explicitly.  ``0`` (the default) disables
-        auto-deletion.  Non-fatal if config is unreadable.
+        返回当 :class:`EphemeralReply` 未显式指定 TTL 时使用的 TTL（秒）。
+        ``0``（默认）禁用自动删除。配置不可读时也不是致命错误。
         """
         try:
             from hermes_cli.config import load_config as _load_config
@@ -2784,11 +2662,10 @@ class BasePlatformAdapter(ABC):
         message_id: str,
         ttl_seconds: int,
     ) -> None:
-        """Spawn a detached task that deletes ``message_id`` after ``ttl_seconds``.
+        """派生一个分离的任务，在 ``ttl_seconds`` 后删除 ``message_id``。
 
-        Best-effort — failures (gateway restart, permission denied, message
-        too old for Telegram's 48h window) are swallowed at debug level.
-        Does not block the caller.
+        尽力而为——失败（网关重启、权限拒绝、消息对 Telegram 的 48 小时窗口
+        而言过旧）会在 debug 级别被吞掉。不会阻塞调用方。
         """
 
         async def _run_delete() -> None:
@@ -2821,29 +2698,25 @@ class BasePlatformAdapter(ABC):
         confirm_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a three-option slash-command confirmation prompt.
+        """发送一个三选项的斜杠命令确认提示。
 
-        Used by the gateway's generic slash-confirm primitive (see
-        ``GatewayRunner._request_slash_confirm``) for commands that have a
-        non-destructive but expensive side effect the user should explicitly
-        acknowledge — the current caller is ``/reload-mcp``, which
-        invalidates the provider prompt cache.
+        由网关的通用 slash-confirm 原语使用（见
+        ``GatewayRunner._request_slash_confirm``），用于那些具有非破坏性但代价
+        昂贵、用户应显式确认的副作用命令——当前调用者是 ``/reload-mcp``，
+        它会使 provider 的 prompt 缓存失效。
 
-        Platforms with inline-button support (Telegram, Discord, Slack,
-        Matrix, Feishu) should override this to render three buttons:
-        Approve Once / Always Approve / Cancel.  Button callbacks MUST be
-        routed back through the gateway by calling
-        ``GatewayRunner._resolve_slash_confirm(confirm_id, choice)`` where
-        ``choice`` is ``"once"`` / ``"always"`` / ``"cancel"``.
+        支持 inline-button 的平台（Telegram、Discord、Slack、Matrix、Feishu）
+        应覆盖此方法以渲染三个按钮：Approve Once / Always Approve / Cancel。
+        按钮回调必须通过调用
+        ``GatewayRunner._resolve_slash_confirm(confirm_id, choice)`` 路由回网关，
+        其中 ``choice`` 为 ``"once"`` / ``"always"`` / ``"cancel"``。
 
-        Platforms without button UIs leave this as the default and fall
-        through to the gateway's text fallback (which sends ``message`` as
-        plain text and intercepts the next ``/approve`` / ``/always`` /
-        ``/cancel`` reply).
+        没有按钮 UI 的平台保持默认实现，落入网关的文本回退（它把 ``message``
+        作为纯文本发送，并拦截下一条 ``/approve`` / ``/always`` / ``/cancel``
+        回复）。
 
-        ``confirm_id`` is a short string generated by the gateway; the
-        adapter stores it alongside any platform-specific state needed to
-        route the callback (e.g. Telegram's ``_approval_state`` dict).
+        ``confirm_id`` 是由网关生成的短字符串；适配器把它与路由回调所需的
+        任何平台特定状态一起存储（例如 Telegram 的 ``_approval_state`` 字典）。
         """
         return SendResult(success=False, error="Not supported")
 
@@ -2856,34 +2729,29 @@ class BasePlatformAdapter(ABC):
         session_key: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a clarify prompt to the user.
+        """向用户发送一个 clarify 提示。
 
-        Two render modes:
+        两种渲染模式：
 
-          * **Multiple choice** (``choices`` is a non-empty list) — adapters
-            that override this should render inline buttons (one per choice
-            plus a final "Other" / free-text option).  Button callbacks
-            MUST resolve via
+          * **多选**（``choices`` 为非空列表）——覆盖此方法的适配器应渲染
+            inline 按钮（每个选项一个，外加一个最后的 "Other" / 自由文本选项）。
+            按钮回调必须通过
             ``tools.clarify_gateway.resolve_gateway_clarify(clarify_id, response)``
-            with the chosen string.  Picking the "Other" button calls
-            ``mark_awaiting_text(clarify_id)`` so the next message in the
-            session is captured as the response.
+            以所选字符串来 resolve。选择 "Other" 按钮会调用
+            ``mark_awaiting_text(clarify_id)``，使 session 中的下一条消息被
+            捕获为响应。
 
-          * **Open-ended** (``choices`` is None or empty) — render the
-            question as a plain text message; the next user message in the
-            session is captured by the gateway's text-intercept and
-            resolves the clarify automatically (see
-            ``GatewayRunner._maybe_intercept_clarify_text``).
+          * **开放式**（``choices`` 为 None 或空）——把问题渲染为纯文本消息；
+            session 中的下一条用户消息会被网关的文本拦截捕获，并自动 resolve
+            该 clarify（见 ``GatewayRunner._maybe_intercept_clarify_text``）。
 
-        The default implementation falls back to a numbered text list,
-        which works on every platform — the user replies with a number
-        ("2") or with the literal choice text, and the gateway intercepts
-        and resolves.  For the text fallback path, the default calls
-        ``mark_awaiting_text()`` so that the gateway text-intercept
-        (:meth:`GatewayRunner._maybe_intercept_clarify_text`) catches the
-        user's reply instead of timing out.
-        Adapters with native button UIs (Telegram, Discord) SHOULD
-        override this for a richer UX.
+        默认实现回退到带编号的文本列表，这在任何平台上都可用——用户以数字
+        （"2"）或字面选项文本回复，网关拦截并 resolve。对于文本回退路径，
+        默认实现会调用 ``mark_awaiting_text()``，使网关的文本拦截
+        （:meth:`GatewayRunner._maybe_intercept_clarify_text`）捕获用户回复，
+        而不是超时。
+        具备原生按钮 UI 的适配器（Telegram、Discord）应覆盖此方法以获得
+        更丰富的 UX。
         """
         if choices:
             lines = [f"❓ {question}", ""]
@@ -2892,8 +2760,8 @@ class BasePlatformAdapter(ABC):
             lines.append("")
             lines.append("Reply with the number, the option text, or your own answer.")
             text = "\n".join(lines)
-            # Text fallback: enable text-capture so the gateway intercept
-            # picks up the user's typed reply (e.g. "2" or choice text).
+            # 文本回退：启用文本捕获，使网关拦截拾取用户键入的回复
+            # （例如 "2" 或选项文本）。
             from tools.clarify_gateway import mark_awaiting_text
             mark_awaiting_text(clarify_id)
         else:
@@ -2912,10 +2780,9 @@ class BasePlatformAdapter(ABC):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a notice privately when the platform supports it.
+        """在平台支持时私密地发送一条通知。
 
-        The default implementation falls back to a normal send so callers can
-        use one code path across platforms.
+        默认实现回退到普通 send，使调用方在各平台上可以用同一条代码路径。
         """
         return await self.send(
             chat_id=chat_id,
@@ -2926,18 +2793,18 @@ class BasePlatformAdapter(ABC):
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         """
-        Send a typing indicator.
-        
-        Override in subclasses if the platform supports it.
-        metadata: optional dict with platform-specific context (e.g. thread_id for Slack).
+        发送一个 typing 指示器。
+
+        若平台支持，在子类中覆盖。
+        metadata：可选字典，携带平台特定上下文（例如 Slack 的 thread_id）。
         """
         pass
 
     async def stop_typing(self, chat_id: str) -> None:
-        """Stop a persistent typing indicator (if the platform uses one).
+        """停止持久的 typing 指示器（如果平台使用了的话）。
 
-        Override in subclasses that start background typing loops.
-        Default is a no-op for platforms with one-shot typing indicators.
+        在启动后台 typing 循环的子类中覆盖。
+        对于使用一次性 typing 指示器的平台，默认为 no-op。
         """
         pass
 
@@ -2948,17 +2815,14 @@ class BasePlatformAdapter(ABC):
         metadata: Optional[Dict[str, Any]] = None,
         human_delay: float = 0.0,
     ) -> None:
-        """Send a batch of images.
+        """批量发送一组图片。
 
-        Accepts ``http(s)://``, ``file://`` URIs in the first tuple
-        element.
+        接受 tuple 第一个元素为 ``http(s)://``、``file://`` URI。
 
-        Default implementation sends each item individually,
-        routing animated GIFs through ``send_animation`` and local
-        files through ``send_image_file``.
+        默认实现逐条发送，把动态 GIF 走 ``send_animation``，把本地文件走
+        ``send_image_file``。
 
-        Override in subclasses to bundle into a single native API call
-        (e.g. Signal's multi-attachment RPC)
+        在子类中覆盖以打包成单次原生 API 调用（例如 Signal 的多附件 RPC）。
         """
         from urllib.parse import unquote as _unquote
 
@@ -3007,13 +2871,12 @@ class BasePlatformAdapter(ABC):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """
-        Send an image natively via the platform API.
-        
-        Override in subclasses to send images as proper attachments
-        instead of plain-text URLs. Default falls back to sending the
-        URL as a text message.
+        通过平台 API 原生地发送一张图片。
+
+        在子类中覆盖，把图片作为真正的附件发送，而不是纯文本 URL。
+        默认回退为把 URL 作为文本消息发送。
         """
-        # Fallback: send URL as text (subclasses override for native images)
+        # 回退：把 URL 作为文本发送（子类为原生图片覆盖此方法）
         text = f"{caption}\n{image_url}" if caption else image_url
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
     
@@ -3026,56 +2889,55 @@ class BasePlatformAdapter(ABC):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """
-        Send an animated GIF natively via the platform API.
-        
-        Override in subclasses to send GIFs as proper animations
-        (e.g., Telegram send_animation) so they auto-play inline.
-        Default falls back to send_image.
+        通过平台 API 原生地发送一个动态 GIF。
+
+        在子类中覆盖，把 GIF 作为真正的动画发送（例如 Telegram 的
+        send_animation），使其内联自动播放。默认回退到 send_image。
         """
         return await self.send_image(chat_id=chat_id, image_url=animation_url, caption=caption, reply_to=reply_to, metadata=metadata)
     
     @staticmethod
     def _is_animation_url(url: str) -> bool:
-        """Check if a URL points to an animated GIF (vs a static image)."""
-        lower = url.lower().split('?')[0]  # Strip query params
+        """检查某个 URL 是否指向动态 GIF（相对于静态图片）。"""
+        lower = url.lower().split('?')[0]  # 剥除 query 参数
         return lower.endswith('.gif')
 
     @staticmethod
     def extract_images(content: str) -> Tuple[List[Tuple[str, str]], str]:
         """
-        Extract image URLs from markdown and HTML image tags in a response.
-        
-        Finds patterns like:
+        从响应中的 markdown 和 HTML 图片标签里提取图片 URL。
+
+        查找如下模式：
         - ![alt text](https://example.com/image.png)
         - <img src="https://example.com/image.png">
         - <img src="https://example.com/image.png"></img>
-        
+
         Args:
-            content: The response text to scan.
-        
+            content: 要扫描的响应文本。
+
         Returns:
-            Tuple of (list of (url, alt_text) pairs, cleaned content with image tags removed).
+            一个 tuple：(url, alt_text) 对的列表，以及移除图片标签后的清洁内容。
         """
         images = []
         cleaned = content
-        
-        # Match markdown images: ![alt](url)
+
+        # 匹配 markdown 图片：![alt](url)
         md_pattern = r'!\[([^\]]*)\]\((https?://[^\s\)]+)\)'
         for match in re.finditer(md_pattern, content):
             alt_text = match.group(1)
             url = match.group(2)
-            # Only extract URLs that look like actual images
+            # 只提取看起来是真实图片的 URL
             if any(url.lower().endswith(ext) or ext in url.lower() for ext in
                    ['.png', '.jpg', '.jpeg', '.gif', '.webp', 'fal.media', 'fal-cdn', 'replicate.delivery']):
                 images.append((url, alt_text))
-        
-        # Match HTML img tags: <img src="url"> or <img src="url"></img> or <img src="url"/>
+
+        # 匹配 HTML img 标签：<img src="url"> 或 <img src="url"></img> 或 <img src="url"/>
         html_pattern = r'<img\s+src=["\']?(https?://[^\s"\'<>]+)["\']?\s*/?>\s*(?:</img>)?'
         for match in re.finditer(html_pattern, content):
             url = match.group(1)
             images.append((url, ""))
-        
-        # Remove only the matched image tags from content (not all markdown images)
+
+        # 仅从内容中移除已匹配到的图片标签（不是所有 markdown 图片）
         if images:
             extracted_urls = {url for url, _ in images}
             def _remove_if_extracted(match):
@@ -3083,7 +2945,7 @@ class BasePlatformAdapter(ABC):
                 return '' if url in extracted_urls else match.group(0)
             cleaned = re.sub(md_pattern, _remove_if_extracted, cleaned)
             cleaned = re.sub(html_pattern, _remove_if_extracted, cleaned)
-            # Clean up leftover blank lines
+            # 清理残留的空行
             cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
         
         return images, cleaned
@@ -3098,11 +2960,10 @@ class BasePlatformAdapter(ABC):
         **kwargs,
     ) -> SendResult:
         """
-        Send an audio file as a native voice message via the platform API.
-        
-        Override in subclasses to send audio as voice bubbles (Telegram)
-        or file attachments (Discord). Default falls back to sending the
-        file path as text.
+        通过平台 API 把音频文件作为原生语音消息发送。
+
+        在子类中覆盖，把音频作为语音气泡（Telegram）或文件附件（Discord）
+        发送。默认回退为把文件路径作为文本发送。
         """
         text = f"🔊 Audio: {audio_path}"
         if caption:
@@ -3110,9 +2971,9 @@ class BasePlatformAdapter(ABC):
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
 
     def prepare_tts_text(self, text: str) -> str:
-        """Prepare text for TTS. Override to filter tool output, code, etc.
+        """为 TTS 准备文本。覆盖此方法以过滤 tool 输出、代码等。
 
-        Default strips markdown formatting and truncates to 4000 chars.
+        默认剥除 markdown 格式并截断到 4000 字符。
         """
         return re.sub(r'[*_`#\[\]()]', '', text)[:4000].strip()
 
@@ -3123,10 +2984,10 @@ class BasePlatformAdapter(ABC):
         **kwargs,
     ) -> SendResult:
         """
-        Play auto-TTS audio for voice replies.
+        为语音回复播放自动 TTS 音频。
 
-        Override in subclasses for invisible playback (e.g. Web UI).
-        Default falls back to send_voice (shows audio player).
+        在子类中覆盖以实现不可见播放（例如 Web UI）。
+        默认回退到 send_voice（显示音频播放器）。
         """
         return await self.send_voice(chat_id=chat_id, audio_path=audio_path, **kwargs)
 
@@ -3140,10 +3001,10 @@ class BasePlatformAdapter(ABC):
         **kwargs,
     ) -> SendResult:
         """
-        Send a video natively via the platform API.
+        通过平台 API 原生地发送一段视频。
 
-        Override in subclasses to send videos as inline playable media.
-        Default falls back to sending the file path as text.
+        在子类中覆盖，把视频作为可内联播放的媒体发送。
+        默认回退为把文件路径作为文本发送。
         """
         text = f"🎬 Video: {video_path}"
         if caption:
@@ -3161,10 +3022,10 @@ class BasePlatformAdapter(ABC):
         **kwargs,
     ) -> SendResult:
         """
-        Send a document/file natively via the platform API.
+        通过平台 API 原生地发送一个文档/文件。
 
-        Override in subclasses to send files as downloadable attachments.
-        Default falls back to sending the file path as text.
+        在子类中覆盖，把文件作为可下载附件发送。
+        默认回退为把文件路径作为文本发送。
         """
         text = f"📎 File: {file_path}"
         if caption:
@@ -3181,11 +3042,11 @@ class BasePlatformAdapter(ABC):
         **kwargs,
     ) -> SendResult:
         """
-        Send a local image file natively via the platform API.
+        通过平台 API 原生地发送一个本地图片文件。
 
-        Unlike send_image() which takes a URL, this takes a local file path.
-        Override in subclasses for native photo attachments.
-        Default falls back to sending the file path as text.
+        与接受 URL 的 send_image() 不同，本方法接受本地文件路径。
+        在子类中覆盖以实现原生照片附件。
+        默认回退为把文件路径作为文本发送。
         """
         text = f"🖼️ Image: {image_path}"
         if caption:
@@ -3194,12 +3055,12 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def validate_media_delivery_path(path: str) -> Optional[str]:
-        """Return a resolved path if it is safe for native attachment upload."""
+        """如果路径对原生附件上传是安全的，则返回解析后的路径。"""
         return validate_media_delivery_path(path)
 
     @staticmethod
     def filter_media_delivery_paths(media_files) -> List[Tuple[str, bool]]:
-        """Drop unsafe MEDIA paths and normalize accepted paths."""
+        """丢弃不安全的 MEDIA 路径，并规范化被接受的路径。"""
         safe_media: List[Tuple[str, bool]] = []
         for media_path, is_voice in media_files or []:
             raw = str(media_path)
@@ -3212,7 +3073,7 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def filter_local_delivery_paths(file_paths) -> List[str]:
-        """Drop unsafe bare local file paths and normalize accepted paths."""
+        """丢弃不安全的裸本地文件路径，并规范化被接受的路径。"""
         safe_paths: List[str] = []
         for file_path in file_paths or []:
             raw = str(file_path)
@@ -3226,37 +3087,37 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def _mask_protected_spans(content: str) -> str:
-        """Replace content inside fenced code blocks, inline code spans,
-        and blockquotes with spaces to prevent MEDIA: false positives.
+        """把 fenced 代码块、inline code span 和 blockquote 内部的内容替换为
+        空格，以防止 MEDIA: 出现误报。
 
-        Preserves character count so regex match offsets stay valid.
-        Skips masking backtick-quoted paths in MEDIA: tags (e.g.
-        ``MEDIA:`/path/to/file.png` ``) to avoid breaking path extraction.
+        保留字符数，使正则匹配偏移量保持有效。
+        跳过对 MEDIA: 标签中反引号引用路径的遮蔽（例如
+        ``MEDIA:`/path/to/file.png` ``），以免破坏路径提取。
         """
         chars = list(content)
         n = len(chars)
 
-        # Build list of (start, end) spans to mask
+        # 构建要遮蔽的 (start, end) 区间列表
         spans: list = []
 
-        # Fenced code blocks: ```...```
+        # fenced 代码块：```...```
         for m in re.finditer(r'```[^\n]*\n.*?```', content, re.DOTALL):
             spans.append((m.start(), m.end()))
 
-        # Inline code: `...` but NOT backtick-quoted paths in MEDIA: tags
+        # inline code：`...`，但不包括 MEDIA: 标签中反引号引用的路径
         for m in re.finditer(r'`[^`\n]+`', content):
             start = m.start()
-            # Check if this is a backtick-quoted path after MEDIA:
+            # 检查这是否是 MEDIA: 之后的反引号引用路径
             prefix = content[max(0, start - 20):start]
             if re.search(r'MEDIA:\s*$', prefix):
-                continue  # This is a MEDIA path quote, not inline code
+                continue  # 这是一个 MEDIA 路径引用，不是 inline code
             spans.append((start, m.end()))
 
-        # Blockquote lines: > at line start
+        # blockquote 行：行首的 >
         for m in re.finditer(r'^>.*$', content, re.MULTILINE):
             spans.append((m.start(), m.end()))
 
-        # Apply masking
+        # 应用遮蔽
         for start, end in spans:
             for i in range(start, end):
                 if chars[i] != '\n':
@@ -3267,36 +3128,34 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def _mask_json_string_media(content: str) -> str:
-        """Blank out ``MEDIA:<bare-path>`` occurrences that sit inside a JSON
-        string *value* so they are never delivered as real attachments.
+        """把位于 JSON 字符串*值*内部的 ``MEDIA:<bare-path>`` 出现处清空，
+        使它们绝不会作为真实附件投递。
 
-        Serialized tool results frequently embed a previous reply's text, e.g.::
+        序列化的 tool 结果经常嵌入了之前回复的文本，例如::
 
             {"result": "MEDIA:/Users/x/.hermes/media/generated/stale.png"}
 
-        Here the ``MEDIA:`` is part of stored text, not an outbound directive,
-        but the bare-path branch of ``MEDIA_TAG_CLEANUP_RE`` would still match it
-        and re-deliver a stale file. (Regression report #34375.)
+        这里的 ``MEDIA:`` 是存储文本的一部分，不是出站指令，但
+        ``MEDIA_TAG_CLEANUP_RE`` 的裸路径分支仍会匹配它并重新投递一个陈旧
+        文件。（回归报告 #34375。）
 
-        The discriminator is precise so legitimate tags are untouched:
+        判别条件很精确，因此合法标签不受影响：
 
-        * Only spans opened by a JSON value-context quote (``:``, ``,``, ``{`` or
-          ``[`` immediately before the ``"``) are considered.
-        * Within such a span, only a ``MEDIA:`` followed by a **bare** path
-          (``/``, ``~/`` or ``X:\\``) is masked. A ``MEDIA:"..."`` quoted-path
-          tag — a real LLM output format the extractor supports — is not bare and
-          is left alone.
-        * Tags at line start, after prose whitespace, or indented are outside any
-          JSON value span and are never affected.
+        * 只考虑由 JSON 值上下文引号（``"`` 紧跟在 ``:``、``,``、``{`` 或
+          ``[`` 之后）开启的 span。
+        * 在这样的 span 内，只有后跟**裸**路径（``/``、``~/`` 或 ``X:\\``）
+          的 ``MEDIA:`` 才会被遮蔽。``MEDIA:"..."`` 引号路径标签——一种
+          extractor 支持的真实 LLM 输出格式——不是裸路径，保持原样。
+        * 位于行首、散文空白之后或缩进的标签不在任何 JSON 值 span 内，从不
+          受影响。
 
-        Offsets are preserved (matched chars replaced with spaces, newlines kept)
-        so downstream match positions stay valid.
+        偏移量被保留（匹配字符替换为空格，换行保留），使下游匹配位置保持有效。
         """
         if '"' not in content or "MEDIA:" not in content:
             return content
         chars = list(content)
-        # JSON value-context string: a quote preceded by : , { or [ (optional ws),
-        # capturing the (escape-aware) string body up to the closing quote.
+        # JSON 值上下文字符串：一个引号前缀为 : , { 或 [（可选空白），
+        # 捕获（转义感知的）字符串体直到结束引号。
         for m in re.finditer(r'(?<=[:,{\[])\s*"((?:[^"\\\n]|\\.)*)"', content):
             seg = m.group(1)
             if re.search(r'MEDIA:\s*(?:~/|/|[A-Za-z]:[/\\])', seg):
@@ -3308,51 +3167,46 @@ class BasePlatformAdapter(ABC):
     @staticmethod
     def extract_media(content: str) -> Tuple[List[Tuple[str, bool]], str]:
         """
-        Extract MEDIA:<path> tags and [[audio_as_voice]] directives from response text.
+        从响应文本中提取 MEDIA:<path> 标签和 [[audio_as_voice]] 指令。
 
-        The TTS tool returns responses like:
+        TTS 工具返回的响应形如：
             [[audio_as_voice]]
             MEDIA:/path/to/audio.ogg
 
-        Skills that produce large/lossless images (e.g. info-graph, where a
-        rendered JPG is 1-2 MB but Telegram's sendPhoto recompresses to
-        ~200 KB at 1280px) can use ``[[as_document]]`` to request unmodified
-        delivery via sendDocument instead of sendPhoto/sendMediaGroup. The
-        directive is detected at the dispatch sites (which have access to the
-        original response); this method just strips it so it never leaks into
-        user-visible text. Per-file granularity is intentionally not exposed —
-        when an agent emits ``[[as_document]]`` once, every image path in the
-        same response is delivered as a document, mirroring the all-or-nothing
-        scope of ``[[audio_as_voice]]``.
+        产出大体积/无损图片的 skill（例如 info-graph，渲染出的 JPG 有 1-2 MB，
+        但 Telegram 的 sendPhoto 会在 1280px 下重压缩到约 200 KB）可以用
+        ``[[as_document]]`` 请求通过 sendDocument 而非 sendPhoto/sendMediaGroup
+        原样投递。该指令在分发点（能访问原始响应）处被检测；本方法只是把它剥除，
+        使它绝不泄漏到用户可见文本中。有意不暴露逐文件粒度——当 agent 一次
+        发出 ``[[as_document]]``，同一响应中的每个图片路径都会作为文档投递，
+        与 ``[[audio_as_voice]]`` 的全有或全无作用域一致。
 
         Args:
-            content: The response text to scan.
+            content: 要扫描的响应文本。
 
         Returns:
-            Tuple of (list of (path, is_voice) pairs, cleaned content with tags removed).
+            一个 tuple：((path, is_voice) 对的列表，移除标签后的清洁内容)。
         """
         media = []
         cleaned = content
 
-        # Check for [[audio_as_voice]] directive
+        # 检查 [[audio_as_voice]] 指令
         has_voice_tag = "[[audio_as_voice]]" in content
         cleaned = cleaned.replace("[[audio_as_voice]]", "")
-        # Strip [[as_document]] directive — callers inspect the original
-        # ``content`` for it (so they can still react to it); here we just
-        # keep it out of the user-visible cleaned text.
+        # 剥除 [[as_document]] 指令——调用方在原始 ``content`` 上检查它
+        # （以便仍能对其作出反应）；此处只是让它不出现在用户可见的清洁文本中。
         cleaned = cleaned.replace("[[as_document]]", "")
-        
-        # Extract MEDIA:<path> tags, allowing optional whitespace after the colon
-        # and quoted/backticked paths for LLM-formatted outputs. The extension
-        # set is the shared MEDIA_DELIVERY_EXTS source of truth (built once into
-        # MEDIA_TAG_CLEANUP_RE) so it can never drift from extract_local_files.
+
+        # 提取 MEDIA:<path> 标签，允许冒号后可选空白，以及为 LLM 格式化输出
+        # 而设的引号/反引号路径。扩展名集合是共享的 MEDIA_DELIVERY_EXTS 唯一
+        # 事实来源（一次构建进 MEDIA_TAG_CLEANUP_RE），因此绝不会与
+        # extract_local_files 漂移。
         media_pattern = MEDIA_TAG_CLEANUP_RE
-        # Mask example/stored MEDIA: paths before scanning so they are never
-        # delivered as real attachments:
-        #  - code blocks / inline code / blockquotes hold prose examples (#35695)
-        #  - serialized JSON string values hold stored tool-result text (#34375)
-        # Both maskers are offset-preserving (chars -> spaces) so match offsets
-        # stay valid; chaining them masks the union of both protected regions.
+        # 在扫描前遮蔽示例/存储的 MEDIA: 路径，使它们绝不会作为真实附件投递：
+        #  - 代码块 / inline code / blockquote 承载散文示例（#35695）
+        #  - 序列化的 JSON 字符串值承载存储的 tool-result 文本（#34375）
+        # 两个遮蔽器都保留偏移量（字符 -> 空格），因此匹配偏移量保持有效；
+        # 串联使用它们会遮蔽两块保护区域的并集。
         scan_content = BasePlatformAdapter._mask_protected_spans(content)
         scan_content = BasePlatformAdapter._mask_json_string_media(scan_content)
         for match in media_pattern.finditer(scan_content):
@@ -3364,18 +3218,16 @@ class BasePlatformAdapter(ABC):
                 try:
                     media.append((os.path.expanduser(path), has_voice_tag))
                 except (OSError, RuntimeError, ValueError):
-                    # Skip a crafted ~\x00 path rather than aborting extraction
-                    # and dropping every other attachment in the response.
+                    # 跳过一个精心构造的 ~\x00 路径，而不是中止提取并丢弃
+                    # 响应中的其它所有附件。
                     continue
 
-        # Remove the delivered MEDIA tags from the user-visible text. Mask a
-        # length-equal copy of ``cleaned`` (same union of protected regions) to
-        # *locate* the real tag spans, then delete exactly those spans from the
-        # *unmasked* ``cleaned``. Masking is only a locator — protected spans
-        # (code blocks, quotes, JSON-embedded MEDIA: text) must survive verbatim
-        # in the delivered text, not be blanked to whitespace. Masking
-        # ``cleaned`` (not ``content``) keeps offsets valid after the
-        # [[audio_as_voice]] / [[as_document]] directives are removed.
+        # 从用户可见文本中移除已投递的 MEDIA 标签。对 ``cleaned`` 的等长副本
+        # 做遮蔽（相同的保护区并集）以*定位*真实标签区间，然后从*未遮蔽*的
+        # ``cleaned`` 中精确删除这些区间。遮蔽仅作为定位器——受保护区
+        # （代码块、引用、JSON 内嵌的 MEDIA: 文本）必须在投递文本中原样保留，
+        # 而不是被清成空格。遮蔽 ``cleaned``（而非 ``content``）可在
+        # [[audio_as_voice]] / [[as_document]] 指令被移除后保持偏移量有效。
         if media:
             masked_cleaned = BasePlatformAdapter._mask_protected_spans(cleaned)
             masked_cleaned = BasePlatformAdapter._mask_json_string_media(masked_cleaned)
@@ -3392,41 +3244,36 @@ class BasePlatformAdapter(ABC):
     @staticmethod
     def extract_local_files(content: str) -> Tuple[List[str], str]:
         """
-        Detect bare local file paths in response text for native delivery.
+        检测响应文本中的裸本地文件路径，用于原生投递。
 
-        Matches absolute paths (/...) and tilde paths (~/) ending in common
-        image, video, audio, or document extensions.  Validates each
-        candidate with ``os.path.isfile()`` to avoid false positives from
-        URLs or non-existent paths.
+        匹配绝对路径（/...）和波浪号路径（~/），以常见图片、视频、音频或
+        文档扩展名结尾。对每个候选路径用 ``os.path.isfile()`` 校验，以避免
+        来自 URL 或不存在路径的误报。
 
-        The extension list is broader than just images/video so the agent
-        can produce arbitrary artifacts (charts, PDFs, spreadsheets, code
-        archives, CSVs) and have them ship to the user as native uploads
-        without needing an explicit ``MEDIA:`` tag.  Image / video
-        extensions still embed inline where the platform supports it;
-        document extensions route through ``send_document``.  The dispatch
-        partition lives in ``gateway/run.py``.
+        扩展名列表比单纯图片/视频更宽，使 agent 可以产出任意产物（图表、PDF、
+        电子表格、代码归档、CSV）并作为原生上传投递给用户，而无需显式的
+        ``MEDIA:`` 标签。图片/视频扩展名仍会在平台支持处内联嵌入；文档扩展名
+        走 ``send_document``。分发划分位于 ``gateway/run.py``。
 
-        Paths inside fenced code blocks (``` ... ```) and inline code
-        (`...`) are ignored so that code samples are never mutilated.
+        fenced 代码块（``` ... ```）和 inline code（`...`）内的路径会被忽略，
+        使代码示例绝不会遭到破坏。
 
         Returns:
-            Tuple of (list of expanded file paths, cleaned text with the
-            raw path strings removed).
+            一个 tuple：(展开后的文件路径列表，移除原始路径字符串后的清洁文本)。
         """
         _LOCAL_MEDIA_EXTS = MEDIA_DELIVERY_EXTS
         ext_part = '|'.join(e.lstrip('.') for e in _LOCAL_MEDIA_EXTS)
 
-        # (?<![/:\w.]) prevents matching inside URLs (e.g. https://…/img.png)
-        #             and relative paths (./foo.png)
-        # (?:~/|/)    anchors to absolute or home-relative Unix paths
-        # (?:[A-Za-z]:[/\\]) anchors to Windows drive-letter paths (#34632)
+        # (?<![/:\w.]) 阻止在 URL（例如 https://…/img.png）
+        #             和相对路径（./foo.png）内部匹配
+        # (?:~/|/)    锚定到绝对或家目录相对的 Unix 路径
+        # (?:[A-Za-z]:[/\\]) 锚定到 Windows 盘符路径（#34632）
         path_re = re.compile(
             r'(?<![/:\w.])(?:~/|/|[A-Za-z]:[/\\])(?:[\w.\-]+[/\\])*[\w.\-]+\.(?:' + ext_part + r')\b',
             re.IGNORECASE,
         )
 
-        # Build spans covered by fenced code blocks and inline code
+        # 构建 fenced 代码块和 inline code 覆盖的区间
         code_spans: list = []
         for m in re.finditer(r'```[^\n]*\n.*?```', content, re.DOTALL):
             code_spans.append((m.start(), m.end()))
@@ -3436,7 +3283,7 @@ class BasePlatformAdapter(ABC):
         def _in_code(pos: int) -> bool:
             return any(s <= pos < e for s, e in code_spans)
 
-        found: list = []  # (raw_match_text, expanded_path)
+        found: list = []  # (原始匹配文本, 展开后的路径)
         for match in path_re.finditer(content):
             if _in_code(match.start()):
                 continue
@@ -3445,18 +3292,16 @@ class BasePlatformAdapter(ABC):
             if os.path.isfile(expanded):
                 found.append((raw, expanded))
             else:
-                # The reply mentions a deliverable-looking path that does not
-                # exist on disk, so it is silently dropped from native delivery.
-                # This is the most common reason a promised file never arrives
-                # (the model said "here's your file" but never wrote it, or
-                # referenced the wrong path). Log it so the gap is visible in
-                # gateway.log rather than vanishing without a trace.
+                # 回复提及了一个看起来可投递、但磁盘上不存在的路径，因此从
+                # 原生投递中静默丢弃。这是承诺的文件从未送达的最常见原因
+                # （模型说"这是你的文件"却从未写入，或引用了错误路径）。
+                # 记录日志使该缺口在 gateway.log 中可见，而不是无痕消失。
                 logger.info(
                     "Skipping bare file path in reply (no file on disk): %s",
                     _log_safe_path(raw),
                 )
 
-        # Deduplicate by expanded path, preserving discovery order
+        # 按展开后的路径去重，保留发现顺序
         seen: set = set()
         unique: list = []
         for raw, expanded in found:
@@ -3482,28 +3327,25 @@ class BasePlatformAdapter(ABC):
         stop_event: asyncio.Event | None = None,
     ) -> None:
         """
-        Continuously send typing indicator until cancelled.
-        
-        Telegram/Discord typing status expires after ~5 seconds, so we refresh every 2
-        to recover quickly after progress messages interrupt it.
-        
-        Skips send_typing when the chat is in ``_typing_paused`` (e.g. while
-        the agent is waiting for dangerous-command approval).  This is critical
-        for Slack's Assistant API where ``assistant_threads_setStatus`` disables
-        the compose box — pausing lets the user type ``/approve`` or ``/deny``.
+        持续发送 typing 指示器，直到被取消。
 
-        Each ``send_typing`` call is bounded by a ~1.5s timeout so a slow
-        network round-trip can't stall the refresh cadence.  Telegram- and
-        Discord-side typing expire after ~5s; if any individual send_typing
-        takes longer than the refresh interval, the bubble would die and
-        stay dead until that call returns.  Abandoning the slow call lets
-        the next tick fire a fresh send_typing on schedule — as long as
-        one of them succeeds within the 5s platform-side window, the bubble
-        stays visible across provider stalls / upstream API timeouts.
+        Telegram/Discord 的 typing 状态约 5 秒后过期，因此我们每 2 秒刷新一次，
+        以便在进度消息打断它之后快速恢复。
+
+        当 chat 处于 ``_typing_paused`` 时（例如 agent 正在等待危险命令审批），
+        跳过 send_typing。这对 Slack 的 Assistant API 至关重要——在那里
+        ``assistant_threads_setStatus`` 会禁用 compose 框——暂停可让用户键入
+        ``/approve`` 或 ``/deny``。
+
+        每次 ``send_typing`` 调用都受约 1.5 秒超时约束，使缓慢的网络往返不会
+        拖住刷新节奏。Telegram 和 Discord 端的 typing 约 5 秒后过期；如果某次
+        send_typing 耗时超过刷新间隔，气泡会熄灭并保持熄灭直到该调用返回。
+        放弃慢调用让下一个 tick 按计划发出新的 send_typing——只要其中一次
+        在 5 秒的平台端窗口内成功，气泡就能在 provider 停滞 / 上游 API 超时
+        期间保持可见。
         """
-        # Bound each send_typing round-trip so the refresh cadence isn't
-        # gated on network health.  Must stay below ``interval`` so a slow
-        # call gets abandoned before the next scheduled tick.
+        # 为每次 send_typing 往返设置上限，使刷新节奏不受网络健康状况制约。
+        # 必须小于 ``interval``，这样慢调用会在下一个计划 tick 之前被放弃。
         _send_typing_timeout = max(0.25, min(1.5, interval - 0.25))
         try:
             while True:
@@ -3516,8 +3358,8 @@ class BasePlatformAdapter(ABC):
                             timeout=_send_typing_timeout,
                         )
                     except asyncio.TimeoutError:
-                        # Slow network — abandon this tick, keep the loop
-                        # on schedule so the next send_typing fires fresh.
+                        # 网络慢——放弃本次 tick，保持循环按计划进行，
+                        # 以便下一次 send_typing 新鲜发出。
                         pass
                     except asyncio.CancelledError:
                         raise
@@ -3535,15 +3377,15 @@ class BasePlatformAdapter(ABC):
                     remaining = deadline - loop.time()
                     if remaining <= 0:
                         break
-                    # Poll instead of wait_for(stop_event.wait()).  Cancelling
-                    # wait_for while it owns the inner Event.wait task can leave
-                    # shutdown paths stuck awaiting the typing task on Python
-                    # 3.11/pytest-asyncio; sleep cancellation is immediate.
+                    # 用轮询代替 wait_for(stop_event.wait())。取消 wait_for 时，
+                    # 若它持有内部 Event.wait 任务，可能让关闭路径在 Python
+                    # 3.11/pytest-asyncio 上卡在等待 typing 任务；而 sleep 的
+                    # 取消是立即的。
                     await asyncio.sleep(min(0.25, remaining))
                 if stop_event.is_set():
                     return
         except asyncio.CancelledError:
-            pass  # Normal cancellation when handler completes
+            pass  # 处理器完成时的正常取消
         finally:
             # Ensure the underlying platform typing loop is stopped.
             # _keep_typing may have called send_typing() after an outer
@@ -3564,7 +3406,7 @@ class BasePlatformAdapter(ABC):
         timeout: float = 0.5,
         stop_attempts: int = 2,
     ) -> None:
-        """Stop the refresh task and platform typing state as one operation."""
+        """把刷新任务和平台 typing 状态作为一次操作停止。"""
         self._typing_paused.add(chat_id)
         try:
             if typing_task is not None and not typing_task.done():
@@ -3572,8 +3414,7 @@ class BasePlatformAdapter(ABC):
                 try:
                     await asyncio.wait_for(asyncio.shield(typing_task), timeout=timeout)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
-                    # The task is cancelled; don't let a slow adapter-specific
-                    # cleanup block response delivery or shutdown.
+                    # 任务已被取消；不要让缓慢的适配器特定清理阻塞响应投递或关闭。
                     pass
             if not hasattr(self, "stop_typing"):
                 return
@@ -3589,19 +3430,19 @@ class BasePlatformAdapter(ABC):
             self._typing_paused.discard(chat_id)
 
     def pause_typing_for_chat(self, chat_id: str) -> None:
-        """Pause typing indicator for a chat (e.g. during approval waits).
+        """为某个 chat 暂停 typing 指示器（例如在等待审批期间）。
 
-        Thread-safe (CPython GIL) — can be called from the sync agent thread
-        while ``_keep_typing`` runs on the async event loop.
+        线程安全（CPython GIL）——可在同步 agent 线程中调用，同时
+        ``_keep_typing`` 运行在 async 事件循环上。
         """
         self._typing_paused.add(chat_id)
 
     def resume_typing_for_chat(self, chat_id: str) -> None:
-        """Resume typing indicator for a chat after approval resolves."""
+        """在审批完成后恢复某个聊天的输入指示器。"""
         self._typing_paused.discard(chat_id)
 
     async def interrupt_session_activity(self, session_key: str, chat_id: str) -> None:
-        """Signal the active session loop to stop and clear typing immediately."""
+        """通知活动的会话循环停止，并立即清除输入指示器。"""
         if session_key:
             interrupt_event = self._active_sessions.get(session_key)
             if interrupt_event is not None:
@@ -3618,17 +3459,15 @@ class BasePlatformAdapter(ABC):
         *,
         generation: int | None = None,
     ) -> None:
-        """Register a deferred callback to fire after the main response.
+        """注册一个延迟回调，在主响应发出之后触发。
 
-        ``generation`` lets callers tie the callback to a specific gateway run
-        generation so stale runs cannot clear callbacks owned by a fresher run.
+        ``generation`` 让调用方将回调与某次具体的 gateway 运行世代绑定，
+        这样陈旧的运行就不会清除更新世代所拥有的回调。
 
-        If a callback for the same ``session_key`` (and generation, when set)
-        is already registered, the new callback is chained — both fire, in
-        registration order, with per-callback exception isolation. This lets
-        independent features (background-review release + temporary-bubble
-        cleanup) coexist without clobbering each other. Stale-generation
-        callers never overwrite a fresher generation's slot.
+        如果同一个 ``session_key``（以及 generation，若已设置）已注册过回调，
+        新回调会被串联起来——两者按注册顺序触发，且每个回调之间相互隔离异常。
+        这样可以让彼此独立的功能（后台评审释放 + 临时气泡清理）共存而不互相覆盖。
+        陈旧世代的调用方永远不会覆盖更新世代的槽位。
         """
         if not session_key or not callable(callback):
             return
@@ -3639,15 +3478,14 @@ class BasePlatformAdapter(ABC):
                 existing_gen, existing_cb = existing
             else:
                 existing_gen, existing_cb = None, existing
-            # Stale-generation registrations never overwrite a fresher slot.
+            # 陈旧世代的注册绝不会覆盖更新的槽位。
             if (
                 existing_gen is not None
                 and generation is not None
                 and int(generation) < int(existing_gen)
             ):
                 return
-            # Same-or-newer generation: chain with the existing callback so
-            # both fire in registration order.
+            # 相同或更新的世代：与既有回调串联，使两者按注册顺序触发。
             if callable(existing_cb) and (
                 existing_gen is None
                 or generation is None
@@ -3679,7 +3517,7 @@ class BasePlatformAdapter(ABC):
         *,
         generation: int | None = None,
     ) -> Callable | None:
-        """Pop a deferred callback, optionally requiring generation ownership."""
+        """弹出一个延迟回调，可选地要求世代归属。"""
         if not session_key:
             return None
         entry = self._post_delivery_callbacks.get(session_key)
@@ -3696,18 +3534,18 @@ class BasePlatformAdapter(ABC):
         self._post_delivery_callbacks.pop(session_key, None)
         return entry if callable(entry) else None
 
-    # ── Processing lifecycle hooks ──────────────────────────────────────────
-    # Subclasses override these to react to message processing events
-    # (e.g. Discord adds 👀/✅/❌ reactions).
+    # ── 处理生命周期钩子 ──────────────────────────────────────────
+    # 子类覆盖这些方法以对消息处理事件作出反应
+    # （例如 Discord 会添加 👀/✅/❌ 反应）。
 
     async def on_processing_start(self, event: MessageEvent) -> None:
-        """Hook called when background processing begins."""
+        """后台处理开始时调用的钩子。"""
 
     async def on_processing_complete(self, event: MessageEvent, outcome: ProcessingOutcome) -> None:
-        """Hook called when background processing completes."""
+        """后台处理完成时调用的钩子。"""
 
     async def _run_processing_hook(self, hook_name: str, *args: Any, **kwargs: Any) -> None:
-        """Run a lifecycle hook without letting failures break message flow."""
+        """运行一个生命周期钩子，不让其失败打断消息流。"""
         hook = getattr(self, hook_name, None)
         if not callable(hook):
             return
@@ -3718,7 +3556,7 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def _is_retryable_error(error: Optional[str]) -> bool:
-        """Return True if the error string looks like a transient network failure."""
+        """当错误字符串看起来是瞬时网络失败时返回 True。"""
         if not error:
             return False
         lowered = error.lower()
@@ -3726,10 +3564,9 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def _is_timeout_error(error: Optional[str]) -> bool:
-        """Return True if the error string indicates a read/write timeout.
+        """当错误字符串表明是读/写超时时返回 True。
 
-        Timeout errors are NOT retryable and should NOT trigger plain-text
-        fallback — the request may have already been delivered.
+        超时错误不可重试，也不应触发纯文本回退——请求可能已被投递。
         """
         if not error:
             return False
@@ -3737,14 +3574,13 @@ class BasePlatformAdapter(ABC):
         return "timed out" in lowered or "readtimeout" in lowered or "writetimeout" in lowered
 
     def _unwrap_ephemeral(self, response: Any) -> Tuple[Optional[str], int]:
-        """Unwrap a handler response into (text, ttl_seconds).
+        """把处理器响应解包为 (text, ttl_seconds)。
 
-        Accepts a plain string, ``None``, or an :class:`EphemeralReply`.
-        Returns ``(text, ttl)`` where ``ttl > 0`` means the caller should
-        schedule a deletion via :meth:`_schedule_ephemeral_delete` after
-        the send succeeds.  ``ttl`` is forced to 0 when the adapter
-        doesn't override :meth:`delete_message` so non-supporting
-        platforms silently degrade to normal sends.
+        接受普通字符串、``None`` 或 :class:`EphemeralReply`。
+        返回 ``(text, ttl)``，其中 ``ttl > 0`` 表示调用方应在发送成功后
+        通过 :meth:`_schedule_ephemeral_delete` 安排删除。当适配器未覆盖
+        :meth:`delete_message` 时，``ttl`` 被强制为 0，使不支持的平台静默降级为
+        正常发送。
         """
         if isinstance(response, EphemeralReply):
             ttl = response.ttl_seconds
@@ -3768,12 +3604,11 @@ class BasePlatformAdapter(ABC):
         base_delay: float = 2.0,
     ) -> "SendResult":
         """
-        Send a message with automatic retry for transient network errors.
+        发送一条消息，对瞬时网络错误自动重试。
 
-        On permanent failures (e.g. formatting / permission errors) falls back
-        to a plain-text version before giving up. If all attempts fail due to
-        network errors, sends the user a brief delivery-failure notice so they
-        know to retry rather than waiting indefinitely.
+        在永久性失败（例如格式 / 权限错误）时，放弃前会回退到纯文本版本。
+        如果所有尝试都因网络错误失败，则向用户发送一条简短的投递失败通知，
+        使他们知道应重试，而不是无限等待。
         """
 
         result = await self.send(
@@ -3789,20 +3624,19 @@ class BasePlatformAdapter(ABC):
         error_str = result.error or ""
         is_network = result.retryable or self._is_retryable_error(error_str)
 
-        # Timeout errors are not safe to retry (message may have been
-        # delivered) and not formatting errors — return the failure as-is.
+        # 超时错误不可安全重试（消息可能已被投递），也不是格式错误——原样返回失败。
         if not is_network and self._is_timeout_error(error_str):
             return result
 
         if is_network:
-            # Retry with exponential backoff for transient errors.
-            # Honor server-requested retry_after (e.g. Telegram FloodWait)
-            # when present — it is authoritative over our backoff schedule.
+            # 对瞬时错误以指数退避重试。
+            # 存在服务器要求的 retry_after（例如 Telegram FloodWait）时予以采纳——
+            # 它比我们的退避计划更具权威性。
             server_retry_after = result.retry_after
             for attempt in range(1, max_retries + 1):
                 if server_retry_after is not None:
                     delay = server_retry_after + random.uniform(0, 1)
-                    server_retry_after = None  # only honor once per send
+                    server_retry_after = None  # 每次 send 只采纳一次
                 else:
                     delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
                 logger.warning(
@@ -3823,9 +3657,9 @@ class BasePlatformAdapter(ABC):
                 if result.retry_after is not None:
                     server_retry_after = result.retry_after
                 if not (result.retryable or self._is_retryable_error(error_str)):
-                    break  # error switched to non-transient — fall through to plain-text fallback
+                    break  # 错误切换为非瞬时——落入纯文本回退
             else:
-                # All retries exhausted (loop completed without break) — notify user
+                # 所有重试用尽（循环完成而未 break）——通知用户
                 logger.error("[%s] Failed to deliver response after %d retries: %s", self.name, max_retries, error_str)
                 notice = (
                     "\u26a0\ufe0f Message delivery failed after multiple attempts. "
@@ -3837,7 +3671,7 @@ class BasePlatformAdapter(ABC):
                     logger.debug("[%s] Could not send delivery-failure notice: %s", self.name, notify_err)
                 return result
 
-        # Non-network / post-retry formatting failure: try plain text as fallback
+        # 非网络 / 重试后的格式化失败：尝试纯文本作为回退
         logger.warning("[%s] Send failed: %s — trying plain-text fallback", self.name, error_str)
         fallback_result = await self.send(
             chat_id=chat_id,
@@ -3851,12 +3685,11 @@ class BasePlatformAdapter(ABC):
 
     @staticmethod
     def _merge_caption(existing_text: Optional[str], new_text: str) -> str:
-        """Merge a new caption into existing text, avoiding duplicates.
+        """把新说明文字合并进既有文本，避免重复。
 
-        Uses line-by-line exact match (not substring) to prevent false positives
-        where a shorter caption is silently dropped because it appears as a
-        substring of a longer one (e.g. "Meeting" inside "Meeting agenda").
-        Whitespace is normalised for comparison.
+        使用逐行精确匹配（而非子串）以防止误报：避免较短的说明文字因为作为
+        较长说明文字的子串出现而被静默丢弃（例如 "Meeting" 出现在
+        "Meeting agenda" 中）。比较时会归一化空白。
         """
         if not existing_text:
             return new_text
@@ -3891,7 +3724,7 @@ class BasePlatformAdapter(ABC):
         return result
 
     def _can_merge_text_debounce_events(self, existing: MessageEvent, event: MessageEvent) -> bool:
-        """Return True when two text debounce events came from the same sender."""
+        """当两个文本 debounce 事件来自同一发送者时返回 True。"""
 
         def _identity(candidate: MessageEvent) -> tuple[str, ...] | None:
             source = getattr(candidate, "source", None)
@@ -3910,7 +3743,7 @@ class BasePlatformAdapter(ABC):
         return existing_sender is not None and existing_sender == incoming_sender
 
     def _text_debounce_delay(self, session_key: str) -> float:
-        """Return bounded busy-text debounce delay for ``session_key``."""
+        """返回 ``session_key`` 的有界 busy-text debounce 延迟。"""
         state = self._text_debounce_store().get(session_key)
         if state is None:
             return 0.0
@@ -3920,14 +3753,13 @@ class BasePlatformAdapter(ABC):
         return max(0.0, min(window_deadline, hard_cap_deadline) - now)
 
     async def _queue_text_debounce(self, session_key: str, event: MessageEvent) -> None:
-        """Buffer normal queue-mode busy text and schedule a bounded flush."""
+        """缓冲常规 queue 模式的 busy 文本，并安排一次有界的 flush。"""
         store = self._text_debounce_store()
         state = store.get(session_key)
 
         if state is not None and not self._can_merge_text_debounce_events(state.event, event):
-            # Preserve sender attribution in shared sessions. The current
-            # buffer becomes the next pending turn; the new sender starts a
-            # fresh debounce burst when the pending slot allows it.
+            # 在共享 session 中保留发送者归属。当前缓冲成为下一个待处理轮次；
+            # 新发送者在待处理槽位允许时开始一段新的 debounce 突发。
             await self._flush_text_debounce_now(session_key)
             state = store.get(session_key)
             if state is not None and not self._can_merge_text_debounce_events(state.event, event):
@@ -3972,7 +3804,7 @@ class BasePlatformAdapter(ABC):
         state.task = asyncio.create_task(self._flush_text_debounce(session_key, delay))
 
     async def _flush_text_debounce(self, session_key: str, delay: float) -> None:
-        """Timer task that flushes the debounced text buffer."""
+        """刷新 debounce 文本缓冲的计时器任务。"""
         try:
             await asyncio.sleep(delay)
             await self._flush_text_debounce_now(session_key)
@@ -3985,7 +3817,7 @@ class BasePlatformAdapter(ABC):
                 state.task = None
 
     async def _flush_text_debounce_now(self, session_key: str) -> bool:
-        """Force-flush one debounced busy-text burst into the pending slot."""
+        """强制把一次 debounce 的 busy 文本突发 flush 进待处理槽位。"""
         store = self._text_debounce_store()
         state = store.get(session_key)
         if state is None:
@@ -4015,18 +3847,17 @@ class BasePlatformAdapter(ABC):
         return True
 
     def _discard_text_debounce(self, session_key: str) -> None:
-        """Cancel and drop pending text debounce state for control commands."""
+        """为控制命令取消并丢弃待处理文本 debounce 状态。"""
         state = self._text_debounce_store().pop(session_key, None)
         if state is not None and state.task is not None and not state.task.done():
             state.task.cancel()
 
     # ------------------------------------------------------------------
-    # Session task + guard ownership helpers
+    # Session task + guard 归属辅助方法
     # ------------------------------------------------------------------
-    # These were introduced together with the _session_tasks owner map to
-    # make session lifecycle reconciliation deterministic across (a) the
-    # normal completion path, (b) /stop/ /new/ /reset bypass commands,
-    # and (c) stale-lock self-heal on the next inbound message.
+    # 这些与 _session_tasks owner 映射一同引入，以使 session 生命周期调和在
+    # 以下路径中保持确定性：(a) 正常完成路径，(b) /stop/ /new/ /reset 绕过
+    # 命令，(c) 下一条入站消息上的陈旧锁自愈。
 
     def _release_session_guard(
         self,
@@ -4034,12 +3865,11 @@ class BasePlatformAdapter(ABC):
         *,
         guard: Optional[asyncio.Event] = None,
     ) -> None:
-        """Release the adapter-level guard for a session.
+        """释放某个 session 的适配器级守卫。
 
-        When ``guard`` is provided, only release the entry if it still points
-        at that exact Event.  This lets reset-like commands swap in a temporary
-        guard while the old processing task unwinds, without having the old
-        task's cleanup accidentally clear the replacement guard.
+        当提供了 ``guard`` 时，只有当条目仍指向那个确切的 Event 时才释放。
+        这让 reset 类命令可以在旧处理任务收尾时换入一个临时守卫，而不会让
+        旧任务的清理意外清除替换守卫。
         """
         current_guard = self._active_sessions.get(session_key)
         if current_guard is None:
@@ -4049,15 +3879,14 @@ class BasePlatformAdapter(ABC):
         del self._active_sessions[session_key]
 
     def _session_task_is_stale(self, session_key: str) -> bool:
-        """Return True if the owner task for ``session_key`` is done/cancelled.
+        """当 ``session_key`` 的 owner 任务已完成/取消时返回 True。
 
-        A lock is "stale" when the adapter still has ``_active_sessions[key]``
-        AND a known owner task in ``_session_tasks`` that has already exited.
-        When there is no owner task at all, that usually means the guard was
-        installed by some path other than handle_message() (tests sometimes
-        install guards directly) — don't treat that as stale.  The on-entry
-        self-heal only needs to handle the production split-brain case where
-        an owner task was recorded, then exited without clearing its guard.
+        当适配器仍持有 ``_active_sessions[key]``、且 ``_session_tasks`` 中
+        有一个已知 owner 任务已经退出时，这个锁就是"陈旧"的。当根本不存在
+        owner 任务时，通常意味着守卫是由 handle_message() 以外的某条路径
+        安装的（测试有时会直接安装守卫）——不要把它视为陈旧。入口处的自愈
+        只需处理生产环境的 split-brain 场景：owner 任务被记录后，未清除其
+        守卫就退出了。
         """
         task = self._session_tasks.get(session_key)
         if task is None:
@@ -4066,16 +3895,15 @@ class BasePlatformAdapter(ABC):
         return bool(done and done())
 
     def _heal_stale_session_lock(self, session_key: str) -> bool:
-        """Clear a stale session lock if the owner task is already gone.
+        """当 owner 任务已经不在时清除陈旧的 session 锁。
 
-        Returns True if a stale lock was healed.  Returns False if there is
-        no lock, or the owner task is still alive (the normal busy case).
+        如果治愈了一个陈旧锁则返回 True。如果没有锁，或 owner 任务仍存活
+        （正常的 busy 场景），则返回 False。
 
-        This is the on-entry safety net sidbin's issue #11016 analysis calls
-        for: without it, a split-brain — adapter still thinks the session is
-        active, but nothing is actually processing — traps the chat in
-        infinite "Interrupting current task..." until the gateway is
-        restarted.
+        这是 sidbin 的 issue #11016 分析所要求的入口安全网：没有它，一个
+        split-brain——适配器仍认为 session 是活动的，但实际上没有任何东西
+        在处理——会把 chat 困在无限的 "Interrupting current task..." 中，
+        直到网关重启。
         """
         if session_key not in self._active_sessions:
             return False
@@ -4099,12 +3927,11 @@ class BasePlatformAdapter(ABC):
         *,
         interrupt_event: Optional[asyncio.Event] = None,
     ) -> bool:
-        """Spawn a background processing task under the given session guard.
+        """在给定的 session 守卫下派生一个后台处理任务。
 
-        Returns True on success.  If the runtime stubs ``create_task`` with a
-        non-Task sentinel (some tests do this), the guard is rolled back and
-        False is returned so the caller isn't left holding a half-installed
-        session lock.
+        成功返回 True。如果运行时把 ``create_task`` 桩成了非 Task 哨兵
+        （某些测试会这样做），则回滚守卫并返回 False，使调用方不会持有
+        一个半安装的 session 锁。
         """
         guard = interrupt_event or asyncio.Event()
         self._active_sessions[session_key] = guard
@@ -4114,8 +3941,8 @@ class BasePlatformAdapter(ABC):
         try:
             self._background_tasks.add(task)
         except TypeError:
-            # Tests stub create_task() with lightweight sentinels that are not
-            # hashable and do not support lifecycle callbacks.
+            # 测试用不可哈希、也不支持生命周期回调的轻量哨兵桩掉
+            # create_task()。
             self._session_tasks.pop(session_key, None)
             self._release_session_guard(session_key, guard=guard)
             return False
@@ -4131,17 +3958,15 @@ class BasePlatformAdapter(ABC):
         release_guard: bool = True,
         discard_pending: bool = True,
     ) -> None:
-        """Cancel in-flight processing for a single session.
+        """取消单个 session 的进行中处理。
 
-        ``release_guard=False`` keeps the adapter-level session guard in place
-        so reset-like commands can finish atomically before follow-up messages
-        are allowed to start a fresh background task.
+        ``release_guard=False`` 保留适配器级的 session 守卫，使 reset 类命令
+        能在后续消息被允许启动新的后台任务之前原子地完成。
 
-        Bounded by a 5s timeout so a wedged finally block in the cancelled
-        task (typing-task cleanup, on_processing_complete hook, etc.) can't
-        stall the calling dispatch coroutine — particularly under pytest-
-        asyncio where the event loop's cancellation-propagation semantics
-        differ subtly from a bare ``asyncio.run`` harness.
+        受 5 秒超时约束，使被取消任务中卡住的 finally 块（typing 任务清理、
+        on_processing_complete 钩子等）不能拖住调用方的 dispatch 协程——尤其
+        在 pytest-asyncio 下，事件循环的取消传播语义与裸 ``asyncio.run`` 框架
+        存在细微差别。
         """
         task = self._session_tasks.pop(session_key, None)
         if task is not None and not task.done():
@@ -4180,11 +4005,10 @@ class BasePlatformAdapter(ABC):
         session_key: str,
         command_guard: asyncio.Event,
     ) -> None:
-        """Resume the latest queued follow-up once a session command completes.
+        """在某个 session 命令完成后，恢复最新排队的跟进消息。
 
-        Called at the tail of /stop, /new, and /reset dispatch.  Releases the
-        command-scoped guard, then — if a follow-up message landed while the
-        command was running — spawns a fresh processing task for it.
+        在 /stop、/new 和 /reset 分发的尾部调用。释放命令作用域的守卫，
+        然后——如果命令运行期间有一条跟进消息到达——为它派生一个新的处理任务。
         """
         await self._flush_text_debounce_now(session_key)
         pending_event = self._pending_messages.pop(session_key, None)
@@ -4199,17 +4023,15 @@ class BasePlatformAdapter(ABC):
         session_key: str,
         cmd: str,
     ) -> None:
-        """Dispatch a reset-like bypass command while preserving guard ordering.
+        """分发一个 reset 类绕过命令，同时保留守卫顺序。
 
-        /stop, /new, and /reset must:
-          1. Keep the session guard installed while the runner processes the
-             command (so a racing follow-up message stays queued, not
-             dispatched as a second parallel run).
-          2. Cancel the old in-flight adapter task only AFTER the runner has
-             finished handling the command (so the runner sees consistent
-             state and its response is sent in order).
-          3. Release the command-scoped guard and drain the latest queued
-             follow-up exactly once, after 1 and 2 complete.
+        /stop、/new 和 /reset 必须：
+          1. 在 runner 处理命令期间保持 session 守卫已安装（这样竞态的跟进
+             消息会保持排队，而不是作为第二次并行运行被分发）。
+          2. 只在 runner 完成命令处理*之后*取消旧的进行中适配器任务
+            （使 runner 看到一致状态，其响应按顺序发送）。
+          3. 在 1 和 2 完成后，释放命令作用域守卫，并精确一次地排出最新
+             排队的跟进消息。
         """
         logger.debug(
             "[%s] Command '/%s' bypassing active-session guard for %s",
@@ -4226,11 +4048,10 @@ class BasePlatformAdapter(ABC):
         try:
             response = await self._message_handler(event)
             _text, _eph_ttl = self._unwrap_ephemeral(response)
-            # Send the response BEFORE cancelling the old task so the send
-            # cannot be affected by task-cancellation side effects (race
-            # condition fix — issue #18912).  Previously the send happened
-            # after cancel_session_processing, which could silently drop the
-            # "/new" confirmation when an agent was actively running.
+            # 在取消旧任务*之前*发送响应，使发送不会受任务取消副作用影响
+            # （竞态条件修复 —— issue #18912）。此前发送发生在
+            # cancel_session_processing 之后，当 agent 正在运行时可能静默丢弃
+            # "/new" 确认。
             if _text:
                 logger.info(
                     "[%s] Sending command '/%s' response (%d chars) to %s",
@@ -4251,16 +4072,15 @@ class BasePlatformAdapter(ABC):
                         message_id=_r.message_id,
                         ttl_seconds=_eph_ttl,
                     )
-            # Old adapter task (if any) is cancelled AFTER the response has
-            # been sent — keeps ordering deterministic and avoids the race.
+            # 旧的适配器任务（如果有）在响应发送*之后*才被取消——保持顺序
+            # 确定性，避免竞态。
             await self.cancel_session_processing(
                 session_key,
                 release_guard=False,
                 discard_pending=False,
             )
         except Exception:
-            # On failure, restore the original guard if one still exists so
-            # we don't leave the session in a half-reset state.
+            # 失败时，如果原守卫仍存在则恢复它，避免让 session 处于半 reset 状态。
             if self._active_sessions.get(session_key) is command_guard:
                 if session_key in self._session_tasks and current_guard is not None:
                     self._active_sessions[session_key] = current_guard
@@ -4272,20 +4092,19 @@ class BasePlatformAdapter(ABC):
 
     async def handle_message(self, event: MessageEvent) -> None:
         """
-        Process an incoming message.
-        
-        This method returns quickly by spawning background tasks.
-        This allows new messages to be processed even while an agent is running,
-        enabling interruption support.
+        处理一条入站消息。
+
+        本方法通过派生后台任务快速返回。
+        这使得即便 agent 正在运行，新消息也能被处理，从而支持中断。
         """
         if not self._message_handler:
             return
 
         coerce_plaintext_gateway_command(event)
 
-        # Rewrite ``event.source.thread_id`` via the installed recovery hook
-        # (Telegram DM topic mode) so the session key, guard checks, and
-        # downstream delivery all agree on the same lane.
+        # 通过已安装的恢复钩子（Telegram DM topic 模式）改写
+        # ``event.source.thread_id``，使 session key、守卫检查和下游投递
+        # 都在同一个通道上达成一致。
         self._apply_topic_recovery(event)
 
         session_key = build_session_key(
@@ -4294,34 +4113,30 @@ class BasePlatformAdapter(ABC):
             thread_sessions_per_user=self.config.extra.get("thread_sessions_per_user", False),
         )
 
-        # On-entry self-heal: if the adapter still has an _active_sessions
-        # entry for this key but the owner task has already exited (done or
-        # cancelled), the lock is stale.  Clear it and fall through to
-        # normal dispatch so the user isn't trapped behind a dead guard —
-        # this is the split-brain tail described in issue #11016.
+        # 入口处自愈：如果适配器仍持有该 key 的 _active_sessions 条目，
+        # 但 owner 任务已经退出（完成或取消），这个锁就是陈旧的。清除它并
+        # 落入正常分发，使用户不会被卡在一个死守卫之后——这就是 issue #11016
+        # 描述的 split-brain 尾部场景。
         if session_key in self._active_sessions:
             self._heal_stale_session_lock(session_key)
 
-        # Check if there's already an active handler for this session
+        # 检查该 session 是否已有活动处理器
         if session_key in self._active_sessions:
-            # Certain commands must bypass the active-session guard and be
-            # dispatched directly to the gateway runner.  Without this, they
-            # are queued as pending messages and either:
-            #   - leak into the conversation as user text (/stop, /new), or
-            #   - deadlock (/approve, /deny — agent is blocked on Event.wait)
+            # 某些命令必须绕过活动 session 守卫，直接分发给网关 runner。
+            # 否则它们会被当作待处理消息排队，然后：
+            #   - 作为用户文本泄漏进对话（/stop、/new），或
+            #   - 死锁（/approve、/deny —— agent 阻塞在 Event.wait 上）
             #
-            # Dispatch inline: call the message handler directly and send the
-            # response.  Do NOT use _process_message_background — it manages
-            # session lifecycle and its cleanup races with the running task
-            # (see PR #4926).
+            # 内联分发：直接调用消息处理器并发送响应。不要使用
+            # _process_message_background——它管理 session 生命周期，其清理
+            # 会与正在运行的任务竞态（见 PR #4926）。
             cmd = event.get_command()
             from hermes_cli.commands import should_bypass_active_session
 
             if should_bypass_active_session(cmd):
-                # /stop, /new, /reset must cancel the in-flight adapter task
-                # and preserve ordering of queued follow-ups.  Route those
-                # through the dedicated handoff path that serializes
-                # cancellation + runner response + pending drain.
+                # /stop、/new、/reset 必须取消进行中的适配器任务，并保留
+                # 排队跟进消息的顺序。把这些路由到专门的 handoff 路径，
+                # 它会串行化取消 + runner 响应 + 待处理排出。
                 if cmd in {"stop", "new", "reset"}:
                     self._discard_text_debounce(session_key)
                     try:
@@ -4333,9 +4148,8 @@ class BasePlatformAdapter(ABC):
                         )
                     return
 
-                # Other bypass commands (/approve, /deny, /status,
-                # /background, /restart) just need direct dispatch — they
-                # don't cancel the running task.
+                # 其它绕过命令（/approve、/deny、/status、/background、
+                # /restart）只需直接分发——它们不会取消正在运行的任务。
                 logger.debug(
                     "[%s] Command '/%s' bypassing active-session guard for %s",
                     self.name, cmd, session_key,
@@ -4361,19 +4175,16 @@ class BasePlatformAdapter(ABC):
                     logger.error("[%s] Command '/%s' dispatch failed: %s", self.name, cmd, e, exc_info=True)
                 return
 
-            # Clarify text-capture bypass: if the agent is blocked on a
-            # clarify_tool call awaiting a free-form text response (open-
-            # ended clarify, or user picked "Other"), the next non-command
-            # message in this session MUST reach the runner so the
-            # clarify-intercept can resolve it and unblock the agent.
+            # Clarify 文本捕获绕过：如果 agent 阻塞在 clarify_tool 调用上，
+            # 等待自由格式文本响应（开放式 clarify，或用户选择了 "Other"），
+            # 那么本 session 中的下一条非命令消息必须到达 runner，以便
+            # clarify 拦截能 resolve 它并解除 agent 阻塞。
             #
-            # Without this bypass: the message gets queued in
-            # _pending_messages as a follow-up turn instead of reaching the
-            # clarify resolver, leaving the agent blocked and discarding the
-            # user's answer.
-            # Same shape as the /approve deadlock fix (PR #4926) — both
-            # cases are "agent thread blocked on Event.wait, message must
-            # reach the resolver before being treated as a new turn."
+            # 没有这个绕过：消息会作为跟进轮次排队进 _pending_messages，
+            # 而不是到达 clarify resolver，使 agent 保持阻塞并丢弃用户的回答。
+            # 形态与 /approve 死锁修复（PR #4926）相同——两种情况都是
+            # "agent 线程阻塞在 Event.wait 上，消息在被当作新轮次之前必须
+            # 到达 resolver"。
             if not cmd:
                 try:
                     from tools import clarify_gateway as _clarify_mod
@@ -4421,13 +4232,12 @@ class BasePlatformAdapter(ABC):
                 except Exception as e:
                     logger.error("[%s] Busy-session handler failed: %s", self.name, e, exc_info=True)
 
-            # Special case: photo bursts/albums frequently arrive as multiple near-
-            # simultaneous messages. Queue them without interrupting the active run,
-            # then process them immediately after the current task finishes.
+            # 特殊情况：照片连拍/相册经常以多条近乎同时的消息到达。把它们
+            # 排队而不打断活动运行，然后在当前任务结束后立即处理。
             if event.message_type == MessageType.PHOTO:
                 logger.debug("[%s] Queuing photo follow-up for session %s without interrupt", self.name, session_key)
                 merge_pending_message_event(self._pending_messages, session_key, event)
-                return  # Don't interrupt now - will run after current task completes
+                return  # 现在不打断——当前任务完成后会运行
 
             if self._is_queue_text_debounce_candidate(event):
                 logger.debug(
@@ -4451,26 +4261,25 @@ class BasePlatformAdapter(ABC):
                     event,
                     merge_text=event.message_type == MessageType.TEXT,
                 )
-            return  # Don't process now - will be handled after current task finishes
-        
-        # Mark session as active BEFORE spawning background task to close
-        # the race window where a second message arriving before the task
-        # starts would also pass the _active_sessions check and spawn a
-        # duplicate task.  (grammY sequentialize / aiogram EventIsolation
-        # pattern — set the guard synchronously, not inside the task.)
-        # _start_session_processing installs the guard AND the owner-task
-        # mapping atomically so stale-lock detection works.
+            return  # 现在不处理——当前任务完成后会处理
+
+        # 在派生后台任务*之前*把 session 标记为活动，以关闭一个竞态窗口：
+        # 否则任务启动前到达的第二条消息也会通过 _active_sessions 检查并
+        # 派生重复任务。（grammY sequentialize / aiogram EventIsolation 模式——
+        # 同步设置守卫，而不是在任务内部。）
+        # _start_session_processing 原子地安装守卫和 owner 任务映射，使陈旧锁
+        # 检测能够工作。
         self._start_session_processing(event, session_key)
     
     @staticmethod
     def _get_human_delay() -> float:
         """
-        Return a random delay in seconds for human-like response pacing.
+        返回一个随机延迟（秒），用于拟人化的响应节奏。
 
-        Reads from env vars:
-          HERMES_HUMAN_DELAY_MODE: "off" (default) | "natural" | "custom"
-          HERMES_HUMAN_DELAY_MIN_MS: minimum delay in ms (default 800, custom mode)
-          HERMES_HUMAN_DELAY_MAX_MS: maximum delay in ms (default 2500, custom mode)
+        从环境变量读取：
+          HERMES_HUMAN_DELAY_MODE："off"（默认）| "natural" | "custom"
+          HERMES_HUMAN_DELAY_MIN_MS：最小延迟（毫秒，默认 800，custom 模式）
+          HERMES_HUMAN_DELAY_MAX_MS：最大延迟（毫秒，默认 2500，custom 模式）
         """
         mode = os.getenv("HERMES_HUMAN_DELAY_MODE", "off").lower()
         if mode == "off":
@@ -4478,7 +4287,7 @@ class BasePlatformAdapter(ABC):
         if mode == "natural":
             min_ms, max_ms = 800, 2500
             return random.uniform(min_ms / 1000.0, max_ms / 1000.0)
-        # custom mode — tolerate malformed env vars instead of crashing.
+        # custom 模式——容忍格式错误的环境变量，而不是崩溃。
         try:
             min_ms = int(os.getenv("HERMES_HUMAN_DELAY_MIN_MS", "800"))
         except (TypeError, ValueError):
@@ -4490,8 +4299,8 @@ class BasePlatformAdapter(ABC):
         return random.uniform(min_ms / 1000.0, max_ms / 1000.0)
 
     async def _process_message_background(self, event: MessageEvent, session_key: str) -> None:
-        """Background task that actually processes the message."""
-        # Track delivery outcomes for the processing-complete hook
+        """实际处理消息的后台任务。"""
+        # 为处理完成钩子跟踪投递结果
         delivery_attempted = False
         delivery_succeeded = False
 
@@ -4503,13 +4312,12 @@ class BasePlatformAdapter(ABC):
             if getattr(result, "success", False):
                 delivery_succeeded = True
 
-        # Reuse the interrupt event set by handle_message() (which marks
-        # the session active before spawning this task to prevent races).
-        # Fall back to a new Event only if the entry was removed externally.
+        # 复用 handle_message() 设置的中断事件（它在派生本任务之前把 session
+        # 标记为活动以防竞态）。仅当条目被外部移除时才回退到一个新 Event。
         interrupt_event = self._active_sessions.get(session_key) or asyncio.Event()
         self._active_sessions[session_key] = interrupt_event
-        
-        # Start continuous typing indicator (refreshes every 2 seconds)
+
+        # 启动持续 typing 指示器（每 2 秒刷新）
         _thread_metadata = _thread_metadata_for_source(event.source, _reply_anchor_for_event(event))
         _keep_typing_kwargs = {"metadata": _thread_metadata}
         try:
@@ -4534,27 +4342,23 @@ class BasePlatformAdapter(ABC):
         try:
             await self._run_processing_hook("on_processing_start", event)
 
-            # Call the handler (this can take a while with tool calls)
+            # 调用处理器（含 tool 调用时会比较耗时）
             response = await self._message_handler(event)
             is_ephemeral_response = isinstance(response, EphemeralReply)
 
-            # Slash-command handlers may return an EphemeralReply sentinel to
-            # request that their reply message auto-delete after a TTL (used
-            # for system notices like "✨ New session started!" that the user
-            # doesn't need to keep in the thread).  Unwrap here so all the
-            # downstream extract_media / text-processing logic sees a plain
-            # string, and remember the TTL + platform capability so the
-            # post-send block can schedule the deletion.
+            # 斜杠命令处理器可能返回一个 EphemeralReply 哨兵，请求其回复消息
+            # 在 TTL 后自动删除（用于像 "✨ New session started!" 这种用户无需
+            # 在 thread 中保留的系统通知）。在此解包，使下游所有
+            # extract_media / 文本处理逻辑看到的是普通字符串，并记住 TTL +
+            # 平台能力，以便发送后代码块能安排删除。
             response, _ephemeral_ttl = self._unwrap_ephemeral(response)
 
-            # Send response if any.  A None/empty response is normal when
-            # streaming already delivered the text (already_sent=True) or
-            # when the message was queued behind an active agent.  Log at
-            # DEBUG to avoid noisy warnings for expected behavior.
+            # 如有则发送响应。None/空响应在流式已投递文本（already_sent=True）
+            # 或消息被排在活动 agent 之后时是正常的。以 DEBUG 级别记录，避免对
+            # 预期行为产生嘈杂的警告。
             #
-            # Suppress stale response when the session was interrupted by a
-            # new message that hasn't been consumed yet.  The pending message
-            # is processed by the pending-message handler below (#8221/#2483).
+            # 当 session 被一条尚未消费的新消息中断时，抑制陈旧响应。待处理
+            # 消息由下面的待处理消息处理器处理（#8221/#2483）。
             if (
                 response
                 and interrupt_event.is_set()
@@ -4585,33 +4389,31 @@ class BasePlatformAdapter(ABC):
 
                 # Extract image URLs and send them as native platform attachments
                 images, text_content = self.extract_images(response)
-                # Strip any remaining internal directives from message body (fixes #1561).
-                # _strip_media_directives shares MEDIA_TAG_CLEANUP_RE, so a MEDIA: tag
-                # with an unknown extension is intentionally left in the body for
-                # extract_local_files below to pick up rather than silently dropped (#34517).
+                # 剥除消息体中任何残留的内部指令（修复 #1561）。
+                # _strip_media_directives 共享 MEDIA_TAG_CLEANUP_RE，因此带未知
+                # 扩展名的 MEDIA: 标签会被有意保留在正文中，供下面的
+                # extract_local_files 拾取，而不是被静默丢弃（#34517）。
                 text_content = _strip_media_directives(text_content).strip()
                 if images:
                     logger.info("[%s] extract_images found %d image(s) in response (%d chars)", self.name, len(images), len(response))
 
                 local_files = []
                 if not is_ephemeral_response:
-                    # Auto-detect bare local file paths for native media delivery
-                    # (helps small models that don't use MEDIA: syntax). Skip
-                    # system/command notices so config paths stay visible text
-                    # instead of becoming native uploads.
+                    # 自动检测裸本地文件路径，用于原生媒体投递
+                    # （帮助不使用 MEDIA: 语法的小模型）。跳过系统/命令通知，
+                    # 这样配置路径仍是可见文本，而不是变成原生上传。
                     local_files, text_content = self.extract_local_files(text_content)
                     local_files = self.filter_local_delivery_paths(local_files)
                     if local_files:
                         logger.info("[%s] extract_local_files found %d file(s) in response", self.name, len(local_files))
 
-                # A2 (#29346): extraction can reduce a non-empty response to
-                # empty text with no attachment, and the `if text_content` guard
-                # below then drops it silently. Recover on every platform (#33842
-                # was Discord-only); the guard avoids duplicating an attachment.
+                # A2（#29346）：提取可能把一个非空响应缩减为无附件的空文本，
+                # 下面 `if text_content` 守卫会随之静默丢弃它。在每个平台上
+                # 都做恢复（#33842 曾仅限 Discord）；该守卫避免重复投递附件。
                 if not (text_content or images or local_files or media_files):
-                    # Recover from the post-extract_media `response`, not the raw
-                    # snapshot: extract_media already stripped MEDIA (incl. spaced
-                    # paths) with its full grammar, so no fragment can leak.
+                    # 从 extract_media 之后的 `response` 恢复，而不是从原始快照：
+                    # extract_media 已用其完整语法剥除了 MEDIA（含带空格路径），
+                    # 因此不会有片段泄漏。
                     _recovered = _strip_media_directives(response).strip()
                     if _recovered:
                         logger.warning(
@@ -4622,16 +4424,15 @@ class BasePlatformAdapter(ABC):
                         )
                         text_content = _recovered
 
-                # Final user-visible content (text, TTS, media, files) gets
-                # the existing notify=True marker. Clone once so typing/status
-                # metadata stays unmarked and progress bubbles remain
-                # thread-strict.
+                # 最终用户可见内容（文本、TTS、媒体、文件）会获得既有的
+                # notify=True 标记。克隆一次，使 typing/status 元数据保持未标记，
+                # progress 气泡保持 thread 严格。
                 _final_thread_metadata = _mark_notify_metadata(_thread_metadata)
 
-                # Auto-TTS: if voice message, generate audio FIRST (before sending text)
-                # Gated via ``_should_auto_tts_for_chat``: fires when the chat has
-                # an explicit ``/voice on|tts`` opt-in OR when ``voice.auto_tts`` is
-                # True globally and no ``/voice off`` has been issued.
+                # 自动 TTS：如果是语音消息，先（在发送文本之前）生成音频
+                # 通过 ``_should_auto_tts_for_chat`` 门控：当 chat 有显式
+                # ``/voice on|tts`` opt-in，或全局 ``voice.auto_tts`` 为真
+                # 且未发出过 ``/voice off`` 时触发。
                 _tts_path = None
                 if (self._should_auto_tts_for_chat(event.source.chat_id)
                         and event.message_type == MessageType.VOICE
@@ -4652,7 +4453,7 @@ class BasePlatformAdapter(ABC):
                     except Exception as tts_err:
                         logger.warning("[%s] Auto-TTS failed: %s", self.name, tts_err)
 
-                # Play TTS audio before text (voice-first experience)
+                # 在文本之前播放 TTS 音频（语音优先体验）
                 _tts_caption_delivered = False
                 if _tts_path and Path(_tts_path).exists():
                     try:
@@ -4678,7 +4479,7 @@ class BasePlatformAdapter(ABC):
                         except OSError:
                             pass
 
-                # Send the text portion
+                # 发送文本部分
                 if text_content and not _tts_caption_delivered:
                     logger.info("[%s] Sending response (%d chars) to %s", self.name, len(text_content), event.source.chat_id)
                     _reply_anchor = _reply_anchor_for_event(event)
@@ -4690,9 +4491,8 @@ class BasePlatformAdapter(ABC):
                     )
                     _record_delivery(result)
 
-                    # Schedule auto-deletion of system-notice replies.
-                    # Detached so the handler returns immediately; errors
-                    # (permission denied, message too old) are swallowed.
+                    # 安排系统通知回复的自动删除。
+                    # 分离执行，使处理器立即返回；错误（权限拒绝、消息过旧）被吞掉。
                     if (
                         _ephemeral_ttl
                         and _ephemeral_ttl > 0
@@ -4705,10 +4505,10 @@ class BasePlatformAdapter(ABC):
                             ttl_seconds=_ephemeral_ttl,
                         )
 
-                # Human-like pacing delay between text and media
+                # 文本与媒体之间拟人化的节奏延迟
                 human_delay = self._get_human_delay()
 
-                # Send extracted images as native attachments
+                # 把提取出的图片作为原生附件发送
                 if images:
                     logger.info("[%s] Extracted %d image(s) to send as attachments", self.name, len(images))
                     try:
@@ -4722,16 +4522,14 @@ class BasePlatformAdapter(ABC):
                         logger.warning("[%s] Error batching images: %s", self.name, batch_err, exc_info=True)
 
 
-                # Send extracted media files — route by file type
+                # 发送提取出的媒体文件——按文件类型路由
                 _VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp'}
                 _IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 
-                # Partition images out of media_files + local_files so they
-                # can be sent as a single batch (Signal RPC). When
-                # ``[[as_document]]`` was set on the original response, image
-                # files skip the photo path and route to send_document below
-                # so they're delivered with original bytes (no Telegram
-                # sendPhoto recompression).
+                # 把图片从 media_files + local_files 中分出来，以便作为单批
+                # 发送（Signal RPC）。当原始响应设置了 ``[[as_document]]`` 时，
+                # 图片文件跳过 photo 路径，路由到下面的 send_document，使其以
+                # 原始字节投递（不做 Telegram sendPhoto 重压缩）。
                 from urllib.parse import quote as _quote
                 _image_paths: list = []
                 _non_image_media: list = []
@@ -4792,7 +4590,7 @@ class BasePlatformAdapter(ABC):
                     except Exception as media_err:
                         logger.warning("[%s] Error sending media: %s", self.name, media_err)
 
-                # Send auto-detected local non-image files as native attachments
+                # 把自动检测到的本地非图片文件作为原生附件发送
                 for file_path in _non_image_local:
                     if human_delay > 0:
                         await asyncio.sleep(human_delay)
@@ -4813,8 +4611,8 @@ class BasePlatformAdapter(ABC):
                     except Exception as file_err:
                         logger.error("[%s] Error sending local file %s: %s", self.name, file_path, file_err)
 
-                # A3 (#29346): if a non-empty response produced nothing
-                # deliverable, fail loudly rather than dropping it in silence.
+                # A3（#29346）：如果非空响应没有产出任何可投递内容，
+                # 大声失败，而不是静默丢弃。
                 _anything_delivered = (
                     delivery_attempted or _tts_caption_delivered
                     or images or local_files or media_files
@@ -4827,7 +4625,7 @@ class BasePlatformAdapter(ABC):
                         self.name, len(_response_pre_extract), event.source.chat_id,
                     )
 
-            # Determine overall success for the processing hook
+            # 为处理钩子判定整体成功与否
             processing_ok = delivery_succeeded if delivery_attempted else not bool(response)
             await self._run_processing_hook(
                 "on_processing_complete",
@@ -4835,24 +4633,20 @@ class BasePlatformAdapter(ABC):
                 ProcessingOutcome.SUCCESS if processing_ok else ProcessingOutcome.FAILURE,
             )
 
-            # The active drain owns debounce state. If a queue-mode timer has
-            # not fired yet, force-flush into _pending_messages here and let
-            # this task hand off the follow-up.
+            # 活动排出拥有 debounce 状态。如果某个 queue 模式计时器尚未触发，
+            # 在此处强制 flush 进 _pending_messages，让本任务交接跟进消息。
             await self._flush_text_debounce_now(session_key)
 
-            # Check if there's a pending message that was queued during our processing
+            # 检查在我们处理期间是否有待处理消息被排队
             if session_key in self._pending_messages:
                 pending_event = self._pending_messages.pop(session_key)
                 logger.debug("[%s] Processing queued follow-up message", self.name)
-                # Keep the _active_sessions entry live across the turn chain
-                # and only CLEAR the interrupt Event — do NOT delete the entry.
-                # If we deleted here, a concurrent inbound message arriving
-                # during the awaits below would pass the Level-1 guard, spawn
-                # its own _process_message_background, and run simultaneously
-                # with the recursive drain below.  Two agents on one
-                # session_key = duplicate responses, duplicate tool calls.
-                # Clearing the Event keeps the guard live so follow-ups take
-                # the busy-handler path as intended.
+                # 在轮次链中保持 _active_sessions 条目存活，只清除中断 Event——
+                # 不要删除条目。如果在此删除，下面 awaits 期间到达的并发入站消息
+                # 会通过 Level-1 守卫，派生自己的 _process_message_background，
+                # 与下面的递归排出同时运行。一个 session_key 上两个 agent = 重复
+                # 响应、重复 tool 调用。清除 Event 让守卫保持存活，使跟进消息按
+                # 预期走 busy-handler 路径。
                 _active = self._active_sessions.get(session_key)
                 if _active is not None:
                     _active.clear()

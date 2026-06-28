@@ -1,10 +1,10 @@
-"""Raft channel platform adapter.
+"""Raft 频道平台适配器。
 
-Starts a local wake endpoint, spawns ``raft agent bridge`` as a child process,
-and injects content-free wake hints into Hermes' normal gateway session pipeline.
-Token and port are auto-generated when not provided via env/config.
-The bridge remains responsible for Raft message cursors and body materialization;
-the agent uses the Raft CLI according to the Raft manual.
+启动本地唤醒端点，将 ``raft agent bridge`` 作为子进程派生，
+并将无内容的唤醒提示注入 Hermes 的常规网关会话管道。
+当未通过环境变量/配置提供时，token 和端口会自动生成。
+bridge 进程负责 Raft 消息游标和消息体物化；
+agent 按照 Raft 手册使用 Raft CLI。
 """
 
 from __future__ import annotations
@@ -98,16 +98,14 @@ _RAFT_PROMPT_TURN_IDS: set[str] = set()
 
 
 def check_raft_requirements() -> bool:
-    """Check if Raft channel dependencies are available.
+    """检查 Raft 频道依赖是否可用。
 
-    Intentionally silent on failure — this is a passive probe registered as
-    the platform's ``check_fn``. It is called on every
-    ``load_gateway_config()`` (message handling, display lookups, agent
-    turns), so logging here floods the logs for every user without the
-    ``raft`` CLI installed. The caller (``gateway/platform_registry.py``
-    ``create_adapter()``) emits its own warning when requirements are not met
-    and an adapter is actually requested. This matches the convention used by
-    other platform adapters (e.g. ``teams/adapter.py``).
+    失败时静默处理——这是一个被动探测，注册为平台的 ``check_fn``。
+    每次调用 ``load_gateway_config()``（消息处理、显示查找、agent 轮次）
+    都会调用它，因此在此处记录日志会为每个未安装 ``raft`` CLI 的用户
+    产生大量日志。当依赖不满足且实际请求适配器时，调用方
+    （``gateway/platform_registry.py`` 中的 ``create_adapter()``）会自行发出警告。
+    这与其他平台适配器（例如 ``teams/adapter.py``）使用的约定一致。
     """
     if not AIOHTTP_AVAILABLE:
         return False
@@ -266,7 +264,7 @@ def _validate_activity_event(value: Any) -> Dict[str, Any]:
 
 
 class ActivityQueue:
-    """Bounded at-most-once queue for Raft external activity telemetry."""
+    """Raft 外部活动遥测的有界最多一次投递队列。"""
 
     def __init__(self, cap: int = DEFAULT_ACTIVITY_QUEUE_CAP):
         self._cap = max(1, int(cap or DEFAULT_ACTIVITY_QUEUE_CAP))
@@ -444,7 +442,7 @@ def _on_session_finalize(**kwargs: Any) -> None:
 
 
 class RaftAdapter(BasePlatformAdapter):
-    """Local HTTP endpoint for Raft channel bridge delivery."""
+    """用于 Raft 频道 bridge 投递的本地 HTTP 端点。"""
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform("raft"))
@@ -613,8 +611,8 @@ class RaftAdapter(BasePlatformAdapter):
                 return web.json_response({"ok": False, "error": "invalid_payload"}, status=400)
             payload = parsed
 
-        # Do not gate on payload["schema"]: the bridge owns schema evolution;
-        # Hermes only verifies that wake hints are content-free.
+        # 不要对 payload["schema"] 做门控：schema 演进由 bridge 负责；
+        # Hermes 仅验证唤醒提示不包含内容。
         if _has_content_field(payload):
             return web.json_response({"ok": False, "error": "content_not_allowed"}, status=400)
 

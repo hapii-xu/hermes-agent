@@ -1,4 +1,4 @@
-"""ACP auth helpers — detect and advertise Hermes authentication methods."""
+"""ACP 认证辅助模块 — 检测并广播 Hermes 认证方式。"""
 
 from __future__ import annotations
 
@@ -9,13 +9,12 @@ TERMINAL_SETUP_AUTH_METHOD_ID = "hermes-setup"
 
 
 def detect_provider() -> Optional[str]:
-    """Resolve the active Hermes runtime provider, or None if unavailable.
+    """解析当前活跃的 Hermes 运行时 provider，如果不可用则返回 None。
 
-    Treats a ``Callable`` ``api_key`` (Azure Foundry Entra ID bearer
-    token provider — see :mod:`agent.azure_identity_adapter`) as a valid
-    credential. Without this, ACP sessions for Entra-configured Foundry
-    deployments silently default to ``"openrouter"`` and the ACP auth
-    handshake rejects the legitimate provider.
+    将 ``Callable`` 类型的 ``api_key``（Azure Foundry Entra ID bearer
+    token 提供者 — 参见 :mod:`agent.azure_identity_adapter`）视为有效凭据。
+    如果不做此处理，使用 Entra 配置的 Foundry 部署的 ACP 会话会静默地
+    回退到 ``"openrouter"``，导致 ACP 认证握手拒绝合法的 provider。
     """
     try:
         from hermes_cli.runtime_provider import resolve_runtime_provider
@@ -34,19 +33,17 @@ def detect_provider() -> Optional[str]:
 
 
 def has_provider() -> bool:
-    """Return True if Hermes can resolve any runtime provider credentials."""
+    """如果 Hermes 能够解析到任何运行时 provider 凭据，则返回 True。"""
     return detect_provider() is not None
 
 
 def build_auth_methods() -> list[Any]:
-    """Return registry-compatible ACP auth methods for Hermes.
+    """返回适用于 Hermes 的注册中心兼容 ACP 认证方法列表。
 
-    The official ACP registry validates that agents advertise at least one
-    usable auth method during the initial handshake. A fresh Zed install may
-    not have Hermes provider credentials configured yet, so Hermes always
-    advertises a terminal setup method. When credentials are already present,
-    it also advertises the resolved provider as the default agent-managed
-    runtime credential method.
+    官方 ACP 注册中心会验证代理在初始握手期间至少广播一种可用的认证方式。
+    全新安装的 Zed 可能尚未配置 Hermes provider 凭据，因此 Hermes 始终广播
+    一个终端设置方法。当凭据已存在时，还会将解析到的 provider 作为默认的
+    代理管理运行时凭据方式进行广播。
     """
     from acp.schema import AuthMethodAgent, TerminalAuthMethod
 

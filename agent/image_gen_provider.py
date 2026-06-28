@@ -1,42 +1,40 @@
 """
-Image Generation Provider ABC
-=============================
+图像生成 Provider ABC
+=====================
 
-Defines the pluggable-backend interface for image generation. Providers register
-instances via ``PluginContext.register_image_gen_provider()``; the active one
-(selected via ``image_gen.provider`` in ``config.yaml``) services every
-``image_generate`` tool call.
+定义图像生成的可插拔后端接口。Provider 通过
+``PluginContext.register_image_gen_provider()`` 注册实例；当前活跃的
+provider（通过 ``config.yaml`` 中的 ``image_gen.provider`` 选择）负责处理所有
+``image_generate`` 工具调用。
 
-Providers live in ``<repo>/plugins/image_gen/<name>/`` (built-in, auto-loaded
-as ``kind: backend``) or ``~/.hermes/plugins/image_gen/<name>/`` (user, opt-in
-via ``plugins.enabled``).
+Provider 位于 ``<repo>/plugins/image_gen/<name>/``（内置，作为
+``kind: backend`` 自动加载）或 ``~/.hermes/plugins/image_gen/<name>/``
+（用户级，需通过 ``plugins.enabled`` 手动启用）。
 
-Unified surface
----------------
-One tool — ``image_generate`` — covers **text-to-image** and
-**image-to-image / image editing**. The router is the presence of
-``image_url`` (and/or ``reference_image_urls``): if any source image is
-provided, the provider routes to its image-to-image / edit endpoint; if
-omitted, the provider routes to text-to-image. Users pick one **model**
-(e.g. nano-banana-pro, gpt-image-2, grok-imagine-image); the provider
-handles which underlying endpoint to hit. This mirrors the ``video_gen``
-provider design (``agent/video_gen_provider.py``) so the two surfaces
-stay learnable together.
+统一接口
+--------
+一个工具 —— ``image_generate`` —— 同时覆盖**文生图**和
+**图生图 / 图像编辑**。路由依据是 ``image_url``（和/或
+``reference_image_urls``）的存在与否：如果提供了源图片，provider 会将请求
+路由到图生图 / 编辑端点；如果未提供，则路由到文生图端点。用户选择一个
+**model**（例如 nano-banana-pro、gpt-image-2、grok-imagine-image）；provider
+负责决定调用哪个底层端点。这与 ``video_gen`` provider 的设计一致
+（``agent/video_gen_provider.py``），使两个接口保持统一的学习曲线。
 
-Response shape
---------------
-All providers return a dict that :func:`success_response` / :func:`error_response`
-produce. The tool wrapper JSON-serializes it. Keys:
+响应格式
+--------
+所有 provider 返回由 :func:`success_response` / :func:`error_response`
+生成的 dict。工具包装器将其 JSON 序列化。键名：
 
     success        bool
-    image          str | None       URL or absolute file path
-    model          str              provider-specific model identifier
-    prompt         str              echoed prompt
+    image          str | None       URL 或绝对文件路径
+    model          str              provider 特定的模型标识符
+    prompt         str              回显的提示词
     aspect_ratio   str              "landscape" | "square" | "portrait"
-    modality       str              "text" | "image" (which mode was used)
-    provider       str              provider name (for diagnostics)
-    error          str              only when success=False
-    error_type     str              only when success=False
+    modality       str              "text" | "image"（使用的模式）
+    provider       str              provider 名称（用于诊断）
+    error          str              仅在 success=False 时存在
+    error_type     str              仅在 success=False 时存在
 """
 
 from __future__ import annotations

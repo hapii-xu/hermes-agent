@@ -1,4 +1,4 @@
-"""Native Anthropic provider profile."""
+"""原生 Anthropic provider 配置文件。"""
 
 import json
 import logging
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnthropicProfile(ProviderProfile):
-    """Native Anthropic — uses x-api-key header, not Bearer."""
+    """原生 Anthropic — 使用 x-api-key header，而非 Bearer。"""
 
     def fetch_models(
         self,
@@ -20,7 +20,7 @@ class AnthropicProfile(ProviderProfile):
         base_url: str | None = None,
         timeout: float = 8.0,
     ) -> list[str] | None:
-        """Anthropic uses x-api-key header and anthropic-version."""
+        """Anthropic 使用 x-api-key header 和 anthropic-version。"""
         if not api_key:
             return None
         try:

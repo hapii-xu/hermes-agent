@@ -1,6 +1,6 @@
 ---
 name: weights-and-biases
-description: "W&B: log ML experiments, sweeps, model registry, dashboards."
+description: "W&B：记录 ML 实验、sweeps、模型注册表、仪表盘。"
 version: 1.0.0
 author: Orchestra Research
 license: MIT
@@ -12,42 +12,42 @@ metadata:
 
 ---
 
-# Weights & Biases: ML Experiment Tracking & MLOps
+# Weights & Biases：ML 实验追踪与 MLOps
 
-## When to Use This Skill
+## 何时使用本技能
 
-Use Weights & Biases (W&B) when you need to:
-- **Track ML experiments** with automatic metric logging
-- **Visualize training** in real-time dashboards
-- **Compare runs** across hyperparameters and configurations
-- **Optimize hyperparameters** with automated sweeps
-- **Manage model registry** with versioning and lineage
-- **Collaborate on ML projects** with team workspaces
-- **Track artifacts** (datasets, models, code) with lineage
+当你需要以下能力时，请使用 Weights & Biases（W&B）：
+- **追踪 ML 实验**，并自动记录指标
+- **在实时仪表盘中可视化**训练过程
+- **跨超参数和配置对比**多次 run
+- **用自动 sweeps 优化超参数**
+- **管理模型注册表**，带版本与血缘（lineage）
+- **在 ML 项目中协作**，使用团队工作空间
+- **追踪 artifacts**（数据集、模型、代码）及其血缘
 
-**Users**: 200,000+ ML practitioners | **GitHub Stars**: 10.5k+ | **Integrations**: 100+
+**用户数**：200,000+ ML 从业者 | **GitHub Stars**：10.5k+ | **集成数**：100+
 
-## Installation
+## 安装
 
 ```bash
-# Install W&B
+# 安装 W&B
 pip install wandb
 
-# Login (creates API key)
+# 登录（创建 API key）
 wandb login
 
-# Or set API key programmatically
+# 或以编程方式设置 API key
 export WANDB_API_KEY=your_api_key_here
 ```
 
-## Quick Start
+## 快速开始
 
-### Basic Experiment Tracking
+### 基础实验追踪
 
 ```python
 import wandb
 
-# Initialize a run
+# 初始化一个 run
 run = wandb.init(
     project="my-project",
     config={
@@ -58,13 +58,13 @@ run = wandb.init(
     }
 )
 
-# Training loop
+# 训练循环
 for epoch in range(run.config.epochs):
-    # Your training code
+    # 你的训练代码
     train_loss = train_epoch()
     val_loss = validate()
 
-    # Log metrics
+    # 记录指标
     wandb.log({
         "epoch": epoch,
         "train/loss": train_loss,
@@ -73,38 +73,38 @@ for epoch in range(run.config.epochs):
         "val/accuracy": val_acc
     })
 
-# Finish the run
+# 结束 run
 wandb.finish()
 ```
 
-### With PyTorch
+### 配合 PyTorch
 
 ```python
 import torch
 import wandb
 
-# Initialize
+# 初始化
 wandb.init(project="pytorch-demo", config={
     "lr": 0.001,
     "epochs": 10
 })
 
-# Access config
+# 访问 config
 config = wandb.config
 
-# Training loop
+# 训练循环
 for epoch in range(config.epochs):
     for batch_idx, (data, target) in enumerate(train_loader):
-        # Forward pass
+        # 前向传播
         output = model(data)
         loss = criterion(output, target)
 
-        # Backward pass
+        # 反向传播
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        # Log every 100 batches
+        # 每 100 个 batch 记录一次
         if batch_idx % 100 == 0:
             wandb.log({
                 "loss": loss.item(),
@@ -112,69 +112,69 @@ for epoch in range(config.epochs):
                 "batch": batch_idx
             })
 
-# Save model
+# 保存模型
 torch.save(model.state_dict(), "model.pth")
-wandb.save("model.pth")  # Upload to W&B
+wandb.save("model.pth")  # 上传到 W&B
 
 wandb.finish()
 ```
 
-## Core Concepts
+## 核心概念
 
-### 1. Projects and Runs
+### 1. 项目与 Run
 
-**Project**: Collection of related experiments
-**Run**: Single execution of your training script
+**项目（Project）**：相关实验的集合
+**Run**：训练脚本的一次执行
 
 ```python
-# Create/use project
+# 创建/使用项目
 run = wandb.init(
     project="image-classification",
-    name="resnet50-experiment-1",  # Optional run name
-    tags=["baseline", "resnet"],    # Organize with tags
-    notes="First baseline run"      # Add notes
+    name="resnet50-experiment-1",  # 可选的 run 名称
+    tags=["baseline", "resnet"],    # 用标签组织
+    notes="First baseline run"      # 添加备注
 )
 
-# Each run has unique ID
+# 每个 run 都有唯一 ID
 print(f"Run ID: {run.id}")
 print(f"Run URL: {run.url}")
 ```
 
-### 2. Configuration Tracking
+### 2. 配置追踪
 
-Track hyperparameters automatically:
+自动追踪超参数：
 
 ```python
 config = {
-    # Model architecture
+    # 模型架构
     "model": "ResNet50",
     "pretrained": True,
 
-    # Training params
+    # 训练参数
     "learning_rate": 0.001,
     "batch_size": 32,
     "epochs": 50,
     "optimizer": "Adam",
 
-    # Data params
+    # 数据参数
     "dataset": "ImageNet",
     "augmentation": "standard"
 }
 
 wandb.init(project="my-project", config=config)
 
-# Access config during training
+# 训练期间访问 config
 lr = wandb.config.learning_rate
 batch_size = wandb.config.batch_size
 ```
 
-### 3. Metric Logging
+### 3. 指标记录
 
 ```python
-# Log scalars
+# 记录标量
 wandb.log({"loss": 0.5, "accuracy": 0.92})
 
-# Log multiple metrics
+# 记录多个指标
 wandb.log({
     "train/loss": train_loss,
     "train/accuracy": train_acc,
@@ -184,27 +184,27 @@ wandb.log({
     "epoch": epoch
 })
 
-# Log with custom x-axis
+# 用自定义 x 轴记录
 wandb.log({"loss": loss}, step=global_step)
 
-# Log media (images, audio, video)
+# 记录媒体（图像、音频、视频）
 wandb.log({"examples": [wandb.Image(img) for img in images]})
 
-# Log histograms
+# 记录直方图
 wandb.log({"gradients": wandb.Histogram(gradients)})
 
-# Log tables
+# 记录表格
 table = wandb.Table(columns=["id", "prediction", "ground_truth"])
 wandb.log({"predictions": table})
 ```
 
-### 4. Model Checkpointing
+### 4. 模型检查点
 
 ```python
 import torch
 import wandb
 
-# Save model checkpoint
+# 保存模型检查点
 checkpoint = {
     'epoch': epoch,
     'model_state_dict': model.state_dict(),
@@ -214,24 +214,24 @@ checkpoint = {
 
 torch.save(checkpoint, 'checkpoint.pth')
 
-# Upload to W&B
+# 上传到 W&B
 wandb.save('checkpoint.pth')
 
-# Or use Artifacts (recommended)
+# 或使用 Artifacts（推荐）
 artifact = wandb.Artifact('model', type='model')
 artifact.add_file('checkpoint.pth')
 wandb.log_artifact(artifact)
 ```
 
-## Hyperparameter Sweeps
+## 超参数 Sweep
 
-Automatically search for optimal hyperparameters.
+自动搜索最优超参数。
 
-### Define Sweep Configuration
+### 定义 Sweep 配置
 
 ```python
 sweep_config = {
-    'method': 'bayes',  # or 'grid', 'random'
+    'method': 'bayes',  # 或 'grid'、'random'
     'metric': {
         'name': 'val/accuracy',
         'goal': 'maximize'
@@ -256,45 +256,45 @@ sweep_config = {
     }
 }
 
-# Initialize sweep
+# 初始化 sweep
 sweep_id = wandb.sweep(sweep_config, project="my-project")
 ```
 
-### Define Training Function
+### 定义训练函数
 
 ```python
 def train():
-    # Initialize run
+    # 初始化 run
     run = wandb.init()
 
-    # Access sweep parameters
+    # 访问 sweep 参数
     lr = wandb.config.learning_rate
     batch_size = wandb.config.batch_size
     optimizer_name = wandb.config.optimizer
 
-    # Build model with sweep config
+    # 用 sweep 配置构建模型
     model = build_model(wandb.config)
     optimizer = get_optimizer(optimizer_name, lr)
 
-    # Training loop
+    # 训练循环
     for epoch in range(NUM_EPOCHS):
         train_loss = train_epoch(model, optimizer, batch_size)
         val_acc = validate(model)
 
-        # Log metrics
+        # 记录指标
         wandb.log({
             "train/loss": train_loss,
             "val/accuracy": val_acc
         })
 
-# Run sweep
-wandb.agent(sweep_id, function=train, count=50)  # Run 50 trials
+# 运行 sweep
+wandb.agent(sweep_id, function=train, count=50)  # 跑 50 次试验
 ```
 
-### Sweep Strategies
+### Sweep 策略
 
 ```python
-# Grid search - exhaustive
+# 网格搜索 - 穷举
 sweep_config = {
     'method': 'grid',
     'parameters': {
@@ -303,7 +303,7 @@ sweep_config = {
     }
 }
 
-# Random search
+# 随机搜索
 sweep_config = {
     'method': 'random',
     'parameters': {
@@ -312,7 +312,7 @@ sweep_config = {
     }
 }
 
-# Bayesian optimization (recommended)
+# 贝叶斯优化（推荐）
 sweep_config = {
     'method': 'bayes',
     'metric': {'name': 'val/loss', 'goal': 'minimize'},
@@ -324,12 +324,12 @@ sweep_config = {
 
 ## Artifacts
 
-Track datasets, models, and other files with lineage.
+带血缘地追踪数据集、模型和其他文件。
 
-### Log Artifacts
+### 记录 Artifacts
 
 ```python
-# Create artifact
+# 创建 artifact
 artifact = wandb.Artifact(
     name='training-dataset',
     type='dataset',
@@ -337,32 +337,32 @@ artifact = wandb.Artifact(
     metadata={'size': '1.2M images', 'split': 'train'}
 )
 
-# Add files
+# 添加文件
 artifact.add_file('data/train.csv')
 artifact.add_dir('data/images/')
 
-# Log artifact
+# 记录 artifact
 wandb.log_artifact(artifact)
 ```
 
-### Use Artifacts
+### 使用 Artifacts
 
 ```python
-# Download and use artifact
+# 下载并使用 artifact
 run = wandb.init(project="my-project")
 
-# Download artifact
+# 下载 artifact
 artifact = run.use_artifact('training-dataset:latest')
 artifact_dir = artifact.download()
 
-# Use the data
+# 使用数据
 data = load_data(f"{artifact_dir}/train.csv")
 ```
 
-### Model Registry
+### 模型注册表
 
 ```python
-# Log model as artifact
+# 把模型作为 artifact 记录
 model_artifact = wandb.Artifact(
     name='resnet50-model',
     type='model',
@@ -372,11 +372,11 @@ model_artifact = wandb.Artifact(
 model_artifact.add_file('model.pth')
 wandb.log_artifact(model_artifact, aliases=['best', 'production'])
 
-# Link to model registry
+# 链接到模型注册表
 run.link_artifact(model_artifact, 'model-registry/production-models')
 ```
 
-## Integration Examples
+## 集成示例
 
 ### HuggingFace Transformers
 
@@ -384,19 +384,19 @@ run.link_artifact(model_artifact, 'model-registry/production-models')
 from transformers import Trainer, TrainingArguments
 import wandb
 
-# Initialize W&B
+# 初始化 W&B
 wandb.init(project="hf-transformers")
 
-# Training arguments with W&B
+# 带 W&B 的训练参数
 training_args = TrainingArguments(
     output_dir="./results",
-    report_to="wandb",  # Enable W&B logging
+    report_to="wandb",  # 启用 W&B 记录
     run_name="bert-finetuning",
     logging_steps=100,
     save_steps=500
 )
 
-# Trainer automatically logs to W&B
+# Trainer 会自动记录到 W&B
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -414,13 +414,13 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-# Create W&B logger
+# 创建 W&B logger
 wandb_logger = WandbLogger(
     project="lightning-demo",
-    log_model=True  # Log model checkpoints
+    log_model=True  # 记录模型检查点
 )
 
-# Use with Trainer
+# 配合 Trainer 使用
 trainer = Trainer(
     logger=wandb_logger,
     max_epochs=10
@@ -435,31 +435,31 @@ trainer.fit(model, datamodule=dm)
 import wandb
 from wandb.keras import WandbCallback
 
-# Initialize
+# 初始化
 wandb.init(project="keras-demo")
 
-# Add callback
+# 添加回调
 model.fit(
     x_train, y_train,
     validation_data=(x_val, y_val),
     epochs=10,
-    callbacks=[WandbCallback()]  # Auto-logs metrics
+    callbacks=[WandbCallback()]  # 自动记录指标
 )
 ```
 
-## Visualization & Analysis
+## 可视化与分析
 
-### Custom Charts
+### 自定义图表
 
 ```python
-# Log custom visualizations
+# 记录自定义可视化
 import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots()
 ax.plot(x, y)
 wandb.log({"custom_plot": wandb.Image(fig)})
 
-# Log confusion matrix
+# 记录混淆矩阵
 wandb.log({"conf_mat": wandb.plot.confusion_matrix(
     probs=None,
     y_true=ground_truth,
@@ -468,69 +468,69 @@ wandb.log({"conf_mat": wandb.plot.confusion_matrix(
 )})
 ```
 
-### Reports
+### 报告
 
-Create shareable reports in W&B UI:
-- Combine runs, charts, and text
-- Markdown support
-- Embeddable visualizations
-- Team collaboration
+在 W&B UI 中创建可分享的报告：
+- 组合 run、图表和文字
+- 支持 Markdown
+- 可嵌入的可视化
+- 团队协作
 
-## Best Practices
+## 最佳实践
 
-### 1. Organize with Tags and Groups
+### 1. 用标签和分组组织
 
 ```python
 wandb.init(
     project="my-project",
     tags=["baseline", "resnet50", "imagenet"],
-    group="resnet-experiments",  # Group related runs
-    job_type="train"             # Type of job
+    group="resnet-experiments",  # 把相关 run 分组
+    job_type="train"             # 作业类型
 )
 ```
 
-### 2. Log Everything Relevant
+### 2. 记录所有相关内容
 
 ```python
-# Log system metrics
+# 记录系统指标
 wandb.log({
     "gpu/util": gpu_utilization,
     "gpu/memory": gpu_memory_used,
     "cpu/util": cpu_utilization
 })
 
-# Log code version
+# 记录代码版本
 wandb.log({"git_commit": git_commit_hash})
 
-# Log data splits
+# 记录数据划分
 wandb.log({
     "data/train_size": len(train_dataset),
     "data/val_size": len(val_dataset)
 })
 ```
 
-### 3. Use Descriptive Names
+### 3. 使用有描述性的名称
 
 ```python
-# ✅ Good: Descriptive run names
+# ✅ 好：有描述性的 run 名称
 wandb.init(
     project="nlp-classification",
     name="bert-base-lr0.001-bs32-epoch10"
 )
 
-# ❌ Bad: Generic names
+# ❌ 差：通用名称
 wandb.init(project="nlp", name="run1")
 ```
 
-### 4. Save Important Artifacts
+### 4. 保存重要 Artifacts
 
 ```python
-# Save final model
+# 保存最终模型
 artifact = wandb.Artifact('final-model', type='model')
 artifact.add_file('model.pth')
 wandb.log_artifact(artifact)
 
-# Save predictions for analysis
+# 保存预测结果用于分析
 predictions_table = wandb.Table(
     columns=["id", "input", "prediction", "ground_truth"],
     data=predictions_data
@@ -538,57 +538,57 @@ predictions_table = wandb.Table(
 wandb.log({"predictions": predictions_table})
 ```
 
-### 5. Use Offline Mode for Unstable Connections
+### 5. 在网络不稳定时使用离线模式
 
 ```python
 import os
 
-# Enable offline mode
+# 启用离线模式
 os.environ["WANDB_MODE"] = "offline"
 
 wandb.init(project="my-project")
-# ... your code ...
+# ... 你的代码 ...
 
-# Sync later
+# 稍后同步
 # wandb sync <run_directory>
 ```
 
-## Team Collaboration
+## 团队协作
 
-### Share Runs
+### 分享 Run
 
 ```python
-# Runs are automatically shareable via URL
+# run 通过 URL 自动可分享
 run = wandb.init(project="team-project")
 print(f"Share this URL: {run.url}")
 ```
 
-### Team Projects
+### 团队项目
 
-- Create team account at wandb.ai
-- Add team members
-- Set project visibility (private/public)
-- Use team-level artifacts and model registry
+- 在 wandb.ai 创建团队账号
+- 添加团队成员
+- 设置项目可见性（私有/公开）
+- 使用团队级 artifacts 和模型注册表
 
-## Pricing
+## 定价
 
-- **Free**: Unlimited public projects, 100GB storage
-- **Academic**: Free for students/researchers
-- **Teams**: $50/seat/month, private projects, unlimited storage
-- **Enterprise**: Custom pricing, on-prem options
+- **免费**：无限公开项目，100GB 存储
+- **学术版**：对学生/研究人员免费
+- **团队版**：$50/席位/月，私有项目，无限存储
+- **企业版**：定制价格，提供本地部署选项
 
-## Resources
+## 资源
 
-- **Documentation**: https://docs.wandb.ai
-- **GitHub**: https://github.com/wandb/wandb (10.5k+ stars)
-- **Examples**: https://github.com/wandb/examples
-- **Community**: https://wandb.ai/community
-- **Discord**: https://wandb.me/discord
+- **文档**：https://docs.wandb.ai
+- **GitHub**：https://github.com/wandb/wandb（10.5k+ stars）
+- **示例**：https://github.com/wandb/examples
+- **社区**：https://wandb.ai/community
+- **Discord**：https://wandb.me/discord
 
-## See Also
+## 另请参阅
 
-- `references/sweeps.md` - Comprehensive hyperparameter optimization guide
-- `references/artifacts.md` - Data and model versioning patterns
-- `references/integrations.md` - Framework-specific examples
+- `references/sweeps.md` - 全面的超参数优化指南
+- `references/artifacts.md` - 数据与模型版本化模式
+- `references/integrations.md` - 各框架的示例
 
 

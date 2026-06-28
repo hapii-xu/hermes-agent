@@ -1,26 +1,26 @@
-# Segment Anything Advanced Usage Guide
+# Segment Anything 高级用法指南
 
-## SAM 2 (Video Segmentation)
+## SAM 2（视频分割）
 
-### Overview
+### 概述
 
-SAM 2 extends SAM to video segmentation with streaming memory architecture:
+SAM 2 通过流式记忆架构把 SAM 扩展到视频分割：
 
 ```bash
 pip install git+https://github.com/facebookresearch/segment-anything-2.git
 ```
 
-### Video segmentation
+### 视频分割
 
 ```python
 from sam2.build_sam import build_sam2_video_predictor
 
 predictor = build_sam2_video_predictor("sam2_hiera_l.yaml", "sam2_hiera_large.pt")
 
-# Initialize with video
+# 用视频初始化
 predictor.init_state(video_path="video.mp4")
 
-# Add prompt on first frame
+# 在第一帧添加提示
 predictor.add_new_points(
     frame_idx=0,
     obj_id=1,
@@ -28,48 +28,48 @@ predictor.add_new_points(
     labels=[1]
 )
 
-# Propagate through video
+# 在视频中传播
 for frame_idx, masks in predictor.propagate_in_video():
-    # masks contains segmentation for all tracked objects
+    # masks 包含所有被跟踪对象的分割结果
     process_frame(frame_idx, masks)
 ```
 
-### SAM 2 vs SAM comparison
+### SAM 2 与 SAM 对比
 
-| Feature | SAM | SAM 2 |
+| 特性 | SAM | SAM 2 |
 |---------|-----|-------|
-| Input | Images only | Images + Videos |
-| Architecture | ViT + Decoder | Hiera + Memory |
-| Memory | Per-image | Streaming memory bank |
-| Tracking | No | Yes, across frames |
-| Models | ViT-B/L/H | Hiera-T/S/B+/L |
+| 输入 | 仅图像 | 图像 + 视频 |
+| 架构 | ViT + Decoder | Hiera + Memory |
+| 记忆 | 每张图像独立 | 流式记忆库 |
+| 跟踪 | 无 | 有，跨帧跟踪 |
+| 模型 | ViT-B/L/H | Hiera-T/S/B+/L |
 
-## Grounded SAM (Text-Prompted Segmentation)
+## Grounded SAM（文本提示分割）
 
-### Setup
+### 安装
 
 ```bash
 pip install groundingdino-py
 pip install git+https://github.com/facebookresearch/segment-anything.git
 ```
 
-### Text-to-mask pipeline
+### 文本到掩码的流水线
 
 ```python
 from groundingdino.util.inference import load_model, predict
 from segment_anything import sam_model_registry, SamPredictor
 import cv2
 
-# Load Grounding DINO
+# 加载 Grounding DINO
 grounding_model = load_model("groundingdino_swint_ogc.pth", "GroundingDINO_SwinT_OGC.py")
 
-# Load SAM
+# 加载 SAM
 sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
 predictor = SamPredictor(sam)
 
 def text_to_mask(image, text_prompt, box_threshold=0.3, text_threshold=0.25):
-    """Generate masks from text description."""
-    # Get bounding boxes from text
+    """从文本描述生成掩码。"""
+    # 从文本获取边界框
     boxes, logits, phrases = predict(
         model=grounding_model,
         image=image,
@@ -78,12 +78,12 @@ def text_to_mask(image, text_prompt, box_threshold=0.3, text_threshold=0.25):
         text_threshold=text_threshold
     )
 
-    # Generate masks with SAM
+    # 用 SAM 生成掩码
     predictor.set_image(image)
 
     masks = []
     for box in boxes:
-        # Convert normalized box to pixel coordinates
+        # 把归一化的框转换为像素坐标
         h, w = image.shape[:2]
         box_pixels = box * np.array([w, h, w, h])
 
@@ -95,16 +95,16 @@ def text_to_mask(image, text_prompt, box_threshold=0.3, text_threshold=0.25):
 
     return masks, boxes, phrases
 
-# Usage
+# 用法
 image = cv2.imread("image.jpg")
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 masks, boxes, phrases = text_to_mask(image, "person . dog . car")
 ```
 
-## Batched Processing
+## 批处理
 
-### Efficient multi-image processing
+### 高效的多图处理
 
 ```python
 import torch
@@ -118,7 +118,7 @@ class BatchedSAM:
         self.device = device
 
     def process_batch(self, images, prompts):
-        """Process multiple images with corresponding prompts."""
+        """用对应的提示处理多张图像。"""
         results = []
 
         for image, prompt in zip(images, prompts):
@@ -144,7 +144,7 @@ class BatchedSAM:
 
         return results
 
-# Usage
+# 用法
 batch_sam = BatchedSAM("sam_vit_h_4b8939.pth")
 
 images = [cv2.imread(f"image_{i}.jpg") for i in range(10)]
@@ -153,15 +153,15 @@ prompts = [{"point": np.array([[100, 100]]), "label": np.array([1])} for _ in ra
 results = batch_sam.process_batch(images, prompts)
 ```
 
-### Parallel automatic mask generation
+### 并行自动掩码生成
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
 from segment_anything import SamAutomaticMaskGenerator
 
 def generate_masks_parallel(images, num_workers=4):
-    """Generate masks for multiple images in parallel."""
-    # Note: Each worker needs its own model instance
+    """并行地为多张图像生成掩码。"""
+    # 注意：每个 worker 需要自己的模型实例
     def worker_init():
         sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b_01ec64.pth")
         return SamAutomaticMaskGenerator(sam)
@@ -179,9 +179,9 @@ def generate_masks_parallel(images, num_workers=4):
     return results
 ```
 
-## Custom Integration
+## 自定义集成
 
-### FastAPI service
+### FastAPI 服务
 
 ```python
 from fastapi import FastAPI, File, UploadFile
@@ -192,7 +192,7 @@ import io
 
 app = FastAPI()
 
-# Load model once
+# 只加载一次模型
 sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
 sam.to("cuda")
 predictor = SamPredictor(sam)
@@ -207,20 +207,20 @@ async def segment_with_point(
     file: UploadFile = File(...),
     points: list[PointPrompt] = []
 ):
-    # Read image
+    # 读取图像
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Set image
+    # 设置图像
     predictor.set_image(image)
 
-    # Prepare prompts
+    # 准备提示
     point_coords = np.array([[p.x, p.y] for p in points])
     point_labels = np.array([p.label for p in points])
 
-    # Generate masks
+    # 生成掩码
     masks, scores, _ = predictor.predict(
         point_coords=point_coords,
         point_labels=point_labels,
@@ -259,18 +259,18 @@ async def segment_automatic(file: UploadFile = File(...)):
     }
 ```
 
-### Gradio interface
+### Gradio 界面
 
 ```python
 import gradio as gr
 import numpy as np
 
-# Load model
+# 加载模型
 sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
 predictor = SamPredictor(sam)
 
 def segment_image(image, evt: gr.SelectData):
-    """Segment object at clicked point."""
+    """在点击位置分割对象。"""
     predictor.set_image(image)
 
     point = np.array([[evt.index[0], evt.index[1]]])
@@ -284,7 +284,7 @@ def segment_image(image, evt: gr.SelectData):
 
     best_mask = masks[np.argmax(scores)]
 
-    # Overlay mask on image
+    # 在图像上叠加掩码
     overlay = image.copy()
     overlay[best_mask] = overlay[best_mask] * 0.5 + np.array([255, 0, 0]) * 0.5
 
@@ -303,30 +303,30 @@ with gr.Blocks() as demo:
 demo.launch()
 ```
 
-## Fine-Tuning SAM
+## 微调 SAM
 
-### LoRA fine-tuning (experimental)
+### LoRA 微调（实验性）
 
 ```python
 from peft import LoraConfig, get_peft_model
 from transformers import SamModel
 
-# Load model
+# 加载模型
 model = SamModel.from_pretrained("facebook/sam-vit-base")
 
-# Configure LoRA
+# 配置 LoRA
 lora_config = LoraConfig(
     r=16,
     lora_alpha=32,
-    target_modules=["qkv"],  # Attention layers
+    target_modules=["qkv"],  # 注意力层
     lora_dropout=0.1,
     bias="none",
 )
 
-# Apply LoRA
+# 应用 LoRA
 model = get_peft_model(model, lora_config)
 
-# Training loop (simplified)
+# 训练循环（简化版）
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 for batch in dataloader:
@@ -336,73 +336,73 @@ for batch in dataloader:
         input_labels=batch["input_labels"]
     )
 
-    # Custom loss (e.g., IoU loss with ground truth)
+    # 自定义损失（例如带真值的 IoU 损失）
     loss = compute_loss(outputs.pred_masks, batch["gt_masks"])
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
 ```
 
-### MedSAM (Medical imaging)
+### MedSAM（医学影像）
 
 ```python
-# MedSAM is a fine-tuned SAM for medical images
+# MedSAM 是针对医学图像微调过的 SAM
 # https://github.com/bowang-lab/MedSAM
 
 from segment_anything import sam_model_registry, SamPredictor
 import torch
 
-# Load MedSAM checkpoint
+# 加载 MedSAM 检查点
 medsam = sam_model_registry["vit_b"](checkpoint="medsam_vit_b.pth")
 medsam.to("cuda")
 
 predictor = SamPredictor(medsam)
 
-# Process medical image
-# Convert grayscale to RGB if needed
+# 处理医学图像
+# 如有需要，把灰度图转为 RGB
 medical_image = cv2.imread("ct_scan.png", cv2.IMREAD_GRAYSCALE)
 rgb_image = np.stack([medical_image] * 3, axis=-1)
 
 predictor.set_image(rgb_image)
 
-# Segment with box prompt (common for medical imaging)
+# 用框提示分割（医学影像常用）
 masks, scores, _ = predictor.predict(
     box=np.array([x1, y1, x2, y2]),
     multimask_output=False
 )
 ```
 
-## Advanced Mask Processing
+## 高级掩码处理
 
-### Mask refinement
+### 掩码精修
 
 ```python
 import cv2
 from scipy import ndimage
 
 def refine_mask(mask, kernel_size=5, iterations=2):
-    """Refine mask with morphological operations."""
+    """用形态学运算精修掩码。"""
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
 
-    # Close small holes
+    # 闭合小孔
     closed = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel, iterations=iterations)
 
-    # Remove small noise
+    # 去除小噪声
     opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=iterations)
 
     return opened.astype(bool)
 
 def fill_holes(mask):
-    """Fill holes in mask."""
+    """填充掩码中的孔洞。"""
     filled = ndimage.binary_fill_holes(mask)
     return filled
 
 def remove_small_regions(mask, min_area=100):
-    """Remove small disconnected regions."""
+    """移除小的不连通区域。"""
     labeled, num_features = ndimage.label(mask)
     sizes = ndimage.sum(mask, labeled, range(1, num_features + 1))
 
-    # Keep only regions larger than min_area
+    # 只保留大于 min_area 的区域
     mask_clean = np.zeros_like(mask)
     for i, size in enumerate(sizes, 1):
         if size >= min_area:
@@ -411,13 +411,13 @@ def remove_small_regions(mask, min_area=100):
     return mask_clean
 ```
 
-### Mask to polygon conversion
+### 掩码转多边形
 
 ```python
 import cv2
 
 def mask_to_polygons(mask, epsilon_factor=0.01):
-    """Convert binary mask to polygon coordinates."""
+    """把二值掩码转换为多边形坐标。"""
     contours, _ = cv2.findContours(
         mask.astype(np.uint8),
         cv2.RETR_EXTERNAL,
@@ -429,13 +429,13 @@ def mask_to_polygons(mask, epsilon_factor=0.01):
         epsilon = epsilon_factor * cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon, True)
         polygon = approx.squeeze().tolist()
-        if len(polygon) >= 3:  # Valid polygon
+        if len(polygon) >= 3:  # 有效的多边形
             polygons.append(polygon)
 
     return polygons
 
 def polygons_to_mask(polygons, height, width):
-    """Convert polygons back to binary mask."""
+    """把多边形转换回二值掩码。"""
     mask = np.zeros((height, width), dtype=np.uint8)
     for polygon in polygons:
         pts = np.array(polygon, dtype=np.int32)
@@ -443,21 +443,21 @@ def polygons_to_mask(polygons, height, width):
     return mask.astype(bool)
 ```
 
-### Multi-scale segmentation
+### 多尺度分割
 
 ```python
 def multiscale_segment(image, predictor, point, scales=[0.5, 1.0, 2.0]):
-    """Generate masks at multiple scales and combine."""
+    """在多个尺度上生成掩码并合并。"""
     h, w = image.shape[:2]
     masks_all = []
 
     for scale in scales:
-        # Resize image
+        # 缩放图像
         new_h, new_w = int(h * scale), int(w * scale)
         scaled_image = cv2.resize(image, (new_w, new_h))
         scaled_point = (point * scale).astype(int)
 
-        # Segment
+        # 分割
         predictor.set_image(scaled_image)
         masks, scores, _ = predictor.predict(
             point_coords=scaled_point.reshape(1, 2),
@@ -465,22 +465,22 @@ def multiscale_segment(image, predictor, point, scales=[0.5, 1.0, 2.0]):
             multimask_output=True
         )
 
-        # Resize mask back
+        # 把掩码缩放回原尺寸
         best_mask = masks[np.argmax(scores)]
         original_mask = cv2.resize(best_mask.astype(np.uint8), (w, h)) > 0.5
 
         masks_all.append(original_mask)
 
-    # Combine masks (majority voting)
+    # 合并掩码（多数投票）
     combined = np.stack(masks_all, axis=0)
     final_mask = np.sum(combined, axis=0) >= len(scales) // 2 + 1
 
     return final_mask
 ```
 
-## Performance Optimization
+## 性能优化
 
-### TensorRT acceleration
+### TensorRT 加速
 
 ```python
 import tensorrt as trt
@@ -488,7 +488,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 
 def export_to_tensorrt(onnx_path, engine_path, fp16=True):
-    """Convert ONNX model to TensorRT engine."""
+    """把 ONNX 模型转换为 TensorRT 引擎。"""
     logger = trt.Logger(trt.Logger.WARNING)
     builder = trt.Builder(logger)
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
@@ -514,7 +514,7 @@ def export_to_tensorrt(onnx_path, engine_path, fp16=True):
     return engine
 ```
 
-### Memory-efficient inference
+### 显存高效的推理
 
 ```python
 class MemoryEfficientSAM:
@@ -541,34 +541,34 @@ class MemoryEfficientSAM:
         )
         return masks, scores
 
-# Usage with context manager (auto-cleanup)
+# 用上下文管理器（自动清理）
 with MemoryEfficientSAM("sam_vit_b_01ec64.pth") as sam:
     masks, scores = sam.segment(image, points, labels)
-# CUDA memory freed automatically
+# CUDA 显存自动释放
 ```
 
-## Dataset Generation
+## 数据集生成
 
-### Create segmentation dataset
+### 创建分割数据集
 
 ```python
 import json
 
 def generate_dataset(images_dir, output_dir, mask_generator):
-    """Generate segmentation dataset from images."""
+    """从图像生成分割数据集。"""
     annotations = []
 
     for img_path in Path(images_dir).glob("*.jpg"):
         image = cv2.imread(str(img_path))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Generate masks
+        # 生成掩码
         masks = mask_generator.generate(image)
 
-        # Filter high-quality masks
+        # 过滤高质量掩码
         good_masks = [m for m in masks if m["predicted_iou"] > 0.9]
 
-        # Save annotations
+        # 保存标注
         for i, mask_data in enumerate(good_masks):
             annotation = {
                 "image_id": img_path.stem,
@@ -581,7 +581,7 @@ def generate_dataset(images_dir, output_dir, mask_generator):
             }
             annotations.append(annotation)
 
-    # Save dataset
+    # 保存数据集
     with open(output_dir / "annotations.json", "w") as f:
         json.dump(annotations, f)
 

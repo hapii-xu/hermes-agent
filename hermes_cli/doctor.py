@@ -1,7 +1,7 @@
 """
-Doctor command for hermes CLI.
+hermes CLI 的诊断命令。
 
-Diagnoses issues with Hermes Agent setup.
+诊断 Hermes Agent 安装配置中的问题。
 """
 
 import os
@@ -17,9 +17,9 @@ from hermes_constants import agent_browser_runnable
 
 PROJECT_ROOT = get_project_root()
 HERMES_HOME = get_hermes_home()
-_DHH = display_hermes_home()  # user-facing display path (e.g. ~/.hermes or ~/.hermes/profiles/coder)
+_DHH = display_hermes_home()  # 用户界面显示路径（例如 ~/.hermes 或 ~/.hermes/profiles/coder）
 
-# Load environment variables from ~/.hermes/.env so API key checks work
+# 从 ~/.hermes/.env 加载环境变量，使 API 密钥检查生效
 _env_path = get_env_path()
 load_hermes_dotenv(hermes_home=_env_path.parent, project_env=PROJECT_ROOT / ".env")
 
@@ -71,7 +71,7 @@ def _system_package_install_cmd(pkg: str) -> str:
 
 
 def _safe_which(cmd: str) -> str | None:
-    """shutil.which wrapper resilient to platform monkeypatching in tests."""
+    """shutil.which 的包装函数，可抵御测试中的平台 monkeypatching。"""
     try:
         return shutil.which(cmd)
     except Exception:
@@ -99,12 +99,12 @@ def _termux_install_all_fallback_notes() -> list[str]:
 
 
 def _has_provider_env_config(content: str) -> bool:
-    """Return True when ~/.hermes/.env contains provider auth/base URL settings."""
+    """当 ~/.hermes/.env 包含 provider auth/base URL 设置时返回 True。"""
     return any(key in content for key in _PROVIDER_ENV_HINTS)
 
 
 def _honcho_is_configured_for_doctor() -> bool:
-    """Return True when Honcho is configured, even if this process has no active session."""
+    """当 Honcho 已配置时返回 True，即使当前进程没有活跃会话。"""
     try:
         from plugins.memory.honcho.client import HonchoClientConfig
 
@@ -115,7 +115,7 @@ def _honcho_is_configured_for_doctor() -> bool:
 
 
 def _is_kanban_worker_env_gate(item: dict) -> bool:
-    """Return True when Kanban is unavailable only because this is not a worker process."""
+    """当 Kanban 不可用仅仅是因为当前不是 worker 进程时返回 True。"""
     if item.get("name") != "kanban":
         return False
     if os.environ.get("HERMES_KANBAN_TASK"):
@@ -126,14 +126,14 @@ def _is_kanban_worker_env_gate(item: dict) -> bool:
 
 
 def _doctor_tool_availability_detail(toolset: str) -> str:
-    """Optional explanatory suffix for toolsets whose doctor status needs context."""
+    """为 doctor 状态需要上下文的 toolset 提供可选的解释后缀。"""
     if toolset == "kanban" and not os.environ.get("HERMES_KANBAN_TASK"):
         return "(runtime-gated; loaded only for dispatcher-spawned workers)"
     return ""
 
 
 def _apply_doctor_tool_availability_overrides(available: list[str], unavailable: list[dict]) -> tuple[list[str], list[dict]]:
-    """Adjust runtime-gated tool availability for doctor diagnostics."""
+    """为 doctor 诊断调整运行时门控的 tool 可用性。"""
     updated_available = list(available)
     updated_unavailable = []
     for item in unavailable:
@@ -151,12 +151,12 @@ def _apply_doctor_tool_availability_overrides(available: list[str], unavailable:
 
 
 def _has_healthy_oauth_fallback_for_apikey_provider(provider_label: str) -> bool:
-    """Return True when a direct API-key probe failure is non-blocking.
+    """当直接的 API 密钥探测失败不阻塞时返回 True。
 
-    Some provider families support both a direct API-key path and a separate
-    OAuth runtime path. When the OAuth path is already healthy, doctor should
-    still show a failed API-key connectivity row, but it should not promote
-    that direct-key problem into the final blocking summary.
+    某些 provider 家族同时支持直接的 API 密钥路径和独立的
+    OAuth 运行时路径。当 OAuth 路径已健康时，doctor 仍应
+    显示失败的 API 密钥连接行，但不应将该直接密钥问题
+    提升为最终的阻塞摘要。
     """
     normalized = (provider_label or "").strip().lower()
     if normalized == "minimax":
@@ -188,13 +188,13 @@ def check_info(text: str):
 
 
 def _section(title: str) -> None:
-    """Print a doctor section banner: blank line + bold cyan ◆ title."""
+    """打印 doctor 分区标题：空行 + 加粗青色 ◆ 标题。"""
     print()
     print(color(f"◆ {title}", Colors.CYAN, Colors.BOLD))
 
 
 def _fail_and_issue(text: str, detail: str, fix: str, issues: list[str]) -> None:
-    """Emit a check_fail and append the corresponding fix instruction."""
+    """输出 check_fail 并追加相应的修复指令。"""
     check_fail(text, detail)
     issues.append(fix)
 

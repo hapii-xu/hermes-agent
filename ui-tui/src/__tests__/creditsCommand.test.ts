@@ -4,9 +4,9 @@ import { creditsCommands } from '../app/slash/commands/credits.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import type { CreditsViewResponse } from '../gatewayTypes.js'
 
-// The command opens the top-up URL through this helper on confirm. Mock it so
-// the test never shells out to a real browser/`xdg-open` and we can assert the
-// success/failure messaging deterministically.
+// 这个命令在确认时通过这个辅助函数打开充值 URL。Mock 它以便
+// 测试不会调用真实的浏览器/`xdg-open`，我们可以确定性地断言
+// 成功/失败消息。
 vi.mock('../lib/openExternalUrl.js', () => ({
   openExternalUrl: vi.fn(() => true)
 }))
@@ -26,9 +26,9 @@ const buildView = (overrides: Partial<CreditsViewResponse> = {}): CreditsViewRes
   ...overrides
 })
 
-// Mirror createSlashHandler's real `guarded` wrapper: skip the handler when the
-// command is stale OR the response is falsy. Tests stay non-stale, so this is a
-// straightforward "run the handler when we got a response" shim.
+// 模拟 createSlashHandler 的真实 `guarded` 包装器：当命令已过期
+// 或响应为假值时跳过 handler。测试保持非过期状态，所以这是一个
+// 简单的"收到响应时运行 handler"的 shim。
 const guarded =
   <T,>(fn: (r: T) => void) =>
   (r: null | T) => {
@@ -51,13 +51,13 @@ const buildCtx = (rpcResult: CreditsViewResponse) => {
     transcript: { page: vi.fn(), panel: vi.fn(), sys }
   }
 
-  // Run the command, then await the rpc promise so the .then() handler has
-  // flushed before assertions — deterministic, no polling/timeouts.
+  // 运行命令，然后 await rpc 的 promise，确保 .then() handler 在
+  // 断言前已执行完毕——确定性，无需轮询/超时。
   const run = async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     creditsCommand.run('', ctx as any, 'credits')
     await rpc.mock.results[0]?.value
-    // Allow the chained .then() microtask to settle.
+    // 允许链式的 .then() 微任务完成。
     await Promise.resolve()
   }
 
@@ -79,14 +79,14 @@ describe('/credits slash command', () => {
 
     expect(rpc).toHaveBeenCalledWith('credits.view', { session_id: 'sid-abc' })
 
-    // (a) sys received the balance text including the topup_url
+    // (a) sys 收到了包含 topup_url 的余额文本
     const printed = sys.mock.calls.map(call => call[0]).join('\n')
     expect(printed).toContain('💳 Nous credits')
     expect(printed).toContain('Grant: $9.50 left')
     expect(printed).toContain('Signed in as ada@example.com')
     expect(printed).toContain(view.topup_url)
 
-    // (b) confirm overlay set with the expected label + detail
+    // (b) 确认弹层已设置预期的 label + detail
     const confirm = getOverlayState().confirm
     expect(confirm).toBeTruthy()
     expect(confirm?.confirmLabel).toBe('Open top-up in browser')
@@ -94,7 +94,7 @@ describe('/credits slash command', () => {
     expect(confirm?.title).toBe('Add credits?')
     expect(confirm?.detail).toBe(view.topup_url)
 
-    // onConfirm opens the URL and reports success back to the transcript
+    // onConfirm 打开 URL 并将成功消息报告回 transcript
     confirm?.onConfirm()
     expect(openExternalUrlMock).toHaveBeenCalledWith(view.topup_url)
     expect(sys).toHaveBeenCalledWith(

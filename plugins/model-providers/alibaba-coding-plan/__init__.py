@@ -1,7 +1,7 @@
-"""Alibaba Cloud Coding Plan provider profile.
+"""阿里云编程计划 provider 配置文件。
 
-Separate from the standard `alibaba` profile because it hits a different
-endpoint (coding-intl.dashscope.aliyuncs.com) with a dedicated API key tier.
+与标准 `alibaba` 配置文件分离，因为它使用不同的
+端点（coding-intl.dashscope.aliyuncs.com）并需要专用的 API key 级别。
 """
 
 from providers import register_provider

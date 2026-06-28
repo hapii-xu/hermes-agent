@@ -163,13 +163,13 @@ describe('session orchestrator helpers', () => {
 
 describe('unified Sessions overlay helpers', () => {
   it('orders rows as [new][live…][history…]', () => {
-    // 2 live sessions, any number of history rows after them.
+    // 2 个活跃 session，后面可以有任意数量的 history 行。
     expect(sessionRowKindAt(0, 2)).toBe('new')
     expect(sessionRowKindAt(1, 2)).toBe('live')
     expect(sessionRowKindAt(2, 2)).toBe('live')
     expect(sessionRowKindAt(3, 2)).toBe('history')
     expect(sessionRowKindAt(9, 2)).toBe('history')
-    // No live sessions: row 0 is new, everything after is history.
+    // 没有活跃 session 时：第 0 行是 new，之后全是 history。
     expect(sessionRowKindAt(0, 0)).toBe('new')
     expect(sessionRowKindAt(1, 0)).toBe('history')
   })

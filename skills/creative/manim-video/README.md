@@ -1,22 +1,22 @@
-# Manim Video Skill
+# Manim 视频技能
 
-Production pipeline for mathematical and technical animations using [Manim Community Edition](https://www.manim.community/).
+使用 [Manim Community Edition](https://www.manim.community/) 的数学与技术动画制作流水线。
 
-## What it does
+## 它能做什么
 
-Creates 3Blue1Brown-style animated videos from text prompts. The agent handles the full pipeline: creative planning, Python code generation, rendering, scene stitching, and iterative refinement.
+从文字提示创建 3Blue1Brown 风格的动画视频。Agent 负责完整的流水线：创意规划、Python 代码生成、渲染、场景拼接，以及迭代优化。
 
-## Use cases
+## 使用场景
 
-- **Concept explainers** — "Explain how neural networks learn"
-- **Equation derivations** — "Animate the proof of the Pythagorean theorem"
-- **Algorithm visualizations** — "Show how quicksort works step by step"
-- **Data stories** — "Animate our before/after performance metrics"
-- **Architecture diagrams** — "Show our microservice architecture building up"
+- **概念讲解** — "解释神经网络是如何学习的"
+- **公式推导** — "动画演示勾股定理的证明"
+- **算法可视化** — "逐步展示快速排序的工作原理"
+- **数据故事** — "把我们改进前后的性能指标做成动画"
+- **架构图** — "展示我们的微服务架构是如何逐步搭建的"
 
-## Prerequisites
+## 前置条件
 
-Python 3.10+, Manim CE (`pip install manim`), LaTeX, ffmpeg.
+Python 3.10+、Manim CE（`pip install manim`）、LaTeX、ffmpeg。
 
 ```bash
 bash skills/creative/manim-video/scripts/setup.sh

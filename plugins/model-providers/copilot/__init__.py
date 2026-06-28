@@ -1,13 +1,13 @@
-"""Copilot / GitHub Models provider profile.
+"""Copilot / GitHub Models provider 配置文件。
 
-Copilot uses per-model api_mode routing:
-  - GPT-5+ / Codex models → codex_responses
-  - Claude models → anthropic_messages
-  - Everything else → chat_completions (this profile covers that subset)
+Copilot 使用按模型的 api_mode 路由：
+  - GPT-5+ / Codex 模型 → codex_responses
+  - Claude 模型 → anthropic_messages
+  - 其他所有模型 → chat_completions（此配置文件覆盖该子集）
 
-Key quirks for the chat_completions subset:
-  - Editor attribution headers (via copilot_default_headers())
-  - GitHub Models reasoning extra_body (model-catalog gated)
+chat_completions 子集的关键特点：
+  - 编辑器归属 headers（通过 copilot_default_headers()）
+  - GitHub Models 推理 extra_body（model-catalog 门控）
 """
 
 from typing import Any
@@ -17,7 +17,7 @@ from providers.base import ProviderProfile
 
 
 class CopilotProfile(ProviderProfile):
-    """GitHub Copilot / GitHub Models — editor headers + reasoning."""
+    """GitHub Copilot / GitHub Models — 编辑器 headers + 推理。"""
 
     def build_api_kwargs_extras(
         self,
@@ -35,7 +35,7 @@ class CopilotProfile(ProviderProfile):
                 supported_efforts = github_model_reasoning_efforts(model)
                 if supported_efforts and reasoning_config:
                     effort = reasoning_config.get("effort", "medium")
-                    # Normalize non-standard effort levels to the nearest supported
+                    # 将非标准的 effort 级别规范化为最接近的支持值
                     if effort == "xhigh":
                         effort = "high"
                     if effort in supported_efforts:

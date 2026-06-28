@@ -1,27 +1,26 @@
-"""Firecrawl cloud browser provider — plugin form.
+"""Firecrawl 云浏览器 provider — 插件形式。
 
-Subclasses :class:`agent.browser_provider.BrowserProvider` (the plugin-facing
-ABC introduced in PR #25214). The legacy in-tree module
-``tools.browser_providers.firecrawl`` was removed in the same PR; this file
-is now the canonical implementation.
+继承自 :class:`agent.browser_provider.BrowserProvider`（PR #25214 引入的
+面向插件的 ABC）。旧的内置模块
+``tools.browser_providers.firecrawl`` 已在同一 PR 中移除；此文件
+现在是规范实现。
 
-This is the cloud-browser path — distinct from the firecrawl WEB plugin at
-``plugins/web/firecrawl/`` which handles search/extract/crawl on
-``/v2/search`` / ``/v2/scrape`` / ``/v2/crawl``. The two plugins share the
-``FIRECRAWL_API_KEY`` env var but talk to different endpoints (this one
-hits ``/v2/browser``).
+这是云浏览器路径 — 与 ``plugins/web/firecrawl/`` 的 Firecrawl 网页插件不同，
+后者处理 ``/v2/search`` / ``/v2/scrape`` / ``/v2/crawl`` 上的搜索/提取/爬取。
+两个插件共用 ``FIRECRAWL_API_KEY`` 环境变量，但访问不同端点（此处
+访问 ``/v2/browser``）。
 
-Config keys this provider responds to::
+此 provider 响应的配置键::
 
     browser:
-      cloud_provider: "firecrawl"   # explicit selection only — not in the
-                                    # legacy auto-detect walk
+      cloud_provider: "firecrawl"   # 仅支持显式选择 — 不在
+                                    # 旧式自动检测流程中
 
-Auth env vars::
+认证环境变量::
 
     FIRECRAWL_API_KEY=...           # https://firecrawl.dev
-    FIRECRAWL_API_URL=...           # optional override (default https://api.firecrawl.dev)
-    FIRECRAWL_BROWSER_TTL=...       # optional, default 300 seconds
+    FIRECRAWL_API_URL=...           # 可选覆盖（默认 https://api.firecrawl.dev）
+    FIRECRAWL_BROWSER_TTL=...       # 可选，默认 300 秒
 """
 
 from __future__ import annotations
@@ -41,10 +40,10 @@ _BASE_URL = "https://api.firecrawl.dev"
 
 
 class FirecrawlBrowserProvider(BrowserProvider):
-    """Firecrawl (https://firecrawl.dev) cloud browser backend.
+    """Firecrawl (https://firecrawl.dev) 云浏览器后端。
 
-    Cloud-browser path only — search/extract/crawl live in the separate
-    ``plugins/web/firecrawl/`` plugin.
+    仅支持云浏览器路径 — 搜索/提取/爬取功能位于独立的
+    ``plugins/web/firecrawl/`` 插件中。
     """
 
     @property
@@ -59,7 +58,7 @@ class FirecrawlBrowserProvider(BrowserProvider):
         return bool(os.environ.get("FIRECRAWL_API_KEY"))
 
     # ------------------------------------------------------------------
-    # Session lifecycle
+    # 会话生命周期
     # ------------------------------------------------------------------
 
     def _api_url(self) -> str:

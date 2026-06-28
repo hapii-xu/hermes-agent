@@ -1,18 +1,16 @@
-"""BasicAuthProvider — username/password dashboard auth (no OAuth IDP).
+"""BasicAuthProvider — 用户名/密码仪表板认证（无 OAuth IDP）。
 
-A self-hosted "just put a password on my dashboard" provider. It plugs
-into the same ``DashboardAuthProvider`` framework as the Nous OAuth
-provider, but authenticates with a username + password instead of an
-OAuth redirect: it sets ``supports_password = True`` and implements
-``complete_password_login``. The login page renders a credential form for
-it; everything downstream of login (session cookies, verify, refresh,
-ws-tickets, logout) is identical to the OAuth path because a password
-session is just a :class:`Session` with provider-minted opaque tokens.
+一个自托管的"为仪表板设置密码"provider。它插入到与 Nous OAuth
+provider 相同的 ``DashboardAuthProvider`` 框架中，但使用用户名 + 密码
+而非 OAuth 重定向进行认证：设置 ``supports_password = True`` 并实现
+``complete_password_login``。登录页面为其渲染凭据表单；
+登录后的一切（会话 cookie、验证、刷新、ws-ticket、注销）与 OAuth
+路径相同，因为密码会话只是一个带有 provider 生成的不透明 token 的
+:class:`Session`。
 
-This provider has **no external IDP and no database**. Credentials are
-configured up front; sessions are stateless HMAC-signed tokens this
-provider mints and verifies itself. That keeps it zero-infrastructure —
-appropriate for a single-box self-hosted dashboard.
+此 provider **没有外部 IDP，也没有数据库**。凭据预先配置；
+会话是由此 provider 生成和验证的无状态 HMAC 签名 token。
+这使其保持零基础设施 — 适合单机自托管仪表板。
 
 Configuration surfaces (env wins over config.yaml when set non-empty),
 mirroring the Nous provider's precedence convention:
@@ -38,21 +36,19 @@ mirroring the Nous provider's precedence convention:
       HERMES_DASHBOARD_BASIC_AUTH_SECRET
       HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS
 
-If ``secret`` is not configured, a random per-process secret is generated
-at startup. That's fine for a single-process dashboard, but means all
-sessions are invalidated on restart and sessions don't survive across
-multiple worker processes — set an explicit ``secret`` for stable
-multi-worker / restart-surviving sessions.
+如果未配置 ``secret``，则在启动时生成一个随机的每进程密钥。
+这对单进程仪表板没问题，但意味着所有会话在重启时失效，
+且会话不能跨多个工作进程存活 — 为稳定的多工作进程/重启存活会话
+设置显式 ``secret``。
 
-Password hashing uses stdlib :func:`hashlib.scrypt` (memory-hard, no
-third-party dependency). ``complete_password_login`` runs a constant-time
-comparison and always performs a hash even for an unknown username, so
-the endpoint is not a username-enumeration timing oracle.
+密码哈希使用标准库 :func:`hashlib.scrypt`（内存密集型，无第三方依赖）。
+``complete_password_login`` 运行恒定时间比较，即使对未知用户名也始终
+执行哈希，因此端点不是用户名枚举的定时预言机。
 
-Skip reasons:
-  Like the Nous provider, this exposes a module-level ``LAST_SKIP_REASON``
-  the gate's fail-closed branch can surface when the plugin loads but
-  declines to register (no username/password configured).
+跳过原因：
+  与 Nous provider 类似，此模块暴露了一个模块级 ``LAST_SKIP_REASON``，
+  当插件加载但拒绝注册时（未配置用户名/密码），网关的失败关闭分支
+  可以显示该原因。
 """
 
 from __future__ import annotations
@@ -79,28 +75,25 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Defaults
+# 默认值
 # ---------------------------------------------------------------------------
 
-# Access-token lifetime. The middleware transparently refreshes via the
-# refresh token (30-day) when the access token lapses, so this controls
-# how often a refresh round trip happens, not how long the user stays
-# logged in.
-_DEFAULT_TTL_SECONDS = 12 * 60 * 60  # 12h
-_REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60  # 30d
+# access token 生命周期。当 access token 过期时，中间件通过
+# refresh token（30 天）透明刷新，因此这控制刷新往返发生的频率，
+# 而非用户保持登录的时长。
+_DEFAULT_TTL_SECONDS = 12 * 60 * 60  # 12小时
+_REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60  # 30天
 
-# scrypt parameters (RFC 7914 / stdlib hashlib.scrypt). n must be a power
-# of two; these are the widely-recommended interactive-login parameters
-# (~16 MiB, a few ms on commodity hardware).
+# scrypt 参数（RFC 7914 / 标准库 hashlib.scrypt）。n 必须是 2 的幂；
+# 这些是广泛推荐的交互式登录参数（约 16 MiB，商用硬件上几毫秒）。
 _SCRYPT_N = 2**14
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _SCRYPT_DKLEN = 32
 _SCRYPT_SALT_BYTES = 16
 
-# Length of the HMAC-SHA256 digest appended as a fixed-length suffix to
-# signed tokens (no separator — binary HMAC bytes can't be confused with
-# a delimiter).
+# HMAC-SHA256 摘要的长度，作为固定长度后缀附加到已签名的 token
+# （无分隔符 — 二进制 HMAC 字节不会与分隔符混淆）。
 _SIG_LEN = hashlib.sha256().digest_size
 
 
@@ -108,15 +101,15 @@ LAST_SKIP_REASON: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Password hashing (stdlib scrypt)
+# 密码哈希（标准库 scrypt）
 # ---------------------------------------------------------------------------
 
 
 def hash_password(password: str) -> str:
-    """Return a ``scrypt$n$r$p$<salt_b64>$<dk_b64>`` hash string.
+    """返回 ``scrypt$n$r$p$<salt_b64>$<dk_b64>`` 哈希字符串。
 
-    Use this to precompute ``password_hash`` for config.yaml so plaintext
-    never sits at rest. Exposed as a module function so operators can run
+    使用此函数为 config.yaml 预计算 ``password_hash``，使明文
+    永不静态存储。作为模块函数暴露，供操作员运行
     ``python -c "from plugins.dashboard_auth.basic import hash_password;
     print(hash_password('pw'))"``.
     """
@@ -137,7 +130,7 @@ def hash_password(password: str) -> str:
 
 
 def _verify_password(password: str, encoded: str) -> bool:
-    """Constant-time scrypt verify. False on any malformed hash string."""
+    """恒定时间 scrypt 验证。任何格式错误的哈希字符串返回 False。"""
     try:
         scheme, n_s, r_s, p_s, salt_b64, dk_b64 = encoded.split("$")
         if scheme != "scrypt":
@@ -162,14 +155,14 @@ def _verify_password(password: str, encoded: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
-# A fixed dummy hash used to spend ~equal time when the username is
-# unknown, so an attacker can't distinguish "no such user" (fast) from
-# "wrong password" (slow scrypt) by timing. Computed once at import.
+# 当用户名未知时用于花费约等时间的固定虚拟哈希，
+# 使攻击者无法通过计时区分"无此用户"（快速）和
+# "密码错误"（慢速 scrypt）。在导入时计算一次。
 _DUMMY_HASH = hash_password("dummy-password-for-constant-time-verify")
 
 
 # ---------------------------------------------------------------------------
-# Token signing (stateless HMAC-signed blobs)
+# Token 签名（无状态 HMAC 签名数据块）
 # ---------------------------------------------------------------------------
 
 
@@ -199,7 +192,7 @@ def _unsign(token: str, secret: bytes) -> Optional[dict]:
 
 
 class BasicAuthProvider(DashboardAuthProvider):
-    """Username/password provider with stateless HMAC-signed sessions."""
+    """使用无状态 HMAC 签名会话的用户名/密码 provider。"""
 
     name = "basic"
     display_name = "Username & Password"
@@ -224,7 +217,7 @@ class BasicAuthProvider(DashboardAuthProvider):
         self._secret = secret
         self._ttl = max(60, int(ttl_seconds))
 
-    # ---- OAuth methods: not used (pure-password provider) ------------------
+    # ---- OAuth 方法：未使用（纯密码 provider）------------------
 
     def start_login(self, *, redirect_uri: str) -> LoginStart:
         raise NotImplementedError(
@@ -239,16 +232,15 @@ class BasicAuthProvider(DashboardAuthProvider):
             "BasicAuthProvider is password-only; use complete_password_login."
         )
 
-    # ---- password login ----------------------------------------------------
+    # ---- 密码登录 ----------------------------------------------------
 
     def complete_password_login(
         self, *, username: str, password: str
     ) -> Session:
-        # Constant-time-ish: always run a scrypt verify (against the real
-        # hash if the username matches, else a dummy hash) so an unknown
-        # username and a wrong password take comparable time. Compare the
-        # username with compare_digest too, to avoid a length/byte timing
-        # leak on the username itself.
+        # 近似恒定时间：始终运行 scrypt 验证（若用户名匹配则使用真实
+        # 哈希，否则使用虚拟哈希），使未知用户名和错误密码花费相近时间。
+        # 也使用 compare_digest 比较用户名，避免用户名本身的
+        # 长度/字节计时泄漏。
         username_ok = hmac.compare_digest(
             username.encode("utf-8"), self._username.encode("utf-8")
         )
@@ -258,7 +250,7 @@ class BasicAuthProvider(DashboardAuthProvider):
             raise InvalidCredentialsError("invalid username or password")
         return self._mint_session(self._username)
 
-    # ---- session lifecycle -------------------------------------------------
+    # ---- 会话生命周期 -------------------------------------------------
 
     def verify_session(self, *, access_token: str) -> Optional[Session]:
         payload = _unsign(access_token, self._secret)
@@ -283,12 +275,12 @@ class BasicAuthProvider(DashboardAuthProvider):
         return self._mint_session(str(payload.get("sub", self._username)))
 
     def revoke_session(self, *, refresh_token: str) -> None:
-        # Stateless tokens — nothing to revoke server-side. The session
-        # expires within its TTL. Best-effort no-op, must not raise.
+        # 无状态 token — 服务器端无需撤销。会话在其 TTL 内过期。
+        # 尽力而为的空操作，不得抛出异常。
         _ = refresh_token
         return None
 
-    # ---- internals ---------------------------------------------------------
+    # ---- 内部方法 ---------------------------------------------------------
 
     def _mint_session(self, user_id: str) -> Session:
         now = int(time.time())
@@ -328,15 +320,15 @@ class BasicAuthProvider(DashboardAuthProvider):
 
 
 # ---------------------------------------------------------------------------
-# Plugin entry point
+# 插件入口点
 # ---------------------------------------------------------------------------
 
 
 def _load_config_basic_auth_section() -> dict:
-    """Return ``dashboard.basic_auth`` from config.yaml, or ``{}``.
+    """从 config.yaml 返回 ``dashboard.basic_auth``，或 ``{}``。
 
-    Robust to load_config() raising, the keys being absent, or the value
-    not being a dict — every shape falls through to ``{}``.
+    对 load_config() 抛出异常、键缺失或值不是字典等情况具有鲁棒性
+    — 每种情况都回退到 ``{}``。
     """
     try:
         from hermes_cli.config import cfg_get, load_config
@@ -354,7 +346,7 @@ def _load_config_basic_auth_section() -> dict:
 
 
 def _resolve(env_name: str, cfg_section: dict, cfg_key: str) -> str:
-    """Env-wins-over-config resolution; empty env treated as unset."""
+    """环境变量优先于配置的解析；空环境变量视为未设置。"""
     env = os.environ.get(env_name, "").strip()
     if env:
         return env
@@ -362,11 +354,11 @@ def _resolve(env_name: str, cfg_section: dict, cfg_key: str) -> str:
 
 
 def _resolve_secret(cfg_section: dict) -> bytes:
-    """Resolve the token-signing secret.
+    """解析 token 签名密钥。
 
-    Accepts base64 or hex or raw text from config/env. When unset,
-    generates a random per-process secret (sessions then don't survive a
-    restart or span multiple workers — logged at INFO).
+    接受来自配置/环境的 base64、hex 或原始文本。未设置时，
+    生成随机的每进程密钥（会话则不能在重启后存活或跨多个工作进程
+    — 在 INFO 级别记录）。
     """
     raw = _resolve(
         "HERMES_DASHBOARD_BASIC_AUTH_SECRET", cfg_section, "secret"
@@ -380,7 +372,7 @@ def _resolve_secret(cfg_section: dict) -> bytes:
             "sessions."
         )
         return secrets.token_bytes(32)
-    # Try base64, then hex, then fall back to the raw UTF-8 bytes.
+    # 先尝试 base64，再尝试 hex，最后回退到原始 UTF-8 字节。
     for decoder in (base64.b64decode, bytes.fromhex):
         try:
             decoded = decoder(raw)
@@ -392,13 +384,12 @@ def _resolve_secret(cfg_section: dict) -> bytes:
 
 
 def register(ctx) -> None:
-    """Plugin entry — registers BasicAuthProvider when credentials exist.
+    """插件入口 — 当凭据存在时注册 BasicAuthProvider。
 
-    Loopback / ``--insecure`` operators and anyone using the OAuth
-    provider leave ``dashboard.basic_auth`` unset, so this plugin is a
-    no-op for them. When username + (password or password_hash) are
-    configured, it registers a password provider that the login page
-    renders as a credential form.
+    回环 / ``--insecure`` 操作员和使用 OAuth provider 的人
+    不设置 ``dashboard.basic_auth``，因此此插件对他们是空操作。
+    当配置了用户名 + （密码或 password_hash）时，注册一个密码 provider，
+    登录页面将其渲染为凭据表单。
     """
     global LAST_SKIP_REASON
     LAST_SKIP_REASON = ""
@@ -438,15 +429,14 @@ def register(ctx) -> None:
         logger.warning("dashboard-auth-basic: %s", LAST_SKIP_REASON)
         return
 
-    # Precedence (env-wins convention): a password supplied via the
-    # HERMES_DASHBOARD_BASIC_AUTH_PASSWORD env var overrides a config.yaml
-    # password_hash, so an operator can rotate the password by setting an
-    # env var without editing config. A password_hash (precomputed) wins
-    # over a config-only plaintext password at the same tier — it's the
-    # preferred at-rest form. Concretely:
-    #   * env password set        → hash it (overrides any config hash)
-    #   * else config password_hash set → use it
-    #   * else config plaintext password → hash it in-memory
+    # 优先级（环境变量优先约定）：通过 HERMES_DASHBOARD_BASIC_AUTH_PASSWORD
+    # 环境变量提供的密码会覆盖 config.yaml 中的 password_hash，
+    # 因此操作员可以通过设置环境变量而不编辑配置来轮换密码。
+    # 预计算的 password_hash 在同层优先于仅配置的明文密码
+    # — 它是首选的静态存储形式。具体来说：
+    #   * 环境变量密码已设置       → 哈希它（覆盖任何配置哈希）
+    #   * 否则配置 password_hash 已设置 → 使用它
+    #   * 否则配置明文密码          → 在内存中哈希它
     plaintext_from_env = os.environ.get(
         "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD", ""
     ).strip()

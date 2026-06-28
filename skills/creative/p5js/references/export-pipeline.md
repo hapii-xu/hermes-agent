@@ -1,19 +1,19 @@
-# Export Pipeline
+# 导出流水线
 
-## PNG Export
+## PNG 导出
 
-### In-Sketch (Keyboard Shortcut)
+### 草图内（键盘快捷键）
 
 ```javascript
 function keyPressed() {
   if (key === 's' || key === 'S') {
     saveCanvas('output', 'png');
-    // Downloads output.png immediately
+    // 立即下载 output.png
   }
 }
 ```
 
-### Timed Export (Static Generative)
+### 定时导出（静态生成）
 
 ```javascript
 function setup() {
@@ -25,26 +25,26 @@ function setup() {
 }
 
 function draw() {
-  // ... render everything ...
+  // ... 渲染一切 ...
   saveCanvas('output-seed-' + CONFIG.seed, 'png');
 }
 ```
 
-### High-Resolution Export
+### 高分辨率导出
 
-For resolutions beyond screen size, use `pixelDensity()` or a large offscreen buffer:
+要超过屏幕尺寸的分辨率，使用 `pixelDensity()` 或一个大的离屏缓冲：
 
 ```javascript
 function exportHighRes(scale) {
   let buffer = createGraphics(width * scale, height * scale);
   buffer.scale(scale);
-  // Re-render everything to buffer at higher resolution
+  // 以更高分辨率把一切重新渲染到缓冲
   renderScene(buffer);
   buffer.save('highres-output.png');
 }
 ```
 
-### Batch Seed Export
+### 批量种子导出
 
 ```javascript
 function exportBatch(startSeed, count) {
@@ -52,7 +52,7 @@ function exportBatch(startSeed, count) {
     CONFIG.seed = startSeed + i;
     randomSeed(CONFIG.seed);
     noiseSeed(CONFIG.seed);
-    // Render
+    // 渲染
     background(0);
     renderScene();
     saveCanvas('seed-' + nf(CONFIG.seed, 5), 'png');
@@ -60,7 +60,7 @@ function exportBatch(startSeed, count) {
 }
 ```
 
-## GIF Export
+## GIF 导出
 
 ### saveGif()
 
@@ -68,36 +68,36 @@ function exportBatch(startSeed, count) {
 function keyPressed() {
   if (key === 'g' || key === 'G') {
     saveGif('output', 5);
-    // Captures 5 seconds of animation
-    // Options: saveGif(filename, duration, options)
+    // 捕获 5 秒动画
+    // 选项：saveGif(filename, duration, options)
   }
 }
 
-// With options
+// 带选项
 saveGif('output', 5, {
-  delay: 0,        // delay before starting capture (seconds)
-  units: 'seconds' // or 'frames'
+  delay: 0,        // 开始捕获前的延迟（秒）
+  units: 'seconds' // 或 'frames'
 });
 ```
 
-Limitations:
-- GIF is 256 colors max — dithering artifacts on gradients
-- Large canvases produce huge files
-- Use a smaller canvas (640x360) for GIF, higher for PNG/MP4
-- Frame rate is approximate
+限制：
+- GIF 最多 256 色——渐变上会有抖动伪影
+- 大画布会产生巨大文件
+- GIF 用较小画布（640x360），PNG/MP4 用更高分辨率
+- 帧率是近似的
 
-### Optimal GIF Settings
+### 最佳 GIF 设置
 
 ```javascript
-// For GIF output, use smaller canvas and lower framerate
+// GIF 输出时用更小的画布和更低的帧率
 function setup() {
   createCanvas(640, 360);
-  frameRate(15);  // GIF standard
+  frameRate(15);  // GIF 标准
   pixelDensity(1);
 }
 ```
 
-## Frame Sequence Export
+## 帧序列导出
 
 ### saveFrames()
 
@@ -105,13 +105,13 @@ function setup() {
 function keyPressed() {
   if (key === 'f') {
     saveFrames('frame', 'png', 10, 30);
-    // 10 seconds, 30 fps → 300 PNG files
-    // Downloads as individual files (browser may block bulk downloads)
+    // 10 秒，30 fps → 300 个 PNG 文件
+    // 作为独立文件下载（浏览器可能阻止批量下载）
   }
 }
 ```
 
-### Manual Frame Export (More Control)
+### 手动帧导出（更可控）
 
 ```javascript
 let recording = false;
@@ -123,7 +123,7 @@ function keyPressed() {
 }
 
 function draw() {
-  // ... render frame ...
+  // ... 渲染帧 ...
 
   if (recording) {
     saveCanvas('frame-' + nf(frameNum, 4), 'png');
@@ -137,144 +137,144 @@ function draw() {
 }
 ```
 
-### Deterministic Capture (Critical for Video)
+### 确定性捕获（视频的关键）
 
-The `noLoop()` + `redraw()` pattern is **required** for frame-perfect headless capture. Without it, p5's draw loop runs freely in Chrome while Puppeteer screenshots are slow — the sketch runs ahead and you get duplicate/missing frames.
+`noLoop()` + `redraw()` 模式是帧精确无头捕获**必需**的。否则，p5 的绘制循环在 Chrome 中自由运行，而 Puppeteer 截图很慢——草图跑在前面，导致重复/丢帧。
 
 ```javascript
 function setup() {
   createCanvas(1920, 1080);
   pixelDensity(1);
-  noLoop();                    // STOP the automatic draw loop
-  window._p5Ready = true;      // Signal to capture script
+  noLoop();                    // 停止自动绘制循环
+  window._p5Ready = true;      // 向捕获脚本发信号
 }
 
 function draw() {
-  // This only runs when redraw() is called by the capture script
-  // frameCount increments exactly once per redraw()
+  // 这只在捕获脚本调用 redraw() 时运行
+  // 每次 redraw() 时 frameCount 恰好递增一次
 }
 ```
 
-The bundled `scripts/export-frames.js` detects `window._p5Ready` and switches to deterministic mode automatically. Without it, falls back to timed capture (less precise).
+附带的 `scripts/export-frames.js` 会检测 `window._p5Ready`，并自动切换到确定性模式。若没有它，则回退到定时捕获（不够精确）。
 
-### ffmpeg: Frames to MP4
+### ffmpeg：帧转 MP4
 
 ```bash
-# Basic encoding
+# 基础编码
 ffmpeg -framerate 30 -i frame-%04d.png -c:v libx264 -pix_fmt yuv420p output.mp4
 
-# High quality
+# 高质量
 ffmpeg -framerate 30 -i frame-%04d.png \
   -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p \
   output.mp4
 
-# With audio
+# 带音频
 ffmpeg -framerate 30 -i frame-%04d.png -i audio.mp3 \
   -c:v libx264 -c:a aac -shortest \
   output.mp4
 
-# Loop for social media (3 loops)
+# 社交媒体循环（循环 3 次）
 ffmpeg -stream_loop 2 -i output.mp4 -c copy output-looped.mp4
 ```
 
-### Video Export Gotchas
+### 视频导出陷阱
 
-**YUV420 clips dark values.** H.264 encodes in YUV420 color space, which rounds dark RGB values. Content below RGB(8,8,8) may become pure black. Subtle dark details (dim particle trails, faint noise textures) disappear in the encoded video even though they're visible in the PNG frames.
+**YUV420 会吃掉暗部数值。** H.264 在 YUV420 色彩空间中编码，会对暗的 RGB 数值取整。低于 RGB(8,8,8) 的内容可能变成纯黑。细微的暗部细节（暗淡的粒子拖尾、微弱的噪声纹理）在编码视频中会消失，尽管它们在 PNG 帧里清晰可见。
 
-**Fix:** Ensure minimum brightness of ~10 for any visible content. Test by encoding a few frames and comparing the MP4 frame vs the source PNG.
+**修复：** 确保任何可见内容的最小亮度约为 10。编码几帧后对比 MP4 帧与源 PNG 来测试。
 
 ```bash
-# Extract a frame from MP4 for comparison
+# 从 MP4 提取一帧用于对比
 ffmpeg -i output.mp4 -vf "select=eq(n\,100)" -vframes 1 check.png
 ```
 
-**Static frames look broken in video.** If an algorithm produces a single static image (like a pre-computed attractor heatmap), it reads as a freeze/glitch in video. Always add animation even to static content:
-- Progressive reveal (expand from center, sweep across)
-- Slow parameter drift (rotate color mapping, shift noise offset)
-- Camera-like motion (slow zoom, slight pan)
-- Overlay animated particles or grain
+**静态帧在视频中看起来像出错。** 如果算法只产出单一静态图像（如预计算的吸引子热图），在视频中会读起来像卡顿/故障。即使是静态内容也要加动画：
+- 渐进揭示（从中心扩展、横扫）
+- 缓慢参数漂移（旋转颜色映射、偏移噪声）
+- 类相机运动（缓慢缩放、轻微平移）
+- 叠加动画粒子或颗粒
 
-**Scene transitions are mandatory.** Hard cuts between visually different scenes are jarring. Use fade envelopes:
+**场景转场是必须的。** 视觉差异大的场景之间硬切令人不适。用淡入淡出包络：
 
 ```javascript
-const FADE_FRAMES = 15;  // half-second at 30fps
+const FADE_FRAMES = 15;  // 30fps 下半秒
 let fade = 1;
 if (localFrame < FADE_FRAMES) fade = localFrame / FADE_FRAMES;
 if (localFrame > SCENE_FRAMES - FADE_FRAMES) fade = (SCENE_FRAMES - localFrame) / FADE_FRAMES;
 fade = fade * fade * (3 - 2 * fade);  // smoothstep
-// Apply: multiply all alpha/brightness by fade
+// 应用：把所有 alpha/亮度乘以 fade
 ```
 
-### Per-Clip Architecture (Multi-Scene Videos)
+### 逐片段架构（多场景视频）
 
-For videos with multiple scenes, render each as a separate HTML file + MP4 clip, then stitch with ffmpeg. This enables re-rendering individual scenes without touching the rest.
+对于多场景视频，把每个场景渲染为独立的 HTML 文件 + MP4 片段，再用 ffmpeg 拼接。这样可以单独重渲染某个场景而不动其余部分。
 
-**Directory structure:**
+**目录结构：**
 ```
 project/
-├── capture-scene.js          # Shared: node capture-scene.js <html> <outdir> <frames>
-├── render-all.sh             # Renders all + stitches
+├── capture-scene.js          # 共享：node capture-scene.js <html> <outdir> <frames>
+├── render-all.sh             # 渲染全部 + 拼接
 ├── scenes/
-│   ├── 00-intro.html         # Each scene is self-contained
+│   ├── 00-intro.html         # 每个场景自包含
 │   ├── 01-particles.html
 │   ├── 02-noise.html
 │   └── 03-outro.html
 └── clips/
-    ├── 00-intro.mp4          # Each clip rendered independently
+    ├── 00-intro.mp4          # 每个片段独立渲染
     ├── 01-particles.mp4
     ├── 02-noise.mp4
     ├── 03-outro.mp4
     └── concat.txt
 ```
 
-**Stitch clips with ffmpeg concat:**
+**用 ffmpeg concat 拼接片段：**
 ```bash
-# concat.txt (order determines final sequence)
+# concat.txt（顺序决定最终序列）
 file '00-intro.mp4'
 file '01-particles.mp4'
 file '02-noise.mp4'
 file '03-outro.mp4'
 
-# Lossless stitch (all clips must have same codec/resolution/fps)
+# 无损拼接（所有片段必须具有相同的编解码器/分辨率/帧率）
 ffmpeg -f concat -safe 0 -i concat.txt -c copy final.mp4
 ```
 
-**Re-render a single scene:**
+**重渲染单个场景：**
 ```bash
 node capture-scene.js scenes/01-particles.html clips/01-particles 150
 ffmpeg -y -framerate 30 -i clips/01-particles/frame-%04d.png \
   -c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p clips/01-particles.mp4
-# Then re-stitch
+# 然后重新拼接
 ffmpeg -y -f concat -safe 0 -i clips/concat.txt -c copy final.mp4
 ```
 
-**Re-order without re-rendering:** Just change the order in concat.txt and re-stitch. No frames need re-rendering.
+**不重渲染即可重排：** 只需更改 concat.txt 中的顺序再重新拼接。无需重渲染任何帧。
 
-**Each scene HTML must:**
-- Call `noLoop()` in setup and set `window._p5Ready = true`
-- Use `frameCount`-based timing (not `millis()`) for deterministic output
-- Handle its own fade-in/fade-out envelope
-- Be fully self-contained (no shared state between scenes)
+**每个场景 HTML 必须：**
+- 在 setup 中调用 `noLoop()` 并设置 `window._p5Ready = true`
+- 使用基于 `frameCount` 的定时（而非 `millis()`）以保证确定性输出
+- 自行处理淡入/淡出包络
+- 完全自包含（场景之间无共享状态）
 
-### ffmpeg: Frames to GIF (Better Quality)
+### ffmpeg：帧转 GIF（质量更佳）
 
 ```bash
-# Generate palette first for optimal colors
+# 先生成调色板以获得最佳颜色
 ffmpeg -i frame-%04d.png -vf "fps=15,palettegen=max_colors=256" palette.png
 
-# Render GIF using palette
+# 用调色板渲染 GIF
 ffmpeg -i frame-%04d.png -i palette.png \
   -lavfi "fps=15 [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=3" \
   output.gif
 ```
 
-## Headless Export (Puppeteer)
+## 无头导出（Puppeteer）
 
-For automated, server-side, or CI rendering. Uses a headless Chrome browser to run the sketch.
+用于自动化、服务器端或 CI 渲染。使用无头 Chrome 浏览器运行草图。
 
-### export-frames.js (Node.js Script)
+### export-frames.js（Node.js 脚本）
 
-See `scripts/export-frames.js` for the full implementation. Basic pattern:
+完整实现见 `scripts/export-frames.js`。基本模式：
 
 ```javascript
 const puppeteer = require('puppeteer');
@@ -296,7 +296,7 @@ async function captureFrames(htmlPath, outputDir, options) {
     waitUntil: 'networkidle0'
   });
 
-  // Wait for sketch to initialize
+  // 等待草图初始化
   await page.waitForSelector('canvas');
   await page.waitForTimeout(1000);
 
@@ -306,7 +306,7 @@ async function captureFrames(htmlPath, outputDir, options) {
       path: path.join(outputDir, `frame-${String(i).padStart(4, '0')}.png`)
     });
 
-    // Advance one frame
+    // 推进一帧
     await page.evaluate(() => { redraw(); });
     await page.waitForTimeout(1000 / options.fps);
   }
@@ -315,21 +315,21 @@ async function captureFrames(htmlPath, outputDir, options) {
 }
 ```
 
-### render.sh (Full Pipeline)
+### render.sh（完整流水线）
 
-See `scripts/render.sh` for the complete render script. Pipeline:
+完整渲染脚本见 `scripts/render.sh`。流水线：
 
 ```
-1. Launch Puppeteer → open sketch HTML
-2. Capture N frames as PNG sequence
-3. Pipe to ffmpeg → encode H.264 MP4
-4. Optional: add audio track
-5. Clean up temp frames
+1. 启动 Puppeteer → 打开草图 HTML
+2. 把 N 帧捕获为 PNG 序列
+3. 通过管道送给 ffmpeg → 编码 H.264 MP4
+4. 可选：添加音轨
+5. 清理临时帧
 ```
 
-## SVG Export
+## SVG 导出
 
-### Using p5.js-svg Library
+### 使用 p5.js-svg 库
 
 ```html
 <script src="https://unpkg.com/p5.js-svg@1.5.1"></script>
@@ -337,12 +337,12 @@ See `scripts/render.sh` for the complete render script. Pipeline:
 
 ```javascript
 function setup() {
-  createCanvas(1920, 1080, SVG);  // SVG renderer
+  createCanvas(1920, 1080, SVG);  // SVG 渲染器
   noLoop();
 }
 
 function draw() {
-  // Only vector operations (no pixels, no blend modes)
+  // 只能用矢量操作（无像素、无混合模式）
   stroke(0);
   noFill();
   for (let i = 0; i < 100; i++) {
@@ -354,33 +354,33 @@ function draw() {
 }
 ```
 
-Limitations:
-- No `loadPixels()`, `updatePixels()`, `filter()`, `blendMode()`
-- No WebGL
-- No pixel-level effects
-- Great for: line art, geometric patterns, plots
+限制：
+- 无 `loadPixels()`、`updatePixels()`、`filter()`、`blendMode()`
+- 无 WebGL
+- 无像素级特效
+- 适合：线条艺术、几何图案、绘图仪输出
 
-### Hybrid: Raster Background + SVG Overlay
+### 混合：光栅背景 + SVG 叠加
 
-Render background effects to PNG, then SVG for crisp vector elements on top.
+把背景特效渲染为 PNG，再用 SVG 叠加清晰的矢量元素。
 
-## Export Format Decision Guide
+## 导出格式决策指南
 
-| Need | Format | Method |
+| 需求 | 格式 | 方法 |
 |------|--------|--------|
-| Single still image | PNG | `saveCanvas()` or `keyPressed()` |
-| Print-quality still | PNG (high-res) | `pixelDensity(1)` + large canvas |
-| Short animated loop | GIF | `saveGif()` |
-| Long animation | MP4 | Frame sequence + ffmpeg |
-| Social media video | MP4 | `scripts/render.sh` |
-| Vector/print | SVG | p5.js-svg renderer |
-| Batch variations | PNG sequence | Seed loop + `saveCanvas()` |
-| Interactive deployment | HTML | Single self-contained file |
-| Headless rendering | PNG/MP4 | Puppeteer + ffmpeg |
+| 单张静态图 | PNG | `saveCanvas()` 或 `keyPressed()` |
+| 印刷级静态图 | PNG（高分辨率） | `pixelDensity(1)` + 大画布 |
+| 短动画循环 | GIF | `saveGif()` |
+| 长动画 | MP4 | 帧序列 + ffmpeg |
+| 社交媒体视频 | MP4 | `scripts/render.sh` |
+| 矢量/印刷 | SVG | p5.js-svg 渲染器 |
+| 批量变体 | PNG 序列 | 种子循环 + `saveCanvas()` |
+| 交互式部署 | HTML | 单个自包含文件 |
+| 无头渲染 | PNG/MP4 | Puppeteer + ffmpeg |
 
-## Tiling for Ultra-High-Resolution
+## 超高分辨率的分块
 
-For resolutions too large for a single canvas (e.g., 10000x10000 for print):
+对于单画布无法承载的分辨率（例如印刷用的 10000x10000）：
 
 ```javascript
 function renderTiled(totalW, totalH, tileSize) {
@@ -395,23 +395,23 @@ function renderTiled(totalW, totalH, tileSize) {
       renderScene(buffer, totalW, totalH);
       buffer.pop();
       buffer.save(`tile-${tx}-${ty}.png`);
-      buffer.remove();  // free memory
+      buffer.remove();  // 释放内存
     }
   }
-  // Stitch with ImageMagick:
+  // 用 ImageMagick 拼接：
   // montage tile-*.png -tile 4x4 -geometry +0+0 final.png
 }
 ```
 
-## CCapture.js — Deterministic Video Capture
+## CCapture.js — 确定性视频捕获
 
-The built-in `saveFrames()` has limitations: small frame counts, memory issues, browser download blocking. CCapture.js solves all of these by hooking into the browser's timing functions to simulate constant time steps regardless of actual render speed.
+内置的 `saveFrames()` 有局限：帧数少、内存问题、浏览器下载阻止。CCapture.js 通过挂钩浏览器的定时函数来模拟恒定时间步长（无论实际渲染速度如何），从而解决这一切。
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/ccapture.js-npmfixed/build/CCapture.all.min.js"></script>
 ```
 
-### Basic Setup
+### 基础设置
 
 ```javascript
 let capturer;
@@ -422,16 +422,16 @@ function setup() {
   pixelDensity(1);
 
   capturer = new CCapture({
-    format: 'webm',       // 'webm', 'gif', 'png', 'jpg'
+    format: 'webm',       // 'webm'、'gif'、'png'、'jpg'
     framerate: 30,
-    quality: 99,           // 0-100 for webm/jpg
-    // timeLimit: 10,      // auto-stop after N seconds
-    // motionBlurFrames: 4 // supersampled motion blur
+    quality: 99,           // webm/jpg 为 0-100
+    // timeLimit: 10,      // N 秒后自动停止
+    // motionBlurFrames: 4 // 超采样的运动模糊
   });
 }
 
 function draw() {
-  // ... render frame ...
+  // ... 渲染帧 ...
 
   if (recording) {
     capturer.capture(document.querySelector('canvas'));
@@ -446,7 +446,7 @@ function keyPressed() {
       console.log('Recording started');
     } else {
       capturer.stop();
-      capturer.save();  // triggers download
+      capturer.save();  // 触发下载
       recording = false;
       console.log('Recording saved');
     }
@@ -454,41 +454,41 @@ function keyPressed() {
 }
 ```
 
-### Format Comparison
+### 格式对比
 
-| Format | Quality | Size | Browser Support |
+| 格式 | 质量 | 大小 | 浏览器支持 |
 |--------|---------|------|-----------------|
-| **WebM** | High | Medium | Chrome only |
-| **GIF** | 256 colors | Large | All (via gif.js worker) |
-| **PNG sequence** | Lossless | Very large (TAR) | All |
-| **JPEG sequence** | Lossy | Large (TAR) | All |
+| **WebM** | 高 | 中 | 仅 Chrome |
+| **GIF** | 256 色 | 大 | 全部（通过 gif.js worker） |
+| **PNG 序列** | 无损 | 很大（TAR） | 全部 |
+| **JPEG 序列** | 有损 | 大（TAR） | 全部 |
 
-### Important: Timing Hook
+### 重要：定时钩子
 
-CCapture.js overrides `Date.now()`, `setTimeout`, `requestAnimationFrame`, and `performance.now()`. This means:
-- `millis()` returns simulated time (perfect for recording)
-- `deltaTime` is constant (1000/framerate)
-- Complex sketches that take 500ms per frame still record at smooth 30fps
-- **Caveat**: Audio sync breaks (audio plays in real-time, not simulated time)
+CCapture.js 会覆盖 `Date.now()`、`setTimeout`、`requestAnimationFrame` 和 `performance.now()`。这意味着：
+- `millis()` 返回模拟时间（录制时完美）
+- `deltaTime` 是常量（1000/framerate）
+- 即使每帧耗时 500 毫秒的复杂草图也能以平滑的 30fps 录制
+- **注意**：音频同步会失效（音频按真实时间播放，而非模拟时间）
 
-## Programmatic Export (canvas API)
+## 程序化导出（canvas API）
 
-For custom export workflows beyond `saveCanvas()`:
+用于超越 `saveCanvas()` 的自定义导出工作流：
 
 ```javascript
-// Canvas to Blob (for upload, processing)
+// Canvas 转 Blob（用于上传、处理）
 document.querySelector('canvas').toBlob((blob) => {
-  // Upload to server, process, etc.
+  // 上传到服务器、处理等
   let url = URL.createObjectURL(blob);
   console.log('Blob URL:', url);
 }, 'image/png');
 
-// Canvas to Data URL (for inline embedding)
+// Canvas 转 Data URL（用于内联嵌入）
 let dataUrl = document.querySelector('canvas').toDataURL('image/png');
-// Use in <img src="..."> or send as base64
+// 用在 <img src="..."> 中或作为 base64 发送
 ```
 
-## SVG Export (p5.js-svg)
+## SVG 导出（p5.js-svg）
 
 ```html
 <script src="https://unpkg.com/p5.js-svg@1.6.0"></script>
@@ -496,12 +496,12 @@ let dataUrl = document.querySelector('canvas').toDataURL('image/png');
 
 ```javascript
 function setup() {
-  createCanvas(1920, 1080, SVG);  // SVG renderer
+  createCanvas(1920, 1080, SVG);  // SVG 渲染器
   noLoop();
 }
 
 function draw() {
-  // Only vector operations work (no pixel ops, no blendMode)
+  // 只有矢量操作可用（无像素操作、无 blendMode）
   stroke(0);
   noFill();
   for (let i = 0; i < 100; i++) {
@@ -511,29 +511,29 @@ function draw() {
 }
 ```
 
-**Critical SVG caveats:**
-- **Must call `clear()` in `draw()`** for animated sketches — SVG DOM accumulates child elements, causing memory bloat
-- `blendMode()` is **not implemented** in SVG renderer
-- `filter()`, `loadPixels()`, `updatePixels()` don't work
-- Requires **p5.js 1.11.x** — not compatible with p5.js 2.x
-- Perfect for: line art, geometric patterns, pen plotter output
+**关键 SVG 注意事项：**
+- **动画草图必须在 `draw()` 中调用 `clear()`**——SVG DOM 会累积子元素，导致内存膨胀
+- SVG 渲染器**未实现** `blendMode()`
+- `filter()`、`loadPixels()`、`updatePixels()` 不可用
+- 需要 **p5.js 1.11.x**——与 p5.js 2.x 不兼容
+- 完美适合：线条艺术、几何图案、绘图仪输出
 
-## Platform Export
+## 平台导出
 
-### fxhash Conventions
+### fxhash 约定
 
 ```javascript
-// Replace p5's random with fxhash's deterministic PRNG
+// 用 fxhash 的确定性 PRNG 替换 p5 的 random
 const rng = $fx.rand;
 
-// Declare features for rarity/filtering
+// 声明特性，用于稀有度/筛选
 $fx.features({
   'Palette': paletteName,
   'Complexity': complexity > 0.7 ? 'High' : 'Low',
   'Has Particles': particleCount > 0
 });
 
-// Declare on-chain parameters
+// 声明链上参数
 $fx.params([
   { id: 'density', name: 'Density', type: 'number',
     options: { min: 1, max: 100, step: 1 } },
@@ -542,23 +542,23 @@ $fx.params([
   { id: 'accent', name: 'Accent Color', type: 'color' }
 ]);
 
-// Read params
+// 读取参数
 let density = $fx.getParam('density');
 
-// Build: npx fxhash build → upload.zip
-// Dev: npx fxhash dev → localhost:3300
+// 构建：npx fxhash build → upload.zip
+// 开发：npx fxhash dev → localhost:3300
 ```
 
-### Art Blocks / Generic Platform
+### Art Blocks / 通用平台
 
 ```javascript
-// Platform provides a hash string
-const hash = tokenData.hash;  // Art Blocks convention
+// 平台提供一个哈希字符串
+const hash = tokenData.hash;  // Art Blocks 约定
 
-// Build deterministic PRNG from hash
+// 从哈希构建确定性 PRNG
 function prngFromHash(hash) {
   let seed = parseInt(hash.slice(0, 16), 16);
-  // xoshiro128** or similar
+  // xoshiro128** 或类似算法
   return function() { /* ... */ };
 }
 

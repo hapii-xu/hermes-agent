@@ -1,8 +1,8 @@
-"""Shim for tool discovery. Registers `computer_use` with tools.registry.
+"""用于工具发现的垫片（shim）。将 `computer_use` 注册到 tools.registry。
 
-The real implementation lives in the `tools/computer_use/` package to keep
-the file structure clean. This shim exists because tools.registry auto-imports
-`tools/*.py` — we need a top-level module to trigger the registration.
+真正的实现位于 `tools/computer_use/` 包中，以保持文件结构整洁。
+这个垫片存在的原因是 tools.registry 会自动导入 `tools/*.py`——
+我们需要一个顶层模块来触发注册。
 """
 
 from __future__ import annotations

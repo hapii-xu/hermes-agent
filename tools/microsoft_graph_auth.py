@@ -1,4 +1,4 @@
-"""Microsoft Graph app-only authentication helpers."""
+"""Microsoft Graph 仅应用身份验证辅助工具。"""
 
 from __future__ import annotations
 
@@ -17,20 +17,20 @@ DEFAULT_TOKEN_SKEW_SECONDS = 120
 
 
 class MicrosoftGraphAuthError(RuntimeError):
-    """Base class for Microsoft Graph auth failures."""
+    """Microsoft Graph 身份验证失败的基类。"""
 
 
 class MicrosoftGraphConfigError(MicrosoftGraphAuthError):
-    """Raised when Graph credentials are missing or invalid."""
+    """当 Graph 凭据缺失或无效时抛出。"""
 
 
 class MicrosoftGraphTokenError(MicrosoftGraphAuthError):
-    """Raised when token acquisition fails."""
+    """当 token 获取失败时抛出。"""
 
 
 @dataclass(frozen=True)
 class GraphCredentials:
-    """Normalized Microsoft Graph app-only credentials."""
+    """规范化的 Microsoft Graph 仅应用凭据。"""
 
     tenant_id: str
     client_id: str
@@ -87,7 +87,7 @@ class GraphCredentials:
 
 @dataclass
 class CachedAccessToken:
-    """Cached app-only Graph access token."""
+    """缓存的仅应用 Graph 访问 token。"""
 
     access_token: str
     expires_at: float
@@ -102,7 +102,7 @@ class CachedAccessToken:
 
 
 class MicrosoftGraphTokenProvider:
-    """Acquire and cache Microsoft Graph app-only access tokens."""
+    """获取并缓存 Microsoft Graph 仅应用访问 token。"""
 
     def __init__(
         self,

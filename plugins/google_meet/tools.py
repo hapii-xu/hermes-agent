@@ -1,14 +1,13 @@
-"""Agent-facing tools for the google_meet plugin.
+"""google_meet 插件面向 agent 的工具。
 
-Tools:
-  meet_join        — join a Google Meet URL (spawns Playwright bot locally
-                     OR on a remote node host via node=<name>)
-  meet_status      — report bot liveness + transcript progress
-  meet_transcript  — read the current transcript (optional last-N)
-  meet_leave       — signal the bot to leave cleanly
-  meet_say         — (v2) speak text through the realtime audio bridge.
-                     Requires the active meeting to have been joined with
-                     mode='realtime'.
+工具：
+  meet_join        — 加入 Google Meet URL（在本地启动 Playwright bot
+                     或通过 node=<name> 在远程节点主机上启动）
+  meet_status      — 报告 bot 活跃度 + 转录进度
+  meet_transcript  — 读取当前转录（可选 last-N）
+  meet_leave       — 通知 bot 干净离开
+  meet_say         — （v2）通过实时音频桥说话。
+                     要求活跃会议已通过 mode='realtime' 加入。
 """
 
 from __future__ import annotations
@@ -20,20 +19,20 @@ from plugins.google_meet import process_manager as pm
 
 
 # ---------------------------------------------------------------------------
-# Runtime gate
+# 运行时检查
 # ---------------------------------------------------------------------------
 
 def check_meet_requirements() -> bool:
-    """Return True when the plugin can actually run LOCALLY.
+    """当插件可以在本地实际运行时返回 True。
 
-    Gates on:
-      * Python ``playwright`` package importable
-      * the plugin being on a supported platform (Linux or macOS)
+    检查项：
+      * Python ``playwright`` 包可导入
+      * 插件在支持的平台上（Linux 或 macOS）
 
-    Note: remote-node operation (``node=<name>``) only needs the
-    ``websockets`` dep on the gateway side — Chromium lives on the node.
-    But the plugin-level gate keeps the v1 semantics; individual tool
-    handlers relax the requirement when a node is addressed.
+    注意：远程节点操作（``node=<name>``）在网关侧
+    仅需 ``websockets`` 依赖 — Chromium 位于节点上。
+    但插件级检查保留了 v1 语义；当指定了节点时，
+    各工具处理器会放宽该要求。
     """
     import platform as _p
     if _p.system().lower() not in {"linux", "darwin"}:
@@ -46,14 +45,14 @@ def check_meet_requirements() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Node client helper
+# 节点客户端辅助函数
 # ---------------------------------------------------------------------------
 
 def _resolve_node_client(node: Optional[str]):
-    """Return (NodeClient, node_name) for *node*, or (None, None) to run local.
+    """为 *node* 返回 (NodeClient, node_name)，或为本地运行返回 (None, None)。
 
-    Raises RuntimeError with a readable message if the node is named but
-    unresolvable, so the handler can surface a clear error to the agent.
+    如果节点已命名但无法解析，则抛出带有可读消息的 RuntimeError，
+    以便处理器可以向 agent 展示清晰的错误。
     """
     if node is None or node == "":
         return None, None
@@ -72,7 +71,7 @@ def _resolve_node_client(node: Optional[str]):
 
 
 # ---------------------------------------------------------------------------
-# Schemas
+# 模式定义
 # ---------------------------------------------------------------------------
 
 MEET_JOIN_SCHEMA: Dict[str, Any] = {
@@ -222,7 +221,7 @@ MEET_SAY_SCHEMA: Dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
-# Handlers
+# 处理器
 # ---------------------------------------------------------------------------
 
 def _json(obj: Any) -> str:
@@ -248,7 +247,7 @@ def handle_meet_join(args: Dict[str, Any], **_kw) -> str:
         return _err(str(e))
 
     if client is not None:
-        # Remote path — delegate to the node host.
+        # 远程路径 — 委托给节点主机。
         try:
             res = client.start_bot(
                 url=url,
@@ -261,7 +260,7 @@ def handle_meet_join(args: Dict[str, Any], **_kw) -> str:
         except Exception as e:
             return _err(f"remote node start_bot failed: {e}", node=node_name)
 
-    # Local path — same as v1, with v2 params.
+    # 本地路径 — 与 v1 相同，带有 v2 参数。
     if not check_meet_requirements():
         return _err(
             "google_meet plugin prerequisites missing — install with "

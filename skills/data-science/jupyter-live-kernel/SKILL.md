@@ -1,6 +1,6 @@
 ---
 name: jupyter-live-kernel
-description: "Iterative Python via live Jupyter kernel (hamelnb)."
+description: "通过实时 Jupyter kernel (hamelnb) 进行迭代式 Python。"
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -13,155 +13,152 @@ metadata:
 
 # Jupyter Live Kernel (hamelnb)
 
-Gives you a **stateful Python REPL** via a live Jupyter kernel. Variables persist
-across executions. Use this instead of `execute_code` when you need to build up
-state incrementally, explore APIs, inspect DataFrames, or iterate on complex code.
+通过一个活跃的 Jupyter kernel 为你提供一个**有状态的 Python REPL**。变量在多次
+执行之间持久保留。当你需要逐步累积状态、探索 API、检查 DataFrame 或迭代复杂代码时，
+请使用本 skill 而非 `execute_code`。
 
-## When to Use This vs Other Tools
+## 何时使用本 skill 与其他工具
 
-| Tool | Use When |
+| 工具 | 适用场景 |
 |------|----------|
-| **This skill** | Iterative exploration, state across steps, data science, ML, "let me try this and check" |
-| `execute_code` | One-shot scripts needing hermes tool access (web_search, file ops). Stateless. |
-| `terminal` | Shell commands, builds, installs, git, process management |
+| **本 skill** | 迭代式探索、跨步骤保持状态、数据科学、ML、"让我试一下再看看结果" |
+| `execute_code` | 需要 hermes 工具访问（web_search、文件操作）的一次性脚本。无状态。 |
+| `terminal` | Shell 命令、构建、安装、git、进程管理 |
 
-**Rule of thumb:** If you'd want a Jupyter notebook for the task, use this skill.
+**经验法则：** 如果这个任务你会想用 Jupyter notebook，就用本 skill。
 
-## Prerequisites
+## 前置条件
 
-1. **uv** must be installed (check: `which uv`)
-2. **JupyterLab** must be installed: `uv tool install jupyterlab`
-3. A Jupyter server must be running (see Setup below)
+1. 必须已安装 **uv**（检查：`which uv`）
+2. 必须已安装 **JupyterLab**：`uv tool install jupyterlab`
+3. 必须有一个正在运行的 Jupyter server（参见下文的"配置"）
 
-## Setup
+## 配置
 
-The hamelnb script location:
+hamelnb 脚本位置：
 ```
 SCRIPT="$HOME/.agent-skills/hamelnb/skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py"
 ```
 
-If not cloned yet:
+如果尚未克隆：
 ```
 git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
 ```
 
-### Starting JupyterLab
+### 启动 JupyterLab
 
-Check if a server is already running:
+检查是否已有 server 在运行：
 ```
 uv run "$SCRIPT" servers
 ```
 
-If no servers found, start one:
+如果没有找到 server，启动一个：
 ```
 jupyter-lab --no-browser --port=8888 --notebook-dir=$HOME/notebooks \
   --IdentityProvider.token='' --ServerApp.password='' > /tmp/jupyter.log 2>&1 &
 sleep 3
 ```
 
-Note: Token/password disabled for local agent access. The server runs headless.
+注意：为方便本地 agent 访问，已禁用 token/password。该 server 以无头方式运行。
 
-### Creating a Notebook for REPL Use
+### 为 REPL 用途创建一个 notebook
 
-If you just need a REPL (no existing notebook), create a minimal notebook file:
+如果你只需要一个 REPL（没有现成的 notebook），创建一个最小的 notebook 文件：
 ```
 mkdir -p ~/notebooks
 ```
-Write a minimal .ipynb JSON file with one empty code cell, then start a kernel
-session via the Jupyter REST API:
+写一个只含一个空代码单元的最小 .ipynb JSON 文件，然后通过 Jupyter REST API
+启动一个 kernel 会话：
 ```
 curl -s -X POST http://127.0.0.1:8888/api/sessions \
   -H "Content-Type: application/json" \
   -d '{"path":"scratch.ipynb","type":"notebook","name":"scratch.ipynb","kernel":{"name":"python3"}}'
 ```
 
-## Core Workflow
+## 核心工作流
 
-All commands return structured JSON. Always use `--compact` to save tokens.
+所有命令都返回结构化 JSON。始终使用 `--compact` 以节省 token。
 
-### 1. Discover servers and notebooks
+### 1. 发现 server 和 notebook
 
 ```
 uv run "$SCRIPT" servers --compact
 uv run "$SCRIPT" notebooks --compact
 ```
 
-### 2. Execute code (primary operation)
+### 2. 执行代码（主要操作）
 
 ```
 uv run "$SCRIPT" execute --path <notebook.ipynb> --code '<python code>' --compact
 ```
 
-State persists across execute calls. Variables, imports, objects all survive.
+状态在多次 execute 调用之间持久保留。变量、import、对象都会保留。
 
-Multi-line code works with $'...' quoting:
+多行代码可使用 $'...' 引号：
 ```
 uv run "$SCRIPT" execute --path scratch.ipynb --code $'import os\nfiles = os.listdir(".")\nprint(f"Found {len(files)} files")' --compact
 ```
 
-### 3. Inspect live variables
+### 3. 检查实时变量
 
 ```
 uv run "$SCRIPT" variables --path <notebook.ipynb> list --compact
 uv run "$SCRIPT" variables --path <notebook.ipynb> preview --name <varname> --compact
 ```
 
-### 4. Edit notebook cells
+### 4. 编辑 notebook 单元
 
 ```
-# View current cells
+# 查看当前单元
 uv run "$SCRIPT" contents --path <notebook.ipynb> --compact
 
-# Insert a new cell
+# 插入新单元
 uv run "$SCRIPT" edit --path <notebook.ipynb> insert \
   --at-index <N> --cell-type code --source '<code>' --compact
 
-# Replace cell source (use cell-id from contents output)
+# 替换单元源码（使用 contents 输出中的 cell-id）
 uv run "$SCRIPT" edit --path <notebook.ipynb> replace-source \
   --cell-id <id> --source '<new code>' --compact
 
-# Delete a cell
+# 删除单元
 uv run "$SCRIPT" edit --path <notebook.ipynb> delete --cell-id <id> --compact
 ```
 
-### 5. Verification (restart + run all)
+### 5. 验证（重启 + 全部运行）
 
-Only use when the user asks for a clean verification or you need to confirm
-the notebook runs top-to-bottom:
+仅当用户要求一次干净的验证，或你需要确认 notebook 能从头到尾完整运行时才使用：
 
 ```
 uv run "$SCRIPT" restart-run-all --path <notebook.ipynb> --save-outputs --compact
 ```
 
-## Practical Tips from Experience
+## 来自实践的经验技巧
 
-1. **First execution after server start may timeout** — the kernel needs a moment
-   to initialize. If you get a timeout, just retry.
+1. **server 启动后的首次执行可能超时** —— kernel 需要一点时间
+   初始化。如果遇到超时，重试即可。
 
-2. **The kernel Python is JupyterLab's Python** — packages must be installed in
-   that environment. If you need additional packages, install them into the
-   JupyterLab tool environment first.
+2. **kernel 的 Python 是 JupyterLab 的 Python** —— 包必须安装在该
+   环境中。如果需要额外的包，先把它们安装到 JupyterLab 工具环境里。
 
-3. **--compact flag saves significant tokens** — always use it. JSON output can
-   be very verbose without it.
+3. **--compact 标志能显著节省 token** —— 始终使用它。没有它的话 JSON 输出可能
+   非常冗长。
 
-4. **For pure REPL use**, create a scratch.ipynb and don't bother with cell editing.
-   Just use `execute` repeatedly.
+4. **纯粹用作 REPL 时**，创建一个 scratch.ipynb，不必费心编辑单元。
+   只需反复使用 `execute`。
 
-5. **Argument order matters** — subcommand flags like `--path` go BEFORE the
-   sub-subcommand. E.g.: `variables --path nb.ipynb list` not `variables list --path nb.ipynb`.
+5. **参数顺序很重要** —— 子命令的标志（如 `--path`）要放在
+   子子命令之前。例如：应为 `variables --path nb.ipynb list` 而不是 `variables list --path nb.ipynb`。
 
-6. **If a session doesn't exist yet**, you need to start one via the REST API
-   (see Setup section). The tool can't execute without a live kernel session.
+6. **如果会话尚不存在**，你需要通过 REST API 启动一个
+   （参见"配置"小节）。没有活跃的 kernel 会话，工具无法执行。
 
-7. **Errors are returned as JSON** with traceback — read the `ename` and `evalue`
-   fields to understand what went wrong.
+7. **错误以 JSON 形式返回**并附带 traceback —— 阅读 `ename` 和 `evalue`
+   字段来了解出了什么问题。
 
-8. **Occasional websocket timeouts** — some operations may timeout on first try,
-   especially after a kernel restart. Retry once before escalating.
+8. **偶发的 websocket 超时** —— 某些操作首次尝试可能超时，
+   尤其是在 kernel 重启之后。在升级处理前先重试一次。
 
-## Timeout Defaults
+## 超时默认值
 
-The script has a 30-second default timeout per execution. For long-running
-operations, pass `--timeout 120`. Use generous timeouts (60+) for initial
-setup or heavy computation.
+脚本默认每次执行超时为 30 秒。对于长时间运行的操作，
+传入 `--timeout 120`。在初始设置或重计算时使用较宽裕的超时（60 以上）。

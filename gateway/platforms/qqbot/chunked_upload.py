@@ -1,34 +1,32 @@
-"""QQ Bot chunked upload flow.
+"""QQ Bot 分块上传流程。
 
-The QQ v2 API caps inline base64 uploads (``file_data`` / ``url``) at ~10 MB.
-For files between 10 MB and ~100 MB we have to use the three-step chunked
-upload flow::
+QQ v2 API 对内联 base64 上传（``file_data`` / ``url``）的限制约为 10 MB。
+对于 10 MB 至约 100 MB 之间的文件，必须使用三步分块上传流程::
 
     1. POST /v2/{users|groups}/{id}/upload_prepare
-       → returns upload_id, block_size, and an array of pre-signed COS part URLs.
-    2. For each part:
-         PUT the part bytes to its pre-signed COS URL,
-         then POST /v2/{users|groups}/{id}/upload_part_finish to acknowledge.
-    3. POST /v2/{users|groups}/{id}/files with {"upload_id": ...}
-       → returns the ``file_info`` token the caller uses in a RichMedia
-       message.
+       → 返回 upload_id、block_size 以及预签名 COS 分片 URL 数组。
+    2. 对于每个分片：
+         将分片字节 PUT 到其预签名 COS URL，
+         然后 POST /v2/{users|groups}/{id}/upload_part_finish 进行确认。
+    3. POST /v2/{users|groups}/{id}/files，携带 {"upload_id": ...}
+       → 返回调用方在 RichMedia 消息中使用的 ``file_info`` 令牌。
 
-Error-code semantics (from the QQ Bot v2 API spec):
+错误码语义（来自 QQ Bot v2 API 规范）：
 
-- ``40093001`` — ``upload_part_finish`` retryable. Retry until the server-provided
-  ``retry_timeout`` elapses (or a local cap).
-- ``40093002`` — daily cumulative upload quota exceeded. Not retryable; surface
-  as :class:`UploadDailyLimitExceededError` so the caller can build a
-  user-friendly reply.
+- ``40093001`` — ``upload_part_finish`` 可重试。持续重试直到服务器提供的
+  ``retry_timeout`` 耗尽（或本地上限到达）。
+- ``40093002`` — 每日累计上传配额已超限。不可重试；以
+  :class:`UploadDailyLimitExceededError` 的形式暴露，以便调用方构建
+  对用户友好的回复。
 
-Exceptions:
+异常类：
 
-- :class:`UploadDailyLimitExceededError` — daily quota hit (non-retryable).
-- :class:`UploadFileTooLargeError` — file exceeds the platform per-file limit.
-- :class:`RuntimeError` — generic upload failure (network, part PUT, complete).
+- :class:`UploadDailyLimitExceededError` — 每日配额已达上限（不可重试）。
+- :class:`UploadFileTooLargeError` — 文件超出平台单文件限制。
+- :class:`RuntimeError` — 通用上传失败（网络、分片 PUT、完成接口）。
 
-Ported from WideLee's qqbot-agent-sdk v1.2.2 (``media_loader.py::ChunkedUploader``)
-so the heavy-upload path stays in-tree. Authorship preserved via Co-authored-by.
+移植自 WideLee 的 qqbot-agent-sdk v1.2.2（``media_loader.py::ChunkedUploader``），
+以便大文件上传路径保留在代码库中。通过 Co-authored-by 保留原作者信息。
 """
 
 from __future__ import annotations
@@ -46,15 +44,15 @@ from gateway.platforms.qqbot.constants import FILE_UPLOAD_TIMEOUT
 logger = logging.getLogger(__name__)
 
 
-# ── Error codes ──────────────────────────────────────────────────────
-_BIZ_CODE_DAILY_LIMIT = 40093002     # upload_prepare: daily cumulative limit
-_BIZ_CODE_PART_RETRYABLE = 40093001  # upload_part_finish: transient
+# ── 错误码 ──────────────────────────────────────────────────────
+_BIZ_CODE_DAILY_LIMIT = 40093002     # upload_prepare：每日累计上传配额超限
+_BIZ_CODE_PART_RETRYABLE = 40093001  # upload_part_finish：瞬态错误，可重试
 
-# ── Part upload tuning ───────────────────────────────────────────────
+# ── 分片上传调优参数 ───────────────────────────────────────────────
 _DEFAULT_CONCURRENT_PARTS = 1
 _MAX_CONCURRENT_PARTS = 10
 
-_PART_UPLOAD_TIMEOUT = 300.0        # 5 minutes per COS PUT
+_PART_UPLOAD_TIMEOUT = 300.0        # 每次 COS PUT 最长 5 分钟
 _PART_UPLOAD_MAX_RETRIES = 2
 _PART_FINISH_RETRY_INTERVAL = 1.0
 _PART_FINISH_DEFAULT_TIMEOUT = 120.0
@@ -63,18 +61,17 @@ _PART_FINISH_MAX_TIMEOUT = 600.0
 _COMPLETE_UPLOAD_MAX_RETRIES = 2
 _COMPLETE_UPLOAD_BASE_DELAY = 2.0
 
-# First 10,002,432 bytes used for the ``md5_10m`` hash (per QQ API spec).
+# 前 10,002,432 字节用于计算 ``md5_10m`` 哈希值（依据 QQ API 规范）。
 _MD5_10M_SIZE = 10_002_432
 
 
-# ── Exceptions ───────────────────────────────────────────────────────
+# ── 异常类 ───────────────────────────────────────────────────────
 
 class UploadDailyLimitExceededError(Exception):
-    """Raised when ``upload_prepare`` returns biz_code 40093002.
+    """当 ``upload_prepare`` 返回 biz_code 40093002 时抛出。
 
-    The daily cumulative upload quota for this bot has been reached. Callers
-    should surface :attr:`file_name` + :attr:`file_size_human` so the model
-    can compose a helpful reply.
+    该 bot 的每日累计上传配额已达上限。调用方应将 :attr:`file_name`
+    与 :attr:`file_size_human` 暴露给模型，以便其组织出友好的回复。
     """
 
     def __init__(self, file_name: str, file_size: int, message: str = "") -> None:
@@ -90,7 +87,7 @@ class UploadDailyLimitExceededError(Exception):
 
 
 class UploadFileTooLargeError(Exception):
-    """Raised when a file exceeds the platform per-file size limit."""
+    """当文件超出平台单文件大小限制时抛出。"""
 
     def __init__(
         self,
@@ -120,7 +117,7 @@ class UploadFileTooLargeError(Exception):
         return format_size(self.limit_bytes) if self.limit_bytes else "unknown"
 
 
-# ── Progress tracking ────────────────────────────────────────────────
+# ── 上传进度追踪 ────────────────────────────────────────────────
 
 @dataclass
 class _UploadProgress:
@@ -130,7 +127,7 @@ class _UploadProgress:
     uploaded_bytes: int = 0
 
 
-# ── Prepare-response shape ───────────────────────────────────────────
+# ── Prepare 响应结构 ───────────────────────────────────────────
 
 @dataclass
 class _PreparePart:
@@ -149,9 +146,9 @@ class _PrepareResult:
 
 
 def _parse_prepare_response(raw: Dict[str, Any]) -> _PrepareResult:
-    """Parse the upload_prepare API response into a normalized shape.
+    """将 upload_prepare API 响应解析为规范化结构。
 
-    The API may return the response directly or wrapped in ``data``.
+    API 可能直接返回响应，也可能将其包装在 ``data`` 字段中。
     """
     src = raw.get("data") if isinstance(raw.get("data"), dict) else raw
     upload_id = str(src.get("upload_id", ""))
@@ -187,25 +184,25 @@ def _parse_prepare_response(raw: Dict[str, Any]) -> _PrepareResult:
     )
 
 
-# ── Chunked upload driver ────────────────────────────────────────────
+# ── 分块上传驱动器 ────────────────────────────────────────────
 
 ApiRequestFn = Callable[..., Awaitable[Dict[str, Any]]]
-"""Signature of the adapter's ``_api_request`` callable.
+"""适配器 ``_api_request`` 可调用对象的函数签名。
 
-We pass the bound method in rather than importing the adapter, to avoid
-circular imports and keep this module testable in isolation.
+我们传入绑定方法而非直接导入适配器，以避免循环导入并保持本模块可独立测试。
 """
 
 
 class ChunkedUploader:
-    """Run the prepare → PUT parts → complete sequence.
+    """执行 prepare → PUT 分片 → complete 的完整上传序列。
 
-    :param api_request: Bound ``_api_request(method, path, body=..., timeout=...)``
-        coroutine from the adapter. Must raise ``RuntimeError`` with the biz_code
-        embedded in the message on API errors.
-    :param http_put: Coroutine ``(url, data, headers, timeout) -> response`` for
-        COS part uploads. Typically wraps ``httpx.AsyncClient.put``.
-    :param log_tag: Log prefix.
+    :param api_request: 来自适配器的绑定协程
+        ``_api_request(method, path, body=..., timeout=...)``。
+        在 API 错误时必须抛出携带 biz_code 的 ``RuntimeError``。
+    :param http_put: 用于 COS 分片上传的协程
+        ``(url, data, headers, timeout) -> response``，
+        通常封装自 ``httpx.AsyncClient.put``。
+    :param log_tag: 日志前缀标签。
     """
 
     def __init__(
@@ -226,18 +223,18 @@ class ChunkedUploader:
         file_type: int,
         file_name: str,
     ) -> Dict[str, Any]:
-        """Run the full chunked upload and return the ``complete_upload`` response.
+        """执行完整的分块上传并返回 ``complete_upload`` 响应。
 
-        :param chat_type: ``'c2c'`` or ``'group'``.
-        :param target_id: User or group openid.
-        :param file_path: Absolute path to a local file.
-        :param file_type: ``MEDIA_TYPE_*`` constant.
-        :param file_name: Original filename (for upload_prepare).
-        :returns: The raw response dict from ``complete_upload`` — contains
-            ``file_info`` that the caller uses in a RichMedia message body.
-        :raises UploadDailyLimitExceededError: On biz_code 40093002.
-        :raises UploadFileTooLargeError: When the file exceeds the platform limit.
-        :raises RuntimeError: On other API or I/O failures.
+        :param chat_type: ``'c2c'`` 或 ``'group'``。
+        :param target_id: 用户或群组 openid。
+        :param file_path: 本地文件的绝对路径。
+        :param file_type: ``MEDIA_TYPE_*`` 常量。
+        :param file_name: 原始文件名（用于 upload_prepare）。
+        :returns: 来自 ``complete_upload`` 的原始响应字典 —
+            包含调用方在 RichMedia 消息体中使用的 ``file_info``。
+        :raises UploadDailyLimitExceededError: 当 biz_code 为 40093002 时。
+        :raises UploadFileTooLargeError: 当文件超出平台限制时。
+        :raises RuntimeError: 其他 API 或 I/O 故障时。
         """
         if chat_type not in {"c2c", "group"}:
             raise ValueError(
@@ -252,12 +249,12 @@ class ChunkedUploader:
             self._log_tag, file_name, format_size(file_size), file_type,
         )
 
-        # Step 1: compute hashes (blocking I/O → executor).
+        # 步骤 1：计算哈希值（阻塞 I/O → 线程池执行器）。
         hashes = await asyncio.get_running_loop().run_in_executor(
             None, _compute_file_hashes, file_path, file_size
         )
 
-        # Step 2: upload_prepare.
+        # 步骤 2：upload_prepare。
         prepare = await self._prepare(
             chat_type, target_id, file_type, file_name, file_size, hashes
         )
@@ -277,7 +274,7 @@ class ChunkedUploader:
             total_bytes=file_size,
         )
 
-        # Step 3: PUT each part + notify.
+        # 步骤 3：PUT 每个分片并通知服务端。
         tasks: List[Callable[[], Awaitable[None]]] = [
             functools.partial(
                 self._upload_one_part,
@@ -300,11 +297,11 @@ class ChunkedUploader:
             self._log_tag, len(prepare.parts),
         )
 
-        # Step 4: complete_upload (retry on transient errors).
+        # 步骤 4：complete_upload（瞬态错误时重试）。
         return await self._complete(chat_type, target_id, prepare.upload_id)
 
     # ──────────────────────────────────────────────────────────────────
-    # Step 1 — upload_prepare
+    # 步骤 1 — upload_prepare
     # ──────────────────────────────────────────────────────────────────
 
     async def _prepare(
@@ -340,7 +337,7 @@ class ChunkedUploader:
         return _parse_prepare_response(raw)
 
     # ──────────────────────────────────────────────────────────────────
-    # Step 2 — PUT one part + part_finish
+    # 步骤 2 — PUT 单个分片 + part_finish
     # ──────────────────────────────────────────────────────────────────
 
     async def _upload_one_part(
@@ -355,14 +352,14 @@ class ChunkedUploader:
         retry_timeout: float,
         progress: _UploadProgress,
     ) -> None:
-        """PUT one part to COS, then call ``upload_part_finish``."""
+        """将单个分片 PUT 到 COS，然后调用 ``upload_part_finish``。"""
         part_index = part.index
-        # Per-part block_size wins; fall back to the response-level value.
+        # 优先使用分片级别的 block_size；若无则退回到响应级别的值。
         actual_block_size = part.block_size if part.block_size > 0 else rsp_block_size
         offset = (part_index - 1) * rsp_block_size
         length = min(actual_block_size, file_size - offset)
 
-        # Read this slice of the file (blocking → executor).
+        # 读取文件中的该切片（阻塞操作 → 线程池执行器）。
         data = await asyncio.get_running_loop().run_in_executor(
             None, _read_file_chunk, file_path, offset, length
         )
@@ -397,7 +394,7 @@ class ChunkedUploader:
         part_index: int,
         total_parts: int,
     ) -> None:
-        """PUT part data to a pre-signed COS URL with retry."""
+        """将分片数据 PUT 到预签名 COS URL，失败时重试。"""
         last_exc: Optional[Exception] = None
         for attempt in range(_PART_UPLOAD_MAX_RETRIES + 1):
             try:
@@ -409,7 +406,7 @@ class ChunkedUploader:
                     ),
                     timeout=_PART_UPLOAD_TIMEOUT,
                 )
-                # Caller's http_put is expected to return an httpx-like response.
+                # 调用方的 http_put 预期返回类 httpx 的响应对象。
                 status = getattr(resp, "status_code", 0)
                 if 200 <= status < 300:
                     logger.debug(
@@ -450,7 +447,7 @@ class ChunkedUploader:
         md5: str,
         retry_timeout: float,
     ) -> None:
-        """Call ``upload_part_finish``, retrying on biz_code 40093001."""
+        """调用 ``upload_part_finish``，遇到 biz_code 40093001 时重试。"""
         base = "/v2/users" if chat_type == "c2c" else "/v2/groups"
         path = f"{base}/{target_id}/upload_part_finish"
         body = {
@@ -488,7 +485,7 @@ class ChunkedUploader:
                 await asyncio.sleep(_PART_FINISH_RETRY_INTERVAL)
 
     # ──────────────────────────────────────────────────────────────────
-    # Step 3 — complete_upload
+    # 步骤 3 — complete_upload
     # ──────────────────────────────────────────────────────────────────
 
     async def _complete(
@@ -497,10 +494,10 @@ class ChunkedUploader:
         target_id: str,
         upload_id: str,
     ) -> Dict[str, Any]:
-        """Call ``complete_upload`` with retry.
+        """调用 ``complete_upload``，失败时重试。
 
-        This reuses the ``/files`` endpoint (same as the simple URL-based upload)
-        but signals the chunked-completion path by sending only ``upload_id``.
+        复用 ``/files`` 接口（与基于 URL 的简单上传相同），
+        但仅发送 ``upload_id`` 以表明走分块上传完成路径。
         """
         base = "/v2/users" if chat_type == "c2c" else "/v2/groups"
         path = f"{base}/{target_id}/files"
@@ -528,10 +525,10 @@ class ChunkedUploader:
         )
 
 
-# ── Helpers (module-level for testability) ───────────────────────────
+# ── 辅助函数（模块级，便于测试） ───────────────────────────
 
 def format_size(size_bytes: int) -> str:
-    """Return a human-readable file size string (e.g. ``'12.3 MB'``)."""
+    """返回人类可读的文件大小字符串（例如 ``'12.3 MB'``）。"""
     size = float(size_bytes)
     for unit in ("B", "KB", "MB", "GB"):
         if size < 1024.0:
@@ -541,9 +538,9 @@ def format_size(size_bytes: int) -> str:
 
 
 def _read_file_chunk(file_path: str, offset: int, length: int) -> bytes:
-    """Read *length* bytes from *file_path* starting at *offset*.
+    """从 *file_path* 的 *offset* 位置开始读取 *length* 字节。
 
-    :raises IOError: If fewer bytes were read than expected (truncated file).
+    :raises IOError: 实际读取的字节数少于预期（文件被截断）。
     """
     with open(file_path, "rb") as fh:
         fh.seek(offset)
@@ -557,7 +554,7 @@ def _read_file_chunk(file_path: str, offset: int, length: int) -> bytes:
 
 
 def _compute_file_hashes(file_path: str, file_size: int) -> Dict[str, str]:
-    """Compute md5, sha1, and md5_10m in a single pass."""
+    """单次遍历计算 md5、sha1 和 md5_10m。"""
     md5 = hashlib.md5()
     sha1 = hashlib.sha1()
     md5_10m = hashlib.md5()
@@ -582,7 +579,7 @@ def _compute_file_hashes(file_path: str, file_size: int) -> Dict[str, str]:
     return {
         "md5": full_md5,
         "sha1": sha1.hexdigest(),
-        # For small files the "10m" hash is just the full md5.
+        # 对于小文件，"10m" 哈希值就是完整的 md5。
         "md5_10m": md5_10m.hexdigest() if need_10m else full_md5,
     }
 
@@ -591,7 +588,7 @@ async def _run_with_concurrency(
     tasks: List[Callable[[], Awaitable[None]]],
     concurrency: int,
 ) -> None:
-    """Run a list of thunks with a bounded number in flight at once."""
+    """并发执行一组 thunk，同时最多在途数量受限。"""
     concurrency = max(concurrency, 1)
     sem = asyncio.Semaphore(concurrency)
 

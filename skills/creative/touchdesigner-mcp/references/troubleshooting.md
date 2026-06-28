@@ -1,244 +1,244 @@
-# TouchDesigner Troubleshooting (twozero MCP)
+# TouchDesigner 故障排除（twozero MCP）
 
-> See `references/pitfalls.md` for the comprehensive lessons-learned list.
+> 完整的经验教训清单见 `references/pitfalls.md`。
 
-## 1. Connection Issues
+## 1. 连接问题
 
-### Port 40404 not responding
+### 端口 40404 无响应
 
-Check these in order:
+按顺序检查：
 
-1. Is TouchDesigner running?
+1. TouchDesigner 是否在运行？
    ```bash
    pgrep TouchDesigner
    ```
 
-1b. Quick hub health check (no JSON-RPC needed):
-   A plain GET to the MCP URL returns instance info:
+1b. 快速 hub 健康检查（无需 JSON-RPC）：
+   对 MCP URL 发一个普通 GET 会返回实例信息：
    ```
    curl -s http://localhost:40404/mcp
    ```
-   Returns: `{"hub": true, "pid": ..., "instances": {"127.0.0.1_PID": {"project": "...", "tdVersion": "...", ...}}}`
-   If this returns JSON but `instances` is empty, TD is running but twozero hasn't registered yet.
+   返回：`{"hub": true, "pid": ..., "instances": {"127.0.0.1_PID": {"project": "...", "tdVersion": "...", ...}}}`
+   若返回 JSON 但 `instances` 为空，说明 TD 在运行但 twozero 尚未注册。
 
-2. Is twozero installed in TD?
-   Open TD Palette Browser > twozero should be listed. If not, install it.
+2. twozero 是否已安装到 TD？
+   打开 TD 的 Palette 浏览器 > 应列出 twozero。若没有，安装它。
 
-3. Is MCP enabled in twozero settings?
-   In TD, open twozero preferences and confirm MCP server is toggled ON.
+3. twozero 设置里是否启用了 MCP？
+   在 TD 中打开 twozero 偏好设置，确认 MCP 服务器开关为 ON。
 
-4. Test the port directly:
+4. 直接测试端口：
    ```bash
    nc -z 127.0.0.1 40404
    ```
 
-5. Test the MCP endpoint:
+5. 测试 MCP 端点：
    ```bash
    curl -s http://localhost:40404/mcp
    ```
-   Should return JSON with hub info. If it does, the server is running.
+   应返回带 hub 信息的 JSON。若返回，说明服务器在运行。
 
-### Hub responds but no TD instances
+### Hub 响应但没有 TD 实例
 
-The twozero MCP hub is running but TD hasn't registered. Causes:
-- TD project not loaded yet (still on splash screen)
-- twozero COMP not initialized in the current project
-- twozero version mismatch
+twozero MCP hub 在运行，但 TD 尚未注册。原因：
+- TD 工程尚未加载（仍在启动画面）
+- 当前工程里未初始化 twozero COMP
+- twozero 版本不匹配
 
-Fix: Open/reload a TD project that contains the twozero COMP. Use td_list_instances
-to check which TD instances are registered.
+修复：打开/重新加载一个含 twozero COMP 的 TD 工程。用 td_list_instances
+检查哪些 TD 实例已注册。
 
-### Multi-instance setup
+### 多实例设置
 
-twozero auto-assigns ports for multiple TD instances:
-- First instance: 40404
-- Second instance: 40405
-- Third instance: 40406
-- etc.
+twozero 会为多个 TD 实例自动分配端口：
+- 第一个实例：40404
+- 第二个实例：40405
+- 第三个实例：40406
+- 以此类推
 
-Use `td_list_instances` to discover all running instances and their ports.
+用 `td_list_instances` 发现已运行实例及其端口。
 
-## 2. MCP Tool Errors
+## 2. MCP 工具错误
 
-### td_execute_python returns error
+### td_execute_python 返回错误
 
-The error message from td_execute_python often contains the Python traceback.
-If it's unclear, use `td_read_textport` to see the full TD console output —
-Python exceptions are always printed there.
+td_execute_python 的错误信息常包含 Python 回溯。
+若不清楚，用 `td_read_textport` 查看完整 TD 控制台输出 ——
+Python 异常总是会打印到那里。
 
-Common causes:
-- Syntax error in the script
-- Referencing a node that doesn't exist (op() returns None, then you call .par on None)
-- Using wrong parameter names (see pitfalls.md)
+常见原因：
+- 脚本语法错误
+- 引用了不存在的节点（op() 返回 None，然后你对 None 调 .par）
+- 用错参数名（见 pitfalls.md）
 
-### td_set_operator_pars fails
+### td_set_operator_pars 失败
 
-Parameter name mismatch is the #1 cause. The tool validates param names and
-returns clear errors, but you must use exact names.
+参数名不匹配是头号原因。该工具会校验参数名并
+返回清晰错误，但你必须使用确切名称。
 
-Fix: ALWAYS call `td_get_par_info` first to discover the real parameter names:
+修复：始终先调用 `td_get_par_info` 发现真实参数名：
 ```
 td_get_par_info(op_type='glslTOP')
 td_get_par_info(op_type='noiseTOP')
 ```
 
-### td_create_operator type name errors
+### td_create_operator 类型名错误
 
-Operator type names use camelCase with family suffix:
-- CORRECT: noiseTOP, glslTOP, levelTOP, compositeTOP, audiospectrumCHOP
-- WRONG:   NoiseTOP, noise_top, NOISE TOP, Noise
+算子类型名使用 camelCase 加家族后缀：
+- 正确：noiseTOP、glslTOP、levelTOP、compositeTOP、audiospectrumCHOP
+- 错误：NoiseTOP、noise_top、NOISE TOP、Noise
 
-### td_get_operator_info for deep inspection
+### td_get_operator_info 用于深入检查
 
-If unsure about any aspect of an operator (params, inputs, outputs, state):
+若对算子的任何方面（参数、输入、输出、状态）不确定：
 ```
 td_get_operator_info(path='/project1/noise1', detail='full')
 ```
 
-## 3. Parameter Discovery
+## 3. 参数发现
 
-CRITICAL: ALWAYS use td_get_par_info to discover parameter names.
+关键：始终用 td_get_par_info 发现参数名。
 
-The agent's LLM training data contains WRONG parameter names for TouchDesigner.
-Do not trust them. Known wrong names include dat vs pixeldat, colora vs alpha,
-sizex vs size, and many more. See pitfalls.md for the full list.
+智能体的 LLM 训练数据中包含错误的 TouchDesigner 参数名。
+不要信任它们。已知错误名包括 dat vs pixeldat、colora vs alpha、
+sizex vs size 等等。完整清单见 pitfalls.md。
 
-Workflow:
-1. td_get_par_info(op_type='glslTOP') — get all params for a type
-2. td_get_operator_info(path='/project1/mynode', detail='full') — get params for a specific instance
-3. Use ONLY the names returned by these tools
+工作流：
+1. td_get_par_info(op_type='glslTOP') —— 获取某类型的所有参数
+2. td_get_operator_info(path='/project1/mynode', detail='full') —— 获取某具体实例的参数
+3. 只使用这些工具返回的名称
 
-## 4. Performance
+## 4. 性能
 
-### Diagnosing slow performance
+### 诊断性能缓慢
 
-Use `td_get_perf` to see which operators are slow. Look at cook times —
-anything over 1ms per frame is worth investigating.
+用 `td_get_perf` 查看哪些算子慢。关注 cook 时间 ——
+任何超过每帧 1ms 的都值得排查。
 
-Common causes:
-- Resolution too high (especially on Non-Commercial)
-- Complex GLSL shaders
-- Too many TOP-to-CHOP or CHOP-to-TOP transfers (GPU-CPU memory copies)
-- Feedback loops without decay (values accumulate, memory grows)
+常见原因：
+- 分辨率过高（尤其非商业版）
+- 复杂的 GLSL 着色器
+- 过多的 TOP→CHOP 或 CHOP→TOP 传输（GPU-CPU 内存拷贝）
+- 无衰减的反馈循环（数值累积、内存增长）
 
-### Non-Commercial license restrictions
+### 非商业版授权限制
 
-- Resolution cap: 1280x1280. Setting resolutionw=1920 silently clamps to 1280.
-- H.264/H.265/AV1 encoding requires Commercial license. Use ProRes or Hap instead.
-- No commercial use of output.
+- 分辨率上限：1280x1280。设置 resolutionw=1920 会被静默钳到 1280。
+- H.264/H.265/AV1 编码需要 Commercial 授权。请改用 ProRes 或 Hap。
+- 输出不得用于商业用途。
 
-Always check effective resolution after creation:
+创建后始终检查实际有效分辨率：
 ```python
 n.cook(force=True)
 actual = str(n.width) + 'x' + str(n.height)
 ```
 
-## 5. Hermes Configuration
+## 5. Hermes 配置
 
-### Config location
+### 配置位置
 
-`$HERMES_HOME/config.yaml` (defaults to `~/.hermes/config.yaml` when `HERMES_HOME` is unset)
+`$HERMES_HOME/config.yaml`（`HERMES_HOME` 未设置时默认为 `~/.hermes/config.yaml`）
 
-### MCP entry format
+### MCP 条目格式
 
-The twozero TD entry should look like:
+twozero TD 条目应类似：
 ```yaml
 mcpServers:
   twozero_td:
     url: http://localhost:40404/mcp
 ```
 
-### After config changes
+### 配置改动后
 
-Restart the Hermes session for changes to take effect. The MCP connection is
-established at session startup.
+重启 Hermes 会话以使改动生效。MCP 连接在
+会话启动时建立。
 
-### Verifying MCP tools are available
+### 验证 MCP 工具可用
 
-After restarting, the session log should show twozero MCP tools registered.
-If tools show as registered but aren't callable, check:
-- The twozero MCP hub is still running (curl test above)
-- TD is still running with a project loaded
-- No firewall blocking localhost:40404
+重启后，会话日志应显示 twozero MCP 工具已注册。
+若工具显示已注册但无法调用，检查：
+- twozero MCP hub 仍在运行（上面的 curl 测试）
+- TD 仍在运行且加载了工程
+- 没有防火墙阻挡 localhost:40404
 
-## 6. Node Creation Issues
+## 6. 节点创建问题
 
-### "Node type not found" error
+### “Node type not found”错误
 
-Wrong type string. Use camelCase with family suffix:
-- Wrong: NoiseTop, noise_top, NOISE TOP
-- Right: noiseTOP
+类型字符串错误。使用 camelCase 加家族后缀：
+- 错误：NoiseTop、noise_top、NOISE TOP
+- 正确：noiseTOP
 
-### Node created but not visible
+### 节点已创建但不可见
 
-Check parentPath — use absolute paths like /project1. The default project
-root is /project1. System nodes live at /, /ui, /sys, /local, /perform.
-Don't create user nodes outside /project1.
+检查 parentPath —— 使用如 /project1 的绝对路径。默认工程
+根为 /project1。系统节点位于 /、/ui、/sys、/local、/perform。
+不要在 /project1 之外创建用户节点。
 
-### Cannot create node inside a non-COMP
+### 无法在非 COMP 内创建节点
 
-Only COMP operators (Container, Base, Geometry, etc.) can contain children.
-You cannot create nodes inside a TOP, CHOP, SOP, DAT, or MAT.
+只有 COMP 算子（Container、Base、Geometry 等）能包含子级。
+不能在 TOP、CHOP、SOP、DAT 或 MAT 内创建节点。
 
-## 7. Wiring Issues
+## 7. 接线问题
 
-### Cross-family wiring
+### 跨家族接线
 
-TOPs connect to TOPs, CHOPs to CHOPs, SOPs to SOPs, DATs to DATs.
-Use converter operators to bridge: choptoTOP, topToCHOP, soptoDAT, etc.
+TOP 连 TOP、CHOP 连 CHOP、SOP 连 SOP、DAT 连 DAT。
+用转换算子桥接：choptoTOP、topToCHOP、soptoDAT 等。
 
-Note: choptoTOP has NO input connectors. Use par.chop reference instead:
+注意：choptoTOP 没有输入连接器。改用 par.chop 引用：
 ```python
-spec_tex.par.chop = resample_node  # correct
-# NOT: resample.outputConnectors[0].connect(spec_tex.inputConnectors[0])
+spec_tex.par.chop = resample_node  # 正确
+# 不要：resample.outputConnectors[0].connect(spec_tex.inputConnectors[0])
 ```
 
-### Feedback loops
+### 反馈循环
 
-Never create A -> B -> A directly. Use a Feedback TOP:
+切勿直接创建 A -> B -> A。用 Feedback TOP：
 ```python
 fb = root.create(feedbackTOP, 'fb')
-fb.par.top = comp.path          # reference only, no wire to fb input
+fb.par.top = comp.path          # 仅引用，不要往 fb 输入接线
 fb.outputConnectors[0].connect(next_node)
 ```
-"Cook dependency loop detected" warning on the chain is expected and correct.
+链上出现“Cook dependency loop detected”警告是预期且正确的。
 
-## 8. GLSL Issues
+## 8. GLSL 问题
 
-### Shader compilation errors are silent
+### 着色器编译错误是静默的
 
-GLSL TOP shows a yellow warning in the UI but node.errors() may return empty.
-Check node.warnings() too. Create an Info DAT pointed at the GLSL TOP for
-full compiler output.
+GLSL TOP 在 UI 中显示黄色警告，但 node.errors() 可能返回空。
+同时检查 node.warnings()。创建一个指向该 GLSL TOP 的 Info DAT 以
+获取完整编译器输出。
 
-### TD GLSL specifics
+### TD GLSL 特性
 
-- Uses GLSL 4.60 (Vulkan backend). GLSL 3.30 and earlier removed.
-- UV coordinates: vUV.st (not gl_FragCoord)
-- Input textures: sTD2DInputs[0]
-- Output: layout(location = 0) out vec4 fragColor
-- macOS CRITICAL: Always wrap output with TDOutputSwizzle(color)
-- No built-in time uniform. Pass time via GLSL TOP Values page or Constant TOP.
+- 使用 GLSL 4.60（Vulkan 后端）。GLSL 3.30 及更早版本已移除。
+- UV 坐标：vUV.st（不是 gl_FragCoord）
+- 输入纹理：sTD2DInputs[0]
+- 输出：layout(location = 0) out vec4 fragColor
+- macOS 关键：始终用 TDOutputSwizzle(color) 包裹输出
+- 没有内置 time uniform。通过 GLSL TOP Values 页或 Constant TOP 传入时间。
 
-## 9. Recording Issues
+## 9. 录制问题
 
-### H.264/H.265/AV1 requires Commercial license
+### H.264/H.265/AV1 需要 Commercial 授权
 
-Use Apple ProRes on macOS (hardware accelerated, not license-restricted):
+在 macOS 上使用 Apple ProRes（硬件加速、不受授权限制）：
 ```python
-rec.par.videocodec = 'prores'  # Preferred on macOS — lossless, Non-Commercial OK
-# rec.par.videocodec = 'mjpa'  # Fallback — lossy, works everywhere
+rec.par.videocodec = 'prores'  # macOS 首选 —— 无损、非商业版可用
+# rec.par.videocodec = 'mjpa'  # 备选 —— 有损、到处可用
 ```
 
-### MovieFileOut has no .record() method
+### MovieFileOut 没有 .record() 方法
 
-Use the toggle parameter:
+使用切换参数：
 ```python
-rec.par.record = True   # start
-rec.par.record = False  # stop
+rec.par.record = True   # 开始
+rec.par.record = False  # 停止
 ```
 
-### All exported frames identical
+### 所有导出帧完全相同
 
-TOP.save() captures same frame when called rapidly. Use MovieFileOut for
-real-time recording. Set project.realTime = False for frame-accurate output.
+快速连续调用 TOP.save() 会捕获同一帧。实时录制请用 MovieFileOut。
+要帧精确输出，设置 project.realTime = False。

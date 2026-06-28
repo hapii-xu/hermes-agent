@@ -1,19 +1,17 @@
-"""Inbound cron-fire token verification for Chronos (Phase 4E.1).
+"""Chronos 的入站 cron-fire token 验证（阶段 4E.1）。
 
-When NAS relays an external scheduler fire to the agent, it POSTs
-``/api/cron/fire`` with a short-lived NAS-minted JWT. This module verifies that
-JWT before any job runs — the security boundary for remotely-triggered job
-execution.
+当 NAS 将外部调度器触发中继到 agent 时，它通过 POST 请求
+``/api/cron/fire`` 携带一个短期有效的 NAS 生成的 JWT。此模块在
+任何任务运行前验证该 JWT — 这是远程触发任务执行的安全边界。
 
-We verify a NAS-minted JWT (the trust path the agent already has) rather than
-let an external scheduler call the agent directly: the scheduler signs with
-NAS's keys, which the agent doesn't (and shouldn't) hold. See the plan's DQ-4.
+我们验证 NAS 生成的 JWT（agent 已信任的路径），而不是让外部调度器直接
+调用 agent：调度器使用 NAS 的密钥签名，agent 不持有（也不应持有）这些密钥。
+参见计划的 DQ-4。
 
-The verifier is pluggable (``get_fire_verifier``) so the escape-hatch mode
-(direct per-job cron-key) can swap in later with no handler change.
+验证器是可插拔的（``get_fire_verifier``），因此逃生舱模式
+（每个任务的直接 cron-key）可以在不更改处理器的情况下替换进来。
 
-Crypto is delegated to PyJWT (already a declared dependency) — we do NOT
-hand-roll JWT verification.
+加密委托给 PyJWT（已声明的依赖项）— 我们不手动实现 JWT 验证。
 """
 
 from __future__ import annotations
@@ -23,8 +21,8 @@ from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger("cron.chronos.verify")
 
-# The purpose claim that scopes a token to the fire endpoint. A general agent
-# JWT (without this claim) must NOT be replayable against /api/cron/fire.
+# 将 token 限定到 fire 端点的用途声明。通用 agent
+# JWT（不含此声明）不得重放到 /api/cron/fire。
 _FIRE_PURPOSE = "cron_fire"
 
 
@@ -36,25 +34,25 @@ def verify_nas_fire_token(
     issuer: Optional[str] = None,
     leeway_seconds: int = 30,
 ) -> Optional[Dict[str, Any]]:
-    """Verify a NAS-minted cron-fire JWT. Return decoded claims, or None.
+    """验证 NAS 生成的 cron-fire JWT。返回解码后的声明，或 None。
 
-    Checks (all must pass):
-      - signature against the NAS JWKS (``jwks_or_key`` is a JWKS URL) — RS256
-        family; symmetric secrets are rejected (NAS signs asymmetrically).
-      - ``aud`` == ``expected_audience`` (this agent: ``agent:{instance_id}``).
-      - ``exp`` / ``nbf`` within ``leeway_seconds``.
-      - ``iss`` == ``issuer`` when an issuer is configured.
-      - ``purpose`` == ``"cron_fire"`` — so a general agent JWT can't be
-        replayed against the fire endpoint.
+    检查（全部必须通过）：
+      - 与 NAS JWKS 的签名验证（``jwks_or_key`` 是 JWKS URL）— RS256
+        系列；对称密钥被拒绝（NAS 使用非对称签名）。
+      - ``aud`` == ``expected_audience``（此 agent：``agent:{instance_id}``）。
+      - ``exp`` / ``nbf`` 在 ``leeway_seconds`` 范围内。
+      - 配置了 issuer 时 ``iss`` == ``issuer``。
+      - ``purpose`` == ``"cron_fire"`` — 防止通用 agent JWT 被
+        重放到 fire 端点。
 
-    Returns None (never raises) on any failure, so the handler can answer 401
-    without leaking which check failed.
+    任何失败时返回 None（永不抛出异常），使处理器可以回复 401
+    而不泄露哪项检查失败。
     """
     if not token or not expected_audience:
         return None
     if not jwks_or_key:
-        # No verification key configured → cannot verify → refuse. We never
-        # fall back to unsigned decode for a security boundary.
+        # 未配置验证密钥 → 无法验证 → 拒绝。对于安全边界，
+        # 我们永不回退到无签名解码。
         logger.warning("cron fire: no JWKS/key configured; refusing token")
         return None
 
@@ -62,13 +60,13 @@ def verify_nas_fire_token(
         import jwt
         from jwt import PyJWKClient
 
-        # Resolve the signing key from the JWKS endpoint by the token's kid.
+        # 通过 token 的 kid 从 JWKS 端点解析签名密钥。
         signing_key = None
         if jwks_or_key.startswith("http://") or jwks_or_key.startswith("https://"):
             jwk_client = PyJWKClient(jwks_or_key)
             signing_key = jwk_client.get_signing_key_from_jwt(token).key
         else:
-            # A PEM public key passed inline (test / pinned-key deployments).
+            # 内联传入的 PEM 公钥（测试 / 固定密钥部署）。
             signing_key = jwks_or_key
 
         options = {"require": ["exp", "aud"]}
@@ -94,10 +92,10 @@ def verify_nas_fire_token(
 
 
 def get_fire_verifier() -> Callable[..., Optional[Dict[str, Any]]]:
-    """Return the active inbound-fire verifier.
+    """返回当前活跃的入站触发验证器。
 
-    Default = the NAS-JWT verifier. The DQ-4 escape hatch (direct per-job
-    cron-key) would return a cron-key verifier here instead, selected by config
-    — so the webhook handler never changes when the auth mode is swapped.
+    默认 = NAS-JWT 验证器。DQ-4 逃生舱（每个任务的直接 cron-key）
+    将在此处返回 cron-key 验证器，由配置选择
+    — 因此当认证模式切换时 webhook 处理器无需更改。
     """
     return verify_nas_fire_token

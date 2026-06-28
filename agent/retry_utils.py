@@ -1,8 +1,7 @@
-"""Retry utilities — jittered backoff for decorrelated retries.
+"""重试工具 —— 用于去相关重试的抖动退避。
 
-Replaces fixed exponential backoff with jittered delays to prevent
-thundering-herd retry spikes when multiple sessions hit the same
-rate-limited provider concurrently.
+用抖动延迟替代固定指数退避，防止多个会话同时命中同一
+速率受限提供商时产生惊群式重试峰值。
 """
 
 import random
@@ -10,18 +9,15 @@ import threading
 import time
 from typing import Any
 
-# Monotonic counter for jitter seed uniqueness within the same process.
-# Protected by a lock to avoid race conditions in concurrent retry paths
-# (e.g. multiple gateway sessions retrying simultaneously).
+# 进程内抖动种子唯一性的单调计数器。
+# 使用锁保护，避免并发重试路径（如多个 gateway 会话同时重试）中的竞态条件。
 _jitter_counter = 0
 _jitter_lock = threading.Lock()
 
-# Z.AI Coding Plan's GLM-5.2 endpoint often returns HTTP 429 code 1305
-# ("The service may be temporarily overloaded...") for otherwise valid
-# Hermes requests. Short retries tend to hammer the same overloaded window;
-# after a few normal retries, progressively widen the wait window. Keep the
-# cap interactive-friendly: a simple TUI message should fail visibly in minutes,
-# not sit silent for 20+ minutes.
+# Z.AI Coding Plan 的 GLM-5.2 endpoint 对于原本有效的 Hermes 请求
+# 经常返回 HTTP 429 code 1305（"服务可能暂时过载..."）。
+# 短重试倾向于持续冲击同一过载窗口；在若干次正常重试后逐步扩大等待窗口。
+# 保持上限对交互友好：简单的 TUI 消息应在几分钟内明显失败，而非静默等待 20+ 分钟。
 _ZAI_CODING_OVERLOAD_LONG_BACKOFF = (30.0, 60.0, 90.0, 120.0)
 
 
@@ -32,20 +28,19 @@ def jittered_backoff(
     max_delay: float = 120.0,
     jitter_ratio: float = 0.5,
 ) -> float:
-    """Compute a jittered exponential backoff delay.
+    """计算带抖动的指数退避延迟。
 
     Args:
-        attempt: 1-based retry attempt number.
-        base_delay: Base delay in seconds for attempt 1.
-        max_delay: Maximum delay cap in seconds.
-        jitter_ratio: Fraction of computed delay to use as random jitter
-            range.  0.5 means jitter is uniform in [0, 0.5 * delay].
+        attempt: 从 1 开始的重试次数。
+        base_delay: 第 1 次重试的基础延迟（秒）。
+        max_delay: 最大延迟上限（秒）。
+        jitter_ratio: 将计算出的延迟作为随机抖动范围的比例。
+            0.5 表示抖动在 [0, 0.5 * delay] 范围内均匀分布。
 
     Returns:
-        Delay in seconds: min(base * 2^(attempt-1), max_delay) + jitter.
+        延迟秒数：min(base * 2^(attempt-1), max_delay) + 抖动值。
 
-    The jitter decorrelates concurrent retries so multiple sessions
-    hitting the same provider don't all retry at the same instant.
+    抖动使并发重试去相关，避免多个会话命中同一提供商时同时重试。
     """
     global _jitter_counter
     with _jitter_lock:
@@ -58,7 +53,7 @@ def jittered_backoff(
     else:
         delay = min(base_delay * (2 ** exponent), max_delay)
 
-    # Seed from time + counter for decorrelation even with coarse clocks.
+    # 使用时间 + 计数器作为种子，即使时钟精度较低也能实现去相关。
     seed = (time.time_ns() ^ (tick * 0x9E3779B9)) & 0xFFFFFFFF
     rng = random.Random(seed)
     jitter = rng.uniform(0, jitter_ratio * delay)
@@ -67,7 +62,7 @@ def jittered_backoff(
 
 
 def _error_text(error: Any) -> str:
-    """Best-effort flattened provider error text for retry classification."""
+    """尽力展平提供商错误文本，用于重试分类。"""
     parts = [
         error,
         getattr(error, "message", None),
@@ -78,12 +73,12 @@ def _error_text(error: Any) -> str:
 
 
 def is_zai_coding_overload_error(*, base_url: str | None, model: str | None, error: Any) -> bool:
-    """Return True for Z.AI Coding Plan transient overload 429s.
+    """对于 Z.AI Coding Plan 的瞬时过载 429 返回 True。
 
-    The coding-plan endpoint reports overload as HTTP 429 with body code 1305
-    and message "The service may be temporarily overloaded...". Treat only
-    that narrow shape specially so ordinary quota/billing 429s still fail fast
-    through the existing classifier.
+    Coding Plan endpoint 将过载报告为 HTTP 429，body code 为 1305，
+    消息为 "The service may be temporarily overloaded..."。
+    仅对该特定形状进行特殊处理，以便普通配额/账单 429
+    仍通过现有分类器快速失败。
     """
     base = (base_url or "").lower()
     model_name = (model or "").lower()
@@ -106,16 +101,16 @@ def adaptive_rate_limit_backoff(
     default_wait: float,
     short_attempts: int = 3,
 ) -> tuple[float, str | None]:
-    """Provider-aware rate-limit backoff.
+    """感知提供商的速率限制退避。
 
-    For most providers this returns ``default_wait`` unchanged. For Z.AI
-    Coding Plan GLM-5.2 overloads, keep the first ``short_attempts`` retries on
-    the normal short exponential schedule, then switch to progressively longer
-    waits (30s → 60s → 90s → 120s, capped) plus light jitter.
+    对于大多数提供商，直接返回未变的 ``default_wait``。
+    对于 Z.AI Coding Plan GLM-5.2 过载，前 ``short_attempts`` 次
+    重试保持正常的短指数退避，之后切换到逐步延长的等待
+    （30s → 60s → 90s → 120s，有上限）加轻量抖动。
 
-    ``attempt`` is 1-based, matching the retry loop's logged attempt number.
-    Returns ``(wait_seconds, reason_label)`` where ``reason_label`` is suitable
-    for status/log decoration when a provider-specific policy fired.
+    ``attempt`` 从 1 开始，与重试循环的日志记录次数一致。
+    返回 ``(wait_seconds, reason_label)``，当提供商特定策略触发时，
+    ``reason_label`` 适合用于状态/日志装饰。
     """
     if not is_zai_coding_overload_error(base_url=base_url, model=model, error=error):
         return default_wait, None
@@ -124,6 +119,5 @@ def adaptive_rate_limit_backoff(
 
     idx = min(attempt - short_attempts - 1, len(_ZAI_CODING_OVERLOAD_LONG_BACKOFF) - 1)
     base_delay = _ZAI_CODING_OVERLOAD_LONG_BACKOFF[idx]
-    # A smaller jitter ratio keeps long waits readable while still avoiding
-    # synchronized retry storms across concurrent Hermes sessions.
+    # 较小的抖动比例使长等待时间可读，同时仍避免并发 Hermes 会话间的同步重试风暴。
     return jittered_backoff(1, base_delay=base_delay, max_delay=base_delay, jitter_ratio=0.2), "zai_coding_overload_long"

@@ -1,18 +1,18 @@
 """
-Email platform adapter for the Hermes gateway.
+Hermes 网关的邮件平台适配器。
 
-Allows users to interact with Hermes by sending emails.
-Uses IMAP to receive and SMTP to send messages.
+允许用户通过发送邮件与 Hermes 交互。
+使用 IMAP 接收邮件，使用 SMTP 发送邮件。
 
-Environment variables:
-    EMAIL_IMAP_HOST     — IMAP server host (e.g., imap.gmail.com)
-    EMAIL_IMAP_PORT     — IMAP server port (default: 993)
-    EMAIL_SMTP_HOST     — SMTP server host (e.g., smtp.gmail.com)
-    EMAIL_SMTP_PORT     — SMTP server port (default: 587)
-    EMAIL_ADDRESS       — Email address for the agent
-    EMAIL_PASSWORD      — Email password or app-specific password
-    EMAIL_POLL_INTERVAL — Seconds between mailbox checks (default: 15)
-    EMAIL_ALLOWED_USERS — Comma-separated list of allowed sender addresses
+环境变量：
+    EMAIL_IMAP_HOST     — IMAP 服务器主机（例如 imap.gmail.com）
+    EMAIL_IMAP_PORT     — IMAP 服务器端口（默认：993）
+    EMAIL_SMTP_HOST     — SMTP 服务器主机（例如 smtp.gmail.com）
+    EMAIL_SMTP_PORT     — SMTP 服务器端口（默认：587）
+    EMAIL_ADDRESS       — 代理使用的邮箱地址
+    EMAIL_PASSWORD      — 邮箱密码或应用专用密码
+    EMAIL_POLL_INTERVAL — 两次邮箱检查之间的秒数（默认：15）
+    EMAIL_ALLOWED_USERS — 允许的发件人地址列表，以逗号分隔
 """
 
 import asyncio
@@ -46,14 +46,14 @@ from gateway.config import Platform, PlatformConfig
 from utils import env_int
 
 logger = logging.getLogger(__name__)
-# Automated sender patterns — emails from these are silently ignored
+# 自动发件人模式 — 来自这些地址的邮件将被静默忽略
 _NOREPLY_PATTERNS = (
     "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply",
     "mailer-daemon", "postmaster", "bounce", "notifications@",
     "automated@", "auto-confirm", "auto-reply", "automailer",
 )
 
-# RFC headers that indicate bulk/automated mail
+# 表示批量/自动邮件的 RFC 头
 _AUTOMATED_HEADERS = {
     "Auto-Submitted": lambda v: v.lower() != "no",
     "Precedence": lambda v: v.lower() in {"bulk", "list", "junk"},
@@ -61,7 +61,7 @@ _AUTOMATED_HEADERS = {
     "List-Unsubscribe": lambda v: bool(v),
 }
 
-# Gmail-safe max length per email body
+# Gmail 安全的每封邮件正文最大长度
 MAX_MESSAGE_LENGTH = 50_000
 
 SMTP_CONNECT_TIMEOUT = 30
@@ -73,11 +73,11 @@ def _create_ipv4_connection(
     timeout: float,
     source_address: Any = None,
 ) -> socket.socket:
-    """Create a TCP connection using only IPv4 addresses.
+    """仅使用 IPv4 地址创建 TCP 连接。
 
-    This mirrors ``socket.create_connection`` but constrains DNS resolution to
-    ``AF_INET``.  It avoids mutating process-global socket functions, which
-    matters because email sends run in executor threads.
+    此函数与 ``socket.create_connection`` 功能相同，但将 DNS 解析限制在
+    ``AF_INET``。避免修改进程全局的 socket 函数，这一点很重要，
+    因为邮件发送在 executor 线程中运行。
     """
     last_error: OSError | None = None
     for family, socktype, proto, _canonname, sockaddr in socket.getaddrinfo(
@@ -121,16 +121,15 @@ class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
             server_hostname=getattr(self, "_host", host),
         )
 
-# Supported image extensions for inline detection
+# 用于内联检测的图片扩展名
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 def _send_imap_id(imap: "imaplib.IMAP4") -> None:
-    """Send RFC 2971 IMAP ID command identifying this client.
+    """发送 RFC 2971 IMAP ID 命令以标识此客户端。
 
-    Required by 163/NetEase mailbox after LOGIN: without it, every UID
-    SEARCH/FETCH returns ``BYE Unsafe Login`` and disconnects.  Other
-    IMAP servers either honor it silently or reject the unknown command;
-    we swallow failures so non-supporting servers keep working.
+    163/网易邮箱在登录后需要此命令：没有它，每次 UID SEARCH/FETCH 都会返回
+    ``BYE Unsafe Login`` 并断开连接。其他 IMAP 服务器要么静默接受，要么拒绝
+    未知命令；我们吞掉失败，以便不支持此命令的服务器继续工作。
     """
     try:
         try:
@@ -148,7 +147,7 @@ def _send_imap_id(imap: "imaplib.IMAP4") -> None:
 
 
 def _is_automated_sender(address: str, headers: dict) -> bool:
-    """Return True if this email is from an automated/noreply source."""
+    """如果此邮件来自自动/无回复来源，则返回 True。"""
     addr = address.lower()
     if any(pattern in addr for pattern in _NOREPLY_PATTERNS):
         return True
@@ -159,10 +158,9 @@ def _is_automated_sender(address: str, headers: dict) -> bool:
     return False
     
 def check_email_requirements() -> bool:
-    """Check if email platform settings are available and non-blank.
+    """检查邮件平台设置是否可用且非空。
 
-    Treats blank/whitespace-only values as missing so an abandoned setup that
-    left empty ``EMAIL_*`` keys in ``.env`` does not enable the platform (#40715).
+    将空白/仅包含空格的内容视为缺失，这样 .env 中遗留的空 ``EMAIL_*`` 键不会启用平台（#40715）。
     """
     addr = os.getenv("EMAIL_ADDRESS", "").strip()
     pwd = os.getenv("EMAIL_PASSWORD", "").strip()
@@ -172,7 +170,7 @@ def check_email_requirements() -> bool:
 
 
 def _decode_header_value(raw: str) -> str:
-    """Decode an RFC 2047 encoded email header into a plain string."""
+    """将 RFC 2047 编码的邮件头解码为纯字符串。"""
     parts = decode_header(raw)
     decoded = []
     for part, charset in parts:

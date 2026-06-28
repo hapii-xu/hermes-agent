@@ -1,29 +1,29 @@
 # origami
 
-Folded paper forms with geometric precision
+折纸形态，几何精确
 
-## Color Palette
+## 配色
 
-- Primary: Solid origami paper colors - red, blue, green, gold
-- Background: White or soft gray, subtle shadows
-- Accents: Paper fold highlights, crisp shadows
+- 主色：纯色折纸——红、蓝、绿、金
+- 背景：白色或浅灰，微妙阴影
+- 点缀：折痕高光、利落阴影
 
-## Visual Elements
+## 视觉元素
 
-- Geometric folded shapes
-- Visible fold lines
-- Cast shadows showing depth
-- Paper texture
-- Angular, faceted forms
-- Low-poly aesthetic
+- 几何折叠形状
+- 可见的折痕
+- 投射阴影体现深度
+- 纸张纹理
+- 棱角分明的多面形态
+- 低多边形美学
 
-## Typography
+## 字体排印
 
-- Clean geometric fonts
-- Angular letterforms
-- Folded paper text effect
-- Minimal, precise labels
+- 干净的几何字体
+- 棱角分明的字形
+- 折纸文字效果
+- 极简、精确的标签
 
-## Best For
+## 最适用于
 
-Geometric concepts, transformation topics, Japanese themes, abstract representations
+几何概念、变形主题、日式主题、抽象表达

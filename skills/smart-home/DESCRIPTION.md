@@ -1,3 +1,3 @@
 ---
-description: Skills for controlling smart home devices — lights, switches, sensors, and home automation systems.
+description: 控制智能家居设备的技能 —— 灯光、开关、传感器以及家庭自动化系统。
 ---

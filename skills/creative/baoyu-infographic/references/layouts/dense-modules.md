@@ -1,72 +1,72 @@
 # dense-modules
 
-High-density modular layout with 6-7 typed information modules packed with concrete data.
+高密度模块化布局，包含 6-7 个类型化信息模块，每个模块塞满具体数据。
 
-## Structure
+## 结构
 
-- 6-7 distinct modules per image, each serving a specific information function
-- Every module contains concrete data: brand names, numbers, percentages, parameters
-- Minimal whitespace—compact spacing prioritized over breathing room
-- Smaller text acceptable to maximize information density
-- Each module identified by coordinate label or section marker (e.g., MOD-1, SEC-A)
+- 每张图 6-7 个独立模块，各承担特定信息职能
+- 每个模块包含具体数据：品牌名、数字、百分比、参数
+- 极少留白——紧凑间距优先于呼吸空间
+- 为最大化信息密度，可接受较小的字号
+- 每个模块以坐标标签或分区标记标识（如 MOD-1、SEC-A）
 
-## Module Archetypes
+## 模块原型
 
-| Module | Purpose | Content Requirements |
+| 模块 | 用途 | 内容要求 |
 |--------|---------|---------------------|
-| **Brand/Selection Array** | Grid of options with recommendations | 4-8 items with icons, names, brief descriptions; highlight "best choice" |
-| **Specification Scale** | Quality/measurement gauge | 3-5 levels with precise numerical increments, quality indicators (emoji faces, checkmarks) |
-| **Deep Dive/Detail** | Technical breakdown of key item | Zoom-in callouts, internal components, cross-section or exploded view |
-| **Scenario Comparison** | Side-by-side use cases | 3-6 scenarios with specific recommendations and data per scenario |
-| **Identification Tips** | How-to checklist | 3-5 inspection methods: look/test/check/ask format |
-| **Warning/Pitfall Zone** | Critical mistakes to avoid | 3-5 pitfalls with consequences, 1-2 correct approaches; high visual contrast |
-| **Quick Reference** | Compact summary | Dense table, one-line summaries, decision flowchart, or key takeaways |
+| **品牌/选择阵列** | 带推荐意见的选项网格 | 4-8 个条目，含图标、名称、简短描述；高亮"最佳选择" |
+| **规格标尺** | 品质/度量仪表 | 3-5 个等级，带精确数值增量、品质指示符（表情、勾号） |
+| **深度剖析/细节** | 关键条目的技术拆解 | 放大标注、内部组件、剖面或分解图 |
+| **场景对比** | 并列用例 | 3-6 个场景，每个场景配具体推荐和数据 |
+| **识别技巧** | 操作清单 | 3-5 种检查方法：看/测/查/问 格式 |
+| **警示/避坑区** | 需避免的严重错误 | 3-5 个坑及其后果，1-2 种正确做法；高视觉对比 |
+| **快速参考** | 紧凑摘要 | 密集表格、一句话总结、决策流程图或关键要点 |
 
-## Variants
+## 变体
 
-| Variant | Focus | Visual Emphasis |
+| 变体 | 重点 | 视觉强调 |
 |---------|-------|-----------------|
-| **Coordinate-labeled** | Precision and systematicity | Each module has alphanumeric coordinate (A-01, B-05, C-12), ruler/axis markers |
-| **Grid-cell** | Order and structure | Modules in strict rectangular cells divided by thick lines, Swiss grid feel |
-| **Free-flowing** | Organic density | Magazine-style layout with dotted frames, varying module sizes, connected by arrows |
+| **坐标标注型** | 精确与系统性 | 每个模块有字母数字坐标（A-01、B-05、C-12），标尺/坐标轴标记 |
+| **网格单元型** | 秩序与结构 | 模块置于严格矩形单元格内，粗线分隔，瑞士网格风格 |
+| **自由流动型** | 有机密度 | 杂志风布局，虚线框，模块大小不一，以箭头相连 |
 
-## Best For
+## 最适用于
 
-- Product selection guides and buying guides
-- Multi-dimensional comparison content
-- Data-rich educational materials
-- "Avoid pitfalls" / "complete guide" formats
-- Content targeting platforms like Xiaohongshu with high-density visual requirements
+- 产品选购指南和购买指南
+- 多维对比内容
+- 数据丰富的教学材料
+- "避坑"/"完全指南"类格式
+- 面向小红书等高密度视觉需求平台的内容
 
-## Visual Elements
+## 视觉元素
 
-- Module boundary markers (thick lines, dotted frames, or coordinate grids)
-- Quality indicators per module (emoji faces, checkmarks, crosses, crowns)
-- Data callout boxes with highlighted numbers
-- Comparison arrows and progression indicators
-- Warning/alert visual markers for pitfall modules
-- Metadata in corners (page numbers, timestamps, small barcodes)
+- 模块边界标记（粗线、虚线框或坐标网格）
+- 每个模块配品质指示符（表情、勾号、叉号、皇冠）
+- 带高亮数字的数据标注框
+- 对比箭头和递进指示符
+- 避坑模块用警示/告警视觉标记
+- 四角放元数据（页码、时间戳、小型条码）
 
-## Text Placement
+## 文字排布
 
-- Main title at top, prominent and impactful
-- Subtitle with module count ("X大维度全面解析...")
-- Module headers inside colored badges or labeled frames
-- Body text compact, multiple columns within modules
-- Numbers highlighted with accent colors, slightly larger than body text
+- 主标题置于顶部，醒目有冲击力
+- 副标题注明模块数（"X 大维度全面解析……"）
+- 模块标题置于彩色徽章或标注框内
+- 正文紧凑，模块内多栏排版
+- 数字用强调色高亮，略大于正文
 
-## Information Density Rules
+## 信息密度规则
 
-- Every corner should contain useful information or metadata
-- No decorative-only empty space
-- Text size may be reduced to fit more content—information over font size
-- Each module must have specific data points, not generic descriptions
-- Balance between density and readability: dense but organized
+- 每个角落都应承载有用信息或元数据
+- 不留仅为装饰的空白
+- 为塞入更多内容可缩小字号——信息优先于字号
+- 每个模块必须有具体数据点，而非笼统描述
+- 在密度与可读性之间取得平衡：密而不乱
 
-## Recommended Pairings
+## 推荐搭配
 
-- `pop-laboratory`: Technical precision with coordinate markers and blueprint grid
-- `morandi-journal`: Hand-drawn warmth with doodle illustrations and organic frames
-- `retro-pop-grid`: 1970s pop art with strict grid cells and bold contrast
-- `corporate-memphis`: Clean business feel for product comparisons
-- `technical-schematic`: Engineering precision for technical product guides
+- `pop-laboratory`：技术精度，配坐标标记和蓝图网格
+- `morandi-journal`：手绘温度，配涂鸦插画和有机边框
+- `retro-pop-grid`：1970 年代波普，配严格网格单元和强烈对比
+- `corporate-memphis`：干净商业感，适合产品对比
+- `technical-schematic`：工程精度，适合技术产品指南

@@ -1,275 +1,275 @@
-# Design System: Sentry
+# 设计系统：Sentry
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Rubik` | **Mono:** `JetBrains Mono`
-> - **Font stack (CSS):** `font-family: 'Rubik', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主字体：** `Rubik` | **等宽字体：** `JetBrains Mono`
+> - **字体栈 (CSS)：** `font-family: 'Rubik', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Sentry's website is a dark-mode-first developer tool interface that speaks the language of code editors and terminal windows. The entire aesthetic is rooted in deep purple-black backgrounds (`#1f1633`, `#150f23`) that evoke the late-night debugging sessions Sentry was built for. Against this inky canvas, a carefully curated set of purples, pinks, and a distinctive lime-green accent (`#c2ef4e`) create a visual system that feels simultaneously technical and vibrant.
+Sentry 的网站是一个深色优先的开发者工具界面，说着代码编辑器和终端窗口的语言。整个美学扎根于深紫黑背景（`#1f1633`、`#150f23`），唤起 Sentry 为之而生的深夜调试会话。在这片墨色画布上，一组精心策划的紫色、粉色和独特的柠檬绿强调色（`#c2ef4e`）创造出一种既技术化又充满活力的视觉系统。
 
-The typography pairing is deliberate: "Dammit Sans" appears at hero scale (88px, weight 700) as a display font with personality and attitude that matches Sentry's irreverent brand voice ("Code breaks. Fix it faster."), while Rubik serves as the workhorse UI font across all functional text — headings, body, buttons, captions, and navigation. Monaco provides the monospace layer for code snippets and technical content, completing the developer-tool trinity.
+字体搭配是刻意的："Dammit Sans" 以英雄尺度（88px、700 字重）作为展示字体出现，配个性和态度，匹配 Sentry 不羁的品牌声音（"Code breaks. Fix it faster."），而 Rubik 作为主力 UI 字体服务于所有功能性文字——标题、正文、按钮、说明和导航。Monaco 提供等宽层，用于代码片段和技术内容，补全开发者工具三件套。
 
-What makes Sentry distinctive is its embrace of the "dark IDE" aesthetic without feeling cold or sterile. Warm purple tones replace the typical cool grays of developer tools, and bold illustrative elements (3D characters, colorful product screenshots) punctuate the dark canvas. The button system uses a signature muted purple (`#79628c`) with inset shadows that creates a tactile, almost physical quality — buttons feel like they could be pressed into the surface.
+让 Sentry 独具特色的是它拥抱"深色 IDE"美学却不显冷漠或 sterile。温暖的紫色调取代了开发者工具典型的冷灰，大胆的插画元素（3D 角色、多彩的产品截图）点缀着深色画布。按钮系统使用标志性的低饱和紫（`#79628c`），配内阴影，创造出一种触感、近乎物理的质感——按钮感觉像是可以被按进表面的。
 
-**Key Characteristics:**
-- Dark purple-black backgrounds (`#1f1633`, `#150f23`) — never pure black
-- Warm purple accent spectrum: from deep (`#362d59`) through mid (`#79628c`, `#6a5fc1`) to vibrant (`#422082`)
-- Lime-green accent (`#c2ef4e`) for high-visibility CTAs and highlights
-- Pink/coral accents (`#ffb287`, `#fa7faa`) for focus states and secondary highlights
-- "Dammit Sans" display font for brand personality at hero scale
-- Rubik as primary UI font with uppercase letter-spaced labels
-- Monaco monospace for code elements
-- Inset shadows on buttons creating tactile depth
-- Frosted glass effects with `blur(18px) saturate(180%)`
+**关键特征：**
+- 深紫黑背景（`#1f1633`、`#150f23`）——绝不纯黑
+- 暖紫强调色谱：从深（`#362d59`）到中（`#79628c`、`#6a5fc1`）到鲜艳（`#422082`）
+- 柠檬绿强调（`#c2ef4e`）用于高可见性 CTA 和高亮
+- 粉/珊瑚强调（`#ffb287`、`#fa7faa`）用于聚焦状态和次要高亮
+- "Dammit Sans" 展示字体，用于英雄尺度上的品牌个性
+- Rubik 作为主 UI 字体，配大写字距标签
+- Monaco 等宽用于代码元素
+- 按钮上的内阴影创造触感深度
+- 配 `blur(18px) saturate(180%)` 的毛玻璃效果
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary Brand
-- **Deep Purple** (`#1f1633`): Primary background, the defining color of the brand
-- **Darker Purple** (`#150f23`): Deeper sections, footer, secondary backgrounds
-- **Border Purple** (`#362d59`): Borders, dividers, subtle structural lines
+### 主品牌色
+- **深紫** (`#1f1633`)：主背景，品牌的定义色
+- **更深紫** (`#150f23`)：更深区块、页脚、次要背景
+- **边框紫** (`#362d59`)：边框、分割线、细微的结构线
 
-### Accent Colors
-- **Sentry Purple** (`#6a5fc1`): Primary interactive color — links, hover states, focus rings
-- **Muted Purple** (`#79628c`): Button backgrounds, secondary interactive elements
-- **Deep Violet** (`#422082`): Select dropdowns, active states, high-emphasis surfaces
-- **Lime Green** (`#c2ef4e`): High-visibility accent, special links, badge highlights
-- **Coral** (`#ffb287`): Focus state backgrounds, warm accent
-- **Pink** (`#fa7faa`): Focus outlines, decorative accents
+### 强调色
+- **Sentry 紫** (`#6a5fc1`)：主交互色——链接、悬停状态、聚焦环
+- **低饱和紫** (`#79628c`)：按钮背景、次要交互元素
+- **深紫罗兰** (`#422082`)：下拉选择、激活状态、高强调表面
+- **柠檬绿** (`#c2ef4e`)：高可见性强调、特殊链接、徽章高亮
+- **珊瑚色** (`#ffb287`)：聚焦状态背景、暖色强调
+- **粉色** (`#fa7faa`)：聚焦轮廓、装饰性强调
 
-### Text Colors
-- **Pure White** (`#ffffff`): Primary text on dark backgrounds
-- **Light Gray** (`#e5e7eb`): Secondary text, muted content
-- **Code Yellow** (`#dcdcaa`): Syntax highlighting, code tokens
+### 文字色
+- **纯白** (`#ffffff`)：深色背景上的主文字
+- **浅灰** (`#e5e7eb`)：次要文字、低饱和内容
+- **代码黄** (`#dcdcaa`)：语法高亮、代码 token
 
-### Surface & Overlay
-- **Glass White** (`rgba(255, 255, 255, 0.18)`): Frosted glass button backgrounds
-- **Glass Dark** (`rgba(54, 22, 107, 0.14)`): Hover overlay on glass elements
-- **Input White** (`#ffffff`): Form input backgrounds (light context)
-- **Input Border** (`#cfcfdb`): Form field borders
+### 表面与覆盖
+- **玻璃白** (`rgba(255, 255, 255, 0.18)`)：毛玻璃按钮背景
+- **玻璃深** (`rgba(54, 22, 107, 0.14)`)：玻璃元素上的悬停覆盖
+- **输入白** (`#ffffff`)：表单输入背景（浅色上下文）
+- **输入边框** (`#cfcfdb`)：表单字段边框
 
-### Shadows
-- **Ambient Glow** (`rgba(22, 15, 36, 0.9) 0px 4px 4px 9px`): Deep purple ambient shadow
-- **Button Hover** (`rgba(0, 0, 0, 0.18) 0px 0.5rem 1.5rem`): Elevated hover state
-- **Card Shadow** (`rgba(0, 0, 0, 0.1) 0px 10px 15px -3px`): Standard card elevation
-- **Inset Button** (`rgba(0, 0, 0, 0.1) 0px 1px 3px 0px inset`): Tactile pressed effect
+### 阴影
+- **环境光晕** (`rgba(22, 15, 36, 0.9) 0px 4px 4px 9px`)：深紫环境阴影
+- **按钮悬停** (`rgba(0, 0, 0, 0.18) 0px 0.5rem 1.5rem`)：抬升的悬停状态
+- **卡片阴影** (`rgba(0, 0, 0, 0.1) 0px 10px 15px -3px`)：标准卡片抬升
+- **内陷按钮** (`rgba(0, 0, 0, 0.1) 0px 1px 3px 0px inset`)：触感按下效果
 
-## 3. Typography Rules
+## 3. 字体规则
 
-### Font Families
-- **Display**: `Dammit Sans` — brand personality font for hero headings
-- **Primary UI**: `Rubik`, with fallbacks: `-apple-system, system-ui, Segoe UI, Helvetica, Arial`
-- **Monospace**: `Monaco`, with fallbacks: `Menlo, Ubuntu Mono`
+### 字体族
+- **展示字体**：`Dammit Sans`——用于英雄标题的品牌个性字体
+- **主 UI 字体**：`Rubik`，回退：`-apple-system, system-ui, Segoe UI, Helvetica, Arial`
+- **等宽字体**：`Monaco`，回退：`Menlo, Ubuntu Mono`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字距 | 备注 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Hero | Dammit Sans | 88px (5.50rem) | 700 | 1.20 (tight) | normal | Maximum impact, brand voice |
-| Display Secondary | Dammit Sans | 60px (3.75rem) | 500 | 1.10 (tight) | normal | Secondary hero text |
-| Section Heading | Rubik | 30px (1.88rem) | 400 | 1.20 (tight) | normal | Major section titles |
-| Sub-heading | Rubik | 27px (1.69rem) | 500 | 1.25 (tight) | normal | Feature section headers |
-| Card Title | Rubik | 24px (1.50rem) | 500 | 1.25 (tight) | normal | Card and block headings |
-| Feature Title | Rubik | 20px (1.25rem) | 600 | 1.25 (tight) | normal | Emphasized feature names |
-| Body | Rubik | 16px (1.00rem) | 400 | 1.50 | normal | Standard body text |
-| Body Emphasis | Rubik | 16px (1.00rem) | 500–600 | 1.50 | normal | Bold body, nav items |
-| Nav Label | Rubik | 15px (0.94rem) | 500 | 1.40 | normal | Navigation links |
-| Uppercase Label | Rubik | 15px (0.94rem) | 500 | 1.25 (tight) | normal | `text-transform: uppercase` |
-| Button Text | Rubik | 14px (0.88rem) | 500–700 | 1.14–1.29 (tight) | 0.2px | `text-transform: uppercase` |
-| Caption | Rubik | 14px (0.88rem) | 500–700 | 1.00–1.43 | 0.2px | Often uppercase |
-| Small Caption | Rubik | 12px (0.75rem) | 600 | 2.00 (relaxed) | normal | Subtle annotations |
-| Micro Label | Rubik | 10px (0.63rem) | 600 | 1.80 (relaxed) | 0.25px | `text-transform: uppercase` |
-| Code | Monaco | 16px (1.00rem) | 400–700 | 1.50 | normal | Code blocks, technical text |
+| 英雄展示 | Dammit Sans | 88px (5.50rem) | 700 | 1.20（紧凑） | normal | 最大冲击力，品牌声音 |
+| 次要展示 | Dammit Sans | 60px (3.75rem) | 500 | 1.10（紧凑） | normal | 次要英雄文字 |
+| 区块标题 | Rubik | 30px (1.88rem) | 400 | 1.20（紧凑） | normal | 主要区块标题 |
+| 副标题 | Rubik | 27px (1.69rem) | 500 | 1.25（紧凑） | normal | 特性区块页头 |
+| 卡片标题 | Rubik | 24px (1.50rem) | 500 | 1.25（紧凑） | normal | 卡片和块标题 |
+| 特性标题 | Rubik | 20px (1.25rem) | 600 | 1.25（紧凑） | normal | 强调特性名 |
+| 正文 | Rubik | 16px (1.00rem) | 400 | 1.50 | normal | 标准正文 |
+| 强调正文 | Rubik | 16px (1.00rem) | 500–600 | 1.50 | normal | 粗正文、导航项 |
+| 导航标签 | Rubik | 15px (0.94rem) | 500 | 1.40 | normal | 导航链接 |
+| 大写标签 | Rubik | 15px (0.94rem) | 500 | 1.25（紧凑） | normal | `text-transform: uppercase` |
+| 按钮文字 | Rubik | 14px (0.88rem) | 500–700 | 1.14–1.29（紧凑） | 0.2px | `text-transform: uppercase` |
+| 说明文字 | Rubik | 14px (0.88rem) | 500–700 | 1.00–1.43 | 0.2px | 通常大写 |
+| 小说明 | Rubik | 12px (0.75rem) | 600 | 2.00（宽松） | normal | 细微注释 |
+| 微型标签 | Rubik | 10px (0.63rem) | 600 | 1.80（宽松） | 0.25px | `text-transform: uppercase` |
+| 代码 | Monaco | 16px (1.00rem) | 400–700 | 1.50 | normal | 代码块、技术文字 |
 
-### Principles
-- **Dual personality**: Dammit Sans brings irreverent brand character at display scale; Rubik provides clean professionalism for everything functional.
-- **Uppercase as system**: Buttons, captions, labels, and micro-text all use `text-transform: uppercase` with subtle letter-spacing (0.2px–0.25px), creating a systematic "technical label" pattern throughout.
-- **Weight stratification**: Rubik uses 400 (body), 500 (emphasis/nav), 600 (titles/strong), 700 (buttons/CTAs) — a clean four-tier weight system.
-- **Tight headings, relaxed body**: All headings use 1.10–1.25 line-height; body uses 1.50; small captions expand to 2.00 for readability at tiny sizes.
+### 原则
+- **双重个性**：Dammit Sans 在展示尺度上带来不羁的品牌个性；Rubik 为所有功能性内容提供干净的专业感。
+- **大写作为系统**：按钮、说明、标签和微型文字都使用 `text-transform: uppercase` 配细微字距（0.2px–0.25px），在整个系统中创造出系统化的"技术标签"模式。
+- **字重分层**：Rubik 使用 400（正文）、500（强调/导航）、600（标题/强）、700（按钮/CTA）——一个干净的四层字重系统。
+- **紧凑标题，宽松正文**：所有标题使用 1.10–1.25 行高；正文用 1.50；小说明扩展到 2.00 以在微小字号下保持可读性。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Muted Purple**
-- Background: `#79628c` (rgb(121, 98, 140))
-- Text: `#ffffff`, uppercase, 14px, weight 500–700, letter-spacing 0.2px
-- Border: `1px solid #584674`
-- Radius: 13px
-- Shadow: `rgba(0, 0, 0, 0.1) 0px 1px 3px 0px inset` (tactile inset)
-- Hover: elevated shadow `rgba(0, 0, 0, 0.18) 0px 0.5rem 1.5rem`
+**主低饱和紫**
+- 背景：`#79628c`（rgb(121, 98, 140)）
+- 文字：`#ffffff`，大写，14px，500–700 字重，字距 0.2px
+- 边框：`1px solid #584674`
+- 圆角：13px
+- 阴影：`rgba(0, 0, 0, 0.1) 0px 1px 3px 0px inset`（触感内陷）
+- 悬停：抬升阴影 `rgba(0, 0, 0, 0.18) 0px 0.5rem 1.5rem`
 
-**Glass White**
-- Background: `rgba(255, 255, 255, 0.18)` (frosted glass)
-- Text: `#ffffff`
-- Padding: 8px
-- Radius: 12px (left-aligned variant: `12px 0px 0px 12px`)
-- Shadow: `rgba(0, 0, 0, 0.08) 0px 2px 8px`
-- Hover background: `rgba(54, 22, 107, 0.14)`
-- Use: Secondary actions on dark surfaces
+**玻璃白**
+- 背景：`rgba(255, 255, 255, 0.18)`（毛玻璃）
+- 文字：`#ffffff`
+- 内边距：8px
+- 圆角：12px（左对齐变体：`12px 0px 0px 12px`）
+- 阴影：`rgba(0, 0, 0, 0.08) 0px 2px 8px`
+- 悬停背景：`rgba(54, 22, 107, 0.14)`
+- 用途：深色表面上的次要操作
 
-**White Solid**
-- Background: `#ffffff`
-- Text: `#1f1633`
-- Padding: 12px 16px
-- Radius: 8px
-- Hover: background transitions to `#6a5fc1`, text to white
-- Focus: background `#ffb287` (coral), outline `rgb(106, 95, 193) solid 0.125rem`
-- Use: High-visibility CTA on dark backgrounds
+**白色实心**
+- 背景：`#ffffff`
+- 文字：`#1f1633`
+- 内边距：12px 16px
+- 圆角：8px
+- 悬停：背景过渡到 `#6a5fc1`，文字变白
+- 聚焦：背景 `#ffb287`（珊瑚），轮廓 `rgb(106, 95, 193) solid 0.125rem`
+- 用途：深色背景上的高可见性 CTA
 
-**Deep Violet (Select/Dropdown)**
-- Background: `#422082`
-- Text: `#ffffff`
-- Padding: 8px 16px
-- Radius: 8px
+**深紫罗兰（选择/下拉）**
+- 背景：`#422082`
+- 文字：`#ffffff`
+- 内边距：8px 16px
+- 圆角：8px
 
-### Inputs
+### 输入
 
-**Text Input**
-- Background: `#ffffff`
-- Text: `#1f1633`
-- Border: `1px solid #cfcfdb`
-- Padding: 8px 12px
-- Radius: 6px
-- Focus: border-color stays `#cfcfdb`, shadow `rgba(0, 0, 0, 0.15) 0px 2px 10px inset`
+**文本输入**
+- 背景：`#ffffff`
+- 文字：`#1f1633`
+- 边框：`1px solid #cfcfdb`
+- 内边距：8px 12px
+- 圆角：6px
+- 聚焦：边框色保持 `#cfcfdb`，阴影 `rgba(0, 0, 0, 0.15) 0px 2px 10px inset`
 
-### Links
-- **Default on dark**: `#ffffff`, underline decoration
-- **Hover**: color transitions to `#6a5fc1` (Sentry Purple)
-- **Purple links**: `#6a5fc1` default, hover underline
-- **Lime accent links**: `#c2ef4e` default, hover to `#6a5fc1`
-- **Dark context links**: `#362d59`, hover to `#ffffff`
+### 链接
+- **深色上默认**：`#ffffff`，下划线装饰
+- **悬停**：颜色过渡到 `#6a5fc1`（Sentry 紫）
+- **紫色链接**：`#6a5fc1` 默认，悬停下划线
+- **柠檬强调链接**：`#c2ef4e` 默认，悬停到 `#6a5fc1`
+- **深色上下文链接**：`#362d59`，悬停到 `#ffffff`
 
-### Cards & Containers
-- Background: semi-transparent or dark purple surfaces
-- Radius: 8px–12px
-- Shadow: `rgba(0, 0, 0, 0.1) 0px 10px 15px -3px`
-- Backdrop filter: `blur(18px) saturate(180%)` for glass effects
+### 卡片与容器
+- 背景：半透明或深紫表面
+- 圆角：8px–12px
+- 阴影：`rgba(0, 0, 0, 0.1) 0px 10px 15px -3px`
+- 背景滤镜：`blur(18px) saturate(180%)` 用于玻璃效果
 
-### Navigation
-- Dark transparent header over hero content
-- Rubik 15px weight 500 for nav links
-- White text, hover to Sentry Purple (`#6a5fc1`)
-- Uppercase labels with 0.2px letter-spacing for categories
-- Mobile: hamburger menu, full-width expanded
+### 导航
+- 英雄内容上的深色透明页头
+- Rubik 15px 500 字重用于导航链接
+- 白色文字，悬停到 Sentry 紫（`#6a5fc1`）
+- 类别标签大写，配 0.2px 字距
+- 移动端：汉堡菜单，全宽展开
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 2px, 4px, 5px, 6px, 8px, 12px, 16px, 24px, 32px, 40px, 44px, 45px, 47px
+### 间距系统
+- 基本单位：8px
+- 比例：1px, 2px, 4px, 5px, 6px, 8px, 12px, 16px, 24px, 32px, 40px, 44px, 45px, 47px
 
-### Grid & Container
-- Max content width: 1152px (XL breakpoint)
-- Responsive padding: 2rem (mobile) → 4rem (tablet+)
-- Content centered within container
-- Full-width dark sections with contained inner content
+### 网格与容器
+- 最大内容宽度：1152px（XL 断点）
+- 响应式内边距：2rem（移动端）→ 4rem（平板+）
+- 内容在容器内居中
+- 全宽深色区块配受限的内部内容
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | < 576px | Single column, stacked layout |
-| Small Tablet | 576–640px | Minor width adjustments |
-| Tablet | 640–768px | 2-column begins |
-| Small Desktop | 768–992px | Full nav visible |
-| Desktop | 992–1152px | Standard layout |
-| Large Desktop | 1152–1440px | Max-width content |
+| 移动端 | < 576px | 单列，堆叠布局 |
+| 小平板 | 576–640px | 少量宽度调整 |
+| 平板 | 640–768px | 开始 2 列 |
+| 小桌面 | 768–992px | 完整导航可见 |
+| 桌面 | 992–1152px | 标准布局 |
+| 大桌面 | 1152–1440px | 最大宽度内容 |
 
-### Whitespace Philosophy
-- **Dark breathing room**: Generous vertical spacing between sections (64px–80px+) lets the dark background serve as a visual rest.
-- **Content islands**: Feature sections are self-contained blocks floating in the dark purple sea, each with its own internal spacing rhythm.
-- **Asymmetric padding**: Buttons use asymmetric padding patterns (12px 16px, 8px 12px) that feel organic rather than rigid.
+### 留白哲学
+- **深色呼吸空间**：区块间宽裕的垂直间距（64px–80px+）让深色背景作为视觉休憩。
+- **内容岛屿**：特性区块是漂浮在深紫海洋中的自包含块，每个都有自己的内部间距节奏。
+- **不对称内边距**：按钮使用不对称内边距模式（12px 16px、8px 12px），感觉有机而非僵硬。
 
-### Border Radius Scale
-- Minimal (6px): Form inputs, small interactive elements
-- Standard (8px): Buttons, cards, containers
-- Comfortable (10px–12px): Larger containers, glass panels
-- Rounded (13px): Primary muted buttons
-- Pill (18px): Image containers, badges
+### 圆角比例
+- 最小（6px）：表单输入、小型交互元素
+- 标准（8px）：按钮、卡片、容器
+- 舒适（10px–12px）：较大容器、玻璃面板
+- 圆润（13px）：主低饱和按钮
+- 胶囊（18px）：图片容器、徽章
 
-## 6. Depth & Elevation
+## 6. 深度与层级
 
-| Level | Treatment | Use |
+| 等级 | 处理 | 用途 |
 |-------|-----------|-----|
-| Sunken (Level -1) | Inset shadow `rgba(0, 0, 0, 0.1) 0px 1px 3px inset` | Primary buttons (tactile pressed feel) |
-| Flat (Level 0) | No shadow | Default surfaces, dark backgrounds |
-| Surface (Level 1) | `rgba(0, 0, 0, 0.08) 0px 2px 8px` | Glass buttons, subtle cards |
-| Elevated (Level 2) | `rgba(0, 0, 0, 0.1) 0px 10px 15px -3px` | Cards, floating panels |
-| Prominent (Level 3) | `rgba(0, 0, 0, 0.18) 0px 0.5rem 1.5rem` | Hover states, modals |
-| Ambient (Level 4) | `rgba(22, 15, 36, 0.9) 0px 4px 4px 9px` | Deep purple ambient glow around hero |
+| 下陷（等级 -1） | 内阴影 `rgba(0, 0, 0, 0.1) 0px 1px 3px inset` | 主按钮（触感按下感） |
+| 平面（等级 0） | 无阴影 | 默认表面、深色背景 |
+| 表面（等级 1） | `rgba(0, 0, 0, 0.08) 0px 2px 8px` | 玻璃按钮、细微卡片 |
+| 抬升（等级 2） | `rgba(0, 0, 0, 0.1) 0px 10px 15px -3px` | 卡片、浮动面板 |
+| 突出（等级 3） | `rgba(0, 0, 0, 0.18) 0px 0.5rem 1.5rem` | 悬停状态、模态 |
+| 环境（等级 4） | `rgba(22, 15, 36, 0.9) 0px 4px 4px 9px` | 英雄周围的深紫环境光晕 |
 
-**Shadow Philosophy**: Sentry uses a unique combination of inset shadows (buttons feel pressed INTO the surface) and ambient glows (content radiates from the dark background). The deep purple ambient shadow (`rgba(22, 15, 36, 0.9)`) is the signature — it creates a bioluminescent quality where content seems to emit its own purple-tinted light.
+**阴影哲学**：Sentry 独特地组合了内阴影（按钮感觉被按进表面）和环境光晕（内容从深色背景中辐射出来）。深紫环境阴影（`rgba(22, 15, 36, 0.9)`）是签名——它创造出一种生物发光质感，内容似乎散发自己的紫调光。
 
-## 7. Do's and Don'ts
+## 7. 该做与不该做
 
-### Do
-- Use deep purple backgrounds (`#1f1633`, `#150f23`) — never pure black (`#000000`)
-- Apply inset shadows on primary buttons for the tactile pressed effect
-- Use Dammit Sans ONLY for hero/display headings — Rubik for everything else
-- Apply `text-transform: uppercase` with `letter-spacing: 0.2px` on buttons and labels
-- Use the lime-green accent (`#c2ef4e`) sparingly for maximum impact
-- Employ frosted glass effects (`blur(18px) saturate(180%)`) for layered surfaces
-- Maintain the warm purple shadow tones — shadows should feel purple-tinted, not neutral gray
-- Use Rubik's 4-tier weight system: 400 (body), 500 (nav/emphasis), 600 (titles), 700 (CTAs)
+### 该做
+- 使用深紫背景（`#1f1633`、`#150f23`）——绝不纯黑（`#000000`）
+- 主按钮应用内阴影以获得触感按下效果
+- Dammit Sans 只用于英雄/展示标题——其他一切用 Rubik
+- 按钮和标签应用 `text-transform: uppercase` 配 `letter-spacing: 0.2px`
+- 谨慎使用柠檬绿强调（`#c2ef4e`）以获得最大冲击
+- 分层表面采用毛玻璃效果（`blur(18px) saturate(180%)`）
+- 保持温暖的紫调阴影——阴影应该感觉带紫调，而非中性灰
+- 使用 Rubik 的 4 层字重系统：400（正文）、500（导航/强调）、600（标题）、700（CTA）
 
-### Don't
-- Don't use pure black (`#000000`) for backgrounds — always use the warm purple-blacks
-- Don't apply Dammit Sans to body text or UI elements — it's display-only
-- Don't use standard gray (`#666`, `#999`) for borders — use purple-tinted grays (`#362d59`, `#584674`)
-- Don't drop the uppercase treatment on buttons — it's a system-wide pattern
-- Don't use sharp corners (0px radius) — minimum 6px for all interactive elements
-- Don't mix the lime-green accent with the coral/pink accents in the same component
-- Don't use flat (non-inset) shadows on primary buttons — the tactile quality is signature
-- Don't forget letter-spacing on uppercase text — 0.2px minimum
+### 不该做
+- 背景不要用纯黑（`#000000`）——始终用温暖的紫黑
+- 正文或 UI 元素不要应用 Dammit Sans——它只用于展示
+- 边框不要用标准灰（`#666`、`#999`）——用紫调灰（`#362d59`、`#584674`）
+- 按钮上不要丢掉大写处理——这是全系统模式
+- 不要用锐角（0px 圆角）——所有交互元素至少 6px
+- 不要在同一组件中混用柠檬绿强调和珊瑚/粉强调
+- 主按钮不要用平面（非内陷）阴影——触感质感是签名
+- 大写文字不要忘记字距——至少 0.2px
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <576px | Single column, hamburger nav, stacked CTAs |
-| Tablet | 576–768px | 2-column feature grids begin |
-| Small Desktop | 768–992px | Full navigation, side-by-side layouts |
-| Desktop | 992–1152px | Max-width container, full layout |
-| Large | >1152px | Content max-width maintained, generous margins |
+| 移动端 | <576px | 单列，汉堡导航，堆叠 CTA |
+| 平板 | 576–768px | 开始 2 列特性网格 |
+| 小桌面 | 768–992px | 完整导航，并排布局 |
+| 桌面 | 992–1152px | 最大宽度容器，完整布局 |
+| 大屏 | >1152px | 内容最大宽度保持，宽裕边距 |
 
-### Collapsing Strategy
-- Hero text: 88px Dammit Sans → 60px → mobile scales
-- Navigation: horizontal → hamburger with slide-out
-- Feature sections: side-by-side → stacked cards
-- Buttons: inline → full-width stacked on mobile
-- Container padding: 4rem → 2rem
+### 折叠策略
+- 英雄文字：88px Dammit Sans → 60px → 移动端缩放
+- 导航：横向 → 带滑出的汉堡菜单
+- 特性区块：并排 → 堆叠卡片
+- 按钮：内联 → 移动端全宽堆叠
+- 容器内边距：4rem → 2rem
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Background: `#1f1633` (primary), `#150f23` (deeper)
-- Text: `#ffffff` (primary), `#e5e7eb` (secondary)
-- Interactive: `#6a5fc1` (links/hover), `#79628c` (buttons)
-- Accent: `#c2ef4e` (lime highlight), `#ffb287` (coral focus)
-- Border: `#362d59` (dark), `#cfcfdb` (light context)
+### 快速颜色参考
+- 背景：`#1f1633`（主）、`#150f23`（更深）
+- 文字：`#ffffff`（主）、`#e5e7eb`（次要）
+- 交互：`#6a5fc1`（链接/悬停）、`#79628c`（按钮）
+- 强调：`#c2ef4e`（柠檬高亮）、`#ffb287`（珊瑚聚焦）
+- 边框：`#362d59`（深色）、`#cfcfdb`（浅色上下文）
 
-### Example Component Prompts
-- "Create a hero section on deep purple background (#1f1633). Headline at 88px Dammit Sans weight 700, line-height 1.20, white text. Sub-text at 16px Rubik weight 400, line-height 1.50. White solid CTA button (8px radius, 12px 16px padding), hover transitions to #6a5fc1."
-- "Design a navigation bar: transparent over dark background. Rubik 15px weight 500, white text. Uppercase category labels with 0.2px letter-spacing. Hover color #6a5fc1."
-- "Build a primary button: background #79628c, border 1px solid #584674, inset shadow rgba(0,0,0,0.1) 0px 1px 3px, white uppercase text at 14px Rubik weight 700, letter-spacing 0.2px, radius 13px. Hover: shadow rgba(0,0,0,0.18) 0px 0.5rem 1.5rem."
-- "Create a glass card panel: background rgba(255,255,255,0.18), backdrop-filter blur(18px) saturate(180%), radius 12px. White text content inside."
-- "Design a feature section: #150f23 background, 24px Rubik weight 500 heading, 16px Rubik weight 400 body text. 14px uppercase lime-green (#c2ef4e) label above heading."
+### 组件提示示例
+- "在深紫背景（#1f1633）上创建英雄区块。标题 88px Dammit Sans 700 字重，行高 1.20，白色文字。副文字 16px Rubik 400 字重，行高 1.50。白色实心 CTA 按钮（8px 圆角、12px 16px 内边距），悬停过渡到 #6a5fc1。"
+- "设计导航栏：深色背景上透明。Rubik 15px 500 字重，白色文字。大写类别标签，配 0.2px 字距。悬停色 #6a5fc1。"
+- "构建主按钮：背景 #79628c，边框 1px solid #584674，内阴影 rgba(0,0,0,0.1) 0px 1px 3px，白色大写文字 14px Rubik 700 字重，字距 0.2px，圆角 13px。悬停：阴影 rgba(0,0,0,0.18) 0px 0.5rem 1.5rem。"
+- "创建一个玻璃卡片面板：背景 rgba(255,255,255,0.18)，backdrop-filter blur(18px) saturate(180%)，圆角 12px。内部白色文字内容。"
+- "设计特性区块：#150f23 背景，24px Rubik 500 字重标题，16px Rubik 400 字重正文。标题上方 14px 大写柠檬绿（#c2ef4e）标签。"
 
-### Iteration Guide
-1. Always start with the dark purple background — the color palette is built FOR dark mode
-2. Use inset shadows on buttons, ambient purple glows on hero sections
-3. Uppercase + letter-spacing is the systematic pattern for labels, buttons, and captions
-4. Lime green (#c2ef4e) is the "pop" color — use once per section maximum
-5. Frosted glass for overlaid panels, solid purple for primary surfaces
-6. Rubik handles 90% of typography — Dammit Sans is hero-only
+### 迭代指南
+1. 始终从深紫背景开始——调色板是为深色模式打造的
+2. 按钮用内阴影，英雄区块用环境紫色光晕
+3. 大写 + 字距是标签、按钮和说明的系统化模式
+4. 柠檬绿（#c2ef4e）是"弹出"色——每个区块最多用一次
+5. 浮层用毛玻璃，主表面用实心紫
+6. Rubik 处理 90% 的字体——Dammit Sans 只用于英雄

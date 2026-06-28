@@ -53,9 +53,9 @@ export const sessionsCountLabel = (liveCount: number, resumableCount: number) =>
 export type SessionRowKind = 'history' | 'live' | 'new'
 
 /**
- * Map a flat row index into the merged Sessions list to its kind. Rows are
- * ordered [new][live…][history…] — the "+ new" row is pinned first so it is
- * always visible no matter how long the resumable history grows.
+ * 将合并后 Sessions 列表中的扁平行索引映射到其类型。行按
+ * [new][live…][history…] 排列 — "+ new" 行固定在最前面，
+ * 因此无论可恢复历史有多长，它始终可见。
  */
 export const sessionRowKindAt = (index: number, liveCount: number): SessionRowKind => {
   if (index <= 0) {
@@ -83,7 +83,7 @@ export const relativeSessionAge = (ts?: number) => {
   return `${Math.floor(days)}d ago`
 }
 
-/** Drop already-live sessions from the resumable history list (dedupe by id). */
+/** 从可恢复历史列表中移除已处于活跃状态的 session（按 id 去重）。 */
 export const resumableHistory = (history: readonly SessionListItem[], live: readonly SessionActiveItem[]) => {
   const liveIds = new Set(live.map(s => s.id))
 
@@ -311,30 +311,30 @@ export function ActiveSessionSwitcher({
   const [draftModel, setDraftModel] = useState('')
   const [pickingModel, setPickingModel] = useState(false)
   const [closingId, setClosingId] = useState('')
-  // When non-null, the user pressed `d` on this (history) session and we await
-  // a second `d` to confirm deletion. Tracked by session id (not row index) so
-  // the 1.5s live-status poll re-indexing rows can't redirect the delete to a
-  // different session. Any other key cancels the prompt.
+  // 当不为 null 时，表示用户在该（历史）session 上按了 `d`，
+  // 我们等待第二次 `d` 来确认删除。按 session id（而非行索引）
+  // 追踪，这样 1.5 秒的活跃状态轮询重新排列行时不会将删除
+  // 操作重定向到另一个 session。任何其他按键都会取消该提示。
   const [confirmDelete, setConfirmDelete] = useState<null | string>(null)
   const [deleting, setDeleting] = useState(false)
   const initialSelectionAppliedRef = useRef(false)
-  // Holds the RAW `session.list` results (pre-dedupe). The quiet 1.5s poll
-  // re-derives the resumable list from this against the latest live set, so a
-  // session that was hidden while live reappears in history once it closes —
-  // without re-querying the DB. Only refreshed on a full (includeHistory) load.
+  // 保存原始的 `session.list` 结果（去重前）。静默的 1.5 秒轮询
+  // 根据最新的活跃 session 集合从此数据重新推导可恢复列表，
+  // 这样在活跃时隐藏的 session 在关闭后能重新出现在历史中 —
+  // 无需重新查询数据库。仅在完整的（includeHistory）加载中刷新。
   const rawHistoryRef = useRef<SessionListItem[]>([])
-  // Mirror the displayed lists so the async poll can re-anchor the selection to
-  // the *same* row (by session id) after live sessions appear/disappear, rather
-  // than keeping a now-stale flat index.
+  // 镜像显示的列表，以便异步轮询可以在活跃 session 出现/消失后
+  // 将选择重新定位到*相同*的行（按 session id），而不是保留
+  // 一个已经过时的扁平索引。
   const itemsRef = useRef<SessionActiveItem[]>([])
   const historyDisplayRef = useRef<SessionListItem[]>([])
   const { stdout } = useStdout()
   const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
   const promptColumns = Math.max(20, width - 11)
 
-  // Rows are [new][live…][history…]: the "+ new" row is pinned first (index 0,
-  // always rendered) and the live+history list is windowed below it. `total`
-  // is the count of selectable rows (incl. the new row).
+  // 行布局为 [new][live…][history…]："+ new" 行固定在最前面
+  // （索引 0，始终渲染），live+history 列表在其下方窗口化显示。
+  // `total` 是可选择行的总数（包括 new 行）。
   const liveCount = items.length
   const histCount = history.length
   const listLen = liveCount + histCount
@@ -342,18 +342,18 @@ export function ActiveSessionSwitcher({
   const rowKind = useCallback((index: number) => sessionRowKindAt(index, liveCount), [liveCount])
 
   const load = useCallback(
-    // `quiet` skips the loading spinner (used by the live-status poll);
-    // `includeHistory` re-queries the resumable DB list (skipped on the 1.5s
-    // poll, which only needs fresh live-session status).
+    // `quiet` 跳过加载动画（用于活跃状态轮询）；
+    // `includeHistory` 重新查询可恢复的数据库列表（在 1.5 秒
+    // 轮询时跳过，轮询只需要最新的活跃 session 状态）。
     async (quiet = false, includeHistory = true) => {
       if (!quiet) {
         setLoading(true)
       }
 
       try {
-        // Fetch independently (allSettled) so a failing session.list can't
-        // wipe the live-session list: live sessions still render and the
-        // resumable history degrades on its own.
+        // 独立获取（allSettled），这样 session.list 失败不会
+        // 清空活跃 session 列表：活跃 session 仍然可以渲染，
+        // 可恢复历史单独降级处理。
         const [liveRes, histRes] = await Promise.allSettled([
           gw.request<SessionActiveListResponse>('session.active_list', {
             current_session_id: currentSessionId
@@ -371,9 +371,9 @@ export function ActiveSessionSwitcher({
 
         const next = r.sessions ?? []
 
-        // Surface a garbled/failed session.list rather than silently blanking
-        // the resumable section; keep the last good raw history so a transient
-        // failure doesn't wipe it.
+        // 暴露损坏/失败的 session.list 错误，而不是静默地清空
+        // 可恢复部分；保留上一次有效的原始历史数据，
+        // 这样临时故障不会将其清除。
         let histError = ''
 
         if (includeHistory) {
@@ -397,17 +397,17 @@ export function ActiveSessionSwitcher({
 
         setItems(next)
         setHistory(hist)
-        // Re-anchor selection to the same row by identity (the live list can
-        // grow/shrink between polls, which would otherwise drift a flat index).
+        // 按身份将选择重新定位到同一行（活跃列表在轮询之间
+        // 可能增长/缩小，否则扁平索引会发生漂移）。
         setSel(s => {
           if (initializeSelection) {
-            // Land on the current live session (shifted +1 past the pinned new
-            // row); with no live sessions, start on the new row itself.
+            // 定位到当前活跃的 session（在固定的 new 行之后偏移 +1）；
+            // 没有活跃 session 时，从 new 行本身开始。
             return next.length ? Math.min(currentSessionSelectionIndex(next, currentSessionId) + 1, maxSel) : 0
           }
 
           if (s <= 0) {
-            return 0 // "+ new" row
+            return 0 // "+ new" 行
           }
 
           const prevItems = itemsRef.current
@@ -571,8 +571,8 @@ export function ActiveSessionSwitcher({
       return
     }
 
-    // Two-press history delete: once armed, only a second `d` deletes; any
-    // other key cancels the prompt (mirrors the standalone resume picker).
+    // 双击删除历史：一旦准备就绪，只有第二次 `d` 才会删除；
+    // 任何其他按键都会取消提示（与独立恢复选择器行为一致）。
     if (confirmDelete !== null) {
       if (ch?.toLowerCase() === 'd') {
         const id = confirmDelete
@@ -618,8 +618,8 @@ export function ActiveSessionSwitcher({
       return
     }
 
-    // `d` arms deletion on a resumable history row. (On the New row `d` is
-    // captured by the prompt's TextInput, so it never reaches here.)
+    // `d` 在可恢复历史行上触发删除。（在 New 行上，`d` 会被
+    // prompt 的 TextInput 捕获，所以不会到达这里。）
     if (lower === 'd' && !key.ctrl && selectedKind === 'history') {
       setConfirmDelete(history[sel - 1 - items.length]?.id ?? null)
 
@@ -677,8 +677,8 @@ export function ActiveSessionSwitcher({
     return <Text color={t.color.muted}>loading sessions…</Text>
   }
 
-  // The "+ new" row (sel 0) is pinned at the top so it's always visible; the
-  // live + history list is windowed beneath it.
+  // "+ new" 行（sel 0）固定在顶部，始终可见；
+  // live + history 列表在其下方窗口化显示。
   const listSel = sel > 0 ? sel - 1 : 0
   const offset = windowOffset(listLen, listSel, VISIBLE)
   const visibleCount = Math.max(0, Math.min(VISIBLE, listLen - offset))

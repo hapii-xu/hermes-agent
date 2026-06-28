@@ -1,34 +1,33 @@
 #!/usr/bin/env python3
 """
-Batch Agent Runner
+批量 Agent 运行器
 
-This module provides parallel batch processing capabilities for running the agent
-across multiple prompts from a dataset. It includes:
-- Dataset loading and batching
-- Parallel batch processing with multiprocessing
-- Checkpointing for fault tolerance and resumption
-- Trajectory saving in the proper format (from/value pairs)
-- Tool usage statistics aggregation across all batches
+本模块为跨数据集多提示词并行批量运行 agent 提供能力，包括：
+- 数据集加载与分批
+- 基于多进程的并行批量处理
+- 用于容错和断点续跑的检查点机制
+- 以正确格式（from/value 对）保存轨迹
+- 跨批次工具使用统计聚合
 
 Usage:
     python batch_runner.py --dataset_file=data.jsonl --batch_size=10 --run_name=my_run
-    
-    # Resume an interrupted run
+
+    # 恢复中断的运行
     python batch_runner.py --dataset_file=data.jsonl --batch_size=10 --run_name=my_run --resume
-    
-    # Use a specific toolset distribution
+
+    # 使用特定工具集分布
     python batch_runner.py --dataset_file=data.jsonl --batch_size=10 --run_name=my_run --distribution=image_gen
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# 重要：hermes_bootstrap 必须是最先导入的模块——用于在 Windows 上配置 UTF-8 标准输入输出。
+# 在 POSIX 系统上为空操作。完整说明见 hermes_bootstrap.py。
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
-    # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
-    # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
+    # 当 hermes_bootstrap 尚未注册到 venv 时的优雅降级处理
+    # ——发生于 ``hermes update`` 部分完成时：git-reset 已落地新代码，
+    # 但 ``uv pip install -e .`` 尚未完成。缺少 bootstrap 意味着
+    # Windows 上的 UTF-8 标准输入输出配置将被跳过；POSIX 不受影响。
     pass
 
 import json
@@ -55,70 +54,70 @@ from toolset_distributions import (
 from model_tools import TOOL_TO_TOOLSET_MAP
 
 
-# Global configuration for worker processes
+# 工作进程的全局配置
 _WORKER_CONFIG = {}
 
-# All possible tools - auto-derived from the master mapping in model_tools.py.
-# This stays in sync automatically when new tools are added to TOOL_TO_TOOLSET_MAP.
-# Used for consistent schema in Arrow/Parquet (HuggingFace datasets) and for
-# filtering corrupted entries during trajectory combination.
+# 所有可能的工具——自动从 model_tools.py 中的主映射派生。
+# 当新工具被添加到 TOOL_TO_TOOLSET_MAP 时，此处会自动保持同步。
+# 用于 Arrow/Parquet（HuggingFace datasets）中的一致 schema，以及
+# 在轨迹合并时过滤损坏的条目。
 ALL_POSSIBLE_TOOLS = set(TOOL_TO_TOOLSET_MAP.keys())
 
-# Default stats for tools that weren't used
+# 未使用工具的默认统计数据
 DEFAULT_TOOL_STATS = {'count': 0, 'success': 0, 'failure': 0}
 
 
 def _normalize_tool_stats(tool_stats: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, int]]:
     """
-    Normalize tool_stats to include all possible tools with consistent schema.
-    
-    This ensures HuggingFace datasets can load the JSONL without schema mismatch errors.
-    Tools that weren't used get zero counts.
-    
+    将 tool_stats 规范化，使其包含所有可能的工具并具有一致的 schema。
+
+    确保 HuggingFace datasets 能够加载 JSONL 文件而不出现 schema 不匹配错误。
+    未使用的工具计数将被置为零。
+
     Args:
-        tool_stats (Dict): Raw tool statistics from extraction
-        
+        tool_stats (Dict): 从提取过程中得到的原始工具统计数据
+
     Returns:
-        Dict: Normalized tool statistics with all tools present
+        Dict: 包含所有工具的规范化工具统计数据
     """
     normalized = {}
-    
-    # Add all possible tools with defaults
+
+    # 为所有可能的工具添加默认值
     for tool in ALL_POSSIBLE_TOOLS:
         if tool in tool_stats:
             normalized[tool] = tool_stats[tool].copy()
         else:
             normalized[tool] = DEFAULT_TOOL_STATS.copy()
-    
-    # Also include any unexpected tools (in case new tools are added)
+
+    # 同时包含任何意外的工具（以防新工具被添加）
     for tool, stats in tool_stats.items():
         if tool not in normalized:
             normalized[tool] = stats.copy()
-    
+
     return normalized
 
 
 def _normalize_tool_error_counts(tool_error_counts: Dict[str, int]) -> Dict[str, int]:
     """
-    Normalize tool_error_counts to include all possible tools.
-    
+    将 tool_error_counts 规范化，使其包含所有可能的工具。
+
     Args:
-        tool_error_counts (Dict): Raw error counts mapping
-        
+        tool_error_counts (Dict): 原始错误计数映射
+
     Returns:
-        Dict: Normalized error counts with all tools present
+        Dict: 包含所有工具的规范化错误计数
     """
     normalized = {}
-    
-    # Add all possible tools with zero defaults
+
+    # 为所有可能的工具添加默认零值
     for tool in ALL_POSSIBLE_TOOLS:
         normalized[tool] = tool_error_counts.get(tool, 0)
-    
-    # Also include any unexpected tools
+
+    # 同时包含任何意外的工具
     for tool, count in tool_error_counts.items():
         if tool not in normalized:
             normalized[tool] = count
-    
+
     return normalized
 
 

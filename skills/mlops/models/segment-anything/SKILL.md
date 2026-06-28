@@ -1,6 +1,6 @@
 ---
 name: segment-anything-model
-description: "SAM: zero-shot image segmentation via points, boxes, masks."
+description: "SAM：通过点、框、掩码进行零样本图像分割。"
 version: 1.0.0
 author: Orchestra Research
 license: MIT
@@ -12,91 +12,91 @@ metadata:
 
 ---
 
-# Segment Anything Model (SAM)
+# Segment Anything Model（SAM）
 
-Comprehensive guide to using Meta AI's Segment Anything Model for zero-shot image segmentation.
+使用 Meta AI 的 Segment Anything Model 进行零样本图像分割的全面指南。
 
-## When to use SAM
+## 何时使用 SAM
 
-**Use SAM when:**
-- Need to segment any object in images without task-specific training
-- Building interactive annotation tools with point/box prompts
-- Generating training data for other vision models
-- Need zero-shot transfer to new image domains
-- Building object detection/segmentation pipelines
-- Processing medical, satellite, or domain-specific images
+**使用 SAM 的场景：**
+- 需要在不进行任务特定训练的情况下，分割图像中的任意对象
+- 构建带点/框提示的交互式标注工具
+- 为其他视觉模型生成训练数据
+- 需要向新图像域进行零样本迁移
+- 构建目标检测/分割流水线
+- 处理医学、卫星或领域专用图像
 
-**Key features:**
-- **Zero-shot segmentation**: Works on any image domain without fine-tuning
-- **Flexible prompts**: Points, bounding boxes, or previous masks
-- **Automatic segmentation**: Generate all object masks automatically
-- **High quality**: Trained on 1.1 billion masks from 11 million images
-- **Multiple model sizes**: ViT-B (fastest), ViT-L, ViT-H (most accurate)
-- **ONNX export**: Deploy in browsers and edge devices
+**关键特性：**
+- **零样本分割**：无需微调即可在任何图像域上工作
+- **灵活的提示**：点、边界框或上一步的掩码
+- **自动分割**：自动生成所有对象掩码
+- **高质量**：基于 1100 万张图像的 11 亿个掩码训练而成
+- **多种模型尺寸**：ViT-B（最快）、ViT-L、ViT-H（最准确）
+- **ONNX 导出**：可在浏览器和边缘设备上部署
 
-**Use alternatives instead:**
-- **YOLO/Detectron2**: For real-time object detection with classes
-- **Mask2Former**: For semantic/panoptic segmentation with categories
-- **GroundingDINO + SAM**: For text-prompted segmentation
-- **SAM 2**: For video segmentation tasks
+**请改用替代方案：**
+- **YOLO/Detectron2**：用于带类别的实时目标检测
+- **Mask2Former**：用于带类别的语义/全景分割
+- **GroundingDINO + SAM**：用于文本提示的分割
+- **SAM 2**：用于视频分割任务
 
-## Quick start
+## 快速开始
 
-### Installation
+### 安装
 
 ```bash
-# From GitHub
+# 从 GitHub 安装
 pip install git+https://github.com/facebookresearch/segment-anything.git
 
-# Optional dependencies
+# 可选依赖
 pip install opencv-python pycocotools matplotlib
 
-# Or use HuggingFace transformers
+# 或使用 HuggingFace transformers
 pip install transformers
 ```
 
-### Download checkpoints
+### 下载检查点
 
 ```bash
-# ViT-H (largest, most accurate) - 2.4GB
+# ViT-H（最大、最准确）- 2.4GB
 wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
-# ViT-L (medium) - 1.2GB
+# ViT-L（中等）- 1.2GB
 wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth
 
-# ViT-B (smallest, fastest) - 375MB
+# ViT-B（最小、最快）- 375MB
 wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth
 ```
 
-### Basic usage with SamPredictor
+### 使用 SamPredictor 的基础用法
 
 ```python
 import numpy as np
 from segment_anything import sam_model_registry, SamPredictor
 
-# Load model
+# 加载模型
 sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
 sam.to(device="cuda")
 
-# Create predictor
+# 创建 predictor
 predictor = SamPredictor(sam)
 
-# Set image (computes embeddings once)
+# 设置图像（仅计算一次嵌入）
 image = cv2.imread("image.jpg")
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 predictor.set_image(image)
 
-# Predict with point prompts
-input_point = np.array([[500, 375]])  # (x, y) coordinates
-input_label = np.array([1])  # 1 = foreground, 0 = background
+# 用点提示进行预测
+input_point = np.array([[500, 375]])  # (x, y) 坐标
+input_label = np.array([1])  # 1 = 前景，0 = 背景
 
 masks, scores, logits = predictor.predict(
     point_coords=input_point,
     point_labels=input_label,
-    multimask_output=True  # Returns 3 mask options
+    multimask_output=True  # 返回 3 个掩码选项
 )
 
-# Select best mask
+# 选择最佳掩码
 best_mask = masks[np.argmax(scores)]
 ```
 
@@ -107,23 +107,23 @@ import torch
 from PIL import Image
 from transformers import SamModel, SamProcessor
 
-# Load model and processor
+# 加载模型和 processor
 model = SamModel.from_pretrained("facebook/sam-vit-huge")
 processor = SamProcessor.from_pretrained("facebook/sam-vit-huge")
 model.to("cuda")
 
-# Process image with point prompt
+# 用点提示处理图像
 image = Image.open("image.jpg")
-input_points = [[[450, 600]]]  # Batch of points
+input_points = [[[450, 600]]]  # 点的批次
 
 inputs = processor(image, input_points=input_points, return_tensors="pt")
 inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
-# Generate masks
+# 生成掩码
 with torch.no_grad():
     outputs = model(**inputs)
 
-# Post-process masks to original size
+# 把掩码后处理回原始尺寸
 masks = processor.image_processor.post_process_masks(
     outputs.pred_masks.cpu(),
     inputs["original_sizes"].cpu(),
@@ -131,9 +131,9 @@ masks = processor.image_processor.post_process_masks(
 )
 ```
 
-## Core concepts
+## 核心概念
 
-### Model architecture
+### 模型架构
 
 <!-- ascii-guard-ignore -->
 ```
@@ -148,29 +148,29 @@ SAM Architecture:
 ```
 <!-- ascii-guard-ignore-end -->
 
-### Model variants
+### 模型变体
 
-| Model | Checkpoint | Size | Speed | Accuracy |
+| 模型 | 检查点 | 大小 | 速度 | 精度 |
 |-------|------------|------|-------|----------|
-| ViT-H | `vit_h` | 2.4 GB | Slowest | Best |
-| ViT-L | `vit_l` | 1.2 GB | Medium | Good |
-| ViT-B | `vit_b` | 375 MB | Fastest | Good |
+| ViT-H | `vit_h` | 2.4 GB | 最慢 | 最佳 |
+| ViT-L | `vit_l` | 1.2 GB | 中等 | 良好 |
+| ViT-B | `vit_b` | 375 MB | 最快 | 良好 |
 
-### Prompt types
+### 提示类型
 
-| Prompt | Description | Use Case |
+| 提示 | 描述 | 用例 |
 |--------|-------------|----------|
-| Point (foreground) | Click on object | Single object selection |
-| Point (background) | Click outside object | Exclude regions |
-| Bounding box | Rectangle around object | Larger objects |
-| Previous mask | Low-res mask input | Iterative refinement |
+| 点（前景） | 点击对象 | 单对象选择 |
+| 点（背景） | 点击对象外部 | 排除区域 |
+| 边界框 | 包围对象的矩形 | 较大对象 |
+| 上一步掩码 | 低分辨率掩码输入 | 迭代精修 |
 
-## Interactive segmentation
+## 交互式分割
 
-### Point prompts
+### 点提示
 
 ```python
-# Single foreground point
+# 单个前景点
 input_point = np.array([[500, 375]])
 input_label = np.array([1])
 
@@ -180,21 +180,21 @@ masks, scores, logits = predictor.predict(
     multimask_output=True
 )
 
-# Multiple points (foreground + background)
+# 多个点（前景 + 背景）
 input_points = np.array([[500, 375], [600, 400], [450, 300]])
-input_labels = np.array([1, 1, 0])  # 2 foreground, 1 background
+input_labels = np.array([1, 1, 0])  # 2 个前景，1 个背景
 
 masks, scores, logits = predictor.predict(
     point_coords=input_points,
     point_labels=input_labels,
-    multimask_output=False  # Single mask when prompts are clear
+    multimask_output=False  # 当提示清晰时返回单个掩码
 )
 ```
 
-### Box prompts
+### 框提示
 
 ```python
-# Bounding box [x1, y1, x2, y2]
+# 边界框 [x1, y1, x2, y2]
 input_box = np.array([425, 600, 700, 875])
 
 masks, scores, logits = predictor.predict(
@@ -203,10 +203,10 @@ masks, scores, logits = predictor.predict(
 )
 ```
 
-### Combined prompts
+### 组合提示
 
 ```python
-# Box + points for precise control
+# 框 + 点，用于精确控制
 masks, scores, logits = predictor.predict(
     point_coords=np.array([[500, 375]]),
     point_labels=np.array([1]),
@@ -215,82 +215,82 @@ masks, scores, logits = predictor.predict(
 )
 ```
 
-### Iterative refinement
+### 迭代精修
 
 ```python
-# Initial prediction
+# 初始预测
 masks, scores, logits = predictor.predict(
     point_coords=np.array([[500, 375]]),
     point_labels=np.array([1]),
     multimask_output=True
 )
 
-# Refine with additional point using previous mask
+# 用额外的点并借助上一步掩码进行精修
 masks, scores, logits = predictor.predict(
     point_coords=np.array([[500, 375], [550, 400]]),
-    point_labels=np.array([1, 0]),  # Add background point
-    mask_input=logits[np.argmax(scores)][None, :, :],  # Use best mask
+    point_labels=np.array([1, 0]),  # 添加背景点
+    mask_input=logits[np.argmax(scores)][None, :, :],  # 使用最佳掩码
     multimask_output=False
 )
 ```
 
-## Automatic mask generation
+## 自动掩码生成
 
-### Basic automatic segmentation
+### 基础自动分割
 
 ```python
 from segment_anything import SamAutomaticMaskGenerator
 
-# Create generator
+# 创建生成器
 mask_generator = SamAutomaticMaskGenerator(sam)
 
-# Generate all masks
+# 生成所有掩码
 masks = mask_generator.generate(image)
 
-# Each mask contains:
-# - segmentation: binary mask
-# - bbox: [x, y, w, h]
-# - area: pixel count
-# - predicted_iou: quality score
-# - stability_score: robustness score
-# - point_coords: generating point
+# 每个掩码包含：
+# - segmentation：二值掩码
+# - bbox：[x, y, w, h]
+# - area：像素数
+# - predicted_iou：质量分数
+# - stability_score：鲁棒性分数
+# - point_coords：生成该掩码所用的点
 ```
 
-### Customized generation
+### 定制化生成
 
 ```python
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
-    points_per_side=32,          # Grid density (more = more masks)
-    pred_iou_thresh=0.88,        # Quality threshold
-    stability_score_thresh=0.95,  # Stability threshold
-    crop_n_layers=1,             # Multi-scale crops
+    points_per_side=32,          # 网格密度（越大掩码越多）
+    pred_iou_thresh=0.88,        # 质量阈值
+    stability_score_thresh=0.95,  # 稳定性阈值
+    crop_n_layers=1,             # 多尺度裁剪
     crop_n_points_downscale_factor=2,
-    min_mask_region_area=100,    # Remove tiny masks
+    min_mask_region_area=100,    # 移除过小的掩码
 )
 
 masks = mask_generator.generate(image)
 ```
 
-### Filtering masks
+### 过滤掩码
 
 ```python
-# Sort by area (largest first)
+# 按面积排序（从大到小）
 masks = sorted(masks, key=lambda x: x['area'], reverse=True)
 
-# Filter by predicted IoU
+# 按预测 IoU 过滤
 high_quality = [m for m in masks if m['predicted_iou'] > 0.9]
 
-# Filter by stability score
+# 按稳定性分数过滤
 stable_masks = [m for m in masks if m['stability_score'] > 0.95]
 ```
 
-## Batched inference
+## 批量推理
 
-### Multiple images
+### 多张图像
 
 ```python
-# Process multiple images efficiently
+# 高效处理多张图像
 images = [cv2.imread(f"image_{i}.jpg") for i in range(10)]
 
 all_masks = []
@@ -304,13 +304,13 @@ for image in images:
     all_masks.append(masks)
 ```
 
-### Multiple prompts per image
+### 每张图像多个提示
 
 ```python
-# Process multiple prompts efficiently (one image encoding)
+# 高效处理多个提示（仅一次图像编码）
 predictor.set_image(image)
 
-# Batch of point prompts
+# 一批点提示
 points = [
     np.array([[100, 100]]),
     np.array([[200, 200]]),
@@ -327,9 +327,9 @@ for point in points:
     all_masks.append(masks[np.argmax(scores)])
 ```
 
-## ONNX deployment
+## ONNX 部署
 
-### Export model
+### 导出模型
 
 ```bash
 python scripts/export_onnx_model.py \
@@ -339,15 +339,15 @@ python scripts/export_onnx_model.py \
     --return-single-mask
 ```
 
-### Use ONNX model
+### 使用 ONNX 模型
 
 ```python
 import onnxruntime
 
-# Load ONNX model
+# 加载 ONNX 模型
 ort_session = onnxruntime.InferenceSession("sam_onnx.onnx")
 
-# Run inference (image embeddings computed separately)
+# 运行推理（图像嵌入需单独计算）
 masks = ort_session.run(
     None,
     {
@@ -361,34 +361,34 @@ masks = ort_session.run(
 )
 ```
 
-## Common workflows
+## 常见工作流
 
-### Workflow 1: Annotation tool
+### 工作流 1：标注工具
 
 ```python
 import cv2
 
-# Load model
+# 加载模型
 predictor = SamPredictor(sam)
 predictor.set_image(image)
 
 def on_click(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-        # Foreground point
+        # 前景点
         masks, scores, _ = predictor.predict(
             point_coords=np.array([[x, y]]),
             point_labels=np.array([1]),
             multimask_output=True
         )
-        # Display best mask
+        # 显示最佳掩码
         display_mask(masks[np.argmax(scores)])
 ```
 
-### Workflow 2: Object extraction
+### 工作流 2：对象提取
 
 ```python
 def extract_object(image, point):
-    """Extract object at point with transparent background."""
+    """在指定点处提取对象，背景透明。"""
     predictor.set_image(image)
 
     masks, scores, _ = predictor.predict(
@@ -399,7 +399,7 @@ def extract_object(image, point):
 
     best_mask = masks[np.argmax(scores)]
 
-    # Create RGBA output
+    # 创建 RGBA 输出
     rgba = np.zeros((image.shape[0], image.shape[1], 4), dtype=np.uint8)
     rgba[:, :, :3] = image
     rgba[:, :, 3] = best_mask * 255
@@ -407,100 +407,100 @@ def extract_object(image, point):
     return rgba
 ```
 
-### Workflow 3: Medical image segmentation
+### 工作流 3：医学图像分割
 
 ```python
-# Process medical images (grayscale to RGB)
+# 处理医学图像（灰度转 RGB）
 medical_image = cv2.imread("scan.png", cv2.IMREAD_GRAYSCALE)
 rgb_image = cv2.cvtColor(medical_image, cv2.COLOR_GRAY2RGB)
 
 predictor.set_image(rgb_image)
 
-# Segment region of interest
+# 分割感兴趣区域
 masks, scores, _ = predictor.predict(
-    box=np.array([x1, y1, x2, y2]),  # ROI bounding box
+    box=np.array([x1, y1, x2, y2]),  # ROI 边界框
     multimask_output=True
 )
 ```
 
-## Output format
+## 输出格式
 
-### Mask data structure
+### 掩码数据结构
 
 ```python
-# SamAutomaticMaskGenerator output
+# SamAutomaticMaskGenerator 的输出
 {
-    "segmentation": np.ndarray,  # H×W binary mask
-    "bbox": [x, y, w, h],        # Bounding box
-    "area": int,                 # Pixel count
-    "predicted_iou": float,      # 0-1 quality score
-    "stability_score": float,    # 0-1 robustness score
-    "crop_box": [x, y, w, h],    # Generation crop region
-    "point_coords": [[x, y]],    # Input point
+    "segmentation": np.ndarray,  # H×W 二值掩码
+    "bbox": [x, y, w, h],        # 边界框
+    "area": int,                 # 像素数
+    "predicted_iou": float,      # 0-1 质量分数
+    "stability_score": float,    # 0-1 鲁棒性分数
+    "crop_box": [x, y, w, h],    # 生成该掩码的裁剪区域
+    "point_coords": [[x, y]],    # 输入点
 }
 ```
 
-### COCO RLE format
+### COCO RLE 格式
 
 ```python
 from pycocotools import mask as mask_utils
 
-# Encode mask to RLE
+# 把掩码编码为 RLE
 rle = mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))
 rle["counts"] = rle["counts"].decode("utf-8")
 
-# Decode RLE to mask
+# 把 RLE 解码为掩码
 decoded_mask = mask_utils.decode(rle)
 ```
 
-## Performance optimization
+## 性能优化
 
-### GPU memory
+### GPU 显存
 
 ```python
-# Use smaller model for limited VRAM
+# 在 VRAM 有限时使用更小的模型
 sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b_01ec64.pth")
 
-# Process images in batches
-# Clear CUDA cache between large batches
+# 批量处理图像
+# 在大批次之间清空 CUDA 缓存
 torch.cuda.empty_cache()
 ```
 
-### Speed optimization
+### 速度优化
 
 ```python
-# Use half precision
+# 使用半精度
 sam = sam.half()
 
-# Reduce points for automatic generation
+# 减少自动生成的点数
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
-    points_per_side=16,  # Default is 32
+    points_per_side=16,  # 默认是 32
 )
 
-# Use ONNX for deployment
-# Export with --return-single-mask for faster inference
+# 部署时使用 ONNX
+# 用 --return-single-mask 导出以获得更快的推理
 ```
 
-## Common issues
+## 常见问题
 
-| Issue | Solution |
+| 问题 | 解决方案 |
 |-------|----------|
-| Out of memory | Use ViT-B model, reduce image size |
-| Slow inference | Use ViT-B, reduce points_per_side |
-| Poor mask quality | Try different prompts, use box + points |
-| Edge artifacts | Use stability_score filtering |
-| Small objects missed | Increase points_per_side |
+| 显存不足 | 使用 ViT-B 模型，缩小图像尺寸 |
+| 推理慢 | 使用 ViT-B，减小 points_per_side |
+| 掩码质量差 | 尝试不同提示，使用框 + 点 |
+| 边缘伪影 | 使用 stability_score 过滤 |
+| 漏掉小对象 | 增大 points_per_side |
 
-## References
+## 参考
 
-- **[Advanced Usage](references/advanced-usage.md)** - Batching, fine-tuning, integration
-- **[Troubleshooting](references/troubleshooting.md)** - Common issues and solutions
+- **[高级用法](references/advanced-usage.md)** - 批处理、微调、集成
+- **[故障排查](references/troubleshooting.md)** - 常见问题与解决方案
 
-## Resources
+## 资源
 
-- **GitHub**: https://github.com/facebookresearch/segment-anything
-- **Paper**: https://arxiv.org/abs/2304.02643
-- **Demo**: https://segment-anything.com
-- **SAM 2 (Video)**: https://github.com/facebookresearch/segment-anything-2
-- **HuggingFace**: https://huggingface.co/facebook/sam-vit-huge
+- **GitHub**：https://github.com/facebookresearch/segment-anything
+- **论文**：https://arxiv.org/abs/2304.02643
+- **演示**：https://segment-anything.com
+- **SAM 2（视频）**：https://github.com/facebookresearch/segment-anything-2
+- **HuggingFace**：https://huggingface.co/facebook/sam-vit-huge

@@ -1,9 +1,9 @@
-"""Custom / Ollama (local) provider profile.
+"""Custom / Ollama（本地）provider 配置文件。
 
-Covers any endpoint registered as provider="custom", including local
-Ollama instances. Key quirks:
-  - ollama_num_ctx → extra_body.options.num_ctx (local context window)
-  - reasoning_config disabled → extra_body.think = False
+覆盖任何注册为 provider="custom" 的端点，包括本地
+Ollama 实例。关键特点：
+  - ollama_num_ctx → extra_body.options.num_ctx（本地上下文窗口）
+  - reasoning_config 禁用 → extra_body.think = False
 """
 
 from typing import Any

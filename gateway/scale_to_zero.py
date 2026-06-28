@@ -1,29 +1,30 @@
-"""Scale-to-zero idle detection + dormant-quiesce for the gateway (Phase 0).
+"""gateway 的 scale-to-zero 空闲检测 + 休眠静默（dormant-quiesce）（Phase 0）。
 
-This is the gateway-side BEHAVIOUR layer that consumes the relay scale-to-zero
-PRIMITIVES (gateway-gateway Phase 5: the buffered-flip, the durable per-instance
-buffer, the wakeUrl poke, the reconnect supervisor). It owns the *decision* to go
-idle and drives the relay transport's ``go_dormant()`` (D12) — it does NOT itself
-suspend the machine. On Fly, the now-traffic-idle machine is suspended by
-``autostop:"suspend"`` and woken by autostart-on-wakeUrl (decisions.md Q3=C′).
+这是 gateway 侧的行为（BEHAVIOUR）层，消费 relay 的 scale-to-zero 原语
+（PRIMITIVES）（gateway-gateway Phase 5：buffered-flip、持久化的 per-instance
+buffer、wakeUrl 探测、重连 supervisor）。它拥有 *决定* 是否进入空闲的权力，
+并驱动 relay transport 的 ``go_dormant()``（D12）——它本身并不挂起机器。
+在 Fly 上，此刻已无流量的机器由 ``autostop:"suspend"`` 挂起，并由
+autostart-on-wakeUrl 唤醒（decisions.md Q3=C′）。
 
-Design constraints (decisions.md):
-  - Per-instance enable is gated SOLELY by the NAS "Labs" toggle, carried to the
-    gateway as the ``HERMES_SCALE_TO_ZERO`` env stamp (D11/Q8=A). NOT a user
-    config key; ``scale_to_zero.idle_timeout_minutes`` IS config.yaml (D2).
-  - Arm only when messaging is relay-only or absent (D1/F6) AND a wakeUrl is
-    registered (§3.4(1)) AND the flag is set.
-  - Idle = no in-flight agent turn AND no inbound for N min AND no live
-    background work (D2/D3/F7).
-  - The quiesce uses ``go_dormant()`` (socket closed + supervisor preserved),
-    NEVER the stop/restart drain or ``disconnect()`` (F12/F14). The process stays
-    alive; Fly freezes+resumes it.
-  - ``mark_resume_pending`` is deliberately NOT called here (D13 — suspend
-    preserves RAM; revive only if we move to autostop:"stop" or see kills).
+设计约束（decisions.md）：
+  - per-instance 的启用完全由 NAS 的 "Labs" 开关门控，并以
+    ``HERMES_SCALE_TO_ZERO`` 环境戳的形式传递到 gateway（D11/Q8=A）。
+    它不是用户配置键；``scale_to_zero.idle_timeout_minutes`` 才是
+    config.yaml 中的配置（D2）。
+  - 只有在消息通道是 relay-only 或不存在（D1/F6），并且注册了 wakeUrl
+    （§3.4(1)），并且 flag 被置位时，才挂载（arm）。
+  - 空闲 = 没有在途的 agent turn 且 N 分钟内没有入站消息且没有正在进行的
+    后台工作（D2/D3/F7）。
+  - 静默使用 ``go_dormant()``（关闭 socket + 保留 supervisor），
+    绝不使用 stop/restart 的 drain 或 ``disconnect()``（F12/F14）。进程
+    保持存活；Fly 负责冻结 + 恢复它。
+  - 这里故意不调用 ``mark_resume_pending``（D13 —— 挂起会保留 RAM；只有
+    当我们改用 autostop:"stop" 或观察到被 kill 时才需要恢复逻辑）。
 
-The pure helpers (``parse_idle_timeout_seconds``, ``scale_to_zero_enabled``,
-``messaging_is_relay_only_or_absent``, ``is_idle``, ``should_arm``) take plain
-inputs so they unit-test without a live gateway.
+纯辅助函数（``parse_idle_timeout_seconds``、``scale_to_zero_enabled``、
+``messaging_is_relay_only_or_absent``、``is_idle``、``should_arm``）接受
+朴素输入，因此无需运行中的 gateway 即可进行单元测试。
 """
 
 from __future__ import annotations
@@ -31,21 +32,21 @@ from __future__ import annotations
 import os
 from typing import Any, Iterable, Optional
 
-# Env flag stamped by NAS when the scaleToZero Labs toggle is on (D11/Q8=A),
-# mirroring how the `relay` feature stamps GATEWAY_RELAY_URL. Truthy values only.
+# 当 scaleToZero Labs 开关打开时，由 NAS 打上的环境 flag（D11/Q8=A），
+# 与 `relay` feature 打上 GATEWAY_RELAY_URL 的方式一致。仅识别真值。
 SCALE_TO_ZERO_ENV = "HERMES_SCALE_TO_ZERO"
 
-# config.yaml default (D2). Behavioural setting -> config, not env.
+# config.yaml 默认值（D2）。行为性设置 -> 放在 config 中，而不是 env。
 DEFAULT_IDLE_TIMEOUT_MINUTES = 5
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
 def scale_to_zero_enabled(environ: Optional[dict] = None) -> bool:
-    """Whether the per-instance Labs toggle is on (the HERMES_SCALE_TO_ZERO stamp).
+    """per-instance 的 Labs 开关是否打开（即 HERMES_SCALE_TO_ZERO 戳）。
 
-    D11/Q8=A: this env flag is the SOLE per-instance enable signal reaching the
-    gateway. Absent/blank/falsey -> disabled (fail-safe default off).
+    D11/Q8=A：该环境 flag 是到达 gateway 的唯一 per-instance 启用信号。
+    缺失/为空/为假 -> 禁用（故障安全的默认关闭）。
     """
     env = environ if environ is not None else os.environ
     return str(env.get(SCALE_TO_ZERO_ENV, "")).strip().lower() in _TRUTHY
@@ -54,11 +55,10 @@ def scale_to_zero_enabled(environ: Optional[dict] = None) -> bool:
 def parse_idle_timeout_seconds(
     cfg_value: Any, default_minutes: int = DEFAULT_IDLE_TIMEOUT_MINUTES
 ) -> float:
-    """Coerce ``scale_to_zero.idle_timeout_minutes`` (config.yaml, D2) to seconds.
+    """把 ``scale_to_zero.idle_timeout_minutes``（config.yaml，D2）强制转换为秒。
 
-    Degrades to the default on any non-numeric / non-positive value (never raises,
-    never returns <= 0 — a zero/negative timeout would make the gateway go dormant
-    instantly, which is never the intent).
+    对任何非数字 / 非正值都回退到默认值（绝不抛异常，也绝不返回 <= 0 ——
+    一个零或负的超时会让 gateway 立即进入休眠，这绝不是预期的行为）。
     """
     try:
         minutes = float(cfg_value)
@@ -70,13 +70,13 @@ def parse_idle_timeout_seconds(
 
 
 def messaging_is_relay_only_or_absent(platforms: Iterable[Any]) -> bool:
-    """True iff the only connected messaging platform is RELAY, or there is none
-    (a Chronos-only / no-platform agent) — the F6/D1 structural precondition.
+    """当唯一连接的消息平台是 RELAY，或没有任何平台（纯 Chronos / 无平台
+    agent）时返回 True —— 这是 F6/D1 的结构性前提。
 
-    A directly-connected platform (Discord/Telegram/Slack/...) holds a live
-    socket and cannot scale to zero, so its presence disarms the feature. We
-    compare by the platform's ``.value``/name to avoid importing the enum here
-    (keeps this module import-light and unit-testable).
+    一个直接连接的平台（Discord/Telegram/Slack/...）持有活动的 socket，
+    无法 scale to zero，因此它的存在会使该 feature 卸除。我们通过平台的
+    ``.value``/name 来比较，以避免在这里导入 enum（保持本模块轻导入、
+    可单元测试）。
     """
     names = {_platform_name(p) for p in platforms}
     names.discard("relay")
@@ -94,12 +94,12 @@ def should_arm(
     relay_only_or_absent: bool,
     wake_url: Optional[str],
 ) -> bool:
-    """Whether to start the idle watcher at all (D1/D11/§3.4(1)).
+    """是否要启动空闲监视器（D1/D11/§3.4(1)）。
 
-    ALL must hold: the Labs flag is on, messaging is relay-only/absent, and a
-    wakeUrl is registered (a suspended instance with no reachable wake target is
-    a black hole — §3.4(1)). Any unmet -> the watcher never starts (no idle
-    timer, no dormancy), so a non-opted instance behaves exactly as today.
+    以下条件必须全部满足：Labs 开关打开、消息通道是 relay-only/不存在、
+    并且注册了 wakeUrl（一个已挂起但没有可达唤醒目标的实例是个黑洞 ——
+    §3.4(1)）。任一条件不满足 -> 监视器永不启动（没有空闲计时器、没有
+    休眠），因此一个未开启的实例行为与今天完全一致。
     """
     return bool(enabled) and bool(relay_only_or_absent) and bool(wake_url)
 
@@ -111,11 +111,12 @@ def is_idle(
     idle_timeout_seconds: float,
     has_live_background_work: bool,
 ) -> bool:
-    """The idle predicate (D2/D3/F7). Pure — composes the three conjuncts.
+    """空闲判定谓词（D2/D3/F7）。纯函数 —— 组合三个合取条件。
 
-    Idle iff: no in-flight agent turn, no inbound within the timeout window, and
-    no live background work (backgrounded delegate_task / kanban / bg terminal).
-    Any active work keeps the gateway awake — suspending mid-flight would lose it.
+    当且仅当以下全部成立时为空闲：没有在途的 agent turn、超时窗口内没有
+    入站消息、并且没有正在进行的后台工作（后台化的 delegate_task / kanban /
+    bg terminal）。任何正在进行的工作都会让 gateway 保持唤醒 —— 在执行中途
+    挂起会导致工作丢失。
     """
     if running_agent_count > 0:
         return False

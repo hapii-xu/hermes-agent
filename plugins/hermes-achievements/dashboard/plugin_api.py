@@ -1,6 +1,6 @@
-"""Hermes Achievements dashboard plugin backend.
+"""Hermes Achievements dashboard 插件后端。
 
-Mounted at /api/plugins/hermes-achievements/ by Hermes dashboard.
+由 Hermes dashboard 挂载在 /api/plugins/hermes-achievements/。
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ except ImportError:
 
 try:
     from fastapi import APIRouter
-except Exception:  # Allows local unit tests without dashboard dependencies.
+except Exception:  # 允许在没有 dashboard 依赖的情况下运行本地单元测试。
     class APIRouter:  # type: ignore
         def get(self, *_args, **_kwargs):
             return lambda fn: fn

@@ -1,35 +1,35 @@
-# Native MCP Client
+# 原生 MCP 客户端
 
-Hermes Agent has a built-in MCP client that connects to MCP servers at startup, discovers their tools, and makes them available as first-class tools the agent can call directly. No bridge CLI needed -- tools from MCP servers appear alongside built-in tools like `terminal`, `read_file`, etc.
+Hermes Agent 内置了 MCP 客户端，它在启动时连接 MCP 服务器、发现其工具，并将其作为 agent 可直接调用的一等工具提供。无需 bridge CLI —— 来自 MCP 服务器的工具与 `terminal`、`read_file` 等内置工具并列出现。
 
-## When to Use
+## 何时使用
 
-Use this whenever you want to:
-- Connect to MCP servers and use their tools from within Hermes Agent
-- Add external capabilities (filesystem access, GitHub, databases, APIs) via MCP
-- Run local stdio-based MCP servers (npx, uvx, or any command)
-- Connect to remote HTTP/StreamableHTTP MCP servers
-- Have MCP tools auto-discovered and available in every conversation
+当你想要做以下任何事时，都可以使用：
+- 连接 MCP 服务器并在 Hermes Agent 中使用其工具
+- 通过 MCP 添加外部能力（文件系统访问、GitHub、数据库、API）
+- 运行本地基于 stdio 的 MCP 服务器（npx、uvx 或任何命令）
+- 连接远程 HTTP/StreamableHTTP MCP 服务器
+- 让 MCP 工具被自动发现并在每次对话中可用
 
-For ad-hoc, one-off MCP tool calls from the terminal without configuring anything, see the `mcporter` skill instead.
+如需从终端做临时的、一次性的 MCP 工具调用而无需任何配置，请改用 `mcporter` skill。
 
-## Prerequisites
+## 前置条件
 
-- **mcp Python package** -- optional dependency; install with `pip install mcp`. If not installed, MCP support is silently disabled.
-- **Node.js** -- required for `npx`-based MCP servers (most community servers)
-- **uv** -- required for `uvx`-based MCP servers (Python-based servers)
+- **mcp Python 包** —— 可选依赖；用 `pip install mcp` 安装。若未安装，MCP 支持会被静默禁用。
+- **Node.js** —— 基于 `npx` 的 MCP 服务器所需（大多数社区服务器）
+- **uv** —— 基于 `uvx` 的 MCP 服务器所需（基于 Python 的服务器）
 
-Install the MCP SDK:
+安装 MCP SDK：
 
 ```bash
 pip install mcp
-# or, if using uv:
+# 或，若使用 uv：
 uv pip install mcp
 ```
 
-## Quick Start
+## 快速开始
 
-Add MCP servers to `~/.hermes/config.yaml` under the `mcp_servers` key:
+在 `~/.hermes/config.yaml` 的 `mcp_servers` 键下添加 MCP 服务器：
 
 ```yaml
 mcp_servers:
@@ -38,103 +38,103 @@ mcp_servers:
     args: ["mcp-server-time"]
 ```
 
-Restart Hermes Agent. On startup it will:
-1. Connect to the server
-2. Discover available tools
-3. Register them with the prefix `mcp_time_*`
-4. Inject them into all platform toolsets
+重启 Hermes Agent。启动时它会：
+1. 连接到服务器
+2. 发现可用工具
+3. 以 `mcp_time_*` 为前缀注册它们
+4. 将其注入所有平台工具集
 
-You can then use the tools naturally -- just ask the agent to get the current time.
+然后你就可以自然地使用这些工具 —— 直接让 agent 获取当前时间即可。
 
-## Configuration Reference
+## 配置参考
 
-Each entry under `mcp_servers` is a server name mapped to its config. There are two transport types: **stdio** (command-based) and **HTTP** (url-based).
+`mcp_servers` 下的每个条目都是一个服务器名映射到其配置。有两种传输类型：**stdio**（基于命令）和 **HTTP**（基于 url）。
 
-### Stdio Transport (command + args)
+### Stdio 传输（command + args）
 
 ```yaml
 mcp_servers:
   server_name:
-    command: "npx"             # (required) executable to run
-    args: ["-y", "pkg-name"]   # (optional) command arguments, default: []
-    env:                       # (optional) environment variables for the subprocess
+    command: "npx"             # （必需）要运行的可执行文件
+    args: ["-y", "pkg-name"]   # （可选）命令参数，默认：[]
+    env:                       # （可选）子进程的环境变量
       SOME_API_KEY: "value"
-    timeout: 120               # (optional) per-tool-call timeout in seconds, default: 120
-    connect_timeout: 60        # (optional) initial connection timeout in seconds, default: 60
+    timeout: 120               # （可选）每次工具调用超时（秒），默认：120
+    connect_timeout: 60        # （可选）初始连接超时（秒），默认：60
 ```
 
-### HTTP Transport (url)
+### HTTP 传输（url）
 
 ```yaml
 mcp_servers:
   server_name:
-    url: "https://my-server.example.com/mcp"   # (required) server URL
-    headers:                                     # (optional) HTTP headers
+    url: "https://my-server.example.com/mcp"   # （必需）服务器 URL
+    headers:                                     # （可选）HTTP 头
       Authorization: "Bearer sk-..."
-    timeout: 180               # (optional) per-tool-call timeout in seconds, default: 120
-    connect_timeout: 60        # (optional) initial connection timeout in seconds, default: 60
+    timeout: 180               # （可选）每次工具调用超时（秒），默认：120
+    connect_timeout: 60        # （可选）初始连接超时（秒），默认：60
 ```
 
-### All Config Options
+### 所有配置选项
 
-| Option            | Type   | Default | Description                                       |
+| 选项              | 类型   | 默认值 | 描述                                       |
 |-------------------|--------|---------|---------------------------------------------------|
-| `command`         | string | --      | Executable to run (stdio transport, required)     |
-| `args`            | list   | `[]`    | Arguments passed to the command                   |
-| `env`             | dict   | `{}`    | Extra environment variables for the subprocess    |
-| `url`             | string | --      | Server URL (HTTP transport, required)             |
-| `headers`         | dict   | `{}`    | HTTP headers sent with every request              |
-| `timeout`         | int    | `120`   | Per-tool-call timeout in seconds                  |
-| `connect_timeout` | int    | `60`    | Timeout for initial connection and discovery      |
+| `command`         | string | --      | 要运行的可执行文件（stdio 传输，必需）     |
+| `args`            | list   | `[]`    | 传给命令的参数                   |
+| `env`             | dict   | `{}`    | 子进程的额外环境变量    |
+| `url`             | string | --      | 服务器 URL（HTTP 传输，必需）             |
+| `headers`         | dict   | `{}`    | 每次请求发送的 HTTP 头              |
+| `timeout`         | int    | `120`   | 每次工具调用超时（秒）                  |
+| `connect_timeout` | int    | `60`    | 初始连接和发现的超时      |
 
-Note: A server config must have either `command` (stdio) or `url` (HTTP), not both.
+注意：一个服务器配置必须有 `command`（stdio）或 `url`（HTTP）之一，不能两者都有。
 
-## How It Works
+## 工作原理
 
-### Startup Discovery
+### 启动发现
 
-When Hermes Agent starts, `discover_mcp_tools()` is called during tool initialization:
+当 Hermes Agent 启动时，会在工具初始化期间调用 `discover_mcp_tools()`：
 
-1. Reads `mcp_servers` from `~/.hermes/config.yaml`
-2. For each server, spawns a connection in a dedicated background event loop
-3. Initializes the MCP session and calls `list_tools()` to discover available tools
-4. Registers each tool in the Hermes tool registry
+1. 从 `~/.hermes/config.yaml` 读取 `mcp_servers`
+2. 为每个服务器在专用后台事件循环中派生连接
+3. 初始化 MCP 会话并调用 `list_tools()` 发现可用工具
+4. 在 Hermes 工具注册表中注册每个工具
 
-### Tool Naming Convention
+### 工具命名约定
 
-MCP tools are registered with the naming pattern:
+MCP 工具按以下命名模式注册：
 
 ```
 mcp_{server_name}_{tool_name}
 ```
 
-Hyphens and dots in names are replaced with underscores for LLM API compatibility.
+名称中的连字符和点会被替换为下划线，以兼容 LLM API。
 
-Examples:
-- Server `filesystem`, tool `read_file` → `mcp_filesystem_read_file`
-- Server `github`, tool `list-issues` → `mcp_github_list_issues`
-- Server `my-api`, tool `fetch.data` → `mcp_my_api_fetch_data`
+示例：
+- 服务器 `filesystem`、工具 `read_file` → `mcp_filesystem_read_file`
+- 服务器 `github`、工具 `list-issues` → `mcp_github_list_issues`
+- 服务器 `my-api`、工具 `fetch.data` → `mcp_my_api_fetch_data`
 
-### Auto-Injection
+### 自动注入
 
-After discovery, MCP tools are automatically injected into all `hermes-*` platform toolsets (CLI, Discord, Telegram, etc.). This means MCP tools are available in every conversation without any additional configuration.
+发现后，MCP 工具会被自动注入所有 `hermes-*` 平台工具集（CLI、Discord、Telegram 等）。这意味着 MCP 工具在每次对话中都可用，无需额外配置。
 
-### Connection Lifecycle
+### 连接生命周期
 
-- Each server runs as a long-lived asyncio Task in a background daemon thread
-- Connections persist for the lifetime of the agent process
-- If a connection drops, automatic reconnection with exponential backoff kicks in (up to 5 retries, max 60s backoff)
-- On agent shutdown, all connections are gracefully closed
+- 每个服务器作为一个长期存活的 asyncio Task 运行在后台守护线程中
+- 连接持续 agent 进程的整个生命周期
+- 若连接断开，会自动以指数退避重连（最多 5 次重试，最长 60s 退避）
+- agent 关闭时，所有连接被优雅关闭
 
-### Idempotency
+### 幂等性
 
-`discover_mcp_tools()` is idempotent -- calling it multiple times only connects to servers that aren't already connected. Failed servers are retried on subsequent calls.
+`discover_mcp_tools()` 是幂等的 —— 多次调用只会连接尚未连接的服务器。失败的服务器会在后续调用中重试。
 
-## Transport Types
+## 传输类型
 
-### Stdio Transport
+### Stdio 传输
 
-The most common transport. Hermes launches the MCP server as a subprocess and communicates over stdin/stdout.
+最常见的传输方式。Hermes 将 MCP 服务器作为子进程启动，并通过 stdin/stdout 通信。
 
 ```yaml
 mcp_servers:
@@ -143,11 +143,11 @@ mcp_servers:
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
 ```
 
-The subprocess inherits a **filtered** environment (see Security section below) plus any variables you specify in `env`.
+子进程继承一个**经过过滤的**环境（见下面的安全小节），加上你在 `env` 中指定的任何变量。
 
-### HTTP / StreamableHTTP Transport
+### HTTP / StreamableHTTP 传输
 
-For remote or shared MCP servers. Requires the `mcp` package to include HTTP client support (`mcp.client.streamable_http`).
+用于远程或共享的 MCP 服务器。要求 `mcp` 包包含 HTTP 客户端支持（`mcp.client.streamable_http`）。
 
 ```yaml
 mcp_servers:
@@ -157,18 +157,18 @@ mcp_servers:
       Authorization: "Bearer sk-..."
 ```
 
-If HTTP support is not available in your installed `mcp` version, the server will fail with an ImportError and other servers will continue normally.
+如果你安装的 `mcp` 版本不支持 HTTP，服务器会以 ImportError 失败，其他服务器继续正常运行。
 
-## Security
+## 安全
 
-### Environment Variable Filtering
+### 环境变量过滤
 
-For stdio servers, Hermes does NOT pass your full shell environment to MCP subprocesses. Only safe baseline variables are inherited:
+对于 stdio 服务器，Hermes **不会**把你的完整 shell 环境传给 MCP 子进程。只继承安全的基线变量：
 
-- `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`, `TERM`, `SHELL`, `TMPDIR`
-- Any `XDG_*` variables
+- `PATH`、`HOME`、`USER`、`LANG`、`LC_ALL`、`TERM`、`SHELL`、`TMPDIR`
+- 任何 `XDG_*` 变量
 
-All other environment variables (API keys, tokens, secrets) are excluded unless you explicitly add them via the `env` config key. This prevents accidental credential leakage to untrusted MCP servers.
+所有其他环境变量（API key、token、密钥）都会被排除，除非你通过 `env` 配置键显式添加。这防止了向不受信任的 MCP 服务器意外泄漏凭据。
 
 ```yaml
 mcp_servers:
@@ -176,24 +176,24 @@ mcp_servers:
     command: "npx"
     args: ["-y", "@modelcontextprotocol/server-github"]
     env:
-      # Only this token is passed to the subprocess
+      # 只有这个 token 被传给子进程
       GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_..."
 ```
 
-### Credential Stripping in Error Messages
+### 错误消息中的凭据剥离
 
-If an MCP tool call fails, any credential-like patterns in the error message are automatically redacted before being shown to the LLM. This covers:
+如果 MCP 工具调用失败，错误消息中任何形如凭据的模式会在展示给 LLM 前被自动脱敏。覆盖范围：
 
-- GitHub PATs (`ghp_...`)
-- OpenAI-style keys (`sk-...`)
-- Bearer tokens
-- Generic `token=`, `key=`, `API_KEY=`, `password=`, `secret=` patterns
+- GitHub PAT（`ghp_...`）
+- OpenAI 风格的 key（`sk-...`）
+- Bearer token
+- 通用的 `token=`、`key=`、`API_KEY=`、`password=`、`secret=` 模式
 
-## Troubleshooting
+## 故障排查
 
 ### "MCP SDK not available -- skipping MCP tool discovery"
 
-The `mcp` Python package is not installed. Install it:
+未安装 `mcp` Python 包。安装它：
 
 ```bash
 pip install mcp
@@ -201,38 +201,38 @@ pip install mcp
 
 ### "No MCP servers configured"
 
-No `mcp_servers` key in `~/.hermes/config.yaml`, or it's empty. Add at least one server.
+`~/.hermes/config.yaml` 中没有 `mcp_servers` 键，或它为空。至少添加一个服务器。
 
 ### "Failed to connect to MCP server 'X'"
 
-Common causes:
-- **Command not found**: The `command` binary isn't on PATH. Ensure `npx`, `uvx`, or the relevant command is installed.
-- **Package not found**: For npx servers, the npm package may not exist or may need `-y` in args to auto-install.
-- **Timeout**: The server took too long to start. Increase `connect_timeout`.
-- **Port conflict**: For HTTP servers, the URL may be unreachable.
+常见原因：
+- **Command not found**：`command` 二进制不在 PATH 上。确保 `npx`、`uvx` 或相关命令已安装。
+- **Package not found**：对于 npx 服务器，npm 包可能不存在或需要在 args 中加 `-y` 以自动安装。
+- **Timeout**：服务器启动太慢。增大 `connect_timeout`。
+- **Port conflict**：对于 HTTP 服务器，URL 可能不可达。
 
 ### "MCP server 'X' requires HTTP transport but mcp.client.streamable_http is not available"
 
-Your `mcp` package version doesn't include HTTP client support. Upgrade:
+你的 `mcp` 包版本不包含 HTTP 客户端支持。升级：
 
 ```bash
 pip install --upgrade mcp
 ```
 
-### Tools not appearing
+### 工具未出现
 
-- Check that the server is listed under `mcp_servers` (not `mcp` or `servers`)
-- Ensure the YAML indentation is correct
-- Look at Hermes Agent startup logs for connection messages
-- Tool names are prefixed with `mcp_{server}_{tool}` -- look for that pattern
+- 检查服务器是否列在 `mcp_servers` 下（而非 `mcp` 或 `servers`）
+- 确保 YAML 缩进正确
+- 查看 Hermes Agent 启动日志中的连接消息
+- 工具名以 `mcp_{server}_{tool}` 为前缀 —— 找该模式
 
-### Connection keeps dropping
+### 连接不断断开
 
-The client retries up to 5 times with exponential backoff (1s, 2s, 4s, 8s, 16s, capped at 60s). If the server is fundamentally unreachable, it gives up after 5 attempts. Check the server process and network connectivity.
+客户端最多重试 5 次，指数退避（1s、2s、4s、8s、16s，上限 60s）。如果服务器从根本上不可达，5 次尝试后放弃。检查服务器进程和网络连通性。
 
-## Examples
+## 示例
 
-### Time Server (uvx)
+### 时间服务器（uvx）
 
 ```yaml
 mcp_servers:
@@ -241,9 +241,9 @@ mcp_servers:
     args: ["mcp-server-time"]
 ```
 
-Registers tools like `mcp_time_get_current_time`.
+注册如 `mcp_time_get_current_time` 这样的工具。
 
-### Filesystem Server (npx)
+### 文件系统服务器（npx）
 
 ```yaml
 mcp_servers:
@@ -253,9 +253,9 @@ mcp_servers:
     timeout: 30
 ```
 
-Registers tools like `mcp_filesystem_read_file`, `mcp_filesystem_write_file`, `mcp_filesystem_list_directory`.
+注册如 `mcp_filesystem_read_file`、`mcp_filesystem_write_file`、`mcp_filesystem_list_directory` 这样的工具。
 
-### GitHub Server with Authentication
+### 带认证的 GitHub 服务器
 
 ```yaml
 mcp_servers:
@@ -267,9 +267,9 @@ mcp_servers:
     timeout: 60
 ```
 
-Registers tools like `mcp_github_list_issues`, `mcp_github_create_pull_request`, etc.
+注册如 `mcp_github_list_issues`、`mcp_github_create_pull_request` 等工具。
 
-### Remote HTTP Server
+### 远程 HTTP 服务器
 
 ```yaml
 mcp_servers:
@@ -282,7 +282,7 @@ mcp_servers:
     connect_timeout: 30
 ```
 
-### Multiple Servers
+### 多服务器
 
 ```yaml
 mcp_servers:
@@ -307,13 +307,13 @@ mcp_servers:
     timeout: 300
 ```
 
-All tools from all servers are registered and available simultaneously. Each server's tools are prefixed with its name to avoid collisions.
+来自所有服务器的所有工具都会被注册并同时可用。每个服务器的工具以其名称为前缀以避免冲突。
 
-## Sampling (Server-Initiated LLM Requests)
+## Sampling（服务器发起的 LLM 请求）
 
-Hermes supports MCP's `sampling/createMessage` capability — MCP servers can request LLM completions through the agent during tool execution. This enables agent-in-the-loop workflows (data analysis, content generation, decision-making).
+Hermes 支持 MCP 的 `sampling/createMessage` 能力 —— MCP 服务器可以在工具执行期间通过 agent 请求 LLM 补全。这支持 agent 在环的工作流（数据分析、内容生成、决策制定）。
 
-Sampling is **enabled by default**. Configure per server:
+Sampling **默认启用**。按服务器配置：
 
 ```yaml
 mcp_servers:
@@ -321,24 +321,24 @@ mcp_servers:
     command: "npx"
     args: ["-y", "my-mcp-server"]
     sampling:
-      enabled: true           # default: true
-      model: "gemini-3-flash" # model override (optional)
-      max_tokens_cap: 4096    # max tokens per request
-      timeout: 30             # LLM call timeout (seconds)
-      max_rpm: 10             # max requests per minute
-      allowed_models: []      # model whitelist (empty = all)
-      max_tool_rounds: 5      # tool loop limit (0 = disable)
-      log_level: "info"       # audit verbosity
+      enabled: true           # 默认：true
+      model: "gemini-3-flash" # 模型覆盖（可选）
+      max_tokens_cap: 4096    # 每次请求的最大 token 数
+      timeout: 30             # LLM 调用超时（秒）
+      max_rpm: 10             # 每分钟最大请求数
+      allowed_models: []      # 模型白名单（空 = 全部）
+      max_tool_rounds: 5      # 工具循环上限（0 = 禁用）
+      log_level: "info"       # 审计详细度
 ```
 
-Servers can also include `tools` in sampling requests for multi-turn tool-augmented workflows. The `max_tool_rounds` config prevents infinite tool loops. Per-server audit metrics (requests, errors, tokens, tool use count) are tracked via `get_mcp_status()`.
+服务器还可以在 sampling 请求中包含 `tools`，用于多轮工具增强工作流。`max_tool_rounds` 配置防止无限工具循环。每服务器的审计指标（请求数、错误数、token 数、工具使用次数）通过 `get_mcp_status()` 跟踪。
 
-Disable sampling for untrusted servers with `sampling: { enabled: false }`.
+对不受信任的服务器用 `sampling: { enabled: false }` 禁用 sampling。
 
-## Notes
+## 说明
 
-- MCP tools are called synchronously from the agent's perspective but run asynchronously on a dedicated background event loop
-- Tool results are returned as JSON with either `{"result": "..."}` or `{"error": "..."}`
-- The native MCP client is independent of `mcporter` -- you can use both simultaneously
-- Server connections are persistent and shared across all conversations in the same agent process
-- Adding or removing servers requires restarting the agent (no hot-reload currently)
+- 从 agent 视角看，MCP 工具是同步调用的，但实际在专用后台事件循环上异步运行
+- 工具结果以 JSON 返回，格式为 `{"result": "..."}` 或 `{"error": "..."}`
+- 原生 MCP 客户端独立于 `mcporter` —— 你可以同时使用两者
+- 服务器连接是持久的，在同一 agent 进程的所有对话间共享
+- 添加或移除服务器需要重启 agent（目前无热重载）

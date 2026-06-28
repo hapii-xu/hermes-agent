@@ -1,37 +1,31 @@
-"""Kanban decomposer — fan a triage task out into a graph of child tasks.
+"""Kanban 分解器 — 将一个 triage 任务扇出为子任务图。
 
-Invoked by ``hermes kanban decompose [task_id | --all]`` and the
-auto-decompose path in the gateway dispatcher loop. Reads the user's
-profile roster (with descriptions) and asks the auxiliary LLM to
-return a task graph in JSON. Then atomically creates the children,
-links them under the root, and flips the root ``triage -> todo``.
+通过 ``hermes kanban decompose [task_id | --all]`` 以及 gateway dispatcher
+循环中的自动分解路径调用。读取用户的 profile 列表（含描述），请求辅助 LLM
+以 JSON 格式返回一个任务图。然后原子性地创建子任务，将它们链接到根任务下，
+并将根任务从 ``triage -> todo`` 翻转。
 
-The root task stays alive and becomes the parent of every leaf child,
-so when the whole graph completes the root wakes back up — its
-assignee (the orchestrator profile) gets a chance to judge completion
-and add more tasks if the work isn't done yet.
+根任务保持存活并成为每个叶子子任务的父任务，因此当整个图完成时根任务会
+重新唤醒 — 其 assignee（orchestrator profile）有机会判断完成状态，如果
+工作尚未完成则添加更多任务。
 
-Design notes
+设计说明
 ------------
 
-* Mirrors the shape of ``hermes_cli/kanban_specify.py``: lazy aux
-  client import inside the function, lenient response parse, never
-  raises on expected failure modes.
+* 与 ``hermes_cli/kanban_specify.py`` 结构一致：在函数内部延迟导入 aux
+  客户端，宽松地解析响应，对可预见的失败模式绝不抛出异常。
 
-* The system prompt sees the *configured* profile roster — names plus
-  descriptions plus the default fallback. Profiles without a
-  description are still listed (with a note) so the decomposer can
-  match on name as a fallback, but the user has an obvious incentive
-  to describe them.
+* system prompt 会看到 *已配置的* profile 列表 — 名称加描述加默认回退。
+  没有描述的 profile 仍会被列出（并附注），以便分解器可以回退到按名称
+  匹配，但用户有明确的动机去描述它们。
 
-* ``fanout=false`` collapses to the same effect as ``kanban specify``:
-  we tighten the body and flip ``triage -> todo`` as a single task,
-  no children created. This makes ``decompose`` a strict superset of
-  ``specify`` from the user's perspective.
+* ``fanout=false`` 会退化为与 ``kanban specify`` 相同的效果：我们精简
+  body 并将 ``triage -> todo`` 作为单个任务翻转，不创建子任务。这使得
+  ``decompose`` 从用户角度是 ``specify`` 的严格超集。
 
-* If the LLM picks an assignee that doesn't exist as a profile, we
-  rewrite it to the configured ``default_assignee`` (or the default
-  profile if unset). A child task NEVER ends up with ``assignee=None``.
+* 如果 LLM 选择了一个不存在的 profile 作为 assignee，我们会将其重写为
+  配置的 ``default_assignee``（或未设置时使用默认 profile）。子任务的
+  assignee 绝不会为 ``assignee=None``。
 """
 
 from __future__ import annotations
@@ -126,7 +120,7 @@ _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 @dataclass
 class DecomposeOutcome:
-    """Result of decomposing a single triage task."""
+    """分解单个 triage 任务的结果。"""
 
     task_id: str
     ok: bool
@@ -161,7 +155,7 @@ def _extract_json_blob(raw: str) -> Optional[dict]:
 
 
 def _profile_author() -> str:
-    """Mirror of ``hermes_cli.kanban._profile_author``."""
+    """``hermes_cli.kanban._profile_author`` 的镜像。"""
     return (
         os.environ.get("HERMES_PROFILE")
         or os.environ.get("USER")
@@ -178,10 +172,10 @@ def _load_config() -> dict:
 
 
 def _resolve_orchestrator_profile(cfg: dict) -> str:
-    """Resolve which profile owns the root/orchestration task after fan-out.
+    """解析 fan-out 后哪个 profile 拥有根任务/orchestration 任务。
 
-    Falls back to the active default profile when ``kanban.orchestrator_profile``
-    is unset, so a task is never stranded for lack of an orchestrator.
+    当 ``kanban.orchestrator_profile`` 未设置时回退到当前活跃的默认 profile，
+    确保任务不会因为缺少 orchestrator 而被搁置。
     """
     kanban_cfg = cfg.get("kanban", {}) if isinstance(cfg, dict) else {}
     explicit = (kanban_cfg.get("orchestrator_profile") or "").strip()
@@ -191,7 +185,7 @@ def _resolve_orchestrator_profile(cfg: dict) -> str:
                 return explicit
         except Exception:
             pass
-    # Fall back to the active default profile.
+    # 回退到当前活跃的默认 profile。
     try:
         return profiles_mod.get_active_profile_name() or "default"
     except Exception:
@@ -199,7 +193,7 @@ def _resolve_orchestrator_profile(cfg: dict) -> str:
 
 
 def _resolve_default_assignee(cfg: dict) -> str:
-    """Resolve which profile catches child tasks the orchestrator can't route."""
+    """解析哪个 profile 接收 orchestrator 无法路由的子任务。"""
     kanban_cfg = cfg.get("kanban", {}) if isinstance(cfg, dict) else {}
     explicit = (kanban_cfg.get("default_assignee") or "").strip()
     if explicit:
@@ -215,11 +209,10 @@ def _resolve_default_assignee(cfg: dict) -> str:
 
 
 def _build_roster() -> tuple[list[dict], set[str]]:
-    """Return (roster_for_prompt, valid_assignee_names).
+    """返回 (roster_for_prompt, valid_assignee_names)。
 
-    Each roster entry is ``{name, description, has_description}``. The
-    valid-set is used after the LLM responds to rewrite invalid
-    assignees to the default fallback.
+    每个 roster 条目为 ``{name, description, has_description}``。
+    有效集合在 LLM 响应后用于将无效的 assignee 重写为默认回退值。
     """
     roster: list[dict] = []
     valid: set[str] = set()
@@ -255,10 +248,10 @@ def _normalize_assignee_choice(
     default_assignee: str,
     valid_names: set[str],
 ) -> str:
-    """Return a valid assignee, falling back to ``default_assignee``.
+    """返回有效的 assignee，无效时回退到 ``default_assignee``。
 
-    Fan-out children and the single-task fallback should share the same
-    routing guarantee: promoted work must not be left unassigned.
+    fan-out 子任务和单任务回退应共享相同的路由保证：被提升的工作
+    不得处于未分配状态。
     """
     if not isinstance(assignee, str) or not assignee.strip():
         return default_assignee
@@ -274,12 +267,11 @@ def decompose_task(
     author: Optional[str] = None,
     timeout: Optional[int] = None,
 ) -> DecomposeOutcome:
-    """Decompose a triage task into a graph of child tasks.
+    """将 triage 任务分解为子任务图。
 
-    Returns an outcome describing what happened. Never raises for
-    expected failure modes (task not in triage, no aux client
-    configured, API error, malformed response, decomposer returned
-    fanout=true with empty task list) — those surface via ``ok=False``.
+    返回一个描述执行结果的对象。对可预见的失败模式（任务不在 triage、
+    未配置 aux 客户端、API 错误、响应格式错误、分解器返回 fanout=true
+    但任务列表为空）绝不抛出异常 — 这些通过 ``ok=False`` 反映。
     """
     with kb.connect_closing() as conn:
         task = kb.get_task(conn, task_id)
@@ -354,7 +346,7 @@ def decompose_task(
     audit_author = author or _profile_author()
 
     if not fanout:
-        # Fall back to single-task spec promotion (same effect as specify).
+        # 回退到单任务 spec 提升（与 specify 效果相同）。
         new_title = parsed.get("title")
         new_body = parsed.get("body")
         title_val = new_title.strip() if isinstance(new_title, str) and new_title.strip() else None
@@ -394,8 +386,8 @@ def decompose_task(
             task_id, False, "decomposer returned fanout=true with empty tasks list",
         )
 
-    # Rewrite invalid assignees to the default fallback. Never leave a
-    # task with assignee=None — the user explicitly does not want that.
+    # 将无效的 assignee 重写为默认回退值。绝不让任务处于
+    # assignee=None 的状态 — 用户明确要求避免这种情况。
     children: list[dict] = []
     for idx, entry in enumerate(raw_tasks):
         if not isinstance(entry, dict):
@@ -429,7 +421,7 @@ def decompose_task(
         parents = entry.get("parents") or []
         if not isinstance(parents, list):
             parents = []
-        # Clean parent indices: drop non-int and out-of-range.
+        # 清理父任务索引：移除非整数和越界值。
         clean_parents = [p for p in parents if isinstance(p, int) and 0 <= p < len(raw_tasks) and p != idx]
         children.append({
             "title": title.strip()[:200],
@@ -466,7 +458,7 @@ def decompose_task(
 
 
 def list_triage_ids(*, tenant: Optional[str] = None) -> list[str]:
-    """Return task ids currently in the triage column."""
+    """返回当前处于 triage 列的任务 id。"""
     with kb.connect_closing() as conn:
         rows = kb.list_tasks(
             conn,

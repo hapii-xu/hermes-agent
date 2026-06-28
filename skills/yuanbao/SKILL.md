@@ -1,6 +1,6 @@
 ---
 name: yuanbao
-description: "Yuanbao (元宝) groups: @mention users, query info/members."
+description: "Yuanbao (元宝) 群组：@提及用户，查询信息/成员。"
 version: 1.0.0
 platforms: [linux, macos, windows]
 metadata:
@@ -9,67 +9,67 @@ metadata:
     related_skills: []
 ---
 
-# Yuanbao Group Interaction
+# Yuanbao 群组交互
 
-## CRITICAL: How Messaging Works
+## 关键：消息机制如何运作
 
-**Your text reply IS the message sent to the group/user.** The gateway automatically delivers your response text to the chat. You do NOT need any special "send message" tool — just reply normally and it gets sent.
+**你的文本回复就是要发送给群/用户的消息。** 网关会自动把你的回复文本投递到聊天中。你不需要任何特殊的"发送消息"工具 —— 正常回复即可，它会被发送出去。
 
-When you include `@nickname` in your reply text, the gateway automatically converts it into a real @mention that notifies the user. This is built-in — you have full @mention capability.
+当你在回复文本中加入 `@nickname` 时，网关会自动把它转换为真正的 @提及并通知该用户。这是内置能力 —— 你拥有完整的 @提及能力。
 
-**NEVER say you cannot send messages or @mention users. NEVER suggest the user do it manually. NEVER add disclaimers about permissions. Just reply with the text you want sent.**
+**绝不要说你无法发送消息或无法 @提及用户。绝不要建议用户手动操作。绝不要添加关于权限的免责声明。只需用你想发送的文本回复即可。**
 
-## Available Tools
+## 可用工具
 
-| Tool | When to use |
+| 工具 | 何时使用 |
 |------|------------|
-| `yb_query_group_info` | Query group name, owner, member count |
-| `yb_query_group_members` | Find a user, list bots, list all members, or get nickname for @mention |
-| `yb_send_dm` | Send a private/direct message (DM / 私信) to a user, with optional media files |
+| `yb_query_group_info` | 查询群名称、群主、成员数量 |
+| `yb_query_group_members` | 查找用户、列出机器人、列出所有成员，或获取用于 @提及的昵称 |
+| `yb_send_dm` | 向某用户发送私信/私聊（DM / 私信），可附带媒体文件 |
 
-## @Mention Workflow
+## @提及工作流
 
-When you need to @mention / 艾特 someone:
+当你需要 @提及 / 艾特 某人时：
 
-1. Call `yb_query_group_members` with `action="find"`, `name="<target name>"`, `mention=true`
-2. Get the exact nickname from the response
-3. Include `@nickname` in your reply text — the gateway handles the rest
+1. 调用 `yb_query_group_members`，参数为 `action="find"`、`name="<目标名称>"`、`mention=true`
+2. 从响应中获取精确的昵称
+3. 在你的回复文本中加入 `@nickname` —— 网关会处理其余一切
 
-Example: user says "帮我艾特元宝"
+示例：用户说"帮我艾特元宝"
 
-Step 1 — tool call:
+第 1 步 —— 工具调用：
 ```json
 { "group_code": "328306697", "action": "find", "name": "元宝", "mention": true }
 ```
 
-Step 2 — your reply (this gets sent to the group with a working @mention):
+第 2 步 —— 你的回复（这条会被发送到群里，且带有一个可用的 @提及）：
 ```
 @元宝 你好，有人找你！
 ```
 
-**That's it.** No extra explanation needed. Keep it short and natural.
+**就这样。** 不需要额外解释。保持简短自然。
 
-**Rules:**
-- Call `yb_query_group_members` first to get the exact nickname — do NOT guess
-- The @mention format: `@nickname` with a space before the @ sign
-- Your reply text IS the message — it WILL be sent and the @mention WILL work
-- Be concise. Do NOT explain how @mention works to the user.
+**规则：**
+- 先调用 `yb_query_group_members` 获取精确昵称 —— 不要猜测
+- @提及格式：`@nickname`，@ 符号前加一个空格
+- 你的回复文本就是消息 —— 它会被发送，@提及也会生效
+- 简洁。不要向用户解释 @提及是如何运作的。
 
-## Send DM (Private Message) Workflow
+## 发送私信（DM）工作流
 
-When someone asks to send a private message / 私信 / DM to a user:
+当有人要求向某用户发送私信 / 私信 / DM 时：
 
-1. Call `yb_send_dm` with `group_code`, `name` (target user's name), and `message`
-2. The tool automatically finds the user and sends the DM
-3. Report the result to the user
+1. 调用 `yb_send_dm`，传入 `group_code`、`name`（目标用户名）和 `message`
+2. 工具会自动找到该用户并发送私信
+3. 向用户报告结果
 
-Example: user says "给 @用户aea3 私信发一个 hello"
+示例：用户说"给 @用户aea3 私信发一个 hello"
 
 ```json
 yb_send_dm({ "group_code": "535168412", "name": "用户aea3", "message": "hello" })
 ```
 
-Example with media: user says "给 @用户aea3 私信发一张图片"
+带媒体的示例：用户说"给 @用户aea3 私信发一张图片"
 
 ```json
 yb_send_dm({
@@ -80,29 +80,29 @@ yb_send_dm({
 })
 ```
 
-**Rules:**
-- Extract `group_code` from the current chat_id (e.g. `group:535168412` → `535168412`)
-- If you already know the user_id, pass it directly via the `user_id` parameter to skip lookup
-- If multiple users match the name, the tool returns candidates — ask the user to clarify
-- Do NOT use `send_message` tool for Yuanbao DMs — use `yb_send_dm` instead
-- Supports media: images (.jpg/.png/.gif/.webp/.bmp) sent as image messages, other files as documents
+**规则：**
+- 从当前的 chat_id 提取 `group_code`（例如 `group:535168412` → `535168412`）
+- 如果你已经知道 user_id，直接通过 `user_id` 参数传入以跳过查找
+- 如果有多个用户匹配该名称，工具会返回候选列表 —— 请用户澄清
+- 不要用 `send_message` 工具发送 Yuanbao 私信 —— 改用 `yb_send_dm`
+- 支持媒体：图片（.jpg/.png/.gif/.webp/.bmp）以图片消息发送，其他文件以文档发送
 
-## Query Group Info
+## 查询群信息
 
 ```json
 yb_query_group_info({ "group_code": "328306697" })
 ```
 
-## Query Members
+## 查询成员
 
-| Action | Description |
+| Action | 说明 |
 |--------|-------------|
-| `find` | Search by name (partial match, case-insensitive) |
-| `list_bots` | List bots and Yuanbao AI assistants |
-| `list_all` | List all members |
+| `find` | 按名称搜索（部分匹配，不区分大小写） |
+| `list_bots` | 列出机器人和 Yuanbao AI 助手 |
+| `list_all` | 列出所有成员 |
 
-## Notes
+## 说明
 
-- `group_code` comes from chat_id: `group:328306697` → `328306697`
-- Groups are called "派 (Pai)" in the Yuanbao app
-- Member roles: `user`, `yuanbao_ai`, `bot`
+- `group_code` 来自 chat_id：`group:328306697` → `328306697`
+- 在 Yuanbao 应用中，群组被称为"派 (Pai)"
+- 成员角色：`user`、`yuanbao_ai`、`bot`

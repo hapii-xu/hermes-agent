@@ -1,257 +1,257 @@
-# Design System: Runway
+# 设计系统：Runway
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主字体：** `Inter` | **等宽字体：** `system monospace stack`
+> - **字体栈 (CSS)：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Runway's interface is a cinematic reel brought to life as a website — a dark, editorial, film-production-grade design where full-bleed photography and video ARE the primary UI elements. This is not a typical tech product page; it's a visual manifesto for AI-powered creativity. Every section feels like a frame from a film: dramatic lighting, sweeping landscapes, and intimate human moments captured in high-quality imagery that dominates the viewport.
+Runway 的界面是一个被赋予网站生命的电影级卷片——一个深色、编辑风、电影制作级的设计，其中全出血的摄影和视频就是主要的 UI 元素。这不是典型的科技产品页面；它是 AI 驱动创造力的视觉宣言。每个区块都感觉像电影中的一帧：戏剧性的布光、开阔的风景，以及以高质量影像捕捉的亲密人文瞬间，主导着视口。
 
-The design language is built on a single typeface — abcNormal — a clean, geometric sans-serif that handles everything from 48px display headlines to 11px uppercase labels. This single-font commitment creates an extreme typographic uniformity that lets the visual content speak louder than the text. Headlines use tight line-heights (1.0) with negative letter-spacing (-0.9px to -1.2px), creating compressed text blocks that feel like film titles rather than marketing copy.
+设计语言建立在一个单一字体上——abcNormal——一种干净的几何无衬线字体，处理从 48px 展示标题到 11px 大写标签的所有内容。这种单字体承诺创造出极端的字体一致性，让视觉内容比文字更响亮。标题使用紧凑行高（1.0）配负字距（-0.9px 到 -1.2px），创造出压缩的文字块，感觉像电影片名而非营销文案。
 
-What makes Runway distinctive is its complete commitment to visual content as design. Rather than illustrating features with icons or diagrams, Runway shows actual AI-generated and AI-enhanced imagery — cars driving through cinematic landscapes, artistic portraits, architectural renders. The interface itself retreats into near-invisibility: minimal borders, zero shadows, subtle cool-gray text, and a dark palette that puts maximum focus on the photography.
+让 Runway 独具特色的是它对视觉内容作为设计的完全承诺。Runway 不用图标或图解来说明特性，而是展示实际的 AI 生成和 AI 增强影像——汽车驶过电影级风景、艺术人像、建筑渲染。界面本身退避到近乎不可见：极简的边框、零阴影、微妙的冷灰文字，以及一个将最大焦点放在摄影上的深色调色板。
 
-**Key Characteristics:**
-- Cinematic full-bleed photography and video as primary UI elements
-- Single typeface system: abcNormal for everything from display to micro labels
-- Dark-dominant palette with cool-toned neutrals (#767d88, #7d848e)
-- Zero shadows, minimal borders — the interface is intentionally invisible
-- Tight display typography (line-height 1.0) with negative tracking (-0.9px to -1.2px)
-- Uppercase labels with positive letter-spacing for navigational structure
-- Weight 450 (unusual intermediate) for small uppercase text — precision craft
-- Editorial magazine layout with mixed-size image grids
+**关键特征：**
+- 电影级全出血摄影和视频作为主要 UI 元素
+- 单字体系统：abcNormal 处理从展示到微型标签的一切
+- 深色主导调色板，配冷调中性色（#767d88、#7d848e）
+- 零阴影、极简边框——界面刻意不可见
+- 紧凑的展示字体（行高 1.0）配负字距（-0.9px 到 -1.2px）
+- 大写标签配正字距用于导航结构
+- 小型大写文字使用 450 字重（不常见的中档）——精准工艺
+- 编辑杂志布局，配混合尺寸的图片网格
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary
-- **Runway Black** (`#000000`): The primary page background and maximum-emphasis text.
-- **Deep Black** (`#030303`): A near-imperceptible variant for layered dark surfaces.
-- **Dark Surface** (`#1a1a1a`): Card backgrounds and elevated dark containers.
-- **Pure White** (`#ffffff`): Primary text on dark surfaces and light-section backgrounds.
+### 主色
+- **Runway 黑** (`#000000`)：主页面背景和最大强调文字。
+- **深黑** (`#030303`)：一种几乎不可察觉的变体，用于分层深色表面。
+- **深色表面** (`#1a1a1a`)：卡片背景和抬升的深色容器。
+- **纯白** (`#ffffff`)：深色表面上的主文字和浅色区块背景。
 
-### Surface & Background
-- **Near White** (`#fefefe`): The lightest surface — barely distinguishable from pure white.
-- **Cool Cloud** (`#e9ecf2`): Light section backgrounds with a cool blue-gray tint.
-- **Border Dark** (`#27272a`): The single dark-mode border color — barely visible containment.
+### 表面与背景
+- **近白** (`#fefefe`)：最浅的表面——几乎与纯白无法区分。
+- **冷云色** (`#e9ecf2`)：浅色区块背景，带冷蓝灰调。
+- **深色边框** (`#27272a`)：单一深色模式边框色——几乎不可见的收纳。
 
-### Neutrals & Text
-- **Charcoal** (`#404040`): Primary body text on light surfaces and secondary text.
-- **Near Charcoal** (`#3f3f3f`): Slightly lighter variant for dark-section secondary text.
-- **Cool Slate** (`#767d88`): Secondary body text — a distinctly blue-gray cool neutral.
-- **Mid Slate** (`#7d848e`): Tertiary text, metadata descriptions.
-- **Muted Gray** (`#a7a7a7`): De-emphasized content, timestamps.
-- **Cool Silver** (`#c9ccd1`): Light borders and dividers.
-- **Light Silver** (`#d0d4d4`): The lightest border/divider variant.
-- **Tailwind Gray** (`#6b7280`): Standard Tailwind neutral for supplementary text.
-- **Dark Link** (`#0c0c0c`): Darkest link text — nearly black.
-- **Footer Gray** (`#999999`): Footer links and deeply muted content.
+### 中性色与文字
+- **炭灰** (`#404040`)：浅色表面上的主正文和次要文字。
+- **近炭色** (`#3f3f3f`)：略浅的变体，用于深色区块次要文字。
+- **冷石板** (`#767d88`)：次要正文——一种明显的蓝灰冷中性色。
+- **中石板** (`#7d848e`)：三级文字、元数据描述。
+- **低饱和灰** (`#a7a7a7`)：弱化的内容、时间戳。
+- **冷银色** (`#c9ccd1`)：浅边框和分割线。
+- **浅银色** (`#d0d4d4`)：最浅的边框/分割线变体。
+- **Tailwind 灰** (`#6b7280`)：标准 Tailwind 中性色，用于补充文字。
+- **深链接色** (`#0c0c0c`)：最深的链接文字——近乎黑色。
+- **页脚灰** (`#999999`)：页脚链接和深度弱化的内容。
 
-### Gradient System
-- **None in the interface.** Visual richness comes entirely from photographic content — AI-generated and enhanced imagery provides all the color and gradient the design needs. The interface itself is intentionally colorless.
+### 渐变系统
+- **界面中没有渐变。** 视觉丰富感完全来自摄影内容——AI 生成和增强的影像提供了设计所需的所有色彩和渐变。界面本身刻意无色。
 
-## 3. Typography Rules
+## 3. 字体规则
 
-### Font Family
-- **Universal**: `abcNormal`, with fallback: `abcNormal Fallback`
+### 字体族
+- **通用字体**：`abcNormal`，回退：`abcNormal Fallback`
 
-*Note: abcNormal is a custom geometric sans-serif. For external implementations, Inter or DM Sans serve as close substitutes.*
+*注意：abcNormal 是一种定制几何无衬线字体。对于外部实现，Inter 或 DM Sans 可作为接近的替代。*
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字距 | 备注 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display / Hero | abcNormal | 48px (3rem) | 400 | 1.00 (tight) | -1.2px | Maximum size, film-title presence |
-| Section Heading | abcNormal | 40px (2.5rem) | 400 | 1.00–1.10 | -1px to 0px | Feature section titles |
-| Sub-heading | abcNormal | 36px (2.25rem) | 400 | 1.00 (tight) | -0.9px | Secondary section markers |
-| Card Title | abcNormal | 24px (1.5rem) | 400 | 1.00 (tight) | normal | Article and card headings |
-| Feature Title | abcNormal | 20px (1.25rem) | 400 | 1.00 (tight) | normal | Small headings |
-| Body / Button | abcNormal | 16px (1rem) | 400–600 | 1.30–1.50 | -0.16px to normal | Standard body, nav links |
-| Caption / Label | abcNormal | 14px (0.88rem) | 500–600 | 1.25–1.43 | 0.35px (uppercase) | Metadata, section labels |
-| Small | abcNormal | 13px (0.81rem) | 400 | 1.30 (tight) | -0.16px to -0.26px | Compact descriptions |
-| Micro / Tag | abcNormal | 11px (0.69rem) | 450 | 1.30 (tight) | normal | Uppercase tags, tiny labels |
+| 展示 / 英雄 | abcNormal | 48px (3rem) | 400 | 1.00（紧凑） | -1.2px | 最大字号，电影片名般的存在感 |
+| 区块标题 | abcNormal | 40px (2.5rem) | 400 | 1.00–1.10 | -1px 到 0px | 特性区块标题 |
+| 副标题 | abcNormal | 36px (2.25rem) | 400 | 1.00（紧凑） | -0.9px | 次要区块标记 |
+| 卡片标题 | abcNormal | 24px (1.5rem) | 400 | 1.00（紧凑） | normal | 文章和卡片标题 |
+| 特性标题 | abcNormal | 20px (1.25rem) | 400 | 1.00（紧凑） | normal | 小标题 |
+| 正文 / 按钮 | abcNormal | 16px (1rem) | 400–600 | 1.30–1.50 | -0.16px 到 normal | 标准正文、导航链接 |
+| 说明 / 标签 | abcNormal | 14px (0.88rem) | 500–600 | 1.25–1.43 | 0.35px（大写） | 元数据、区块标签 |
+| 小号 | abcNormal | 13px (0.81rem) | 400 | 1.30（紧凑） | -0.16px 到 -0.26px | 紧凑描述 |
+| 微型 / 标签 | abcNormal | 11px (0.69rem) | 450 | 1.30（紧凑） | normal | 大写标签、极小标签 |
 
-### Principles
-- **One typeface, complete expression**: abcNormal handles every text role. The design achieves variety through size, weight, case, and letter-spacing rather than font-family switching.
-- **Tight everywhere**: Nearly every size uses line-height 1.0–1.30 — even body text is relatively compressed. This creates a dense, editorial feel.
-- **Weight 450 — the precision detail**: Some small uppercase labels use weight 450, an uncommon intermediate between regular (400) and medium (500). This micro-craft signals typographic sophistication.
-- **Negative tracking as default**: Even body text uses -0.16px to -0.26px letter-spacing, keeping everything slightly tighter than default.
-- **Uppercase as structure**: Labels at 14px and 11px use `text-transform: uppercase` with positive letter-spacing (0.35px) to create navigational signposts that contrast with the tight lowercase text.
+### 原则
+- **一个字体，完整表达**：abcNormal 处理每一个文字角色。设计通过字号、字重、大小写和字距而非字体族切换来创造多样性。
+- **处处紧凑**：几乎每个字号都使用 1.0–1.30 行高——即使是正文也相对压缩。这创造出一种密集的编辑感。
+- **450 字重——精准细节**：一些小型大写标签使用 450 字重，一种常规（400）和中档（500）之间不常见的中档。这种微工艺信号着字体精致度。
+- **负字距作为默认**：即使是正文也使用 -0.16px 到 -0.26px 字距，保持一切比默认略紧。
+- **大写作为结构**：14px 和 11px 的标签使用 `text-transform: uppercase` 配正字距（0.35px），创造与紧凑小写文字形成对比的导航路标。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
-- Text: weight 600 at 14px abcNormal
-- Background: likely transparent or dark, with minimal border
-- Radius: small (4px) for button-like links
-- The button design is extremely restrained — no heavy fills or borders detected
-- Interactive elements blend into the editorial flow
+### 按钮
+- 文字：600 字重，14px abcNormal
+- 背景：可能透明或深色，配极简边框
+- 圆角：小（4px）用于类按钮链接
+- 按钮设计极为克制——未检测到重填充或边框
+- 交互元素融入编辑流
 
-### Cards & Containers
-- Background: transparent or Dark Surface (`#1a1a1a`)
-- Border: `1px solid #27272a` (dark mode) — barely visible containment
-- Radius: small (4–8px) for functional elements; 16px for alert-style containers
-- Shadow: zero — no shadows on any element
-- Cards are primarily photographic — the image IS the card
+### 卡片与容器
+- 背景：透明或深色表面（`#1a1a1a`）
+- 边框：`1px solid #27272a`（深色模式）——几乎不可见的收纳
+- 圆角：小（4–8px）用于功能性元素；16px 用于警示风格容器
+- 阴影：零——任何元素都没有阴影
+- 卡片主要是摄影性的——图片本身就是卡片
 
-### Navigation
-- Minimal horizontal nav — transparent over hero content
-- Logo: Runway wordmark in white/black
-- Links: abcNormal at 16px, weight 400–600
-- Hover: text shifts to white or higher opacity
-- Extremely subtle — designed to not compete with visual content
+### 导航
+- 极简横向导航——透明覆盖在英雄内容上
+- Logo：Runway 文字标识，白色/黑色
+- 链接：abcNormal 16px，400–600 字重
+- 悬停：文字变为白色或更高透明度
+- 极度微妙——设计成不与视觉内容竞争
 
-### Image Treatment
-- Full-bleed cinematic photography and video dominate
-- AI-generated content shown at large scale as primary visual elements
-- Mixed-size image grids creating editorial magazine layouts
-- Dark overlays on hero images for text readability
-- Product screenshots with subtle rounded corners (8px)
+### 图片处理
+- 电影级全出血摄影和视频主导
+- AI 生成内容以大尺度展示作为主要视觉元素
+- 混合尺寸的图片网格创造编辑杂志布局
+- 英雄图片上的深色覆盖用于文字可读性
+- 产品截图配细微圆角（8px）
 
-### Distinctive Components
+### 特色组件
 
-**Cinematic Hero**
-- Full-viewport image or video with text overlay
-- Headline in 48px abcNormal, white on dark imagery
-- The image is always cinematic quality — film-grade composition
+**电影级英雄**
+- 全视口图片或视频配文字覆盖
+- 标题 48px abcNormal，深色影像上白色
+- 图片始终是电影级质量——电影级构图
 
-**Research Article Cards**
-- Photographic thumbnails with article titles
-- Mixed-size grid layout (large feature + smaller supporting)
-- Clean text overlay or below-image caption style
+**研究文章卡片**
+- 摄影缩略图配文章标题
+- 混合尺寸网格布局（大特性 + 较小支撑）
+- 干净的文字覆盖或图片下说明风格
 
-**Trust Bar**
-- Company logos (leading organizations across industries)
-- Clean, monochrome treatment
-- Horizontal layout with generous spacing
+**信任栏**
+- 公司 Logo（各行各业的领先组织）
+- 干净、单色处理
+- 横向布局，配宽裕间距
 
-**Mission Statement**
+**使命宣言**
 - "We are building AI to simulate the world through imagination, art and aesthetics"
-- On a dark background with white text
-- The emotional close — artistic and philosophical
+- 深色背景配白色文字
+- 情感收尾——艺术且富有哲理
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 4px, 6px, 8px, 12px, 16px, 20px, 24px, 28px, 32px, 48px, 64px, 78px
-- Section vertical spacing: generous (48–78px)
-- Component gaps: 16–24px
+### 间距系统
+- 基本单位：8px
+- 比例：4px, 6px, 8px, 12px, 16px, 20px, 24px, 28px, 32px, 48px, 64px, 78px
+- 区块垂直间距：宽裕（48–78px）
+- 组件间距：16–24px
 
-### Grid & Container
-- Max container width: up to 1600px (cinema-wide)
-- Hero: full-viewport, edge-to-edge
-- Content sections: centered with generous margins
-- Image grids: asymmetric, magazine-style mixed sizes
-- Footer: full-width dark section
+### 网格与容器
+- 最大容器宽度：最高 1600px（电影宽）
+- 英雄：全视口、边到边
+- 内容区块：居中配宽裕边距
+- 图片网格：不对称、杂志风混合尺寸
+- 页脚：全宽深色区块
 
-### Whitespace Philosophy
-- **Cinema-grade breathing**: Large vertical gaps between sections create a scrolling experience that feels like watching scenes change.
-- **Images replace whitespace**: Where other sites use empty space, Runway fills it with photography. The visual content IS the breathing room.
-- **Editorial grid asymmetry**: The image grid uses intentionally varied sizes — large hero images paired with smaller supporting images, creating visual rhythm.
+### 留白哲学
+- **电影级呼吸**：区块间大型垂直间距创造出一种滚动体验，感觉像观看场景切换。
+- **图片取代留白**：其他站点用空白的地方，Runway 用摄影填充。视觉内容本身就是呼吸空间。
+- **编辑网格不对称**：图片网格刻意使用变化的尺寸——大型英雄图片配较小的支撑图片，创造视觉节奏。
 
-### Border Radius Scale
-- Sharp (4px): Buttons, small interactive elements
-- Subtle (6px): Links, small containers
-- Comfortable (8px): Standard containers, image cards
-- Generous (16px): Alert-style containers, featured elements
+### 圆角比例
+- 锐利（4px）：按钮、小型交互元素
+- 细微（6px）：链接、小容器
+- 舒适（8px）：标准容器、图片卡片
+- 宽裕（16px）：警示风格容器、精选元素
 
-## 6. Depth & Elevation
+## 6. 深度与层级
 
-| Level | Treatment | Use |
+| 等级 | 处理 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow, no border | Everything — the dominant state |
-| Bordered (Level 1) | `1px solid #27272a` | Alert containers only |
-| Dark Section (Level 2) | Dark bg (#000000 / #1a1a1a) with light text | Hero, features, footer |
-| Light Section (Level 3) | White/Cool Cloud bg with dark text | Content sections, research |
+| 平面（等级 0） | 无阴影、无边框 | 一切——主导状态 |
+| 描边（等级 1） | `1px solid #27272a` | 仅警示容器 |
+| 深色区块（等级 2） | 深色背景（#000000 / #1a1a1a）配浅色文字 | 英雄、特性、页脚 |
+| 浅色区块（等级 3） | 白色/冷云色背景配深色文字 | 内容区块、研究 |
 
-**Shadow Philosophy**: Runway uses **zero shadows**. This is a film-production design decision — in cinema, depth comes from lighting, focus, and composition, not drop shadows. The interface mirrors this philosophy: depth is communicated through dark/light section alternation, photographic depth-of-field, and overlay transparency — never through CSS box-shadow.
+**阴影哲学**：Runway 使用**零阴影**。这是一个电影制作设计决策——在电影中，深度来自布光、焦点和构图，而非投影。界面映射这一哲学：深度通过深/浅区块交替、摄影景深和覆盖透明度传达——绝不通过 CSS box-shadow。
 
-## 7. Do's and Don'ts
+## 7. 该做与不该做
 
-### Do
-- Use full-bleed cinematic photography as the primary visual element
-- Use abcNormal for all text — maintain the single-typeface commitment
-- Keep display line-heights at 1.0 with negative letter-spacing for film-title density
-- Use the cool-gray neutral palette (#767d88, #7d848e) for secondary text
-- Maintain zero shadows — depth comes from photography and section backgrounds
-- Use uppercase with letter-spacing for navigational labels (14px, 0.35px spacing)
-- Apply small border-radius (4–8px) — the design is NOT pill-shaped
-- Let visual content (photos, videos) dominate — the UI should be invisible
-- Use weight 450 for micro labels — the precision matters
+### 该做
+- 使用全出血电影级摄影作为主要视觉元素
+- 所有文字使用 abcNormal——保持单字体承诺
+- 展示行高保持 1.0 配负字距，获得电影片名般的密度
+- 次要文字使用冷灰中性色调色板（#767d88、#7d848e）
+- 保持零阴影——深度来自摄影和区块背景
+- 导航标签使用大写配字距（14px、0.35px 字距）
+- 应用小圆角（4–8px）——设计不是胶囊形
+- 让视觉内容（照片、视频）主导——UI 应该不可见
+- 微型标签使用 450 字重——精度很重要
 
-### Don't
-- Don't add decorative colors to the interface — the only color comes from photography
-- Don't use heavy borders or shadows — the interface must be nearly invisible
-- Don't use pill-shaped radius — Runway's geometry is subtly rounded, not circular
-- Don't use bold (700+) weight — 400–600 is the full range, with 450 as a precision tool
-- Don't compete with the visual content — text overlays should be minimal and restrained
-- Don't use gradient backgrounds in the interface — gradients exist only in photography
-- Don't use more than one typeface — abcNormal handles everything
-- Don't use body line-height above 1.50 — the tight, editorial feel is core
-- Don't reduce image quality — cinematic photography IS the design
+### 不该做
+- 不要给界面添加装饰色——唯一的色彩来自摄影
+- 不要用重边框或阴影——界面必须几乎不可见
+- 不要用胶囊形圆角——Runway 的几何是微妙圆润，而非圆形
+- 不要用粗体（700+）字重——400–600 是全部范围，450 是精准工具
+- 不要与视觉内容竞争——文字覆盖应该极简且克制
+- 界面中不要用渐变背景——渐变只存在于摄影中
+- 不要使用超过一种字体——abcNormal 处理一切
+- 正文行高不要超过 1.50——紧凑的编辑感是核心
+- 不要降低图片质量——电影级摄影就是设计
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <640px | Single column, stacked images, reduced hero text |
-| Tablet | 640–768px | 2-column image grids begin |
-| Small Desktop | 768–1024px | Standard layout |
-| Desktop | 1024–1280px | Full layout, expanded hero |
-| Large Desktop | 1280–1600px | Maximum cinema-width container |
+| 移动端 | <640px | 单列，堆叠图片，缩减英雄文字 |
+| 平板 | 640–768px | 开始 2 列图片网格 |
+| 小桌面 | 768–1024px | 标准布局 |
+| 桌面 | 1024–1280px | 完整布局，扩展英雄 |
+| 大桌面 | 1280–1600px | 最大电影宽度容器 |
 
-### Touch Targets
-- Navigation links at comfortable 16px
-- Article cards serve as large touch targets
-- Buttons at 14px weight 600 with adequate padding
+### 触控目标
+- 导航链接舒适的 16px
+- 文章卡片作为大型触控目标
+- 按钮 14px 600 字重，配充足内边距
 
-### Collapsing Strategy
-- **Navigation**: Collapses to hamburger on mobile
-- **Hero**: Full-bleed maintained, text scales down
-- **Image grids**: Multi-column → 2-column → single column
-- **Research articles**: Feature-size cards → stacked full-width
-- **Trust logos**: Horizontal scroll or reduced grid
+### 折叠策略
+- **导航**：移动端折叠为汉堡菜单
+- **英雄**：保持全出血，文字缩小
+- **图片网格**：多列 → 2 列 → 单列
+- **研究文章**：特性尺寸卡片 → 堆叠全宽
+- **信任 Logo**：横向滚动或缩减网格
 
-### Image Behavior
-- Cinematic images scale proportionally
-- Full-bleed hero maintained across all sizes
-- Image grids reflow to fewer columns
-- Video content maintains aspect ratio
+### 图片行为
+- 电影级图片按比例缩放
+- 全出血英雄在所有尺寸下保持
+- 图片网格重排为更少列
+- 视频内容保持宽高比
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Background Dark: "Runway Black (#000000)"
-- Background Light: "Pure White (#ffffff)"
-- Primary Text Dark: "Charcoal (#404040)"
-- Secondary Text: "Cool Slate (#767d88)"
-- Muted Text: "Muted Gray (#a7a7a7)"
-- Light Border: "Cool Silver (#c9ccd1)"
-- Dark Border: "Border Dark (#27272a)"
-- Card Surface: "Dark Surface (#1a1a1a)"
+### 快速颜色参考
+- 深色背景："Runway Black (#000000)"
+- 浅色背景："Pure White (#ffffff)"
+- 深色主文字："Charcoal (#404040)"
+- 次要文字："Cool Slate (#767d88)"
+- 低饱和文字："Muted Gray (#a7a7a7)"
+- 浅边框："Cool Silver (#c9ccd1)"
+- 深边框："Border Dark (#27272a)"
+- 卡片表面："Dark Surface (#1a1a1a)"
 
-### Example Component Prompts
-- "Create a cinematic hero section: full-bleed dark background with a cinematic image overlay. Headline at 48px abcNormal weight 400, line-height 1.0, letter-spacing -1.2px in white. Minimal text below in Cool Slate (#767d88) at 16px."
-- "Design a research article grid: one large card (50% width) with a cinematic image and 24px title, next to two smaller cards stacked. All images with 8px border-radius. Titles in white (dark bg) or Charcoal (#404040, light bg)."
-- "Build a section label: 14px abcNormal weight 500, uppercase, letter-spacing 0.35px in Cool Slate (#767d88). No border, no background."
-- "Create a trust bar: company logos in monochrome, horizontal layout with generous spacing. On dark background with white/gray logo treatments."
-- "Design a mission statement section: Runway Black background, white text at 36px abcNormal, line-height 1.0, letter-spacing -0.9px. Centered, with generous vertical padding."
+### 组件提示示例
+- "创建电影级英雄区块：全出血深色背景配电影级图片覆盖。标题 48px abcNormal 400 字重，行高 1.0，字距 -1.2px，白色。下方极简文字用 Cool Slate (#767d88) 16px。"
+- "设计研究文章网格：一张大卡片（50% 宽度）配电影级图片和 24px 标题，旁边两张较小的堆叠卡片。所有图片 8px 圆角。标题白色（深色背景）或 Charcoal（#404040，浅色背景）。"
+- "构建一个区块标签：14px abcNormal 500 字重，大写，字距 0.35px，Cool Slate (#767d88)。无边框，无背景。"
+- "创建一个信任栏：单色公司 Logo，横向布局，配宽裕间距。深色背景上配白色/灰色 Logo 处理。"
+- "设计使命宣言区块：Runway 黑背景，白色文字 36px abcNormal，行高 1.0，字距 -0.9px。居中，配宽裕垂直内边距。"
 
-### Iteration Guide
-1. Visual content first — always include cinematic photography
-2. Use abcNormal for everything — specify size and weight, never change the font
-3. Keep the interface invisible — no heavy borders, no shadows, no bright colors
-4. Use the cool slate grays (#767d88, #7d848e) for secondary text — not warm grays
-5. Uppercase labels need letter-spacing (0.35px) — never tight uppercase
-6. Dark sections should be truly dark (#000000 or #1a1a1a) — no medium grays as surfaces
+### 迭代指南
+1. 视觉内容优先——始终包含电影级摄影
+2. 一切用 abcNormal——指定字号和字重，绝不更换字体
+3. 保持界面不可见——无重边框、无阴影、无亮色
+4. 次要文字使用冷石板灰（#767d88、#7d848e）——不要暖灰
+5. 大写标签需要字距（0.35px）——绝不要紧凑的大写
+6. 深色区块应该真正深（#000000 或 #1a1a1a）——不要中灰作为表面

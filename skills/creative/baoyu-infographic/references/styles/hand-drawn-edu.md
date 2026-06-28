@@ -1,63 +1,63 @@
 # hand-drawn-edu
 
-Hand-drawn educational infographic with macaron pastel color blocks on warm cream paper texture.
+手绘教学信息图，温暖奶油纸纹理上配马卡龙粉彩色块。
 
-## Color Palette
+## 配色
 
-- Background: Warm cream (#F5F0E8) with subtle paper grain texture
-- Primary text: Deep charcoal (#2D2D2D) for headlines, outlines
-- Macaron Blue: #A8D8EA for cool-toned information zones
-- Macaron Mint: #B5E5CF for growth/positive zones
-- Macaron Lavender: #D5C6E0 for abstract/concept zones
-- Macaron Peach: #FFD5C2 for warm-toned zones
-- Accent: Coral Red (#E8655A) for key data, warnings, emphasis
-- Muted annotations: Warm gray (#6B6B6B) for secondary labels
+- 背景：温暖奶油色 (#F5F0E8)，带微妙纸纹
+- 主文字：深炭灰 (#2D2D2D)，用于标题、轮廓
+- 马卡龙蓝：#A8D8EA，用于冷调信息区
+- 马卡龙薄荷：#B5E5CF，用于成长/正向区
+- 马卡龙薰衣草：#D5C6E0，用于抽象/概念区
+- 马卡龙蜜桃：#FFD5C2，用于暖调区
+- 点缀：珊瑚红 (#E8655A)，用于关键数据、警示、强调
+- 柔和批注：暖灰 (#6B6B6B)，用于次级标签
 
-## Visual Elements
+## 视觉元素
 
-- Macaron pastel rounded cards as distinct information zones
-- Hand-drawn wavy connection lines and arrows with small text labels
-- Simple stick-figure characters and cartoon icons to humanize concepts
-- Doodle decorations: small stars, underlines, spirals, sparkles
-- Color fills don't completely fill outlines — preserve casual hand-drawn feel
-- Dashed borders for secondary or contained zones
-- Small icon doodles (clipboard, lock, checkmark, lightbulb) to reinforce concepts
-- Bold centered quote or takeaway at the bottom
-- Slight hand-drawn wobble on all lines and shapes
+- 马卡龙粉彩圆角卡片作为独立信息区
+- 手绘波浪连接线和箭头，配小字标签
+- 简单的火柴人角色和卡通图标，让概念更具人情味
+- 涂鸦装饰：小星形、下划线、螺旋、闪光
+- 颜色填充不完全填满轮廓——保留随性的手绘感
+- 次级或包容性区域用虚线边框
+- 小图标涂鸦（剪贴板、锁、勾号、灯泡）以强化概念
+- 底部用粗体居中的引言或要点总结
+- 所有线条和形状带轻微的手绘抖动
 
-## Variants
+## 变体
 
-| Variant | Focus | Visual Emphasis |
+| 变体 | 重点 | 视觉强调 |
 |---------|-------|-----------------|
-| **Sketch-notes** | Concept mapping | More stick figures, thought bubbles, connecting arrows |
-| **Pastel cards** | Structured info | Cleaner macaron blocks, less doodle, more white space |
+| **速写笔记** | 概念映射 | 更多火柴人、思考气泡、连接箭头 |
+| **粉彩卡片** | 结构化信息 | 更干净的马卡龙色块、更少涂鸦、更多留白 |
 
-## Typography
+## 字体排印
 
-- Main title: Bold hand-drawn lettering with organic strokes, large confident letterforms with slight wobble
-- Section headers: Hand-lettered text on or inside macaron color blocks
-- Body text: Clear handwritten print style, legible but not mechanical
-- Annotations: Warm gray (#6B6B6B), smaller, neat handwritten labels
-- Keywords: Bold emphasis within body text
+- 主标题：粗体手绘字，笔触有机，字形大气自信、略带抖动
+- 分区标题：手写字置于马卡龙色块之上或之内
+- 正文：清晰的手写印刷体，易读但不机械
+- 批注：暖灰 (#6B6B6B)，较小、整洁的手写标签
+- 关键词：正文内粗体强调
 
-## Style Enforcement
+## 风格执行
 
-- All lines must have slight hand-drawn wobble — no perfect geometry
-- Each information zone uses a distinct macaron color block
-- Maintain consistent wobble quality across all shapes and lines
-- Include at least one simple cartoon character or stick figure
-- Generous white space between zones — each zone should breathe
-- Maximum 4 macaron colors per infographic
+- 所有线条必须有轻微的手绘抖动——无完美几何
+- 每个信息区使用独立的马卡龙色块
+- 所有形状和线条保持一致的抖动品质
+- 至少包含一个简单的卡通角色或火柴人
+- 各区域之间留充足留白——每个区域都要有呼吸感
+- 每张信息图最多使用 4 种马卡龙色
 
-## Avoid
+## 避免
 
-- Perfect geometric shapes or straight lines
-- Photorealistic elements or stock illustration style
-- Pure white backgrounds
-- Flat vector icons or digital-precision graphics
-- Overcrowded layouts — let zones breathe
-- Corporate or clinical aesthetic
+- 完美的几何形状或直线
+- 照片写实元素或图库插画风格
+- 纯白背景
+- 扁平矢量图标或数字精度图形
+- 过于拥挤的布局——让区域有呼吸感
+- 企业化或冷峻的临床美学
 
-## Best For
+## 最适用于
 
-Educational diagrams, process explainers, concept maps, knowledge summaries, tutorial walkthroughs, onboarding visuals
+教学图解、流程讲解、概念图、知识总结、教程演示、入门引导视觉

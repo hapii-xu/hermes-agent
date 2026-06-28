@@ -1,161 +1,161 @@
-# Animation Design Thinking
+# 动画设计思维
 
-How to decide WHAT to animate and HOW to structure it — before writing any code.
+如何在写任何代码之前，决定动画化"什么"，以及"如何"组织它。
 
-## Should I animate this?
+## 这件事该不该做动画？
 
-Not everything benefits from animation. Motion adds cognitive load. Bad animation is worse than a good static diagram.
+并非所有内容都适合动画。运动增加认知负担。糟糕的动画比优秀的静态图更糟。
 
-**Animate when:**
-- A sequence unfolds over time (algorithm steps, derivation, pipeline stages)
-- Spatial relationships change (transformation, deformation, rotation)
-- Something is built from parts (construction, assembly, accumulation)
-- You're comparing states (before/after, method A vs method B)
-- Temporal evolution is the point (training curves, wave propagation, gradient descent)
+**该做动画的情形：**
+- 一个序列随时间展开（算法步骤、推导、流水线阶段）
+- 空间关系发生变化（变换、形变、旋转）
+- 某物由部分组装而成（构造、装配、累积）
+- 在比较不同状态（之前/之后、方法 A 对方法 B）
+- 时间演化本身就是重点（训练曲线、波传播、梯度下降）
 
-**Show static when:**
-- The concept is a single labeled diagram (circuit, anatomy, architecture overview)
-- Motion would distract from spatial layout
-- The viewer needs to study it carefully (dense table, reference chart)
-- The concept is already intuitive from a well-labeled figure
+**该用静态图的情形：**
+- 概念本身是一张带标注的示意图（电路、解剖图、架构总览）
+- 运动会干扰对空间布局的理解
+- 观众需要仔细研读（密集表格、参考图）
+- 概念靠一张标注清晰的图就已经很直观了
 
-**Rule of thumb:** If you'd explain it with "first X, then Y, then Z" — animate it. If you'd explain it by pointing at parts of one picture — show it static.
+**经验法则：** 如果你会用"先 X，再 Y，然后 Z"来讲解 — 就做动画。如果你会指着一张图的各个部分讲解 — 就用静态图。
 
-## Decomposing a concept into animation
+## 把一个概念拆解成动画
 
-### Step 1: Write the narration first
+### 第 1 步：先写旁白
 
-Before any code, write what the narrator would say. This determines:
-- **Order** — what concept comes first
-- **Duration** — how long each idea gets
-- **Visuals** — what the viewer must SEE when they HEAR each sentence
+在写任何代码之前，先把旁白会说什么写下来。这决定了：
+- **顺序** — 哪个概念先出现
+- **时长** — 每个想法分配多长时间
+- **视觉** — 观众听到每句话时必须"看到"什么
 
-A scene where the narration says "the gradient points uphill" must show a gradient arrow at that moment. If the visual doesn't match the audio, the viewer's brain splits attention and both tracks are lost.
+一个旁白说"梯度指向上坡"的场景，在那一瞬间必须出现一根梯度箭头。如果视觉和音频对不上，观众的大脑就会分散注意力，两条信息流都会丢失。
 
-### Step 2: Identify visual beats
+### 第 2 步：找出视觉节拍
 
-A "beat" is a moment where something changes on screen. Mark each beat in your narration:
+"节拍"是屏幕上发生变化的时刻。在你的旁白里标记每个节拍：
 
 ```
-"Consider a function f of x."         → [BEAT: axes + curve appear]
-"At this point..."                     → [BEAT: dot appears on curve]
-"...the slope is positive."            → [BEAT: tangent line drawn]
-"So the gradient tells us to go left." → [BEAT: arrow points left, dot moves]
+"Consider a function f of x."         → [节拍：坐标轴 + 曲线出现]
+"At this point..."                     → [节拍：曲线上出现一个点]
+"...the slope is positive."            → [节拍：画出切线]
+"So the gradient tells us to go left." → [节拍：箭头指向左，点移动]
 ```
 
-Each beat is one `self.play()` call or a small group of simultaneous animations.
+每个节拍对应一次 `self.play()` 调用，或一小段同时播放的动画。
 
-### Step 3: Choose the right tool per beat
+### 第 3 步：为每个节拍选择合适的工具
 
-| Visual need | Manim approach |
+| 视觉需求 | Manim 做法 |
 |-------------|----------------|
-| Object appears for first time | `Create`, `Write`, `FadeIn`, `GrowFromCenter` |
-| Object transforms into another | `Transform`, `ReplacementTransform`, `FadeTransform` |
-| Attention drawn to existing object | `Indicate`, `Circumscribe`, `Flash`, `ShowPassingFlash` |
-| Continuous relationship maintained | `add_updater`, `always_redraw`, `ValueTracker` |
-| Object leaves the scene | `FadeOut`, `Uncreate`, `ShrinkToCenter` |
-| Static context that stays visible | `self.add()` (no animation) |
+| 对象首次出现 | `Create`、`Write`、`FadeIn`、`GrowFromCenter` |
+| 对象变成另一个 | `Transform`、`ReplacementTransform`、`FadeTransform` |
+| 把注意力引向已有对象 | `Indicate`、`Circumscribe`、`Flash`、`ShowPassingFlash` |
+| 维持持续的关联 | `add_updater`、`always_redraw`、`ValueTracker` |
+| 对象离开场景 | `FadeOut`、`Uncreate`、`ShrinkToCenter` |
+| 始终可见的静态背景 | `self.add()`（无动画） |
 
-## Pacing: the universal mistake is too fast
+## 节奏：最普遍的错误是太快
 
-### Timing rules
+### 时间规则
 
-| Content type | Minimum on-screen time |
+| 内容类型 | 最短屏幕停留时间 |
 |-------------|----------------------|
-| New equation appearing | 2.0s animation + 2.0s pause |
-| New concept label | 1.0s animation + 1.0s pause |
-| Key insight ("aha moment") | 2.5s animation + 3.0s pause |
-| Supporting annotation | 0.8s animation + 0.5s pause |
-| Scene transition (FadeOut all) | 0.5s animation + 0.3s pause |
+| 新公式出现 | 2.0s 动画 + 2.0s 停顿 |
+| 新概念标签 | 1.0s 动画 + 1.0s 停顿 |
+| 关键洞见（"顿悟时刻"） | 2.5s 动画 + 3.0s 停顿 |
+| 辅助标注 | 0.8s 动画 + 0.5s 停顿 |
+| 场景过渡（全部 FadeOut） | 0.5s 动画 + 0.3s 停顿 |
 
-### Breathing room
+### 留出呼吸空间
 
-After every reveal, add `self.wait()`. The viewer needs time to:
-1. Read the new text
-2. Connect it to what's already on screen
-3. Form an expectation about what comes next
+每次揭示之后，加上 `self.wait()`。观众需要时间来：
+1. 读懂新文字
+2. 把它和屏幕上已有的内容联系起来
+3. 对接下来会发生什么形成预期
 
-**No wait = the viewer is always behind you.** They're still reading the equation when you've already started transforming it.
+**没有等待 = 观众永远落后于你。** 他们还在读公式，你就已经开始变换它了。
 
-### Tempo variation
+### 节奏变化
 
-Monotonous pacing feels like a lecture. Vary the tempo:
-- **Slow build** for core concepts (long run_time, long pauses)
-- **Quick succession** for supporting details (short run_time, minimal pauses)
-- **Dramatic pause** before the key reveal (extra `self.wait(2.0)` before the "aha")
-- **Rapid montage** for "and this applies to X, Y, Z..." sequences (`LaggedStart` with tight lag_ratio)
+单调的节奏会让人觉得像在听枯燥的讲座。要让节奏有变化：
+- **缓慢铺垫**用于核心概念（长 run_time、长停顿）
+- **快速连发**用于辅助细节（短 run_time、最短停顿）
+- **戏剧性停顿**用于关键揭示之前（在"顿悟"之前额外加 `self.wait(2.0)`）
+- **快速蒙太奇**用于"而这同样适用于 X、Y、Z……"的序列（用 `LaggedStart`，lag_ratio 设得很紧）
 
-## Narration synchronization
+## 旁白同步
 
-### The "see then hear" principle
+### "先看后听"原则
 
-The visual should appear slightly BEFORE the narration describes it. When the viewer sees a circle appear and THEN hears "consider a circle," the visual primes their brain for the concept. The reverse — hearing first, seeing second — creates confusion because they're searching the screen for something that isn't there yet.
+视觉应当在旁白描述它"之前"略微提前出现。当观众看到一个圆出现、"然后"才听到"考虑一个圆"时，视觉已经为概念做了铺垫。反过来 — 先听后看 — 会造成困惑，因为观众会在屏幕上寻找一个还没出现的东西。
 
-### Practical timing
+### 实用的时间控制
 
 ```python
-# Scene duration should match narration duration.
-# If narration for this scene is 8 seconds:
-# Total animation run_times + total self.wait() times = ~8 seconds.
+# 场景时长应当匹配旁白时长。
+# 如果这一段旁白是 8 秒：
+# 所有动画的 run_time 之和 + 所有 self.wait() 之和 = 约 8 秒。
 
-# Use manim-voiceover for automatic sync:
+# 用 manim-voiceover 自动同步：
 with self.voiceover(text="The gradient points downhill") as tracker:
     self.play(GrowArrow(gradient_arrow), run_time=tracker.duration)
 ```
 
-## Equation decomposition strategy
+## 公式拆解策略
 
-### The "dim and reveal" pattern
+### "先暗后亮"模式
 
-When building a complex equation step by step:
-1. Show the full equation dimmed at `opacity=0.2` (sets expectation for where you're going)
-2. Highlight the first term at full opacity
-3. Explain it
-4. Highlight the next term, dim the first to `0.5` (it's now context)
-5. Repeat until the full equation is bright
+逐步构建一个复杂公式时：
+1. 先把整个公式以 `opacity=0.2` 暗淡显示（让观众对目的地有预期）
+2. 把第一项高亮为完全不透明
+3. 讲解它
+4. 高亮下一项，把前一项调暗到 `0.5`（它现在成了背景）
+5. 重复，直到整个公式都亮起来
 
-This is better than building left-to-right because the viewer always sees the destination.
+这比从左到右逐项搭建更好，因为观众始终能看到终点。
 
-### Term ordering
+### 项的顺序
 
-Animate terms in the order the viewer needs to understand them, not in the order they appear in the equation. For `E = mc²`:
-- Show `E` (the thing we want to know)
-- Then `m` (the input)
-- Then `c²` (the constant that makes it work)
-- Then the `=` (connecting them)
+按观众需要理解的顺序来动画展示各项，而不是按它们在公式里出现的顺序。以 `E = mc²` 为例：
+- 先展示 `E`（我们想知道的那个量）
+- 再展示 `m`（输入）
+- 再展示 `c²`（让它成立的常数）
+- 最后展示 `=`（把它们连起来）
 
-## Architecture and pipeline diagrams
+## 架构与流水线图
 
-### Box granularity
+### 方框的粒度
 
-The most common mistake: too many boxes. Each box is a concept the viewer must track. Five boxes with clear labels beats twelve boxes with abbreviations.
+最常见的错误：方框太多。每个方框都是观众要追踪的一个概念。5 个标注清晰的方框胜过 12 个缩写方框。
 
-**Rule:** If two consecutive boxes could be labeled "X" and "process X output," merge them into one box.
+**规则：** 如果两个相邻的方框会被标注为"X"和"处理 X 的输出"，就把它们合并成一个方框。
 
-### Animation strategy
+### 动画策略
 
-Build pipelines left-to-right (or top-to-bottom) with arrows connecting them:
-1. First box appears alone → explain it
-2. Arrow grows from first to second → "the output feeds into..."
-3. Second box appears → explain it
-4. Repeat
+从左到右（或从上到下）搭建流水线，用箭头连接：
+1. 第一个方框单独出现 → 讲解它
+2. 箭头从第一个长到第二个 → "输出流入……"
+3. 第二个方框出现 → 讲解它
+4. 重复
 
-Then show data flowing through: `ShowPassingFlash` along the arrows, or a colored dot traversing the path.
+然后展示数据在其中流动：沿箭头用 `ShowPassingFlash`，或一个有色点穿过这条路径。
 
-### The zoom-and-return pattern
+### 缩放再回归模式
 
-For complex systems:
-1. Show the full overview (all boxes, small)
-2. Zoom into one box (`MovingCameraScene.camera.frame.animate`)
-3. Expand that box into its internal components
-4. Zoom back out to the overview
-5. Zoom into the next box
+对于复杂系统：
+1. 先展示完整总览（所有方框，尺寸较小）
+2. 缩放到其中一个方框（`MovingCameraScene.camera.frame.animate`）
+3. 把那个方框展开成它的内部组件
+4. 缩放回总览
+5. 缩放到下一个方框
 
-## Common design mistakes
+## 常见设计错误
 
-1. **Animating everything at once.** The viewer can track 1-2 simultaneous animations. More than that and nothing registers.
-2. **No visual hierarchy.** Everything at the same opacity/size/color means nothing stands out. Use opacity layering.
-3. **Equations without context.** An equation appearing alone means nothing. Always show the geometric/visual interpretation first or simultaneously.
-4. **Skipping the "why."** Showing HOW a transformation works without WHY it matters. Add a sentence/label explaining the purpose.
-5. **Identical pacing throughout.** Every animation at run_time=1.5, every wait at 1.0. Vary it.
-6. **Forgetting the audience.** A video for high schoolers needs different pacing and complexity than one for PhD students. Decide the audience in the planning phase.
+1. **一次把所有东西都动起来。** 观众最多能同时追踪 1-2 个动画。再多就什么都记不住了。
+2. **没有视觉层级。** 所有用同样的不透明度/大小/颜色意味着没有任何东西突出。请用透明度分层。
+3. **公式没有上下文。** 一个孤零零的公式毫无意义。一定要先或同时展示它的几何/视觉解释。
+4. **跳过"为什么"。** 只展示一个变换"如何"工作，却不说明它"为什么"重要。加一句话或一个标签说明它的用途。
+5. **从头到尾节奏一模一样。** 每个动画都 run_time=1.5，每次等待都 1.0。要有所变化。
+6. **忘记受众。** 给高中生的视频与给博士生的视频在节奏和复杂度上完全不同。在规划阶段就确定受众。

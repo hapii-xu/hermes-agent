@@ -1,85 +1,85 @@
-# GGUF Troubleshooting Guide
+# GGUF 故障排查指南
 
-## Installation Issues
+## 安装问题
 
-### Build Fails
+### 构建失败
 
-**Error**: `make: *** No targets specified and no makefile found`
+**错误**：`make: *** No targets specified and no makefile found`
 
-**Fix**:
+**修复**：
 ```bash
-# Ensure you're in llama.cpp directory
+# 确保你在 llama.cpp 目录中
 cd llama.cpp
 make
 ```
 
-**Error**: `fatal error: cuda_runtime.h: No such file or directory`
+**错误**：`fatal error: cuda_runtime.h: No such file or directory`
 
-**Fix**:
+**修复**：
 ```bash
-# Install CUDA toolkit
+# 安装 CUDA 工具包
 # Ubuntu
 sudo apt install nvidia-cuda-toolkit
 
-# Or set CUDA path
+# 或设置 CUDA 路径
 export CUDA_PATH=/usr/local/cuda
 export PATH=$CUDA_PATH/bin:$PATH
 make GGML_CUDA=1
 ```
 
-### Python Bindings Issues
+### Python 绑定问题
 
-**Error**: `ERROR: Failed building wheel for llama-cpp-python`
+**错误**：`ERROR: Failed building wheel for llama-cpp-python`
 
-**Fix**:
+**修复**：
 ```bash
-# Install build dependencies
+# 安装构建依赖
 pip install cmake scikit-build-core
 
-# For CUDA support
+# 为了支持 CUDA
 CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
 
-# For Metal (macOS)
+# 为了支持 Metal（macOS）
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
-**Error**: `ImportError: libcudart.so.XX: cannot open shared object file`
+**错误**：`ImportError: libcudart.so.XX: cannot open shared object file`
 
-**Fix**:
+**修复**：
 ```bash
-# Add CUDA libraries to path
+# 将 CUDA 库加入路径
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-# Or reinstall with correct CUDA version
+# 或用正确的 CUDA 版本重新安装
 pip uninstall llama-cpp-python
 CUDACXX=/usr/local/cuda/bin/nvcc CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python
 ```
 
-## Conversion Issues
+## 转换问题
 
-### Model Not Supported
+### 模型不受支持
 
-**Error**: `KeyError: 'model.embed_tokens.weight'`
+**错误**：`KeyError: 'model.embed_tokens.weight'`
 
-**Fix**:
+**修复**：
 ```bash
-# Check model architecture
+# 检查模型架构
 python -c "from transformers import AutoConfig; print(AutoConfig.from_pretrained('./model').architectures)"
 
-# Use appropriate conversion script
-# For most models:
+# 使用合适的转换脚本
+# 对于大多数模型：
 python convert_hf_to_gguf.py ./model --outfile model.gguf
 
-# For older models, check if legacy script needed
+# 对于较旧的模型，检查是否需要旧版脚本
 ```
 
-### Vocabulary Mismatch
+### 词表不匹配
 
-**Error**: `RuntimeError: Vocabulary size mismatch`
+**错误**：`RuntimeError: Vocabulary size mismatch`
 
-**Fix**:
+**修复**：
 ```python
-# Ensure tokenizer matches model
+# 确保分词器与模型匹配
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 tokenizer = AutoTokenizer.from_pretrained("./model")
@@ -88,224 +88,224 @@ model = AutoModelForCausalLM.from_pretrained("./model")
 print(f"Tokenizer vocab size: {len(tokenizer)}")
 print(f"Model vocab size: {model.config.vocab_size}")
 
-# If mismatch, resize embeddings before conversion
+# 如果不匹配，在转换前调整词嵌入大小
 model.resize_token_embeddings(len(tokenizer))
 model.save_pretrained("./model-fixed")
 ```
 
-### Out of Memory During Conversion
+### 转换期间内存不足
 
-**Error**: `torch.cuda.OutOfMemoryError` during conversion
+**错误**：转换期间出现 `torch.cuda.OutOfMemoryError`
 
-**Fix**:
+**修复**：
 ```bash
-# Use CPU for conversion
+# 使用 CPU 进行转换
 CUDA_VISIBLE_DEVICES="" python convert_hf_to_gguf.py ./model --outfile model.gguf
 
-# Or use low memory mode
+# 或使用低内存模式
 python convert_hf_to_gguf.py ./model --outfile model.gguf --outtype f16
 ```
 
-## Quantization Issues
+## 量化问题
 
-### Wrong Output File Size
+### 输出文件大小错误
 
-**Problem**: Quantized file is larger than expected
+**问题**：量化后的文件比预期大
 
-**Check**:
+**检查**：
 ```bash
-# Verify quantization type
+# 验证量化类型
 ./llama-cli -m model.gguf --verbose
 
-# Expected sizes for 7B model:
-# Q4_K_M: ~4.1 GB
-# Q5_K_M: ~4.8 GB
-# Q8_0: ~7.2 GB
-# F16: ~13.5 GB
+# 7B 模型的预期大小：
+# Q4_K_M：~4.1 GB
+# Q5_K_M：~4.8 GB
+# Q8_0：~7.2 GB
+# F16：~13.5 GB
 ```
 
-### Quantization Crashes
+### 量化崩溃
 
-**Error**: `Segmentation fault` during quantization
+**错误**：量化期间出现 `Segmentation fault`
 
-**Fix**:
+**修复**：
 ```bash
-# Increase stack size
+# 增大栈大小
 ulimit -s unlimited
 
-# Or use less threads
+# 或使用更少的线程
 ./llama-quantize -t 4 model-f16.gguf model-q4.gguf Q4_K_M
 ```
 
-### Poor Quality After Quantization
+### 量化后质量差
 
-**Problem**: Model outputs gibberish after quantization
+**问题**：量化后模型输出乱码
 
-**Solutions**:
+**解决方案**：
 
-1. **Use importance matrix**:
+1. **使用重要性矩阵**：
 ```bash
-# Generate imatrix with good calibration data
+# 用优质校准数据生成 imatrix
 ./llama-imatrix -m model-f16.gguf \
     -f wiki_sample.txt \
     --chunk 512 \
     -o model.imatrix
 
-# Quantize with imatrix
+# 带 imatrix 量化
 ./llama-quantize --imatrix model.imatrix \
     model-f16.gguf model-q4_k_m.gguf Q4_K_M
 ```
 
-2. **Try higher precision**:
+2. **尝试更高精度**：
 ```bash
-# Use Q5_K_M or Q6_K instead of Q4
+# 用 Q5_K_M 或 Q6_K 代替 Q4
 ./llama-quantize model-f16.gguf model-q5_k_m.gguf Q5_K_M
 ```
 
-3. **Check original model**:
+3. **检查原始模型**：
 ```bash
-# Test FP16 version first
+# 先测试 FP16 版本
 ./llama-cli -m model-f16.gguf -p "Hello, how are you?" -n 50
 ```
 
-## Inference Issues
+## 推理问题
 
-### Slow Generation
+### 生成缓慢
 
-**Problem**: Generation is slower than expected
+**问题**：生成速度比预期慢
 
-**Solutions**:
+**解决方案**：
 
-1. **Enable GPU offload**:
+1. **启用 GPU 卸载**：
 ```bash
 ./llama-cli -m model.gguf -ngl 35 -p "Hello"
 ```
 
-2. **Optimize batch size**:
+2. **优化批大小**：
 ```python
 llm = Llama(
     model_path="model.gguf",
-    n_batch=512,        # Increase for faster prompt processing
+    n_batch=512,        # 增大以加快提示词处理
     n_gpu_layers=35
 )
 ```
 
-3. **Use appropriate threads**:
+3. **使用合适的线程数**：
 ```bash
-# Match physical cores, not logical
+# 匹配物理核心，而非逻辑核心
 ./llama-cli -m model.gguf -t 8 -p "Hello"
 ```
 
-4. **Enable Flash Attention** (if supported):
+4. **启用 Flash Attention**（如果支持）：
 ```bash
 ./llama-cli -m model.gguf -ngl 35 --flash-attn -p "Hello"
 ```
 
-### Out of Memory
+### 内存不足
 
-**Error**: `CUDA out of memory` or system freeze
+**错误**：`CUDA out of memory` 或系统冻结
 
-**Solutions**:
+**解决方案**：
 
-1. **Reduce GPU layers**:
+1. **减少 GPU 层数**：
 ```python
-# Start low and increase
+# 从低开始，逐步增加
 llm = Llama(model_path="model.gguf", n_gpu_layers=10)
 ```
 
-2. **Use smaller quantization**:
+2. **使用更低量化**：
 ```bash
 ./llama-quantize model-f16.gguf model-q3_k_m.gguf Q3_K_M
 ```
 
-3. **Reduce context length**:
+3. **减少上下文长度**：
 ```python
 llm = Llama(
     model_path="model.gguf",
-    n_ctx=2048,  # Reduce from 4096
+    n_ctx=2048,  # 从 4096 减少
     n_gpu_layers=35
 )
 ```
 
-4. **Quantize KV cache**:
+4. **量化 KV 缓存**：
 ```python
 llm = Llama(
     model_path="model.gguf",
-    type_k=2,    # Q4_0 for K cache
-    type_v=2,    # Q4_0 for V cache
+    type_k=2,    # K 缓存用 Q4_0
+    type_v=2,    # V 缓存用 Q4_0
     n_gpu_layers=35
 )
 ```
 
-### Garbage Output
+### 垃圾输出
 
-**Problem**: Model outputs random characters or nonsense
+**问题**：模型输出随机字符或无意义内容
 
-**Diagnose**:
+**诊断**：
 ```python
-# Check model loading
+# 检查模型加载
 llm = Llama(model_path="model.gguf", verbose=True)
 
-# Test with simple prompt
+# 用简单提示词测试
 output = llm("1+1=", max_tokens=5, temperature=0)
 print(output)
 ```
 
-**Solutions**:
+**解决方案**：
 
-1. **Check model integrity**:
+1. **检查模型完整性**：
 ```bash
-# Verify GGUF file
+# 验证 GGUF 文件
 ./llama-cli -m model.gguf --verbose 2>&1 | head -50
 ```
 
-2. **Use correct chat format**:
+2. **使用正确的对话格式**：
 ```python
 llm = Llama(
     model_path="model.gguf",
-    chat_format="llama-3"  # Match your model: chatml, mistral, etc.
+    chat_format="llama-3"  # 匹配你的模型：chatml、mistral 等
 )
 ```
 
-3. **Check temperature**:
+3. **检查温度**：
 ```python
-# Use lower temperature for deterministic output
+# 使用更低温度以获得确定性输出
 output = llm("Hello", max_tokens=50, temperature=0.1)
 ```
 
-### Token Issues
+### Token 问题
 
-**Error**: `RuntimeError: unknown token` or encoding errors
+**错误**：`RuntimeError: unknown token` 或编码错误
 
-**Fix**:
+**修复**：
 ```python
-# Ensure UTF-8 encoding
+# 确保使用 UTF-8 编码
 prompt = "Hello, world!".encode('utf-8').decode('utf-8')
 output = llm(prompt, max_tokens=50)
 ```
 
-## Server Issues
+## 服务器问题
 
-### Connection Refused
+### 连接被拒绝
 
-**Error**: `Connection refused` when accessing server
+**错误**：访问服务器时出现 `Connection refused`
 
-**Fix**:
+**修复**：
 ```bash
-# Bind to all interfaces
+# 绑定到所有接口
 ./llama-server -m model.gguf --host 0.0.0.0 --port 8080
 
-# Check if port is in use
+# 检查端口是否被占用
 lsof -i :8080
 ```
 
-### Server Crashes Under Load
+### 服务器在高负载下崩溃
 
-**Problem**: Server crashes with multiple concurrent requests
+**问题**：服务器在多个并发请求下崩溃
 
-**Solutions**:
+**解决方案**：
 
-1. **Limit parallelism**:
+1. **限制并行度**：
 ```bash
 ./llama-server -m model.gguf \
     --parallel 2 \
@@ -313,94 +313,94 @@ lsof -i :8080
     --cont-batching
 ```
 
-2. **Add request timeout**:
+2. **添加请求超时**：
 ```bash
 ./llama-server -m model.gguf --timeout 300
 ```
 
-3. **Monitor memory**:
+3. **监控内存**：
 ```bash
-watch -n 1 nvidia-smi  # For GPU
-watch -n 1 free -h     # For RAM
+watch -n 1 nvidia-smi  # 用于 GPU
+watch -n 1 free -h     # 用于 RAM
 ```
 
-### API Compatibility Issues
+### API 兼容性问题
 
-**Problem**: OpenAI client not working with server
+**问题**：OpenAI 客户端无法与服务器配合工作
 
-**Fix**:
+**修复**：
 ```python
 from openai import OpenAI
 
-# Use correct base URL format
+# 使用正确的 base URL 格式
 client = OpenAI(
-    base_url="http://localhost:8080/v1",  # Include /v1
+    base_url="http://localhost:8080/v1",  # 包含 /v1
     api_key="not-needed"
 )
 
-# Use correct model name
+# 使用正确的模型名称
 response = client.chat.completions.create(
-    model="local",  # Or the actual model name
+    model="local",  # 或实际的模型名称
     messages=[{"role": "user", "content": "Hello"}]
 )
 ```
 
-## Apple Silicon Issues
+## Apple Silicon 问题
 
-### Metal Not Working
+### Metal 不工作
 
-**Problem**: Metal acceleration not enabled
+**问题**：Metal 加速未启用
 
-**Check**:
+**检查**：
 ```bash
-# Verify Metal support
+# 验证 Metal 支持
 ./llama-cli -m model.gguf --verbose 2>&1 | grep -i metal
 ```
 
-**Fix**:
+**修复**：
 ```bash
-# Rebuild with Metal
+# 用 Metal 重新构建
 make clean
 make GGML_METAL=1
 
-# Python bindings
+# Python 绑定
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall
 ```
 
-### Incorrect Memory Usage on M1/M2
+### M1/M2 上内存使用不正确
 
-**Problem**: Model uses too much unified memory
+**问题**：模型占用了过多统一内存
 
-**Fix**:
+**修复**：
 ```python
-# Offload all layers for Metal
+# 为 Metal 卸载所有层
 llm = Llama(
     model_path="model.gguf",
-    n_gpu_layers=99,    # Offload everything
-    n_threads=1         # Metal handles parallelism
+    n_gpu_layers=99,    # 全部卸载
+    n_threads=1         # Metal 处理并行
 )
 ```
 
-## Debugging
+## 调试
 
-### Enable Verbose Output
+### 启用详细输出
 
 ```bash
-# CLI verbose mode
+# CLI 详细模式
 ./llama-cli -m model.gguf --verbose -p "Hello" -n 50
 
-# Python verbose
+# Python 详细模式
 llm = Llama(model_path="model.gguf", verbose=True)
 ```
 
-### Check Model Metadata
+### 检查模型元数据
 
 ```bash
-# View GGUF metadata
+# 查看 GGUF 元数据
 ./llama-cli -m model.gguf --verbose 2>&1 | head -100
 ```
 
-### Validate GGUF File
+### 验证 GGUF 文件
 
 ```python
 import struct
@@ -424,19 +424,19 @@ def validate_gguf(filepath):
 validate_gguf("model.gguf")
 ```
 
-## Getting Help
+## 获取帮助
 
-1. **GitHub Issues**: https://github.com/ggml-org/llama.cpp/issues
-2. **Discussions**: https://github.com/ggml-org/llama.cpp/discussions
-3. **Reddit**: r/LocalLLaMA
+1. **GitHub Issues**：https://github.com/ggml-org/llama.cpp/issues
+2. **讨论区**：https://github.com/ggml-org/llama.cpp/discussions
+3. **Reddit**：r/LocalLLaMA
 
-### Reporting Issues
+### 报告问题
 
-Include:
-- llama.cpp version/commit hash
-- Build command used
-- Model name and quantization
-- Full error message/stack trace
-- Hardware: CPU/GPU model, RAM, VRAM
-- OS version
-- Minimal reproduction steps
+请包含：
+- llama.cpp 版本/提交哈希
+- 所用的构建命令
+- 模型名称和量化
+- 完整的错误信息/堆栈跟踪
+- 硬件：CPU/GPU 型号、RAM、VRAM
+- 操作系统版本
+- 最小复现步骤

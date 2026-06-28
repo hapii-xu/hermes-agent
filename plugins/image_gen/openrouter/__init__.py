@@ -1,22 +1,22 @@
-"""OpenRouter-compatible image generation backend (OpenRouter + Nous Portal).
+"""兼容 OpenRouter 的图像生成后端（OpenRouter + Nous Portal）。
 
-Both OpenRouter and the Nous Portal inference endpoint speak the same
-OpenAI-style ``/chat/completions`` image-generation protocol: send
-``modalities: ["image", "text"]`` with an image-output model (e.g.
-``google/gemini-3-pro-image``), pass reference images as ``image_url``
-content parts for grounding, and read the generated images back from
-``choices[0].message.images[].image_url.url`` (a ``data:image/...;base64`` URI).
+OpenRouter 和 Nous Portal 推理端点使用相同的 OpenAI 风格
+``/chat/completions`` 图像生成协议：发送 ``modalities: ["image", "text"]``
+并使用图像输出模型（例如 ``google/gemini-3-pro-image``），将参考图像作为
+``image_url`` 内容片段传入以进行 reference grounding，然后从
+``choices[0].message.images[].image_url.url``（一个 ``data:image/...;base64`` URI）
+读取生成的图像。
 
-Nous Portal proxies OpenRouter, so one implementation services both — we only
-swap the resolved ``(base_url, api_key)``. Credentials are resolved through the
-agent's existing :func:`~hermes_cli.runtime_provider.resolve_runtime_provider`,
-which already understands OpenRouter's key pool and the Nous OAuth device-code
-token, so this plugin never reinvents auth.
+Nous Portal 代理 OpenRouter，因此一个实现即可服务两者——我们只需
+切换解析后的 ``(base_url, api_key)``。凭据通过 agent 已有的
+:func:`~hermes_cli.runtime_provider.resolve_runtime_provider` 解析，
+该函数已经了解 OpenRouter 的 key 池和 Nous OAuth device-code token，
+因此本插件无需重新实现认证。
 
-Reference grounding is the reason pet sprite generation cares about this
-backend: each animation row must stay the same character as the chosen base
-frame, which only works on models that accept image input. Gemini Flash Image
-("nano-banana") does, so both providers advertise image-to-image support.
+Reference grounding 是 pet sprite 生成关心此后端的原因：每一行动画
+必须与所选基础帧保持同一角色，这仅在接受图像输入的模型上可行。
+Gemini Flash Image（"nano-banana"）支持此功能，因此两个 provider
+都声明了 image-to-image 支持。
 """
 
 from __future__ import annotations
@@ -40,38 +40,38 @@ from agent.image_gen_provider import (
 
 logger = logging.getLogger(__name__)
 
-# Quality-first model chain for OpenRouter-compatible endpoints.
+# 面向 OpenRouter 兼容端点的质量优先模型链。
 #
-# Default behavior (no env/config override): try the highest-fidelity OpenAI
-# image model first, then fall back to Gemini 3 Pro Image if the OpenAI model
-# is access-gated / unavailable / times out on this endpoint.
+# 默认行为（无 env/config 覆盖）：先尝试保真度最高的 OpenAI
+# 图像模型，如果该模型在当前端点上被访问限制/不可用/超时，
+# 则回退到 Gemini 3 Pro Image。
 #
-# Explicit override (OPENROUTER_IMAGE_MODEL or image_gen.<provider>.model):
-# use exactly that model (no auto fallback), so power users keep full control.
+# 显式覆盖（OPENROUTER_IMAGE_MODEL 或 image_gen.<provider>.model）：
+# 精确使用指定模型（无自动回退），以便高级用户保持完全控制。
 DEFAULT_MODEL = "openai/gpt-5.4-image-2"
 _FALLBACK_MODEL = "google/gemini-3-pro-image"
 _DEFAULT_MODEL_CHAIN = (DEFAULT_MODEL, _FALLBACK_MODEL)
 
-# Semantic aspect ratio (the image_gen contract) → OpenRouter's image_config
-# aspect_ratio strings.
+# 语义宽高比（image_gen 合约）→ OpenRouter 的 image_config
+# aspect_ratio 字符串。
 _ASPECT_RATIOS = {
     "square": "1:1",
     "landscape": "16:9",
     "portrait": "9:16",
 }
 
-# Gemini Flash Image accepts up to 3 input images per prompt; clamp references
-# so we never overflow the model's limit.
+# Gemini Flash Image 每个 prompt 最多接受 3 张输入图像；限制参考图像
+# 数量以避免超出模型限制。
 _MAX_REFERENCE_IMAGES = 3
 
-# Per single image call. The quality-first default (OpenAI image via OpenRouter)
-# is genuinely slow — a single cold row can run well past 3 minutes — so give
-# each call real headroom before we treat it as hung and fall back / retry.
+# 单次图像调用。质量优先默认值（通过 OpenRouter 调用 OpenAI 图像）
+# 确实很慢——单次冷启动行可能远超 3 分钟——因此给每次调用
+# 足够的超时时间，再将其视为挂起并进行回退/重试。
 _REQUEST_TIMEOUT = 300.0
 
 
 def _load_image_gen_config() -> Dict[str, Any]:
-    """Read the ``image_gen`` section from config.yaml (``{}`` on failure)."""
+    """从 config.yaml 读取 ``image_gen`` 部分（失败时返回 ``{}``）。"""
     try:
         from hermes_cli.config import load_config
 
@@ -84,11 +84,11 @@ def _load_image_gen_config() -> Dict[str, Any]:
 
 
 def _to_image_url_part(ref: str) -> Optional[str]:
-    """Turn a reference (local path or http URL) into an ``image_url`` value.
+    """将引用（本地路径或 HTTP URL）转换为 ``image_url`` 值。
 
-    Remote URLs pass through unchanged; local files are inlined as base64 data
-    URIs so the request is self-contained (the provider endpoint can't reach a
-    path on our disk). Returns ``None`` when the reference can't be read.
+    远程 URL 直接传递不变；本地文件以内联 base64 data URI 形式传入，
+    使请求自包含（provider 端点无法访问本地磁盘路径）。
+    当引用无法读取时返回 ``None``。
     """
     ref = str(ref or "").strip()
     if not ref:
@@ -107,10 +107,10 @@ def _to_image_url_part(ref: str) -> Optional[str]:
 
 
 def _extract_images(payload: Dict[str, Any]) -> List[str]:
-    """Pull generated image URLs from a chat-completions response.
+    """从 chat-completions 响应中提取生成的图像 URL。
 
-    OpenRouter returns generated images under
-    ``choices[0].message.images[].image_url.url`` (typically a base64 data URI).
+    OpenRouter 在 ``choices[0].message.images[].image_url.url`` 下
+    返回生成的图像（通常是 base64 data URI）。
     """
     out: List[str] = []
     choices = payload.get("choices") if isinstance(payload, dict) else None
@@ -134,13 +134,13 @@ def _extract_images(payload: Dict[str, Any]) -> List[str]:
 def _access_error_hint(
     display: str, model_id: str, env_var: str, status: int, err_msg: str
 ) -> Optional[str]:
-    """A targeted hint when an access-gated OpenAI image model can't be reached.
+    """当访问受限的 OpenAI 图像模型无法到达时提供针对性提示。
 
-    Some OpenAI image models on OpenRouter need account enablement / BYOK, so the
-    failure isn't a missing key (the key is valid) — the *model* is unreachable.
-    The generic "check your key" message is misleading there, so we detect that
-    case and point the user at the real fix. Returns one actionable line, or
-    ``None`` when this isn't the access-gated case.
+    OpenRouter 上的一些 OpenAI 图像模型需要账户启用/BYOK，因此
+    失败原因不是缺少 key（key 是有效的）——而是*模型*无法访问。
+    通用的"检查你的 key"提示在此场景下会产生误导，因此我们检测
+    这种情况并引导用户找到真正的解决方案。返回一条可操作提示，
+    或在不属于访问受限情况时返回 ``None``。
     """
     if not model_id.startswith("openai/"):
         return None
@@ -169,11 +169,11 @@ def _dedupe_models(models: list[str]) -> list[str]:
 
 
 class OpenRouterCompatImageProvider(ImageGenProvider):
-    """Image generation over an OpenRouter-compatible chat-completions endpoint.
+    """通过 OpenRouter 兼容的 chat-completions 端点进行图像生成。
 
-    Instantiated once per backend (OpenRouter, Nous Portal). The two differ only
-    in which runtime provider supplies ``(base_url, api_key)`` and in the config
-    namespace used for the model override.
+    每个后端（OpenRouter、Nous Portal）实例化一次。两者仅在
+    哪个 runtime provider 提供 ``(base_url, api_key)`` 以及用于
+    模型覆盖的 config 命名空间上有所不同。
     """
 
     def __init__(

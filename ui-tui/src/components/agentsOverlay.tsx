@@ -33,7 +33,7 @@ import { compactPreview } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { SubagentNode, SubagentProgress } from '../types.js'
 
-// ── Types + lookup tables ────────────────────────────────────────────
+// ── 类型与查找表 ────────────────────────────────────────────
 
 type SortMode = 'depth-first' | 'duration-desc' | 'status' | 'tools-desc'
 type FilterMode = 'all' | 'failed' | 'leaf' | 'running'
@@ -96,10 +96,10 @@ const STATUS_GLYPH: Record<Status, { color: (t: Theme) => string; glyph: string 
   error: { color: t => t.color.error, glyph: '⚠' }
 }
 
-// Heatmap palette — cold → hot, resolved against the active theme.
+// 热力图调色板 — 冷 → 热，基于当前主题解析颜色。
 const heatPalette = (t: Theme) => [t.color.border, t.color.accent, t.color.primary, t.color.warn, t.color.error]
 
-// ── Pure helpers ─────────────────────────────────────────────────────
+// ── 纯函数工具 ─────────────────────────────────────────────────────
 
 const fmtDur = (seconds?: number) => (seconds == null || seconds <= 0 ? '' : fmtDuration(seconds))
 const fmtElapsedLabel = (seconds: number) => (seconds < 0 ? '' : fmtDuration(seconds))
@@ -121,7 +121,7 @@ const formatRowId = (n: number): string => String(n + 1).padStart(2, ' ')
 const cycle = <T,>(order: readonly T[], current: T): T => order[(order.indexOf(current) + 1) % order.length]!
 
 const statusGlyph = (item: SubagentProgress, t: Theme) => {
-  // Defensive fallback for cross-version snapshots with unknown statuses.
+  // 针对未知状态的跨版本快照的防御性回退。
   const g = STATUS_GLYPH[item.status] ?? STATUS_GLYPH.error
 
   return { color: g.color(t), glyph: g.glyph }
@@ -137,9 +137,9 @@ const diffMetricLine = (name: string, a: number, b: number, fmt: (n: number) => 
   return `${name}: ${fmt(a)} → ${fmt(b)}  (${sign}${fmt(Math.abs(d)) || '0'})`
 }
 
-// ── Sub-components ───────────────────────────────────────────────────
+// ── 子组件 ───────────────────────────────────────────────────
 
-/** Polled on parent `tick` so accordions can resize the thumb without a scroll event. */
+/** 在父组件 `tick` 时轮询，使手风琴可以在没有滚动事件的情况下调整滑块大小。 */
 function OverlayScrollbar({
   scrollRef,
   t,
@@ -149,7 +149,7 @@ function OverlayScrollbar({
   t: Theme
   tick: number
 }) {
-  void tick // ensures re-render when the parent clock advances
+  void tick // 确保父时钟推进时重新渲染
 
   const [hover, setHover] = useState(false)
   const [grab, setGrab] = useState<null | number>(null)
@@ -261,9 +261,9 @@ function GanttStrip({
   const totalSpan = Math.max(1, globalEnd - globalStart)
   const totalSeconds = (globalEnd - globalStart) / 1000
 
-  // 5-col id gutter ("  12  ") so the bar doesn't press against the id.
-  // 10-col right reserve: pad + up to `12m 30s`-style label without
-  // truncate-end against a full-width bar.
+  // 5 列 id 间隔（"  12  "），使条形不会紧贴 id。
+  // 10 列右侧预留：内边距 + 最多 `12m 30s` 风格的标签，
+  // 避免在满宽条形上使用 truncate-end。
   const idGutter = 5
   const labelReserve = 10
   const barWidth = Math.max(10, cols - idGutter - labelReserve)
@@ -413,9 +413,9 @@ function Detail({ id, node, t }: { id?: string; node: SubagentNode; t: Theme }) 
   const filesRead = item.filesRead ?? []
   const filesWritten = item.filesWritten ?? []
   const outputTail = item.outputTail ?? []
-  // Tool calls: prefer the live stream; for archived / post-turn views
-  // that stream is often empty even when tool_count > 0, so fall back to
-  // the tool names captured in outputTail at subagent.complete time.
+  // Tool 调用：优先使用实时流；对于归档 / 回合结束后的视图，
+  // 即使 tool_count > 0，该流通常也为空，因此回退到
+  // subagent.complete 时在 outputTail 中捕获的 tool 名称。
   const toolLines = item.tools.length > 0 ? item.tools : outputTail.map(e => e.tool).filter(Boolean)
 
   const filesOverflow = Math.max(0, filesRead.length - 8) + Math.max(0, filesWritten.length - 8)
@@ -689,7 +689,7 @@ function DiffView({
   )
 }
 
-// ── Main overlay ─────────────────────────────────────────────────────
+// ── 主覆盖层 ─────────────────────────────────────────────────────
 
 export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: AgentsOverlayProps) {
   const liveSubagents = useTurnSelector(state => state.subagents)
@@ -698,8 +698,8 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const diffPair = useStore($spawnDiff)
   const { stdout } = useStdout()
 
-  // historyIndex === 0: live turn.  1..N pulls the Nth-most-recent archived
-  // snapshot.  /replay passes N on open.
+  // historyIndex === 0：活跃回合。1..N 拉取倒数第 N 个归档
+  // 快照。/replay 在打开时传入 N。
   const [historyIndex, setHistoryIndex] = useState(() =>
     Math.max(0, Math.min(history.length, Math.floor(initialHistoryIndex)))
   )
@@ -709,18 +709,18 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const [cursor, setCursor] = useState(0)
   const [flash, setFlash] = useState<string>('')
   const [now, setNow] = useState(() => Date.now())
-  // cc-style view switching: list = full-width row picker, detail = full-width
-  // scrollable pane.  Two panes side-by-side in Ink fought Yoga flex.
+  // cc 风格视图切换：list = 全宽行选择器，detail = 全宽
+  // 可滚动面板。在 Ink 中双面板并排与 Yoga flex 冲突。
   const [mode, setMode] = useState<'detail' | 'list'>('list')
 
   const detailScrollRef = useRef<null | ScrollBoxHandle>(null)
   const prevLiveCountRef = useRef(liveSubagents.length)
 
-  // ── Derived state ──────────────────────────────────────────────────
+  // ── 派生状态 ──────────────────────────────────────────────────
 
   const activeSnapshot = historyIndex > 0 ? history[historyIndex - 1] : null
-  // Instant fallback to history[0] the moment the live list clears — avoids
-  // a one-frame "no subagents" flash while the auto-follow effect fires.
+  // 当活跃列表清空时立即回退到 history[0] — 避免
+  // 在自动跟踪效果触发前出现一帧"无 subagent"的闪烁。
   const justFinishedSnapshot = historyIndex === 0 && liveSubagents.length === 0 ? (history[0] ?? null) : null
   const effectiveSnapshot = activeSnapshot ?? justFinishedSnapshot
   const replayMode = effectiveSnapshot != null
@@ -739,28 +739,28 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const rowsH = Math.max(8, (stdout?.rows ?? 24) - 10)
   const listWindowStart = Math.max(0, cursor - Math.floor(rowsH / 2))
 
-  // ── Effects ────────────────────────────────────────────────────────
+  // ── 副作用 ────────────────────────────────────────────────────────
 
   useEffect(() => {
-    // Ticker drives both the live gantt and OverlayScrollbar content-reflow
-    // detection.  Slower in replay (nothing's growing) but not stopped
-    // because accordions still expand.
+    // 时钟驱动实时 gantt 图和 OverlayScrollbar 的内容重排检测。
+    // 在回放模式下较慢（没有内容在增长），但不会停止，
+    // 因为手风琴仍然需要展开。
     const id = setInterval(() => setNow(Date.now()), replayMode ? 300 : 500)
 
     return () => clearInterval(id)
   }, [replayMode])
 
   useEffect(() => {
-    // Clamp stale index when history grows/shrinks beneath us.
+    // 当历史在我们下方增长/缩小时，修正过时的索引。
     if (historyIndex > history.length) {
       setHistoryIndex(history.length)
     }
   }, [history.length, historyIndex])
 
   useEffect(() => {
-    // Auto-follow the just-finished turn onto history[1] so the user isn't
-    // dropped into an empty live view.  Fires only when transitioning from
-    // "had live subagents" → "live empty" while in live mode.
+    // 自动跟踪刚完成的回合到 history[1]，这样用户不会被
+    // 放到一个空的活跃视图中。仅在从"有活跃 subagent"→
+    // "活跃为空"过渡且处于活跃模式时触发。
     const prev = prevLiveCountRef.current
     prevLiveCountRef.current = liveSubagents.length
 
@@ -772,12 +772,12 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   }, [history.length, historyIndex, liveSubagents.length])
 
   useEffect(() => {
-    // Reset detail scroll on navigation so the top of the new node shows.
+    // 导航时重置详情面板的滚动位置，使新节点的顶部可见。
     detailScrollRef.current?.scrollTo(0)
   }, [cursor, historyIndex, mode])
 
   useEffect(() => {
-    // Warm caps + paused flag on open.
+    // 打开时预热 caps + 暂停标志。
     gw.request<DelegationStatusResponse>('delegation.status', {})
       .then(r => applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r)))
       .catch(() => {})
@@ -789,7 +789,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     }
   }, [cursor, rows.length])
 
-  // ── Actions ────────────────────────────────────────────────────────
+  // ── 操作 ────────────────────────────────────────────────────────
 
   const guardLive = (action: () => void) => {
     if (replayMode) {
@@ -846,7 +846,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     onClose()
   }
 
-  // ── Input ──────────────────────────────────────────────────────────
+  // ── 输入处理 ──────────────────────────────────────────────────────────
 
   const detailPageSize = Math.max(4, rowsH - 2)
   const wheelDetailDy = 3
@@ -861,7 +861,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       return mode === 'detail' ? setMode('list') : closeWithCleanup()
     }
 
-    // Shared actions (both modes).
+    // 两种模式共享的操作。
     if (ch === '<' || ch === '[') {
       return stepHistory(1)
     }
@@ -922,7 +922,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       return
     }
 
-    // List mode.
+    // 列表模式。
     if ((key.return || key.rightArrow || ch === 'l') && selected) {
       return setMode('detail')
     }
@@ -952,7 +952,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     }
   })
 
-  // ── Header assembly ────────────────────────────────────────────────
+  // ── 头部组装 ────────────────────────────────────────────────
 
   const mix = Object.entries(
     subagents.reduce<Record<string, number>>((acc, it) => {
@@ -984,7 +984,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     ? ' · controls locked'
     : ` · x kill · X subtree · p ${delegation.paused ? 'resume' : 'pause'}`
 
-  // ── Rendering ──────────────────────────────────────────────────────
+  // ── 渲染 ──────────────────────────────────────────────────────
 
   if (diffPair) {
     return <DiffView cols={cols} onClose={closeWithCleanup} pair={diffPair} t={t} />

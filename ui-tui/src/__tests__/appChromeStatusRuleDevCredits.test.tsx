@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { StatusRule } from '../components/appChrome.js'
 import { DEFAULT_THEME } from '../theme.js'
 
-// DEV_CREDITS_MODE is a module-load-time constant (config/env.ts reads
-// process.env.HERMES_DEV_CREDITS exactly once, at import). Mutating process.env
-// inside a test can't flip it after the module is loaded — so mock the module to
-// the dev-on value for this file. vitest hoists vi.mock above the imports, so
-// appChrome picks up the mocked flag. Lives in its own file so the override
-// stays scoped (the other StatusRule tests run with the real, dev-off value).
+// DEV_CREDITS_MODE 是一个模块加载时常量（config/env.ts 在 import 时
+// 只读取一次 process.env.HERMES_DEV_CREDITS）。在测试内部修改 process.env
+// 无法在模块加载后改变它的值 —— 因此在此文件中将该模块 mock 为
+// dev-on 值。vitest 会将 vi.mock 提升到 import 之前，所以
+// appChrome 会获取到 mock 后的标志。放在独立文件中是为了让 override
+// 保持作用域隔离（其他 StatusRule 测试使用真实的 dev-off 值运行）。
 vi.mock('../config/env.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../config/env.js')>()
   return { ...actual, DEV_CREDITS_MODE: true }
@@ -64,10 +64,10 @@ describe('StatusRule dev-credits banner (HERMES_DEV_CREDITS on)', () => {
 
     const rendered = textContent(element)
 
-    // The notice and the dev banner coexist …
+    // Notice 和 dev banner 共存 …
     expect(rendered).toContain('⚠ 90% used')
     expect(rendered).toContain('(dev credits)')
-    // … and the Δ spend segment renders (12345 micros → 1.2¢).
+    // … 且 Δ spend 段渲染（12345 micros → 1.2¢）。
     expect(rendered).toContain('Δ')
   })
 })

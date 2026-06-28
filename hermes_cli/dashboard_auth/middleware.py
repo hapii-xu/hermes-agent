@@ -1,18 +1,16 @@
-"""Auth-gate middleware for the dashboard.
+"""Dashboard 的认证门控中间件。
 
-Engaged when ``app.state.auth_required is True``. The gate's job:
+当 ``app.state.auth_required is True`` 时启用。门控的职责：
 
-  1. Allow a small set of routes through unauthenticated (login page,
-     ``/auth/*`` OAuth round trip, ``/api/auth/providers``, static
-     assets).
-  2. For everything else, demand a valid session cookie and attach the
-     verified :class:`Session` to ``request.state.session``.
-  3. On HTML routes, redirect missing/invalid cookies to ``/login``.
-     On ``/api/*`` routes, return 401 JSON.
+  1. 允许少量路由无需认证即可通过（登录页、``/auth/*`` OAuth 往返、
+     ``/api/auth/providers``、静态资源）。
+  2. 其他所有路由要求有效的 session cookie，并将已验证的
+     :class:`Session` 附加到 ``request.state.session``。
+  3. 在 HTML 路由上，缺失/无效 cookie 重定向到 ``/login``。
+     在 ``/api/*`` 路由上，返回 401 JSON。
 
-The middleware is a no-op when ``auth_required`` is False (loopback
-mode); the legacy ``_SESSION_TOKEN`` ``auth_middleware`` handles those
-binds.
+当 ``auth_required`` 为 False（回环模式）时，中间件为无操作；
+传统的 ``_SESSION_TOKEN`` ``auth_middleware`` 处理这些绑定。
 """
 from __future__ import annotations
 
@@ -30,11 +28,10 @@ from hermes_cli.dashboard_auth.public_paths import PUBLIC_API_PATHS
 
 _log = logging.getLogger(__name__)
 
-# Prefixes that bypass the auth gate. Match via ``path == prefix`` or
-# ``path.startswith(prefix)`` — so ``/assets/`` (with trailing slash)
-# matches ``/assets/foo.css`` but not ``/assetsleak``. Auth-bootstrap
-# (login page, OAuth round trip, provider listing) and static asset
-# mounts go here.
+# 绕过认证门控的前缀。通过 ``path == prefix`` 或
+# ``path.startswith(prefix)`` 匹配——因此 ``/assets/``（带尾部斜杠）
+# 匹配 ``/assets/foo.css`` 但不匹配 ``/assetsleak``。认证引导
+# （登录页、OAuth 往返、提供者列表）和静态资源挂载放在此处。
 _GATE_PUBLIC_PREFIXES: tuple[str, ...] = (
     "/auth/login",
     "/auth/callback",
@@ -51,17 +48,16 @@ _GATE_PUBLIC_PREFIXES: tuple[str, ...] = (
 
 
 def _path_is_public(path: str) -> bool:
-    """True if ``path`` bypasses the OAuth auth gate.
+    """如果 ``path`` 绕过 OAuth 认证门控则返回 True。
 
-    Two sources of public-ness:
+    两个公开性来源：
 
-    * :data:`PUBLIC_API_PATHS` — the shared ``/api/*`` allowlist that
-      the legacy ``_SESSION_TOKEN`` middleware also honours. Matched
-      exactly (no prefix expansion) so adding ``/api/status`` doesn't
-      accidentally expose ``/api/status/secret-extension``.
-    * :data:`_GATE_PUBLIC_PREFIXES` — auth-bootstrap routes and static
-      mounts. Prefix-matched so ``/assets/foo.css`` lights up via
-      ``/assets/``.
+    * :data:`PUBLIC_API_PATHS` — 传统 ``_SESSION_TOKEN`` 中间件也
+      遵守的共享 ``/api/*`` 白名单。精确匹配（无前缀扩展），
+      因此添加 ``/api/status`` 不会意外暴露
+      ``/api/status/secret-extension``。
+    * :data:`_GATE_PUBLIC_PREFIXES` — 认证引导路由和静态挂载。
+      前缀匹配，因此 ``/assets/foo.css`` 通过 ``/assets/`` 亮起。
     """
     if path in PUBLIC_API_PATHS:
         return True
@@ -79,26 +75,24 @@ def _client_ip(request: Request) -> str:
 
 
 def _unauth_response(request: Request, *, reason: str) -> Response:
-    """API routes → 401 JSON with ``login_url``; HTML routes → 302 → /login.
+    """API 路由 → 401 JSON 带 ``login_url``；HTML 路由 → 302 → /login。
 
-    The JSON envelope carries a ``login_url`` field with a ``next=`` query
-    string so the SPA's global 401 handler can drop the user back where
-    they were after re-auth. The contract is intentionally simple so any
-    fetch-wrapper can implement the redirect without parsing details:
+    JSON 信封携带 ``login_url`` 字段和 ``next=`` 查询字符串，
+    以便 SPA 的全局 401 处理器在重新认证后将用户送回原处。
+    契约故意保持简单，以便任何 fetch 包装器都可以实现重定向
+    而无需解析详细信息：
 
         if response.status === 401 && body.error in ("unauthenticated",
                                                        "session_expired"):
             window.location.assign(body.login_url);
 
-    HTML redirects also carry the ``next=`` query string so direct
-    navigation to ``/sessions`` (etc.) without a cookie comes back to
-    ``/sessions`` after login.
+    HTML 重定向也携带 ``next=`` 查询字符串，以便没有 cookie 时
+    直接导航到 ``/sessions``（等）的用户在登录后回到 ``/sessions``。
 
-    Under a reverse proxy with ``X-Forwarded-Prefix: /hermes``, the
-    ``login_url`` is prefixed (``/hermes/login?next=...``) so the
-    browser's window.location.assign / Location: follow lands on the
-    proxied login page rather than the bare ``/login`` (which the
-    proxy doesn't route to the dashboard).
+    在带有 ``X-Forwarded-Prefix: /hermes`` 的反向代理下，
+    ``login_url`` 会被加上前缀（``/hermes/login?next=...``），
+    以便浏览器的 window.location.assign / Location: 跟随到达
+    代理的登录页，而非裸 ``/login``（代理不会将其路由到 dashboard）。
     """
     from hermes_cli.dashboard_auth.prefix import prefix_from_request
 
@@ -111,10 +105,9 @@ def _unauth_response(request: Request, *, reason: str) -> Response:
     )
 
     if path.startswith("/api/"):
-        # API routes never get redirects: the browser fetch() API would
-        # follow a 302 into the cross-origin OAuth dance opaquely. Return
-        # 401 with a structured envelope so the SPA can full-page-navigate
-        # to login_url.
+        # API 路由永远不会重定向：浏览器 fetch() API 会不透明地
+        # 跟随 302 进入跨域 OAuth 流程。返回 401 和结构化信封，
+        # 以便 SPA 可以整页导航到 login_url。
         error_code = (
             "session_expired"
             if reason == "invalid_or_expired_session"
@@ -133,38 +126,37 @@ def _unauth_response(request: Request, *, reason: str) -> Response:
 
 
 def _safe_next_target(request: Request) -> str:
-    """Build the URL-encoded ``next`` query value, or empty string.
+    """构建 URL 编码的 ``next`` 查询值，或空字符串。
 
-    Only same-origin relative paths are accepted; absolute URLs or
-    ``//evil.com`` open-redirect attempts are silently dropped. The empty
-    string return means the caller produces a bare ``/login`` URL — fine,
-    user lands at the dashboard root after re-auth.
+    仅接受同源相对路径；绝对 URL 或 ``//evil.com`` 开放重定向
+    尝试会被静默丢弃。返回空字符串意味着调用者生成裸 ``/login``
+    URL——没问题，用户在重新认证后着陆到 dashboard 根目录。
     """
     path = request.url.path
-    # Reject anything that doesn't start with "/" or starts with "//"
-    # (protocol-relative URL — would open-redirect to an attacker host).
+    # 拒绝任何不以 "/" 开头或以 "//" 开头的路径
+    # （协议相对 URL——会开放重定向到攻击者主机）。
     if not path or not path.startswith("/") or path.startswith("//"):
         return ""
-    # Don't redirect back to the auth routes themselves — that loops.
+    # 不重定向回认证路由本身——那会形成循环。
     if any(
         path == p or path.startswith(p)
         for p in ("/login", "/auth/", "/api/auth/")
     ):
         return ""
-    # Reject ALL ``/api/*`` paths. The 401-envelope code path fires for
-    # any unauthenticated SPA fetch (e.g. ``GET /api/analytics/models``
-    # from ModelsPage), and the SPA's global 401 handler full-page
-    # navigates to ``login_url``. After the OAuth round trip the user
-    # would land on the API URL and see raw JSON instead of the
-    # dashboard. SPA routes survive (they don't start with ``/api/``);
-    # the SPA's own ``sessionStorage["hermes.lastLocation"]`` fallback
-    # in ``web/src/lib/api.ts`` covers the deep-link case.
+    # 拒绝所有 ``/api/*`` 路径。401 信封代码路径在任何未认证的
+    # SPA fetch 中触发（例如从 ModelsPage 发出的
+    # ``GET /api/analytics/models``），SPA 的全局 401 处理器
+    # 整页导航到 ``login_url``。OAuth 往返后用户会着陆到
+    # API URL 并看到原始 JSON 而非 dashboard。SPA 路由可以保留
+    # （它们不以 ``/api/`` 开头）；SPA 自身的
+    # ``sessionStorage["hermes.lastLocation"]`` 回退（在
+    # ``web/src/lib/api.ts`` 中）覆盖了深链接场景。
     if path == "/api" or path.startswith("/api/"):
         return ""
-    # Preserve query string if present (e.g. /sessions?page=2).
+    # 保留查询字符串（如果存在）（例如 /sessions?page=2）。
     query = request.url.query
     target = f"{path}?{query}" if query else path
-    # urlencode the whole thing as a single value.
+    # 对整个内容进行 urlencode 作为单个值。
     from urllib.parse import quote
     return quote(target, safe="")
 
@@ -173,10 +165,10 @@ async def gated_auth_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
-    """Engaged only when ``app.state.auth_required is True``.
+    """仅在 ``app.state.auth_required is True`` 时启用。
 
-    No-op pass-through in loopback mode so the legacy auth_middleware can
-    handle those binds via ``_SESSION_TOKEN``.
+    回环模式下的无操作直通，以便传统 auth_middleware 可以通过
+    ``_SESSION_TOKEN`` 处理这些绑定。
     """
     if not getattr(request.app.state, "auth_required", False):
         return await call_next(request)
@@ -187,41 +179,37 @@ async def gated_auth_middleware(
 
     at, _rt = read_session_cookies(request)
     if not at and not _rt:
-        # Neither token present — no session at all. Nothing to verify or
-        # refresh; force login.
+        # 两个 token 都不存在——完全没有 session。无需验证或刷新；强制登录。
         return _unauth_response(request, reason="no_cookie")
 
-    # Try every registered provider's verify_session in turn. Providers
-    # MUST return None for tokens they don't recognise (not raise). This
-    # lets multiple providers stack — the first one that recognises a
-    # token wins.
+    # 依次尝试每个已注册提供者的 verify_session。提供者对于
+    # 不认识的 token 必须返回 None（不抛出异常）。这允许
+    # 多个提供者叠加——第一个识别 token 的提供者胜出。
     #
-    # When the access-token cookie is absent but a refresh-token cookie is
-    # present, skip verification and go straight to the refresh path below.
-    # This is the COMMON expiry case, not an edge case: the access-token
-    # cookie is set with ``Max-Age = access_token_expires_in`` (~15 min), so
-    # the browser EVICTS it the moment the token lapses, while the
-    # refresh-token cookie lives for 30 days. From that point the browser
-    # sends only ``hermes_session_rt``. If we bailed on ``not at`` here we'd
-    # bounce the user to /login on every expiry despite holding a perfectly
-    # good refresh token — defeating the whole transparent-refresh feature.
+    # 当 access-token cookie 缺失但 refresh-token cookie 存在时，
+    # 跳过验证直接走下面的刷新路径。这是常见的过期场景，
+    # 而非边缘情况：access-token cookie 设置为
+    # ``Max-Age = access_token_expires_in``（约 15 分钟），
+    # 因此浏览器在 token 过期时立即清除它，而 refresh-token
+    # cookie 存活 30 天。从那时起浏览器只发送
+    # ``hermes_session_rt``。如果在此处因 ``not at`` 而退出，
+    # 我们会在每次过期时将用户弹到 /login，尽管持有完全有效的
+    # refresh token——这破坏了整个透明刷新功能。
     session = None
     if at:
-        # Try every registered provider's verify_session in turn. A provider
-        # that doesn't recognise the token returns None and we move on; the
-        # first provider that returns a Session wins.
+        # 依次尝试每个已注册提供者的 verify_session。不识别 token 的
+        # 提供者返回 None，我们继续；第一个返回 Session 的提供者胜出。
         #
-        # A provider may instead raise ProviderError (its IDP/JWKS is
-        # unreachable, so it can neither confirm nor deny the token). With
-        # multiple providers stacked, that MUST NOT abort the chain — the
-        # token may belong to a *different*, reachable provider. (Concretely:
-        # a self-hosted-OIDC session hits the `nous` provider first, which
-        # tries to reach Nous Portal's JWKS; if that's unreachable it raises,
-        # but the `self-hosted` provider can still verify the token.) So we
-        # remember the unreachable error and keep going. Only if NO provider
-        # verifies the token AND at least one was unreachable do we surface a
-        # 503 — distinguishing "transient IDP outage" (don't force re-login)
-        # from "token genuinely invalid" (fall through to refresh/relogin).
+        # 提供者也可能抛出 ProviderError（其 IDP/JWKS 不可达，
+        # 因此既不能确认也不能否认 token）。多个提供者叠加时，
+        # 这绝不能中止链——token 可能属于*另一个*可达的提供者。
+        # （具体来说：self-hosted-OIDC session 先命中 `nous` 提供者，
+        # 后者尝试访问 Nous Portal 的 JWKS；如果不可达则抛出，
+        # 但 `self-hosted` 提供者仍然可以验证 token。）因此我们
+        # 记住不可达错误并继续。只有当没有提供者验证 token
+        # 且至少一个不可达时，我们才返回 503——区分
+        # "临时 IDP 宕机"（不强制重新登录）和
+        # "token 确实无效"（走刷新/重新登录流程）。
         unreachable_provider: str | None = None
         for provider in list_providers():
             try:
@@ -243,30 +231,29 @@ async def gated_auth_middleware(
             if session is not None:
                 break
         if session is None and unreachable_provider is not None:
-            # No provider could verify the token and at least one couldn't be
-            # reached — treat as a transient outage rather than forcing a
-            # re-login through a (possibly also-unreachable) refresh.
+            # 没有提供者可以验证 token，且至少一个不可达——
+            # 视为临时宕机而非强制通过（可能同样不可达的）
+            # 刷新进行重新登录。
             return JSONResponse(
                 {"detail": f"Auth provider {unreachable_provider!r} unreachable"},
                 status_code=503,
             )
 
     if session is None:
-        # Access token is expired/invalid. Before forcing re-login, try to
-        # rotate it using the refresh token (if the session cookie carries
-        # one). On success we re-set the rotated cookies on the response and
-        # serve the request transparently; on RefreshExpiredError (RT dead /
-        # revoked / reuse-detected) we fall through to clear-and-relogin.
+        # Access token 已过期/无效。在强制重新登录之前，尝试使用
+        # refresh token 轮换它（如果 session cookie 携带了的话）。
+        # 成功时我们将轮换后的 cookie 重新设置在响应上并透明地
+        # 服务请求；RefreshExpiredError（RT 失效/被撤销/检测到重用）
+        # 时我们走清除并重新登录流程。
         refreshed = _attempt_refresh(request, refresh_token=_rt)
         if refreshed is not None:
             new_session, refreshing_provider = refreshed
             request.state.session = new_session
             response = await call_next(request)
-            # Persist the ROTATED tokens. Portal rotates the refresh token on
-            # every refresh and runs reuse-detection, so writing the new RT
-            # back is mandatory: a stale RT cookie would replay a rotated
-            # token on the next refresh and (outside Portal's grace) revoke
-            # the whole session. Bind cookie Secure/Path to the request shape.
+            # 持久化轮换后的 token。Portal 在每次刷新时轮换 refresh token
+            # 并运行重用检测，因此写回新的 RT 是强制性的：过期的 RT cookie
+            # 会在下次刷新时重放已轮换的 token，并在（Portal 宽限期之外）
+            # 撤销整个 session。将 cookie 的 Secure/Path 绑定到请求形态。
             from hermes_cli.dashboard_auth.cookies import (
                 detect_https,
                 set_session_cookies,
@@ -295,12 +282,11 @@ async def gated_auth_middleware(
             ip=_client_ip(request),
         )
         response = _unauth_response(request, reason="invalid_or_expired_session")
-        # Clear the dead cookies so the browser doesn't keep sending them.
-        # Refresh already failed (or there was no RT), so the only correct
-        # next step is full re-auth via /login. Importing locally avoids a
-        # cycle with cookies → middleware at module load. Pass the active
-        # prefix so the deletion's Path matches the set-Path (otherwise
-        # the browser ignores it).
+        # 清除失效的 cookie，使浏览器不再继续发送它们。
+        # 刷新已经失败（或没有 RT），因此唯一正确的下一步是
+        # 通过 /login 进行完整重新认证。局部导入避免了
+        # cookies → middleware 在模块加载时的循环。传递活动前缀
+        # 使删除的 Path 匹配设置的 Path（否则浏览器会忽略它）。
         from hermes_cli.dashboard_auth.cookies import clear_session_cookies
         from hermes_cli.dashboard_auth.prefix import prefix_from_request
         clear_session_cookies(response, prefix=prefix_from_request(request))
@@ -311,12 +297,11 @@ async def gated_auth_middleware(
 
 
 def _expires_in_seconds(session) -> int:
-    """Seconds until the access token's ``exp``, floored at 60.
+    """距离 access token ``exp`` 的秒数，下限为 60。
 
-    Mirrors the auth-route's ``max(60, exp - now)`` so the access-token
-    cookie's Max-Age tracks the token lifetime even on a slightly skewed
-    clock. ``time`` imported locally to keep the module's import surface
-    minimal.
+    镜像认证路由的 ``max(60, exp - now)``，使 access-token cookie 的
+    Max-Age 跟踪 token 生命周期，即使在略有偏差的时钟上也是如此。
+    ``time`` 局部导入以保持模块的导入面最小。
     """
     import time
 
@@ -324,16 +309,16 @@ def _expires_in_seconds(session) -> int:
 
 
 def _attempt_refresh(request: Request, *, refresh_token):
-    """Try to rotate an expired session via the refresh token.
+    """尝试通过 refresh token 轮换过期的 session。
 
-    Returns ``(new_session, provider_name)`` on success, or ``None`` if
-    there's no RT or every provider's ``refresh_session`` failed with
-    ``RefreshExpiredError`` (dead/revoked/reuse-detected RT → force re-login).
+    成功时返回 ``(new_session, provider_name)``，如果没有 RT 或每个提供者的
+    ``refresh_session`` 都以 ``RefreshExpiredError`` 失败
+    （RT 失效/被撤销/检测到重用→强制重新登录）则返回 ``None``。
 
-    A ``ProviderError`` (Portal unreachable) is NOT swallowed into a re-login
-    here — re-raising would 500 the request; instead we log and return None so
-    the caller forces a clean re-login, which is the safer UX than a hard
-    error on a transient network blip during the narrow refresh window.
+    ``ProviderError``（Portal 不可达）不会在此被吞入重新登录——
+    重新抛出会使请求 500；相反我们记录日志并返回 None，
+    让调用者强制干净重新登录，这比在狭窄刷新窗口内的临时网络
+    波动时出现硬错误的用户体验更安全。
     """
     if not refresh_token:
         return None
@@ -341,8 +326,8 @@ def _attempt_refresh(request: Request, *, refresh_token):
         try:
             new_session = provider.refresh_session(refresh_token=refresh_token)
         except RefreshExpiredError:
-            # This provider owns the RT but it's dead — stop trying others
-            # (an RT belongs to exactly one provider) and force re-login.
+            # 此提供者拥有 RT 但它已失效——停止尝试其他提供者
+            # （一个 RT 只属于一个提供者）并强制重新登录。
             audit_log(
                 AuditEvent.REFRESH_FAILURE,
                 provider=provider.name,

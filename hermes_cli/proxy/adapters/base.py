@@ -1,14 +1,14 @@
-"""Abstract base for proxy upstream adapters.
+"""代理上游 adapter 的抽象基类。
 
-An :class:`UpstreamAdapter` represents one OAuth-authenticated provider the
-local proxy can forward requests to. The adapter is responsible for:
+:class:`UpstreamAdapter` 代表本地代理可以转发请求的一个 OAuth 认证 provider。
+adapter 负责：
 
-  - locating the user's auth state for that provider
-  - refreshing/minting credentials when needed
-  - reporting the resolved upstream base URL
-  - declaring which request paths it accepts
+  - 定位用户在该 provider 的认证状态
+  - 在需要时刷新/生成凭证
+  - 报告解析后的上游 base URL
+  - 声明它接受哪些请求路径
 
-The proxy server is otherwise provider-agnostic.
+代理服务器本身是 provider 无关的。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import FrozenSet, Optional
 
 @dataclass(frozen=True)
 class UpstreamCredential:
-    """A resolved bearer + base URL ready to forward to."""
+    """已解析的 bearer + base URL，可直接用于转发。"""
 
     bearer: str
     """Authorization header value to send upstream (token only, no ``Bearer`` prefix)."""

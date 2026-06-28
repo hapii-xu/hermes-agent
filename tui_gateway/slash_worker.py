@@ -1,6 +1,6 @@
-"""Persistent slash-command worker — one HermesCLI per TUI session.
+"""持久化斜杠命令 worker — 每个 TUI 会话一个 HermesCLI。
 
-Protocol: reads JSON lines from stdin {id, command}, writes {id, ok, output|error} to stdout.
+协议：从 stdin 读取 JSON 行 {id, command}，将 {id, ok, output|error} 写入 stdout。
 """
 
 import argparse
@@ -18,12 +18,13 @@ import cli as cli_mod
 from cli import HermesCLI
 from rich.console import Console
 
-# Env-overridable so the integration test can drive sub-second timing.
+# 可通过环境变量覆盖，以便集成测试驱动亚秒级时序。
 def _env_float(name: str, default: float) -> float:
-    """Parse a float env knob, falling back to ``default`` on absent/malformed
-    values. A bare ``float(os.environ.get(...))`` would raise ValueError at
-    import time on a typo (e.g. ``HERMES_SLASH_WATCHDOG_POLL_S=2s``) and kill
-    the worker before it can serve a single command."""
+    """解析一个 float 类型的环境变量旋钮，在缺失或格式错误时
+    回退到 ``default``。直接的 ``float(os.environ.get(...))`` 在
+    拼写错误时（例如 ``HERMES_SLASH_WATCHDOG_POLL_S=2s``）会在
+    导入时抛出 ValueError，在 worker 能服务任何命令之前就终止了。
+    """
     raw = os.environ.get(name)
     if not raw:
         return default
@@ -39,9 +40,10 @@ _in_flight = threading.Event()  # set while a command is executing
 
 
 def _is_orphaned(original_ppid, parent_create_time, getppid=os.getppid) -> bool:
-    """True once our spawning gateway is gone. Compare to the ORIGINAL ppid
-    (never ==1: Linux reparents to a subreaper) and guard PID reuse via
-    create_time."""
+    """一旦生成我们的网关消失则返回 True。与原始的 ppid 比较
+    （永远不会是 1：Linux 会将孤儿进程重新父化到 subreaper）
+    并通过 create_time 防护 PID 复用。
+    """
     if getppid() != original_ppid:
         return True
     try:
@@ -58,7 +60,7 @@ def _start_parent_death_watchdog(original_ppid, parent_create_time) -> None:
             time.sleep(_WATCHDOG_POLL_S)
         deadline = time.monotonic() + _ORPHAN_GRACE_S
         while _in_flight.is_set() and time.monotonic() < deadline:
-            time.sleep(0.05)  # let an in-flight command finish/flush
+            time.sleep(0.05)  # 让正在执行中的命令完成/刷新
         os._exit(0)
 
     threading.Thread(target=_loop, daemon=True).start()
@@ -73,9 +75,9 @@ def _run(cli: HermesCLI, command: str) -> str:
 
     buf = io.StringIO()
 
-    # Rich Console captures its file handle at construction time, so
-    # contextlib.redirect_stdout won't affect it. Swap the console's
-    # underlying file to our buffer so self.console.print() is captured.
+    # Rich Console 在构造时捕获其文件句柄，所以
+    # contextlib.redirect_stdout 不会影响它。将 console 的
+    # 底层文件交换到我们的缓冲区，使 self.console.print() 被捕获。
     cli.console = Console(file=buf, force_terminal=True, width=120)
 
     old = getattr(cli_mod, "_cprint", None)
@@ -101,8 +103,8 @@ def main():
     os.environ["HERMES_SESSION_KEY"] = args.session_key
     os.environ["HERMES_INTERACTIVE"] = "1"
 
-    # Start before the (hundreds-of-ms) HermesCLI build — that window is itself
-    # an orphan risk if the gateway dies mid-spawn.
+    # 在 HermesCLI 构建（数百毫秒）之前启动 — 这个时间窗口
+    # 本身就是一个孤儿风险，如果网关在生成过程中死亡。
     orig_ppid = os.getppid()
     try:
         parent_create_time = psutil.Process(orig_ppid).create_time()

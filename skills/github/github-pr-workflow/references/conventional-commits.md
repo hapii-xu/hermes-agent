@@ -1,30 +1,30 @@
-# Conventional Commits Quick Reference
+# 约定式提交（Conventional Commits）速查
 
-Format: `type(scope): description`
+格式：`type(scope): description`
 
-## Types
+## 类型（Types）
 
-| Type | When to use | Example |
+| 类型 | 何时使用 | 示例 |
 |------|------------|---------|
-| `feat` | New feature or capability | `feat(auth): add OAuth2 login flow` |
-| `fix` | Bug fix | `fix(api): handle null response from /users endpoint` |
-| `refactor` | Code restructuring, no behavior change | `refactor(db): extract query builder into separate module` |
-| `docs` | Documentation only | `docs: update API usage examples in README` |
-| `test` | Adding or updating tests | `test(auth): add integration tests for token refresh` |
-| `ci` | CI/CD configuration | `ci: add Python 3.12 to test matrix` |
-| `chore` | Maintenance, dependencies, tooling | `chore: upgrade pytest to 8.x` |
-| `perf` | Performance improvement | `perf(search): add index on users.email column` |
-| `style` | Formatting, whitespace, semicolons | `style: run black formatter on src/` |
-| `build` | Build system or external deps | `build: switch from setuptools to hatch` |
-| `revert` | Reverts a previous commit | `revert: revert "feat(auth): add OAuth2 login flow"` |
+| `feat` | 新功能或新能力 | `feat(auth): add OAuth2 login flow` |
+| `fix` | bug 修复 | `fix(api): handle null response from /users endpoint` |
+| `refactor` | 代码重构，不改变行为 | `refactor(db): extract query builder into separate module` |
+| `docs` | 仅文档 | `docs: update API usage examples in README` |
+| `test` | 新增或更新测试 | `test(auth): add integration tests for token refresh` |
+| `ci` | CI/CD 配置 | `ci: add Python 3.12 to test matrix` |
+| `chore` | 维护、依赖、工具链 | `chore: upgrade pytest to 8.x` |
+| `perf` | 性能改进 | `perf(search): add index on users.email column` |
+| `style` | 格式化、空白、分号 | `style: run black formatter on src/` |
+| `build` | 构建系统或外部依赖 | `build: switch from setuptools to hatch` |
+| `revert` | 撤销之前的提交 | `revert: revert "feat(auth): add OAuth2 login flow"` |
 
-## Scope (optional)
+## 作用域（scope，可选）
 
-Short identifier for the area of the codebase: `auth`, `api`, `db`, `ui`, `cli`, etc.
+代码库区域的简短标识符：`auth`、`api`、`db`、`ui`、`cli` 等。
 
-## Breaking Changes
+## 破坏性变更（Breaking Changes）
 
-Add `!` after type or `BREAKING CHANGE:` in footer:
+在 type 后加 `!`，或在页脚加 `BREAKING CHANGE:`：
 
 ```
 feat(api)!: change authentication to use bearer tokens
@@ -33,9 +33,9 @@ BREAKING CHANGE: API endpoints now require Bearer token instead of API key heade
 Migration guide: https://docs.example.com/migrate-auth
 ```
 
-## Multi-line Body
+## 多行正文（Body）
 
-Wrap at 72 characters. Use bullet points for multiple changes:
+72 字符换行。多项改动用项目符号：
 
 ```
 feat(auth): add JWT-based user authentication
@@ -48,24 +48,24 @@ feat(auth): add JWT-based user authentication
 Closes #42
 ```
 
-## Linking Issues
+## 关联 Issue
 
-In the commit body or footer:
+在提交正文或页脚中：
 
 ```
-Closes #42          ← closes the issue when merged
-Fixes #42           ← same effect
-Refs #42            ← references without closing
+Closes #42          ← 合并后关闭该 issue
+Fixes #42           ← 效果相同
+Refs #42            ← 仅引用，不关闭
 Co-authored-by: Name <email>
 ```
 
-## Quick Decision Guide
+## 快速决策指南
 
-- Added something new? → `feat`
-- Something was broken and you fixed it? → `fix`
-- Changed how code is organized but not what it does? → `refactor`
-- Only touched tests? → `test`
-- Only touched docs? → `docs`
-- Updated CI/CD pipelines? → `ci`
-- Updated dependencies or tooling? → `chore`
-- Made something faster? → `perf`
+- 新增了东西？→ `feat`
+- 某处坏了并修复了？→ `fix`
+- 只改了代码的组织方式，没改它做什么？→ `refactor`
+- 只动了测试？→ `test`
+- 只动了文档？→ `docs`
+- 更新了 CI/CD 流水线？→ `ci`
+- 更新了依赖或工具链？→ `chore`
+- 让某处更快了？→ `perf`

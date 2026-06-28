@@ -1,190 +1,190 @@
-# Production Quality Checklist
+# 出品质量检查清单
 
-Standards and checks for ensuring animation output is publication-ready.
+确保动画输出达到可发布标准的规范与检查项。
 
-## Pre-Code Checklist
+## 写代码前的检查清单
 
-Before writing any Manim code:
+在写任何 Manim 代码之前：
 
-- [ ] Narration script written with visual beats marked
-- [ ] Scene list with purpose, duration, and layout for each
-- [ ] Color palette defined with meaning assignments (`PRIMARY` = main concept, etc.)
-- [ ] `MONO = "Menlo"` set as the font constant
-- [ ] Target resolution and aspect ratio decided
+- [ ] 已写好旁白脚本并标注了视觉节拍
+- [ ] 已列出场景清单，每个场景有目的、时长、布局
+- [ ] 已定义配色方案并赋予含义（`PRIMARY` = 主概念 等）
+- [ ] 已设定 `MONO = "Menlo"` 作为字体常量
+- [ ] 已确定目标分辨率与宽高比
 
-## Text Quality
+## 文本质量
 
-### Overlap prevention
+### 防重叠
 
 ```python
-# RULE: buff >= 0.5 for edge text
-label.to_edge(DOWN, buff=0.5)     # GOOD
-label.to_edge(DOWN, buff=0.3)     # BAD — may clip
+# 规则：边缘文字 buff >= 0.5
+label.to_edge(DOWN, buff=0.5)     # 好
+label.to_edge(DOWN, buff=0.3)     # 差 —— 可能被裁切
 
-# RULE: FadeOut previous before adding new at same position
-self.play(ReplacementTransform(note1, note2))  # GOOD
-self.play(Write(note2))                          # BAD — overlaps note1
+# 规则：在同一位置加新文字前先把旧的 FadeOut
+self.play(ReplacementTransform(note1, note2))  # 好
+self.play(Write(note2))                          # 差 —— 与 note1 重叠
 
-# RULE: Reduce font size for dense scenes
-# When > 4 text elements visible, use font_size=20 not 28
+# 规则：密集场景缩小字号
+# 当可见的文字元素 > 4 个时，用 font_size=20 而不是 28
 ```
 
-### Width enforcement
+### 宽度约束
 
-Long text strings overflow the frame:
+过长的字符串会溢出画框：
 
 ```python
-# RULE: Set max width for any text that might be long
+# 规则：为任何可能很长的文字设最大宽度
 text = Text("This is a potentially long description", font_size=22, font=MONO)
 if text.width > config.frame_width - 1.0:
     text.set_width(config.frame_width - 1.0)
 ```
 
-### Font consistency
+### 字体一致性
 
 ```python
-# RULE: Define MONO once, use everywhere
+# 规则：MONO 定义一次，到处使用
 MONO = "Menlo"
 
-# WRONG: mixing fonts
+# 错误：混用字体
 Text("Title", font="Helvetica")
 Text("Label", font="Arial")
 Text("Code", font="Courier")
 
-# RIGHT: one font
+# 正确：一种字体
 Text("Title", font=MONO, weight=BOLD, font_size=48)
 Text("Label", font=MONO, font_size=20)
 Text("Code", font=MONO, font_size=18)
 ```
 
-## Spatial Layout
+## 空间布局
 
-### The coordinate budget
+### 坐标预算
 
-The visible frame is approximately 14.2 wide × 8.0 tall (default 16:9). With mandatory margins:
-
-```
-Usable area: x ∈ [-6.5, 6.5], y ∈ [-3.5, 3.5]
-Top title zone: y ∈ [2.5, 3.5]
-Bottom note zone: y ∈ [-3.5, -2.5]
-Main content: y ∈ [-2.5, 2.5], x ∈ [-6.0, 6.0]
-```
-
-### Fill the frame
-
-Empty scenes look unfinished. If the main content is small, add context:
-- A dimmed grid/axes behind the content
-- A title/subtitle at the top
-- A source citation at the bottom
-- Decorative geometry at low opacity
-
-### Maximum simultaneous elements
-
-**Hard limit: 6 actively visible elements.** Beyond that, the viewer can't track everything. If you need more:
-- Dim old elements to opacity 0.3
-- Remove elements that have served their purpose
-- Split into two scenes
-
-## Animation Quality
-
-### Variety audit
-
-Check that no two consecutive scenes use the exact same:
-- Animation type (if Scene 3 uses Write for everything, Scene 4 should use FadeIn or Create)
-- Color emphasis (rotate through palette colors)
-- Layout (center, left-right, grid — alternate)
-- Pacing (if Scene 2 was slow and deliberate, Scene 3 can be faster)
-
-### Tempo curve
-
-A good video follows a tempo curve:
+可见画框约为 14.2 宽 × 8.0 高（默认 16:9）。加上强制边距后：
 
 ```
-Slow ──→ Medium ──→ FAST (climax) ──→ Slow (conclusion)
-
-Scene 1: Slow (introduction, setup)
-Scene 2: Medium (building understanding)
-Scene 3: Medium-Fast (core content, lots of animation)
-Scene 4: FAST (montage of applications/results)
-Scene 5: Slow (conclusion, key takeaway)
+可用区域：x ∈ [-6.5, 6.5]，y ∈ [-3.5, 3.5]
+顶部标题区：y ∈ [2.5, 3.5]
+底部注释区：y ∈ [-3.5, -2.5]
+主内容区：y ∈ [-2.5, 2.5]，x ∈ [-6.0, 6.0]
 ```
 
-### Transition quality
+### 填满画框
 
-Between scenes:
-- **Clean exit**: `self.play(FadeOut(Group(*self.mobjects)), run_time=0.5)`
-- **Brief pause**: `self.wait(0.3)` after fadeout, before next scene's first animation
-- **Never hard-cut**: always animate the transition
+空荡荡的场景看起来没做完。如果主内容很小，加上下文：
+- 在内容后面加一层暗淡的网格/坐标轴
+- 顶部加标题/副标题
+- 底部加来源引用
+- 低不透明度的装饰性几何
 
-## Color Quality
+### 同时可见元素的上限
 
-### Dimming on dark backgrounds
+**硬性上限：6 个同时可见的元素。** 超过这个数，观众就无法追踪一切。如果还需要更多：
+- 把旧元素调暗到不透明度 0.3
+- 移除已用完使命的元素
+- 拆成两个场景
 
-Colors that look vibrant on white look muddy on dark backgrounds (#0D1117, #1C1C1C). Test your palette:
+## 动画质量
+
+### 多样性审查
+
+检查是否有两个相邻场景使用了完全相同的：
+- 动画类型（如果场景 3 全用 Write，场景 4 就该用 FadeIn 或 Create）
+- 色彩强调（在配色中轮换）
+- 布局（居中、左右、网格 —— 交替使用）
+- 节奏（如果场景 2 缓慢而稳重，场景 3 可以快一些）
+
+### 节奏曲线
+
+一个好的视频遵循一条节奏曲线：
+
+```
+慢 ──→ 中 ──→ 快（高潮） ──→ 慢（收尾）
+
+场景 1：慢（引言、铺垫）
+场景 2：中（建立理解）
+场景 3：中快（核心内容、大量动画）
+场景 4：快（应用/结果的蒙太奇）
+场景 5：慢（结论、关键要点）
+```
+
+### 过渡质量
+
+场景之间：
+- **干净退出**：`self.play(FadeOut(Group(*self.mobjects)), run_time=0.5)`
+- **短暂停顿**：在淡出之后、下一个场景第一个动画之前 `self.wait(0.3)`
+- **绝不要硬切**：过渡总是要动画化
+
+## 色彩质量
+
+### 深色背景上的调暗
+
+在白底上鲜艳的颜色，在深色背景（#0D1117、#1C1C1C）上会显得浑浊。测试你的配色：
 
 ```python
-# Colors that work well on dark backgrounds:
-# Bright and saturated: #58C4DD, #83C167, #FFFF00, #FF6B6B
-# Colors that DON'T work: #666666 (invisible), #2244AA (too dark)
+# 在深色背景上效果好的颜色：
+# 明亮且饱和：#58C4DD、#83C167、#FFFF00、#FF6B6B
+# 效果不好的颜色：#666666（看不见）、#2244AA（太暗）
 
-# RULE: Structural elements (axes, grids) at opacity 0.15
-# Context elements at 0.3-0.4
-# Primary elements at 1.0
+# 规则：结构元素（坐标轴、网格）不透明度 0.15
+# 上下文元素 0.3-0.4
+# 主元素 1.0
 ```
 
-### Color meaning consistency
+### 颜色含义一致性
 
-Once a color is assigned a meaning, it keeps that meaning for the entire video:
+一旦某种颜色被赋予了含义，它就在整段视频中保持这个含义：
 
 ```python
-# If PRIMARY (#58C4DD) means "the model" in Scene 1,
-# it means "the model" in every scene.
-# Never reuse PRIMARY for a different concept later.
+# 如果 PRIMARY（#58C4DD）在场景 1 中表示"模型"，
+# 那它在每个场景里都表示"模型"。
+# 绝不要之后再用 PRIMARY 表示另一个概念。
 ```
 
-## Data Visualization Quality
+## 数据可视化质量
 
-### Minimum requirements for charts
+### 图表的最低要求
 
-- Axis labels on every axis
-- Y-axis range starts at 0 (or has a clear break indicator)
-- Bar/line colors match the legend
-- Numbers on notable data points (at least the maximum and the comparison point)
+- 每条坐标轴都有标签
+- Y 轴范围从 0 开始（或有清晰的断点标识）
+- 柱/线的颜色与图例一致
+- 显著数据点上有数字（至少标注最大值和对比点）
 
-### Animated counters
+### 动画计数器
 
-When showing a number changing:
+展示一个变化的数字时：
 ```python
-# GOOD: DecimalNumber with smooth animation
+# 好：DecimalNumber 配平滑动画
 counter = DecimalNumber(0, font_size=48, num_decimal_places=0, font="Menlo")
 self.play(counter.animate.set_value(1000), run_time=3, rate_func=rush_from)
 
-# BAD: Text that jumps between values
+# 差：在值之间跳变的 Text
 ```
 
-## Pre-Render Checklist
+## 渲染前的检查清单
 
-Before running `manim -qh`:
+在运行 `manim -qh` 之前：
 
-- [ ] All scenes render without errors at `-ql`
-- [ ] Preview stills at `-qm` for text-heavy scenes (check kerning)
-- [ ] Background color set in every scene (`self.camera.background_color = BG`)
-- [ ] `add_subcaption()` or `subcaption=` on every significant animation
-- [ ] No text smaller than font_size=18
-- [ ] No text using proportional fonts (use monospace)
-- [ ] buff >= 0.5 on all `.to_edge()` calls
-- [ ] Clean exit (FadeOut all) at end of every scene
-- [ ] `self.wait()` after every reveal
-- [ ] Color constants used (no hardcoded hex strings in scene code)
-- [ ] All scenes use the same quality flag (don't mix `-ql` and `-qh`)
+- [ ] 所有场景在 `-ql` 下都能无错渲染
+- [ ] 文字密集场景在 `-qm` 下预览静帧（检查字距）
+- [ ] 每个场景都设置了背景色（`self.camera.background_color = BG`）
+- [ ] 每个重要动画都有 `add_subcaption()` 或 `subcaption=`
+- [ ] 没有小于 font_size=18 的文字
+- [ ] 没有使用比例字体的文字（用等宽字体）
+- [ ] 所有 `.to_edge()` 调用的 buff >= 0.5
+- [ ] 每个场景结尾都有干净退出（全部 FadeOut）
+- [ ] 每次揭示之后都有 `self.wait()`
+- [ ] 使用了颜色常量（场景代码里没有硬编码的十六进制字符串）
+- [ ] 所有场景使用相同的质量标志（不要混用 `-ql` 和 `-qh`）
 
-## Post-Render Checklist
+## 渲染后的检查清单
 
-After stitching the final video:
+在拼接出最终视频之后：
 
-- [ ] Watch the complete video at 1x speed — does it feel rushed anywhere?
-- [ ] Is there a moment where two things animate simultaneously and it's confusing?
-- [ ] Does every text label have enough time to be read?
-- [ ] Are transitions between scenes smooth (no black frames, no jarring cuts)?
-- [ ] Is the audio in sync with the visuals (if using voiceover)?
-- [ ] Is the Gibbs-like "first impression" good? The first 5 seconds determine if someone keeps watching
+- [ ] 以 1 倍速看完整段视频 —— 哪里是否显得仓促？
+- [ ] 是否存在两个东西同时动画化、令人困惑的时刻？
+- [ ] 每个文字标签是否有足够时间被读完？
+- [ ] 场景之间的过渡是否平滑（没有黑帧、没有突兀的剪切）？
+- [ ] 音频是否与视觉同步（如果用了配音）？
+- [ ] 吉布斯式的"第一印象"是否好？头 5 秒决定别人是否继续看下去

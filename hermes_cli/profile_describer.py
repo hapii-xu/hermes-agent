@@ -1,27 +1,26 @@
-"""Profile describer — auto-generate ``description`` for a profile.
+"""Profile describer — 为 profile 自动生成 ``description``。
 
-Used by ``hermes profile describe <name> --auto`` and the dashboard's
-"auto-generate description" button. Reads the profile's installed
-skills, model+provider, name, and optionally a small slice of memory,
-then asks the auxiliary LLM to produce a 1-2 sentence description of
-what the profile is good at.
+供 ``hermes profile describe <name> --auto`` 和 dashboard 的
+"自动生成描述" 按钮使用。读取 profile 已安装的 skills、
+model+provider、name，以及可选的一小部分 memory，
+然后请求辅助 LLM 生成 1-2 句话描述该 profile 的用途。
 
-Result is written to ``<profile_dir>/profile.yaml`` with
-``description_auto: true`` so the dashboard can surface a "review"
-badge. User can edit afterward to confirm.
+结果写入 ``<profile_dir>/profile.yaml``，并标记
+``description_auto: true``，以便 dashboard 显示"待审核"
+徽标。用户随后可编辑以确认。
 
-Design notes
+设计说明
 ------------
-- Mirrors the shape of ``hermes_cli/kanban_specify.py``: lazy aux
-  client import inside the function, lenient response parse, never
-  raises on expected failure modes.
-- Reads at most ``MAX_SKILLS_FOR_PROMPT`` skill names to keep the
-  prompt bounded. No skill body — names + categories are enough
-  signal and avoid blowing context on profiles with 100+ skills.
-- Memory is intentionally NOT read here. Memories are personal and
-  the orchestrator routes work to a *role* not a *biography*. If we
-  find later that memory adds signal we can wire it; for now,
-  skills + name + model is plenty.
+- 参照 ``hermes_cli/kanban_specify.py`` 的模式：函数内部
+  延迟导入 aux client，宽松地解析响应，对于预期的失败场景
+  永不抛出异常。
+- 最多读取 ``MAX_SKILLS_FOR_PROMPT`` 个 skill 名称以保持
+  prompt 可控。不包含 skill 正文 — 名称 + 类别已提供足够信号，
+  避免在拥有 100+ skills 的 profile 上耗尽上下文。
+- 此处故意不读取 memory。Memory 属于个人信息，
+  编排器将工作路由到的是*角色*而非*履历*。如果后续发现
+  memory 能提供有用信号可以再接入；目前，
+  skills + name + model 已足够。
 """
 
 from __future__ import annotations
@@ -38,9 +37,9 @@ from agent.skill_utils import is_excluded_skill_path
 
 logger = logging.getLogger(__name__)
 
-# Cap on how many skill names we feed the LLM. Profiles with 200+
-# skills (uncommon but possible) would blow context otherwise. The cap
-# is per-category — see _collect_skills.
+# 限制送入 LLM 的 skill 名称数量。拥有 200+ skills 的
+# profile（不常见但有可能）否则会撑爆上下文。此上限
+# 按类别计算 — 详见 _collect_skills。
 MAX_SKILLS_FOR_PROMPT = 60
 
 
@@ -89,7 +88,7 @@ _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 @dataclass
 class DescribeOutcome:
-    """Result of describing a single profile."""
+    """描述单个 profile 的结果。"""
 
     profile_name: str
     ok: bool
@@ -98,11 +97,11 @@ class DescribeOutcome:
 
 
 def _collect_skills(profile_dir: Path) -> list[str]:
-    """Return a stable, capped list of skill names for the prompt.
+    """返回用于 prompt 的稳定、有上限的 skill 名称列表。
 
-    Format: ``category/skill_name`` where category is the immediate
-    subdir under ``skills/`` (e.g. ``devops``, ``research``). Skills
-    that live directly under ``skills/`` show as bare ``skill_name``.
+    格式：``category/skill_name``，其中 category 是 ``skills/`` 下的
+    直接子目录（例如 ``devops``、``research``）。直接位于 ``skills/`` 下
+    的 skill 显示为裸 ``skill_name``。
     """
     skills_dir = profile_dir / "skills"
     if not skills_dir.is_dir():
@@ -118,16 +117,15 @@ def _collect_skills(profile_dir: Path) -> list[str]:
         parts = rel.parts[:-1]  # drop SKILL.md filename
         if not parts:
             continue
-        # parts[-1] is the skill dir name; parts[:-1] is the category path
+        # parts[-1] 是 skill 目录名；parts[:-1] 是类别路径
         if len(parts) == 1:
             names.append(parts[0])
         else:
             names.append(f"{parts[0]}/{parts[-1]}")
     names.sort()
-    # Keep within prompt budget. Skills earlier in alphabet aren't more
-    # important — we'll let the LLM see a sample. Pick evenly-spaced
-    # entries instead of just the head so a profile with skills A..Z
-    # doesn't get described as "starts with A".
+    # 保持在 prompt 预算之内。字母序靠前的 skill 并不更重要
+    # — 让 LLM 看到一个采样即可。选取等间距的条目而非仅取
+    # 头部，避免 A..Z 的 profile 被描述为"以 A 开头"。
     if len(names) <= MAX_SKILLS_FOR_PROMPT:
         return names
     step = len(names) / MAX_SKILLS_FOR_PROMPT
@@ -159,22 +157,22 @@ def describe_profile(
     overwrite: bool = False,
     timeout: Optional[int] = None,
 ) -> DescribeOutcome:
-    """Auto-generate a description for one profile.
+    """为一个 profile 自动生成描述。
 
-    Returns an outcome describing what happened. Never raises for
-    expected failure modes (profile missing, no aux client configured,
-    API error, malformed response) — those surface via ``ok=False`` so
-    a sweep can continue past individual failures.
+    返回描述执行结果的 outcome。对于预期的失败场景
+    （profile 不存在、未配置 aux client、API 错误、
+    响应格式错误）永不抛出异常 — 这些通过 ``ok=False`` 呈现，
+    以便批量扫描可以跳过单个失败继续执行。
 
-    ``overwrite`` controls whether an existing user-authored description
-    is replaced. By default we refuse to overwrite a description with
-    ``description_auto: false`` to protect curated text. Auto-generated
-    descriptions (``description_auto: true``) are always replaceable.
+    ``overwrite`` 控制是否替换已有的用户编写描述。
+    默认情况下，我们拒绝覆盖 ``description_auto: false``
+    的描述以保护人工编写的内容。自动生成的描述
+    （``description_auto: true``）始终可被替换。
     """
     canon = profiles_mod.normalize_profile_name(profile_name)
     if not profiles_mod.profile_exists(canon):
-        # Special case: "default" exists as a virtual profile name
-        # mapped to the default home dir. profile_exists() handles it.
+        # 特殊情况："default" 作为虚拟 profile 名称存在，
+        # 映射到默认 home 目录。profile_exists() 会处理它。
         return DescribeOutcome(canon, False, "profile not found")
 
     try:
@@ -186,7 +184,7 @@ def describe_profile(
     except Exception as exc:
         return DescribeOutcome(canon, False, f"cannot resolve profile dir: {exc}")
 
-    # Honor curated descriptions unless --overwrite.
+    # 除非 --overwrite，否则保留人工编写的描述。
     existing = profiles_mod.read_profile_meta(profile_dir)
     if existing.get("description") and not existing.get("description_auto") and not overwrite:
         return DescribeOutcome(
@@ -203,7 +201,7 @@ def describe_profile(
         if not is_excluded_skill_path(_)
     ) if (profile_dir / "skills").is_dir() else 0
 
-    # Read model + provider from the profile's config.
+    # 从 profile 的 config 中读取 model + provider。
     try:
         model, provider = profiles_mod._read_config_model(profile_dir)
     except Exception:
@@ -259,7 +257,7 @@ def describe_profile(
 
     parsed = _extract_json_blob(raw)
     if parsed is None:
-        # Fall back: take the raw text trimmed to one paragraph.
+        # 回退方案：取原始文本并裁剪为一段。
         text = raw.strip().split("\n\n", 1)[0]
         if not text:
             return DescribeOutcome(canon, False, "LLM returned an empty response")
@@ -285,10 +283,10 @@ def describe_profile(
 
 
 def list_describable_profiles(*, missing_only: bool = True) -> list[str]:
-    """Return profile names that can be described.
+    """返回可被描述的 profile 名称列表。
 
-    ``missing_only=True`` (default) returns only profiles without a
-    description. ``missing_only=False`` returns every profile.
+    ``missing_only=True``（默认）仅返回没有描述的 profile。
+    ``missing_only=False`` 返回所有 profile。
     """
     out: list[str] = []
     for p in profiles_mod.list_profiles():

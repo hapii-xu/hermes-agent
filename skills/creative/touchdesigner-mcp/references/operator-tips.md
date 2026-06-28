@@ -1,11 +1,11 @@
-# Operator Tips
+# 算子技巧
 
-## Wireframe Rendering Pattern
+## 线框渲染模式
 
-Reusable setup for wireframe geometry on black background:
+可在黑色背景上渲染线框几何体的可复用配置：
 
 ```python
-# 1. Material
+# 1. 材质
 mat = root.create(wireframeMAT, 'wire_mat')
 mat.par.colorr = 1.0; mat.par.colorg = 0.0; mat.par.colorb = 0.0
 mat.par.linewidth = 3
@@ -14,13 +14,13 @@ mat.par.linewidth = 3
 geo = root.create(geometryCOMP, 'my_geo')
 geo.par.rx.expr = 'absTime.seconds * 30'
 geo.par.ry.expr = 'absTime.seconds * 45'
-geo.par.material = mat.path  # NOTE: 'material' not 'mat'
+geo.par.material = mat.path  # 注意：是 'material' 不是 'mat'
 
-# 3. Shape inside the geo
+# 3. geo 内部的形状
 box = geo.create(boxSOP, 'cube')
 box.par.sizex = 1.5; box.par.sizey = 1.5; box.par.sizez = 1.5
 
-# 4. Camera
+# 4. 摄像机
 cam = root.create(cameraCOMP, 'cam1')
 cam.par.tx = 0; cam.par.ty = 0; cam.par.tz = 4; cam.par.fov = 45
 
@@ -32,67 +32,67 @@ render.par.bgcolorr = 0; render.par.bgcolorg = 0; render.par.bgcolorb = 0
 render.par.camera = cam.path
 render.par.geometry = geo.path
 
-# 6. Output null
+# 6. 输出 null
 out = root.create(nullTOP, 'out1')
 out.inputConnectors[0].connect(render.outputConnectors[0])
 ```
 
-**Key rules:**
-- Class names: `wireframeMAT` not `wireframeMat` (all-caps suffix)
-- Geometry SOPs/POPs go INSIDE the geo comp
-- Material: `geo.par.material` not `geo.par.mat`
-- Render geometry: `render.par.geometry = geo.path` (string path)
-- `wireframeMAT.par.wireframemode = 'topology'` for clean wireframe (vs `'tesselated'` for triangle edges)
-- Alternative: Use `renderTOP.par.overridemat` instead of per-geo material
+**关键规则：**
+- 类名：`wireframeMAT` 而不是 `wireframeMat`（后缀全大写）
+- 几何体 SOP/POP 要放在 geo comp 内部
+- 材质：`geo.par.material` 而不是 `geo.par.mat`
+- 渲染几何体：`render.par.geometry = geo.path`（字符串路径）
+- `wireframeMAT.par.wireframemode = 'topology'` 可得到干净线框（对比 `'tesselated'` 显示三角形边）
+- 替代方案：使用 `renderTOP.par.overridemat` 代替逐 geo 设置材质
 
 ## Feedback TOP
 
-### Basic Structure
+### 基本结构
 
 ```
-input (initial state) ──┐
-                        ├──→ feedback_top ──→ processing ──→ null_out
-                        │                                        ↑
-                        └── par.top = 'null_out' ────────────────┘
+input（初始状态）──┐
+                  ├──→ feedback_top ──→ 处理 ──→ null_out
+                  │                                  ↑
+                  └── par.top = 'null_out' ─────────┘
 ```
 
-### Setup Pattern
+### 配置模式
 
 ```python
-# 1. Processing chain
+# 1. 处理链
 glsl = root.create(glslTOP, 'sim')
 null_out = root.create(nullTOP, 'null_out')
 glsl.outputConnectors[0].connect(null_out.inputConnectors[0])
 
-# 2. Feedback referencing null_out
+# 2. 引用 null_out 的 feedback
 feedback = root.create(feedbackTOP, 'feedback')
 feedback.par.top = 'null_out'
 
-# 3. Black initial state
+# 3. 黑色初始状态
 const_init = root.create(constantTOP, 'const_init')
 const_init.par.colorr = 0; const_init.par.colorg = 0; const_init.par.colorb = 0
 
-# 4. Wire: initial → feedback, feedback → processing
+# 4. 连线：初始 → feedback，feedback → 处理
 feedback.inputConnectors[0].connect(const_init)
 glsl.inputConnectors[0].connect(feedback)
 
-# 5. Reset to apply initial state
+# 5. 重置以应用初始状态
 feedback.par.resetpulse.pulse()
 ```
 
-### Common Errors
+### 常见错误
 
-| Error | Cause | Solution |
+| 错误 | 原因 | 解决方案 |
 |-------|-------|----------|
-| "Not enough sources specified" | No input connected | Connect initial state TOP |
-| Unexpected initial pattern | Wrong initial state | Use Constant TOP (black) |
+| "Not enough sources specified" | 未连接输入 | 连接初始状态 TOP |
+| 出现意外的初始图案 | 初始状态错误 | 使用 Constant TOP（黑色） |
 
-### Tips
+### 提示
 
-1. Use float format for simulations: `glsl.par.format = 'rgba32float'`
-2. Reset after setup: `feedback.par.resetpulse.pulse()`
-3. Match resolutions — feedback, processing, and initial state must match
-4. Soft boundary prevents edge artifacts:
+1. 模拟使用 float 格式：`glsl.par.format = 'rgba32float'`
+2. 配置完成后重置：`feedback.par.resetpulse.pulse()`
+3. 分辨率要匹配——feedback、处理和初始状态三者必须一致
+4. 软边界可避免边缘伪影：
    ```glsl
    float edge = 3.0 * texel.x;
    float bx = smoothstep(0.0, edge, uv.x) * smoothstep(0.0, edge, 1.0 - uv.x);
@@ -100,7 +100,7 @@ feedback.par.resetpulse.pulse()
    value *= bx * by;
    ```
 
-### Use Cases
-- **Wave Simulation** — R=height, G=velocity, black initial state
-- **Cellular Automata** — white=alive, black=dead, random noise initial state
-- **Trail / Motion Blur** — blend current frame with feedback, black initial
+### 使用场景
+- **波浪模拟** — R=高度，G=速度，黑色初始状态
+- **元胞自动机** — 白色=存活，黑色=死亡，随机噪声初始状态
+- **拖尾 / 运动模糊** — 将当前帧与 feedback 混合，黑色初始状态

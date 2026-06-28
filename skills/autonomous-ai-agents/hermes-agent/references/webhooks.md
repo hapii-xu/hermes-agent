@@ -1,24 +1,24 @@
-# Webhook Subscriptions
+# Webhook 订阅
 
-Create dynamic webhook subscriptions so external services (GitHub, GitLab, Stripe, CI/CD, IoT sensors, monitoring tools) can trigger Hermes agent runs by POSTing events to a URL.
+创建动态 webhook 订阅，让外部服务（GitHub、GitLab、Stripe、CI/CD、IoT 传感器、监控工具）可以通过向某个 URL POST 事件来触发 Hermes agent 运行。
 
-## Setup (Required First)
+## 设置（必须先做）
 
-The webhook platform must be enabled before subscriptions can be created. Check with:
+在创建订阅前必须先启用 webhook 平台。用以下命令检查：
 ```bash
 hermes webhook list
 ```
 
-If it says "Webhook platform is not enabled", set it up:
+如果提示 "Webhook platform is not enabled"，按以下方式设置：
 
-### Option 1: Setup wizard
+### 选项 1：设置向导
 ```bash
 hermes gateway setup
 ```
-Follow the prompts to enable webhooks, set the port, and set a global HMAC secret.
+按提示启用 webhook、设置端口并设置一个全局 HMAC 密钥。
 
-### Option 2: Manual config
-Add to `~/.hermes/config.yaml`:
+### 选项 2：手动配置
+添加到 `~/.hermes/config.yaml`：
 ```yaml
 platforms:
   webhook:
@@ -29,31 +29,31 @@ platforms:
       secret: "generate-a-strong-secret-here"
 ```
 
-### Option 3: Environment variables
-Add to `${HERMES_HOME:-~/.hermes}/.env`:
+### 选项 3：环境变量
+添加到 `${HERMES_HOME:-~/.hermes}/.env`：
 ```bash
 WEBHOOK_ENABLED=true
 WEBHOOK_PORT=8644
 WEBHOOK_SECRET=generate-a-strong-secret-here
 ```
 
-After configuration, start (or restart) the gateway:
+配置后，启动（或重启）网关：
 ```bash
 hermes gateway run
-# Or if using systemd:
+# 或，若使用 systemd：
 systemctl --user restart hermes-gateway
 ```
 
-Verify it's running:
+验证它在运行：
 ```bash
 curl http://localhost:8644/health
 ```
 
-## Commands
+## 命令
 
-All management is via the `hermes webhook` CLI command:
+所有管理都通过 `hermes webhook` CLI 命令进行：
 
-### Create a subscription
+### 创建订阅
 ```bash
 hermes webhook subscribe <name> \
   --prompt "Prompt template with {payload.fields}" \
@@ -65,38 +65,38 @@ hermes webhook subscribe <name> \
   --secret "optional-custom-secret"
 ```
 
-Returns the webhook URL and HMAC secret. The user configures their service to POST to that URL.
+返回 webhook URL 和 HMAC 密钥。用户配置其服务向该 URL 发送 POST。
 
-### List subscriptions
+### 列出订阅
 ```bash
 hermes webhook list
 ```
 
-### Remove a subscription
+### 移除订阅
 ```bash
 hermes webhook remove <name>
 ```
 
-### Test a subscription
+### 测试订阅
 ```bash
 hermes webhook test <name>
 hermes webhook test <name> --payload '{"key": "value"}'
 ```
 
-## Prompt Templates
+## 提示词模板
 
-Prompts support `{dot.notation}` for accessing nested payload fields:
+提示词支持 `{dot.notation}` 来访问嵌套的 payload 字段：
 
-- `{issue.title}` — GitHub issue title
-- `{pull_request.user.login}` — PR author
-- `{data.object.amount}` — Stripe payment amount
-- `{sensor.temperature}` — IoT sensor reading
+- `{issue.title}` —— GitHub issue 标题
+- `{pull_request.user.login}` —— PR 作者
+- `{data.object.amount}` —— Stripe 支付金额
+- `{sensor.temperature}` —— IoT 传感器读数
 
-If no prompt is specified, the full JSON payload is dumped into the agent prompt.
+若未指定提示词，完整的 JSON payload 会被转储进 agent 提示词。
 
-## Common Patterns
+## 常见模式
 
-### GitHub: new issues
+### GitHub：新 issue
 ```bash
 hermes webhook subscribe github-issues \
   --events "issues" \
@@ -105,13 +105,13 @@ hermes webhook subscribe github-issues \
   --deliver-chat-id "-100123456789"
 ```
 
-Then in GitHub repo Settings → Webhooks → Add webhook:
-- Payload URL: the returned webhook_url
-- Content type: application/json
-- Secret: the returned secret
-- Events: "Issues"
+然后在 GitHub 仓库 Settings → Webhooks → Add webhook：
+- Payload URL：返回的 webhook_url
+- Content type：application/json
+- Secret：返回的 secret
+- Events："Issues"
 
-### GitHub: PR reviews
+### GitHub：PR 评审
 ```bash
 hermes webhook subscribe github-prs \
   --events "pull_request" \
@@ -120,7 +120,7 @@ hermes webhook subscribe github-prs \
   --deliver github_comment
 ```
 
-### Stripe: payment events
+### Stripe：支付事件
 ```bash
 hermes webhook subscribe stripe-payments \
   --events "payment_intent.succeeded,payment_intent.payment_failed" \
@@ -129,7 +129,7 @@ hermes webhook subscribe stripe-payments \
   --deliver-chat-id "-100123456789"
 ```
 
-### CI/CD: build notifications
+### CI/CD：构建通知
 ```bash
 hermes webhook subscribe ci-builds \
   --events "pipeline" \
@@ -138,22 +138,22 @@ hermes webhook subscribe ci-builds \
   --deliver-chat-id "1234567890"
 ```
 
-### Generic monitoring alert
+### 通用监控告警
 ```bash
 hermes webhook subscribe alerts \
   --prompt "Alert: {alert.name}\nSeverity: {alert.severity}\nMessage: {alert.message}\n\nPlease investigate and suggest remediation." \
   --deliver origin
 ```
 
-### Direct delivery (no agent, zero LLM cost)
+### 直接投递（无 agent，零 LLM 成本）
 
-For use cases where you just want to push a notification through to a user's chat — no reasoning, no agent loop — add `--deliver-only`. The rendered `--prompt` template becomes the literal message body and is dispatched directly to the target adapter.
+对于只想把通知推送到用户聊天的场景 —— 没有推理、没有 agent 循环 —— 加 `--deliver-only`。渲染后的 `--prompt` 模板成为字面消息体，直接分发给目标适配器。
 
-Use this for:
-- External service push notifications (Supabase/Firebase webhooks → Telegram)
-- Monitoring alerts that should forward verbatim
-- Inter-agent pings where one agent is telling another agent's user something
-- Any webhook where an LLM round trip would be wasted effort
+适用于：
+- 外部服务推送通知（Supabase/Firebase webhook → Telegram）
+- 应原样转发的监控告警
+- agent 之间的 ping（一个 agent 告诉另一个 agent 的用户某事）
+- 任何 LLM 往返纯属浪费的 webhook
 
 ```bash
 hermes webhook subscribe antenna-matches \
@@ -164,31 +164,31 @@ hermes webhook subscribe antenna-matches \
   --description "Antenna match notifications"
 ```
 
-The POST returns `200 OK` on successful delivery, `502` on target failure — so upstream services can retry intelligently. HMAC auth, rate limits, and idempotency still apply.
+投递成功时 POST 返回 `200 OK`，目标失败时返回 `502` —— 以便上游服务智能重试。HMAC 认证、速率限制和幂等性仍然适用。
 
-Requires `--deliver` to be a real target (telegram, discord, slack, github_comment, etc.) — `--deliver log` is rejected because log-only direct delivery is pointless.
+要求 `--deliver` 是一个真实目标（telegram、discord、slack、github_comment 等） —— `--deliver log` 会被拒绝，因为仅日志的直接投递没有意义。
 
-## Security
+## 安全
 
-- Each subscription gets an auto-generated HMAC-SHA256 secret (or provide your own with `--secret`)
-- The webhook adapter validates signatures on every incoming POST
-- Static routes from config.yaml cannot be overwritten by dynamic subscriptions
-- Subscriptions persist to `~/.hermes/webhook_subscriptions.json`
+- 每个订阅获得一个自动生成的 HMAC-SHA256 密钥（或用 `--secret` 提供你自己的）
+- webhook 适配器在每个传入 POST 上验证签名
+- config.yaml 中的静态路由不能被动态订阅覆盖
+- 订阅持久化到 `~/.hermes/webhook_subscriptions.json`
 
-## How It Works
+## 工作原理
 
-1. `hermes webhook subscribe` writes to `~/.hermes/webhook_subscriptions.json`
-2. The webhook adapter hot-reloads this file on each incoming request (mtime-gated, negligible overhead)
-3. When a POST arrives matching a route, the adapter formats the prompt and triggers an agent run
-4. The agent's response is delivered to the configured target (Telegram, Discord, GitHub comment, etc.)
+1. `hermes webhook subscribe` 写入 `~/.hermes/webhook_subscriptions.json`
+2. webhook 适配器在每个传入请求时热重载该文件（基于 mtime 门控，开销可忽略）
+3. 当匹配某路由的 POST 到达时，适配器格式化提示词并触发一次 agent 运行
+4. agent 的响应被投递到配置的目标（Telegram、Discord、GitHub 评论等）
 
-## Troubleshooting
+## 故障排查
 
-If webhooks aren't working:
+如果 webhook 不工作：
 
-1. **Is the gateway running?** Check with `systemctl --user status hermes-gateway` or `ps aux | grep gateway`
-2. **Is the webhook server listening?** `curl http://localhost:8644/health` should return `{"status": "ok"}`
-3. **Check gateway logs:** `grep webhook ~/.hermes/logs/gateway.log | tail -20`
-4. **Signature mismatch?** Verify the secret in your service matches the one from `hermes webhook list`. GitHub sends `X-Hub-Signature-256`, GitLab sends `X-Gitlab-Token`.
-5. **Firewall/NAT?** The webhook URL must be reachable from the service. For local development, use a tunnel (ngrok, cloudflared).
-6. **Wrong event type?** Check `--events` filter matches what the service sends. Use `hermes webhook test <name>` to verify the route works.
+1. **网关在运行吗？** 用 `systemctl --user status hermes-gateway` 或 `ps aux | grep gateway` 检查
+2. **webhook 服务器在监听吗？** `curl http://localhost:8644/health` 应返回 `{"status": "ok"}`
+3. **检查网关日志：** `grep webhook ~/.hermes/logs/gateway.log | tail -20`
+4. **签名不匹配？** 验证你服务中的密钥与 `hermes webhook list` 给出的一致。GitHub 发送 `X-Hub-Signature-256`，GitLab 发送 `X-Gitlab-Token`。
+5. **防火墙/NAT？** webhook URL 必须能从服务端可达。对于本地开发，用隧道（ngrok、cloudflared）。
+6. **事件类型错误？** 检查 `--events` 过滤器是否匹配服务发送的内容。用 `hermes webhook test <name>` 验证路由是否工作。

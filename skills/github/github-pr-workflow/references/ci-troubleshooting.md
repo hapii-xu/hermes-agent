@@ -1,162 +1,162 @@
-# CI Troubleshooting Quick Reference
+# CI 故障排查速查
 
-Common CI failure patterns and how to diagnose them from the logs.
+常见的 CI 失败模式，以及如何从日志中诊断它们。
 
-## Reading CI Logs
+## 阅读 CI 日志
 
 ```bash
-# With gh
+# 用 gh
 gh run view <RUN_ID> --log-failed
 
-# With curl — download and extract
+# 用 curl —— 下载并解压
 curl -sL -H "Authorization: token $GITHUB_TOKEN" \
   https://api.github.com/repos/$GH_OWNER/$GH_REPO/actions/runs/<RUN_ID>/logs \
   -o /tmp/ci-logs.zip && unzip -o /tmp/ci-logs.zip -d /tmp/ci-logs
 ```
 
-## Common Failure Patterns
+## 常见失败模式
 
-### Test Failures
+### 测试失败
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 FAILED tests/test_foo.py::test_bar - AssertionError
 E       assert 42 == 43
 ERROR tests/test_foo.py - ModuleNotFoundError
 ```
 
-**Diagnosis:**
-1. Find the test file and line number from the traceback
-2. Use `read_file` to read the failing test
-3. Check if it's a logic error in the code or a stale test assertion
-4. Look for `ModuleNotFoundError` — usually a missing dependency in CI
+**诊断：**
+1. 从 traceback 中找到测试文件和行号
+2. 用 `read_file` 读取失败的测试
+3. 判断是代码里的逻辑错误，还是过时的测试断言
+4. 注意 `ModuleNotFoundError` —— 通常是 CI 里缺少依赖
 
-**Common fixes:**
-- Update assertion to match new expected behavior
-- Add missing dependency to requirements.txt / pyproject.toml
-- Fix flaky test (add retry, mock external service, fix race condition)
+**常见修复：**
+- 更新断言以匹配新的预期行为
+- 把缺失的依赖加到 requirements.txt / pyproject.toml
+- 修复不稳定的测试（加重试、mock 外部服务、修竞态条件）
 
 ---
 
-### Lint / Formatting Failures
+### Lint / 格式化失败
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 src/auth.py:45:1: E302 expected 2 blank lines, got 1
 src/models.py:12:80: E501 line too long (95 > 88 characters)
 error: would reformat src/utils.py
 ```
 
-**Diagnosis:**
-1. Read the specific file:line numbers mentioned
-2. Check which linter is complaining (flake8, ruff, black, isort, mypy)
+**诊断：**
+1. 读取被提及的具体 文件:行号
+2. 判断是哪个 linter 在报错（flake8、ruff、black、isort、mypy）
 
-**Common fixes:**
-- Run the formatter locally: `black .`, `isort .`, `ruff check --fix .`
-- Fix the specific style violation by editing the file
-- If using `patch`, make sure to match existing indentation style
+**常见修复：**
+- 在本地跑格式化工具：`black .`、`isort .`、`ruff check --fix .`
+- 编辑文件修复具体的样式违规
+- 如果用 `patch`，确保匹配已有的缩进风格
 
 ---
 
-### Type Check Failures (mypy / pyright)
+### 类型检查失败（mypy / pyright）
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 src/api.py:23: error: Argument 1 to "process" has incompatible type "str"; expected "int"
 src/models.py:45: error: Missing return statement
 ```
 
-**Diagnosis:**
-1. Read the file at the mentioned line
-2. Check the function signature and what's being passed
+**诊断：**
+1. 读取被提及行的文件
+2. 检查函数签名和传入的内容
 
-**Common fixes:**
-- Add type cast or conversion
-- Fix the function signature
-- Add `# type: ignore` comment as last resort (with explanation)
+**常见修复：**
+- 加类型转换
+- 修函数签名
+- 作为最后手段加 `# type: ignore` 注释（并附说明）
 
 ---
 
-### Build / Compilation Failures
+### 构建 / 编译失败
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 ModuleNotFoundError: No module named 'some_package'
 ERROR: Could not find a version that satisfies the requirement foo==1.2.3
 npm ERR! Could not resolve dependency
 ```
 
-**Diagnosis:**
-1. Check requirements.txt / package.json for the missing or incompatible dependency
-2. Compare local vs CI Python/Node version
+**诊断：**
+1. 检查 requirements.txt / package.json 里是否缺少或存在不兼容的依赖
+2. 对比本地和 CI 的 Python/Node 版本
 
-**Common fixes:**
-- Add missing dependency to requirements file
-- Pin compatible version
-- Update lockfile (`pip freeze`, `npm install`)
+**常见修复：**
+- 把缺失的依赖加到 requirements 文件
+- 固定兼容的版本
+- 更新 lockfile（`pip freeze`、`npm install`）
 
 ---
 
-### Permission / Auth Failures
+### 权限 / 鉴权失败
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 fatal: could not read Username for 'https://github.com': No such device or address
 Error: Resource not accessible by integration
 403 Forbidden
 ```
 
-**Diagnosis:**
-1. Check if the workflow needs special permissions (token scopes)
-2. Check if secrets are configured (missing `GITHUB_TOKEN` or custom secrets)
+**诊断：**
+1. 检查工作流是否需要特殊权限（token scopes）
+2. 检查 secrets 是否已配置（缺失 `GITHUB_TOKEN` 或自定义 secrets）
 
-**Common fixes:**
-- Add `permissions:` block to workflow YAML
-- Verify secrets exist: `gh secret list` or check repo settings
-- For fork PRs: some secrets aren't available by design
+**常见修复：**
+- 给工作流 YAML 加 `permissions:` 块
+- 核实 secrets 是否存在：`gh secret list` 或检查仓库设置
+- 对 fork PR：某些 secrets 按设计就不可用
 
 ---
 
-### Timeout Failures
+### 超时失败
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 Error: The operation was canceled.
 The job running on runner ... has exceeded the maximum execution time
 ```
 
-**Diagnosis:**
-1. Check which step timed out
-2. Look for infinite loops, hung processes, or slow network calls
+**诊断：**
+1. 检查是哪一步超时
+2. 找死循环、卡住的进程、或缓慢的网络调用
 
-**Common fixes:**
-- Add timeout to the specific step: `timeout-minutes: 10`
-- Fix the underlying performance issue
-- Split into parallel jobs
+**常见修复：**
+- 给具体步骤加超时：`timeout-minutes: 10`
+- 修底层的性能问题
+- 拆分成并行作业
 
 ---
 
-### Docker / Container Failures
+### Docker / 容器失败
 
-**Signatures in logs:**
+**日志中的特征：**
 ```
 docker: Error response from daemon
 failed to solve: ... not found
 COPY failed: file not found in build context
 ```
 
-**Diagnosis:**
-1. Check Dockerfile for the failing step
-2. Verify the referenced files exist in the repo
+**诊断：**
+1. 检查 Dockerfile 中失败的那一步
+2. 核实所引用的文件在仓库中确实存在
 
-**Common fixes:**
-- Fix path in COPY/ADD command
-- Update base image tag
-- Add missing file to `.dockerignore` exclusion or remove from it
+**常见修复：**
+- 修 COPY/ADD 命令里的路径
+- 更新基础镜像 tag
+- 把缺失的文件加到 `.dockerignore` 排除项，或从中移除
 
 ---
 
-## Auto-Fix Decision Tree
+## 自动修复决策树
 
 ```
 CI Failed
@@ -172,12 +172,12 @@ CI Failed
 └── Timeout → investigate perf (may need user input)
 ```
 
-## Re-running After Fix
+## 修复后重新运行
 
 ```bash
 git add <fixed_files> && git commit -m "fix: resolve CI failure" && git push
 
-# Then monitor
+# 然后监控
 gh pr checks --watch 2>/dev/null || \
   echo "Poll with: curl -s -H 'Authorization: token ...' https://api.github.com/repos/.../commits/$(git rev-parse HEAD)/status"
 ```

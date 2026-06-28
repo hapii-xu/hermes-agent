@@ -1,10 +1,10 @@
-# Input Sources
+# 输入源
 
-> **See also:** architecture.md · effects.md · scenes.md · shaders.md · optimization.md · troubleshooting.md
+> **另请参阅：** architecture.md · effects.md · scenes.md · shaders.md · optimization.md · troubleshooting.md
 
-## Audio Analysis
+## 音频分析
 
-### Loading
+### 加载
 
 ```python
 tmp = tempfile.mktemp(suffix=".wav")
@@ -16,11 +16,11 @@ with wave.open(tmp) as wf:
 samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 ```
 
-### Per-Frame FFT
+### 逐帧 FFT
 
 ```python
-hop = sr // fps          # samples per frame
-win = hop * 2            # analysis window (2x hop for overlap)
+hop = sr // fps          # 每帧采样数
+win = hop * 2            # 分析窗口（2 倍 hop 用于重叠）
 window = np.hanning(win)
 freqs = rfftfreq(win, 1.0 / sr)
 
@@ -34,27 +34,27 @@ bands = {
 }
 ```
 
-For each frame: extract chunk, apply window, FFT, compute band energies.
+对每一帧：提取数据块，应用窗口，FFT，计算频带能量。
 
-### Feature Set
+### 特征集
 
-| Feature | Formula | Controls |
+| 特征 | 公式 | 控制 |
 |---------|---------|----------|
-| `rms` | `sqrt(mean(chunk²))` | Overall loudness/energy |
-| `sub`..`hi` | `sqrt(mean(band_magnitudes²))` | Per-band energy |
-| `centroid` | `sum(freq*mag) / sum(mag)` | Brightness/timbre |
-| `flatness` | `geomean(mag) / mean(mag)` | Noise vs tone |
-| `flux` | `sum(max(0, mag - prev_mag))` | Transient strength |
-| `sub_r`..`hi_r` | `band / sum(all_bands)` | Spectral shape (volume-independent) |
-| `cent_d` | `abs(gradient(centroid))` | Timbral change rate |
-| `beat` | Flux peak detection | Binary beat onset |
-| `bdecay` | Exponential decay from beats | Smooth beat pulse (0→1→0) |
+| `rms` | `sqrt(mean(chunk²))` | 整体响度/能量 |
+| `sub`..`hi` | `sqrt(mean(band_magnitudes²))` | 各频带能量 |
+| `centroid` | `sum(freq*mag) / sum(mag)` | 明亮度/音色 |
+| `flatness` | `geomean(mag) / mean(mag)` | 噪声 vs 纯音 |
+| `flux` | `sum(max(0, mag - prev_mag))` | 瞬态强度 |
+| `sub_r`..`hi_r` | `band / sum(all_bands)` | 频谱形状（与音量无关） |
+| `cent_d` | `abs(gradient(centroid))` | 音色变化率 |
+| `beat` | Flux 峰值检测 | 二值节拍 onset |
+| `bdecay` | 从节拍开始的指数衰减 | 平滑节拍脉冲 (0→1→0) |
 
-**Band ratios are critical** — they decouple spectral shape from volume, so a quiet bass section and a loud bass section both read as "bassy" rather than just "loud" vs "quiet".
+**频带比例至关重要** —— 它们将频谱形状与音量解耦，因此安静的低音段和响亮的低音段都被解读为"低音重"，而不仅仅是"安静"与"响亮"的区别。
 
-### Smoothing
+### 平滑
 
-EMA prevents visual jitter:
+EMA 防止视觉抖动：
 
 ```python
 def ema(arr, alpha):
@@ -63,11 +63,11 @@ def ema(arr, alpha):
         out[i] = alpha * arr[i] + (1 - alpha) * out[i-1]
     return out
 
-# Slow-moving features (alpha=0.12): centroid, flatness, band ratios, cent_d
-# Fast-moving features (alpha=0.3): rms, flux, raw bands
+# 慢变化特征 (alpha=0.12): centroid, flatness, 频带比例, cent_d
+# 快变化特征 (alpha=0.3): rms, flux, 原始频带
 ```
 
-### Beat Detection
+### 节拍检测
 
 ```python
 flux_smooth = np.convolve(flux, np.ones(5)/5, mode="same")
@@ -82,11 +82,11 @@ for p in peaks:
             bdecay[p + d] = max(bdecay[p + d], math.exp(-d * 2.5 / (fps // 2)))
 ```
 
-`bdecay` gives smooth 0→1→0 pulse per beat, decaying over ~0.5s. Use for flash/glitch/mirror triggers.
+`bdecay` 为每个节拍给出平滑的 0→1→0 脉冲，在约 0.5 秒内衰减。用于闪光/故障/镜像触发。
 
-### Normalization
+### 归一化
 
-After computing all frames, normalize each feature to 0-1:
+计算所有帧后，将每个特征归一化到 0-1：
 
 ```python
 for k in features:
@@ -95,12 +95,12 @@ for k in features:
     features[k] = (a - lo) / (hi - lo + 1e-10)
 ```
 
-## Video Sampling
+## 视频采样
 
-### Frame Extraction
+### 帧提取
 
 ```python
-# Method 1: ffmpeg pipe (memory efficient)
+# 方法 1：ffmpeg 管道（内存高效）
 cmd = ["ffmpeg", "-i", input_video, "-f", "rawvideo", "-pix_fmt", "rgb24",
        "-s", f"{target_w}x{target_h}", "-r", str(fps), "-"]
 pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -109,34 +109,34 @@ for fi in range(n_frames):
     raw = pipe.stdout.read(frame_size)
     if len(raw) < frame_size: break
     frame = np.frombuffer(raw, dtype=np.uint8).reshape(target_h, target_w, 3)
-    # process frame...
+    # 处理画布帧...
 
-# Method 2: OpenCV (if available)
+# 方法 2：OpenCV（如果可用）
 cap = cv2.VideoCapture(input_video)
 ```
 
-### Luminance-to-Character Mapping
+### 亮度到字符的映射
 
-Convert video pixels to ASCII characters based on brightness:
+基于亮度将视频像素转换为 ASCII 字符：
 
 ```python
 def frame_to_ascii(frame_rgb, grid, pal=PAL_DEFAULT):
-    """Convert video frame to character + color arrays."""
+    """将视频画布帧转换为字符 + 颜色数组。"""
     rows, cols = grid.rows, grid.cols
-    # Resize frame to grid dimensions
+    # 将画布帧调整为网格尺寸
     small = np.array(Image.fromarray(frame_rgb).resize((cols, rows), Image.LANCZOS))
-    # Luminance
+    # 亮度
     lum = (0.299 * small[:,:,0] + 0.587 * small[:,:,1] + 0.114 * small[:,:,2]) / 255.0
-    # Map to chars
+    # 映射到字符
     chars = val2char(lum, lum > 0.02, pal)
-    # Colors: use source pixel colors, scaled by luminance for visibility
+    # 颜色：使用源像素颜色，按亮度缩放以提高可见度
     colors = np.clip(small * np.clip(lum[:,:,None] * 1.5 + 0.3, 0.3, 1), 0, 255).astype(np.uint8)
     return chars, colors
 ```
 
-### Edge-Weighted Character Mapping
+### 边缘加权字符映射
 
-Use edge detection for more detail in contour regions:
+使用边缘检测在轮廓区域获得更多细节：
 
 ```python
 def frame_to_ascii_edges(frame_rgb, grid, pal=PAL_DEFAULT, edge_pal=PAL_BOX):
@@ -144,14 +144,14 @@ def frame_to_ascii_edges(frame_rgb, grid, pal=PAL_DEFAULT, edge_pal=PAL_BOX):
     small_gray = resize(gray, (grid.rows, grid.cols))
     lum = small_gray / 255.0
 
-    # Sobel edge detection
+    # Sobel 边缘检测
     gx = np.abs(small_gray[:, 2:] - small_gray[:, :-2])
     gy = np.abs(small_gray[2:, :] - small_gray[:-2, :])
     edge = np.zeros_like(small_gray)
     edge[:, 1:-1] += gx; edge[1:-1, :] += gy
     edge = np.clip(edge / edge.max(), 0, 1)
 
-    # Edge regions get box drawing chars, flat regions get brightness chars
+    # 边缘区域使用制表字符，平坦区域使用亮度字符
     is_edge = edge > 0.15
     chars = val2char(lum, lum > 0.02, pal)
     edge_chars = val2char(edge, is_edge, edge_pal)
@@ -160,9 +160,9 @@ def frame_to_ascii_edges(frame_rgb, grid, pal=PAL_DEFAULT, edge_pal=PAL_BOX):
     return chars, colors
 ```
 
-### Motion Detection
+### 运动检测
 
-Detect pixel changes between frames for motion-reactive effects:
+检测画布帧之间的像素变化，用于运动响应效果：
 
 ```python
 prev_frame = None
@@ -172,15 +172,15 @@ def compute_motion(frame):
         prev_frame = frame.astype(np.float32)
         return np.zeros(frame.shape[:2])
     diff = np.abs(frame.astype(np.float32) - prev_frame).mean(axis=2)
-    prev_frame = frame.astype(np.float32) * 0.7 + prev_frame * 0.3  # smoothed
-    return np.clip(diff / 30.0, 0, 1)  # normalized motion map
+    prev_frame = frame.astype(np.float32) * 0.7 + prev_frame * 0.3  # 平滑
+    return np.clip(diff / 30.0, 0, 1)  # 归一化的运动图
 ```
 
-Use motion map to drive particle emission, glitch intensity, or character density.
+使用运动图驱动粒子发射、故障强度或字符密度。
 
-### Video Feature Extraction
+### 视频特征提取
 
-Per-frame features analogous to audio features, for driving effects:
+逐帧特征类似于音频特征，用于驱动效果：
 
 ```python
 def analyze_video_frame(frame_rgb):
@@ -195,11 +195,11 @@ def analyze_video_frame(frame_rgb):
     }
 ```
 
-## Image Sequence
+## 图像序列
 
-### Static Image to ASCII
+### 静态图像转 ASCII
 
-Same as single video frame conversion. For animated sequences:
+与单个视频画布帧转换相同。对于动画序列：
 
 ```python
 import glob
@@ -209,25 +209,25 @@ for fi, path in enumerate(frames):
     chars, colors = frame_to_ascii(img, grid, pal)
 ```
 
-### Image as Texture Source
+### 图像作为纹理源
 
-Use an image as a background texture that effects modulate:
+将图像用作效果调制的背景纹理：
 
 ```python
 def load_texture(path, grid):
     img = np.array(Image.open(path).resize((grid.cols, grid.rows)))
     lum = np.mean(img, axis=2) / 255.0
-    return lum, img  # luminance for char mapping, RGB for colors
+    return lum, img  # 亮度用于字符映射，RGB 用于颜色
 ```
 
-## Text / Lyrics
+## 文本 / 歌词
 
-### SRT Parsing
+### SRT 解析
 
 ```python
 import re
 def parse_srt(path):
-    """Returns [(start_sec, end_sec, text), ...]"""
+    """返回 [(start_sec, end_sec, text), ...]"""
     entries = []
     with open(path) as f:
         content = f.read()
@@ -246,29 +246,29 @@ def parse_srt(path):
     return entries
 ```
 
-### Lyrics Display Modes
+### 歌词显示模式
 
-- **Typewriter**: characters appear left-to-right over the time window
-- **Fade-in**: whole line fades from dark to bright
-- **Flash**: appear instantly on beat, fade out
-- **Scatter**: characters start at random positions, converge to final position
-- **Wave**: text follows a sine wave path
+- **打字机**：字符在时间窗口内从左到右出现
+- **淡入**：整行从暗到亮淡入
+- **闪光**：节拍时瞬间出现，然后淡出
+- **散射**：字符从随机位置开始，汇聚到最终位置
+- **波浪**：文本沿正弦波路径排列
 
 ```python
 def lyrics_typewriter(ch, co, text, row, col, t, t_start, t_end, color):
-    """Reveal characters progressively over time window."""
+    """在时间窗口内逐步显示字符。"""
     progress = np.clip((t - t_start) / (t_end - t_start), 0, 1)
     n_visible = int(len(text) * progress)
     stamp(ch, co, text[:n_visible], row, col, color)
 ```
 
-## Generative (No Input)
+## 生成式（无输入）
 
-For pure generative ASCII art, the "features" dict is synthesized from time:
+对于纯生成式 ASCII 艺术，"特征"字典由时间合成：
 
 ```python
 def synthetic_features(t, bpm=120):
-    """Generate audio-like features from time alone."""
+    """仅从时间生成类音频特征。"""
     beat_period = 60.0 / bpm
     beat_phase = (t % beat_period) / beat_period
     return {
@@ -282,25 +282,25 @@ def synthetic_features(t, bpm=120):
         "flux": 0.3 + 0.2 * math.sin(t * 3),
         "beat": 1.0 if beat_phase < 0.05 else 0.0,
         "bdecay": max(0, 1.0 - beat_phase * 4),
-        # ratios
+        # 比例
         "sub_r": 0.2, "bass_r": 0.25, "lomid_r": 0.15,
         "mid_r": 0.2, "himid_r": 0.12, "hi_r": 0.08,
         "cent_d": 0.1,
     }
 ```
 
-## TTS Integration
+## TTS 集成
 
-For narrated videos (testimonials, quotes, storytelling), generate speech audio per segment and mix with background music.
+对于带旁白的视频（证言、引语、讲故事），按片段生成语音音频并与背景音乐混合。
 
-### ElevenLabs Voice Generation
+### ElevenLabs 语音生成
 
 ```python
 import requests, time, os
 
 def generate_tts(text, voice_id, api_key, output_path, model="eleven_multilingual_v2"):
-    """Generate TTS audio via ElevenLabs API. Streams response to disk."""
-    # Skip if already generated (idempotent re-runs)
+    """通过 ElevenLabs API 生成 TTS 音频。将响应流式写入磁盘。"""
+    # 如果已生成则跳过（幂等重跑）
     if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
         return
 
@@ -321,18 +321,18 @@ def generate_tts(text, voice_id, api_key, output_path, model="eleven_multilingua
     with open(output_path, "wb") as f:
         for chunk in resp.iter_content(chunk_size=4096):
             f.write(chunk)
-    time.sleep(0.3)  # rate limit: avoid 429s on batch generation
+    time.sleep(0.3)  # 限流：避免批量生成时的 429
 ```
 
-Voice settings notes:
-- `stability` 0.65 gives natural variation without drift. Lower (0.3-0.5) for more expressive reads, higher (0.7-0.9) for monotone/narration.
-- `similarity_boost` 0.80 keeps it close to the voice profile. Lower for more generic sound.
-- `style` 0.15 adds slight stylistic variation. Keep low (0-0.2) for straightforward reads.
-- `use_speaker_boost` True improves clarity at the cost of slightly more processing time.
+语音设置说明：
+- `stability` 0.65 给出自然变化而不漂移。更低 (0.3-0.5) 更具表现力，更高 (0.7-0.9) 更单调/适合旁白。
+- `similarity_boost` 0.80 使其贴近声音档案。更低则声音更通用。
+- `style` 0.15 增加轻微的风格变化。简单朗读时保持低位 (0-0.2)。
+- `use_speaker_boost` True 以略多处理时间为代价提升清晰度。
 
-### Voice Pool
+### 声音池
 
-ElevenLabs has ~20 built-in voices. Use multiple voices for variety across quotes. Reference pool:
+ElevenLabs 有约 20 种内置声音。跨引语使用多种声音增加多样性。参考池：
 
 ```python
 VOICE_POOL = [
@@ -360,62 +360,62 @@ VOICE_POOL = [
 ]
 ```
 
-### Voice Assignment
+### 声音分配
 
-Shuffle deterministically so re-runs produce the same voice mapping:
+确定性洗牌，使重跑产生相同的声音映射：
 
 ```python
 import random as _rng
 
 def assign_voices(n_quotes, voice_pool, seed=42):
-    """Assign a different voice to each quote, cycling if needed."""
+    """为每条引语分配不同声音，需要时循环。"""
     r = _rng.Random(seed)
     ids = [v[0] for v in voice_pool]
     r.shuffle(ids)
     return [ids[i % len(ids)] for i in range(n_quotes)]
 ```
 
-### Pronunciation Control
+### 发音控制
 
-TTS text must be separate from display text. The display text has line breaks for visual layout; the TTS text is a flat sentence with phonetic fixes.
+TTS 文本必须与显示文本分开。显示文本有用于视觉布局的换行；TTS 文本是带注音修正的平铺句子。
 
-Common fixes:
-- Brand names: spell phonetically ("Nous" -> "Noose", "nginx" -> "engine-x")
-- Abbreviations: expand ("API" -> "A P I", "CLI" -> "C L I")
-- Technical terms: add phonetic hints
-- Punctuation for pacing: periods create pauses, commas create slight pauses
+常见修正：
+- 品牌名：按发音拼写（"Nous" -> "Noose"，"nginx" -> "engine-x"）
+- 缩写：展开（"API" -> "A P I"，"CLI" -> "C L I"）
+- 技术术语：添加发音提示
+- 用于节奏的标点：句号产生停顿，逗号产生轻微停顿
 
 ```python
-# Display text: line breaks control visual layout
+# 显示文本：换行控制视觉布局
 QUOTES = [
     ("It can do far more than the Claws,\nand you don't need to buy a Mac Mini.\nNous Research has a winner here.", "Brian Roemmele"),
 ]
 
-# TTS text: flat, phonetically corrected for speech
+# TTS 文本：平铺，按发音修正用于朗读
 QUOTES_TTS = [
     "It can do far more than the Claws, and you don't need to buy a Mac Mini. Noose Research has a winner here.",
 ]
-# Keep both arrays in sync -- same indices
+# 保持两个数组同步 —— 索引相同
 ```
 
-### Audio Pipeline
+### 音频流水线
 
-1. Generate individual TTS clips (MP3 per quote, skipping existing)
-2. Convert each to WAV (mono, 22050 Hz) for duration measurement and concatenation
-3. Calculate timing: intro pad + speech + gaps + outro pad = target duration
-4. Concatenate into single TTS track with silence padding
-5. Mix with background music
+1. 生成各个 TTS 片段（每条引语一个 MP3，跳过已存在的）
+2. 将每个转换为 WAV（单声道，22050 Hz）用于时长测量和拼接
+3. 计算时间：前奏填充 + 语音 + 间隙 + 尾奏填充 = 目标时长
+4. 拼接成单一 TTS 轨道，带静音填充
+5. 与背景音乐混合
 
 ```python
 def build_tts_track(tts_clips, target_duration, intro_pad=5.0, outro_pad=4.0):
-    """Concatenate TTS clips with calculated gaps, pad to target duration.
+    """按计算的间隙拼接 TTS 片段，填充到目标时长。
 
     Returns:
-        timing: list of (start_time, end_time, quote_index) tuples
+        timing: (start_time, end_time, quote_index) 元组列表
     """
     sr = 22050
 
-    # Convert MP3s to WAV for duration and sample-level concatenation
+    # 将 MP3 转为 WAV 用于时长和采样级拼接
     durations = []
     for clip in tts_clips:
         wav = clip.replace(".mp3", ".wav")
@@ -429,13 +429,13 @@ def build_tts_track(tts_clips, target_duration, intro_pad=5.0, outro_pad=4.0):
             capture_output=True, text=True)
         durations.append(float(result.stdout.strip()))
 
-    # Calculate gap to fill target duration
+    # 计算填满目标时长的间隙
     total_speech = sum(durations)
     n_gaps = len(tts_clips) - 1
     remaining = target_duration - total_speech - intro_pad - outro_pad
     gap = max(1.0, remaining / max(1, n_gaps))
 
-    # Build timing and concatenate samples
+    # 构建时间并拼接采样
     timing = []
     t = intro_pad
     all_audio = [np.zeros(int(sr * intro_pad), dtype=np.int16)]
@@ -453,7 +453,7 @@ def build_tts_track(tts_clips, target_duration, intro_pad=5.0, outro_pad=4.0):
 
     all_audio.append(np.zeros(int(sr * outro_pad), dtype=np.int16))
 
-    # Pad or trim to exactly target_duration
+    # 填充或裁剪到精确的 target_duration
     full = np.concatenate(all_audio)
     target_samples = int(sr * target_duration)
     if len(full) < target_samples:
@@ -461,7 +461,7 @@ def build_tts_track(tts_clips, target_duration, intro_pad=5.0, outro_pad=4.0):
     else:
         full = full[:target_samples]
 
-    # Write concatenated TTS track
+    # 写入拼接的 TTS 轨道
     with wave.open("tts_full.wav", "w") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
@@ -471,26 +471,26 @@ def build_tts_track(tts_clips, target_duration, intro_pad=5.0, outro_pad=4.0):
     return timing
 ```
 
-### Audio Mixing
+### 音频混合
 
-Mix TTS (center) with background music (wide stereo, low volume). The filter chain:
-1. TTS mono duplicated to both channels (centered)
-2. BGM loudness-normalized, volume reduced to 15%, stereo widened with `extrastereo`
-3. Mixed together with dropout transition for smooth endings
+将 TTS（居中）与背景音乐（宽立体声、低音量）混合。滤镜链：
+1. TTS 单声道复制到两个声道（居中）
+2. BGM 响度归一化，音量降至 15%，用 `extrastereo` 拓宽立体声
+3. 混合在一起，结尾带 dropout 过渡以获得平滑收尾
 
 ```python
 def mix_audio(tts_path, bgm_path, output_path, bgm_volume=0.15):
-    """Mix TTS centered with BGM panned wide stereo."""
+    """将居中的 TTS 与左右铺开的立体声 BGM 混合。"""
     filter_complex = (
-        # TTS: mono -> stereo center
+        # TTS：单声道 -> 立体声居中
         "[0:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=mono,"
         "pan=stereo|c0=c0|c1=c0[tts];"
-        # BGM: normalize loudness, reduce volume, widen stereo
+        # BGM：归一化响度，降低音量，拓宽立体声
         f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
         f"loudnorm=I=-16:TP=-1.5:LRA=11,"
         f"volume={bgm_volume},"
         f"extrastereo=m=2.5[bgm];"
-        # Mix with smooth dropout at end
+        # 混合并结尾平滑 dropout
         "[tts][bgm]amix=inputs=2:duration=longest:dropout_transition=3,"
         "aformat=sample_fmts=s16:sample_rates=44100:channel_layouts=stereo[out]"
     )
@@ -504,36 +504,36 @@ def mix_audio(tts_path, bgm_path, output_path, bgm_volume=0.15):
     subprocess.run(cmd, capture_output=True, check=True)
 ```
 
-### Per-Quote Visual Style
+### 逐引语视觉风格
 
-Cycle through visual presets per quote for variety. Each preset defines a background effect, color scheme, and text color:
+逐引语循环视觉预设以增加多样性。每个预设定义一个背景效果、配色方案和文本颜色：
 
 ```python
 QUOTE_STYLES = [
-    {"hue": 0.08, "accent": 0.7, "bg": "spiral",       "text_rgb": (255, 220, 140)},  # warm gold
-    {"hue": 0.55, "accent": 0.6, "bg": "rings",         "text_rgb": (180, 220, 255)},  # cool blue
-    {"hue": 0.75, "accent": 0.7, "bg": "wave",          "text_rgb": (220, 180, 255)},  # purple
-    {"hue": 0.35, "accent": 0.6, "bg": "matrix",        "text_rgb": (140, 255, 180)},  # green
-    {"hue": 0.95, "accent": 0.8, "bg": "fire",          "text_rgb": (255, 180, 160)},  # red/coral
-    {"hue": 0.12, "accent": 0.5, "bg": "interference",  "text_rgb": (255, 240, 200)},  # amber
-    {"hue": 0.60, "accent": 0.7, "bg": "tunnel",        "text_rgb": (160, 210, 255)},  # cyan
-    {"hue": 0.45, "accent": 0.6, "bg": "aurora",        "text_rgb": (180, 255, 220)},  # teal
+    {"hue": 0.08, "accent": 0.7, "bg": "spiral",       "text_rgb": (255, 220, 140)},  # 暖金色
+    {"hue": 0.55, "accent": 0.6, "bg": "rings",         "text_rgb": (180, 220, 255)},  # 冷蓝
+    {"hue": 0.75, "accent": 0.7, "bg": "wave",          "text_rgb": (220, 180, 255)},  # 紫色
+    {"hue": 0.35, "accent": 0.6, "bg": "matrix",        "text_rgb": (140, 255, 180)},  # 绿色
+    {"hue": 0.95, "accent": 0.8, "bg": "fire",          "text_rgb": (255, 180, 160)},  # 红/珊瑚
+    {"hue": 0.12, "accent": 0.5, "bg": "interference",  "text_rgb": (255, 240, 200)},  # 琥珀
+    {"hue": 0.60, "accent": 0.7, "bg": "tunnel",        "text_rgb": (160, 210, 255)},  # 青色
+    {"hue": 0.45, "accent": 0.6, "bg": "aurora",        "text_rgb": (180, 255, 220)},  # 蓝绿
 ]
 
 style = QUOTE_STYLES[quote_index % len(QUOTE_STYLES)]
 ```
 
-This guarantees no two adjacent quotes share the same look, even without randomness.
+这保证没有两个相邻引语共享相同外观，即使没有随机性。
 
-### Typewriter Text Rendering
+### 打字机文本渲染
 
-Display quote text character-by-character synced to speech progress. Recently revealed characters are brighter, creating a "just typed" glow:
+将引语文本逐字符显示，与语音进度同步。最近显示的字符更亮，营造"刚打出"的发光感：
 
 ```python
 def render_typewriter(ch, co, lines, block_start, cols, progress, total_chars, text_rgb, t):
-    """Overlay typewriter text onto character/color grids.
-    progress: 0.0 (nothing visible) to 1.0 (all text visible)."""
-    chars_visible = int(total_chars * min(1.0, progress * 1.2))  # slight overshoot for snappy feel
+    """将打字机文本叠加到字符/颜色网格上。
+    progress：0.0（无可见）到 1.0（全部文本可见）。"""
+    chars_visible = int(total_chars * min(1.0, progress * 1.2))  # 轻微超调以获得干脆感
     tr, tg, tb = text_rgb
     char_count = 0
     for li, line in enumerate(lines):
@@ -542,7 +542,7 @@ def render_typewriter(ch, co, lines, block_start, cols, progress, total_chars, t
         for ci, c in enumerate(line):
             if char_count < chars_visible:
                 age = chars_visible - char_count
-                bri_factor = min(1.0, 0.5 + 0.5 / (1 + age * 0.015))  # newer = brighter
+                bri_factor = min(1.0, 0.5 + 0.5 / (1 + age * 0.015))  # 越新 = 越亮
                 hue_shift = math.sin(char_count * 0.3 + t * 2) * 0.05
                 stamp(ch, co, c, row, col + ci,
                       (int(min(255, tr * bri_factor * (1.0 + hue_shift))),
@@ -550,41 +550,41 @@ def render_typewriter(ch, co, lines, block_start, cols, progress, total_chars, t
                        int(min(255, tb * bri_factor * (1.0 - hue_shift)))))
             char_count += 1
 
-    # Blinking cursor at insertion point
+    # 插入点处的闪烁光标
     if progress < 1.0 and int(t * 3) % 2 == 0:
-        # Find cursor position (char_count == chars_visible)
+        # 寻找光标位置 (char_count == chars_visible)
         cc = 0
         for li, line in enumerate(lines):
             for ci, c in enumerate(line):
                 if cc == chars_visible:
-                    stamp(ch, co, "\u258c", block_start + li,
+                    stamp(ch, co, "▌", block_start + li,
                           (cols - len(line)) // 2 + ci, (255, 220, 100))
                     return
                 cc += 1
 ```
 
-### Feature Analysis on Mixed Audio
+### 对混合音频的特征分析
 
-Run the standard audio analysis (FFT, beat detection) on the final mixed track so visual effects react to both TTS and music:
+对最终混合轨道运行标准音频分析（FFT、节拍检测），使视觉效果同时对 TTS 和音乐做出反应：
 
 ```python
-# Analyze mixed_final.wav (not individual tracks)
+# 分析 mixed_final.wav（而非各个轨道）
 features = analyze_audio("mixed_final.wav", fps=24)
 ```
 
-Visuals pulse with both the music beats and the speech energy.
+视觉随音乐节拍和语音能量共同脉动。
 
 ---
 
-## Audio-Video Sync Verification
+## 音视频同步验证
 
-After rendering, verify that visual beat markers align with actual audio beats. Drift accumulates from frame timing errors, ffmpeg concat boundaries, and rounding in `fi / fps`.
+渲染后，验证视觉节拍标记与实际音频节拍对齐。漂移累积自画布帧计时误差、ffmpeg 拼接边界以及 `fi / fps` 中的舍入。
 
-### Beat Timestamp Extraction
+### 节拍时间戳提取
 
 ```python
 def extract_beat_timestamps(features, fps, threshold=0.5):
-    """Extract timestamps where beat feature exceeds threshold."""
+    """提取节拍特征超过阈值的时间戳。"""
     beat = features["beat"]
     timestamps = []
     for fi in range(len(beat)):
@@ -593,27 +593,27 @@ def extract_beat_timestamps(features, fps, threshold=0.5):
     return timestamps
 
 def extract_visual_beat_timestamps(video_path, fps, brightness_jump=30):
-    """Detect visual beats by brightness jumps between consecutive frames.
-    Returns timestamps where mean brightness increases by more than threshold."""
+    """通过连续画布帧之间的亮度跳变检测视觉节拍。
+    返回平均亮度增加超过阈值的画布帧时间戳。"""
     import subprocess
     cmd = ["ffmpeg", "-i", video_path, "-f", "rawvideo", "-pix_fmt", "gray", "-"]
     proc = subprocess.run(cmd, capture_output=True)
     frames = np.frombuffer(proc.stdout, dtype=np.uint8)
-    # Infer frame dimensions from total byte count
+    # 从总字节数推断画布帧尺寸
     n_pixels = len(frames)
-    # For 1080p: 1920*1080 pixels per frame
-    # Auto-detect from video metadata is more robust:
+    # 对于 1080p：每画布帧 1920*1080 像素
+    # 从视频元数据自动检测更稳健：
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height",
          "-of", "csv=p=0", video_path],
         capture_output=True, text=True)
     w, h = map(int, probe.stdout.strip().split(","))
-    ppf = w * h  # pixels per frame
+    ppf = w * h  # 每画布帧像素数
     n_frames = n_pixels // ppf
     frames = frames[:n_frames * ppf].reshape(n_frames, ppf)
     means = frames.mean(axis=1)
-    
+
     timestamps = []
     for i in range(1, len(means)):
         if means[i] - means[i-1] > brightness_jump:
@@ -621,25 +621,25 @@ def extract_visual_beat_timestamps(video_path, fps, brightness_jump=30):
     return timestamps
 ```
 
-### Sync Report
+### 同步报告
 
 ```python
 def sync_report(audio_beats, visual_beats, tolerance_ms=50):
-    """Compare audio beat timestamps to visual beat timestamps.
-    
+    """将音频节拍时间戳与视觉节拍时间戳进行对比。
+
     Args:
-        audio_beats: list of timestamps (seconds) from audio analysis
-        visual_beats: list of timestamps (seconds) from video brightness analysis
-        tolerance_ms: max acceptable drift in milliseconds
-    
+        audio_beats: 来自音频分析的时间戳（秒）列表
+        visual_beats: 来自视频亮度分析的时间戳（秒）列表
+        tolerance_ms: 可接受的最大漂移（毫秒）
+
     Returns:
-        dict with matched/unmatched/drift statistics
+        含 matched/unmatched/drift 统计的字典
     """
     tolerance = tolerance_ms / 1000.0
     matched = []
     unmatched_audio = []
     unmatched_visual = list(visual_beats)
-    
+
     for at in audio_beats:
         best_match = None
         best_delta = float("inf")
@@ -653,7 +653,7 @@ def sync_report(audio_beats, visual_beats, tolerance_ms=50):
             unmatched_visual.remove(best_match)
         else:
             unmatched_audio.append(at)
-    
+
     drifts = [m["drift_ms"] for m in matched]
     return {
         "matched": len(matched),
@@ -666,20 +666,20 @@ def sync_report(audio_beats, visual_beats, tolerance_ms=50):
         "p95_drift_ms": np.percentile(drifts, 95) if len(drifts) > 1 else 0,
     }
 
-# Usage:
+# 用法：
 audio_beats = extract_beat_timestamps(features, fps=24)
 visual_beats = extract_visual_beat_timestamps("output.mp4", fps=24)
 report = sync_report(audio_beats, visual_beats)
-print(f"Matched: {report['matched']}/{report['total_audio_beats']} beats")
-print(f"Mean drift: {report['mean_drift_ms']:.1f}ms, Max: {report['max_drift_ms']:.1f}ms")
-# Target: mean drift < 20ms, max drift < 42ms (1 frame at 24fps)
+print(f"匹配：{report['matched']}/{report['total_audio_beats']} 个节拍")
+print(f"平均漂移：{report['mean_drift_ms']:.1f}ms，最大：{report['max_drift_ms']:.1f}ms")
+# 目标：平均漂移 < 20ms，最大漂移 < 42ms（24fps 下 1 帧）
 ```
 
-### Common Sync Issues
+### 常见同步问题
 
-| Symptom | Cause | Fix |
+| 症状 | 原因 | 修复 |
 |---------|-------|-----|
-| Consistent late visual beats | ffmpeg concat adds frames at boundaries | Use `-vsync cfr` flag; pad segments to exact frame count |
-| Drift increases over time | Floating-point accumulation in `t = fi / fps` | Use integer frame counter, compute `t` fresh each frame |
-| Random missed beats | Beat threshold too high / feature smoothing too aggressive | Lower threshold; reduce EMA alpha for beat feature |
-| Beats land on wrong frame | Off-by-one in frame indexing | Verify: frame 0 = t=0, frame 1 = t=1/fps (not t=0) |
+| 视觉节拍持续偏晚 | ffmpeg concat 在边界添加画布帧 | 使用 `-vsync cfr` 标志；将分段填充到精确画布帧数 |
+| 漂移随时间增大 | `t = fi / fps` 中的浮点累积 | 使用整数画布帧计数器，每画布帧重新计算 `t` |
+| 随机漏拍 | 节拍阈值太高 / 特征平滑过度 | 降低阈值；减小节拍特征的 EMA alpha |
+| 节拍落在错误画布帧 | 画布帧索引差一 | 验证：画布帧 0 = t=0，画布帧 1 = t=1/fps（而非 t=0） |

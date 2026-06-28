@@ -1,283 +1,283 @@
-# Reviewer Guidelines & Evaluation Criteria
+# 审稿人指南与评估标准
 
-This reference documents how reviewers evaluate papers at major ML/AI conferences, helping authors anticipate and address reviewer concerns.
-
----
-
-## Contents
-
-- [Universal Evaluation Dimensions](#universal-evaluation-dimensions)
-- [NeurIPS Reviewer Guidelines](#neurips-reviewer-guidelines)
-- [ICML Reviewer Guidelines](#icml-reviewer-guidelines)
-- [ICLR Reviewer Guidelines](#iclr-reviewer-guidelines)
-- [ACL Reviewer Guidelines](#acl-reviewer-guidelines)
-- [What Makes Reviews Strong](#what-makes-reviews-strong)
-- [Common Reviewer Concerns](#common-reviewer-concerns)
-- [How to Address Reviewer Feedback](#how-to-address-reviewer-feedback)
+本参考资料记录了主要 ML/AI 会议审稿人如何评估论文，帮助作者预见并应对审稿人的关切。
 
 ---
 
-## Universal Evaluation Dimensions
+## 目录
 
-All major ML conferences assess papers across four core dimensions:
-
-### 1. Quality (Technical Soundness)
-
-**What reviewers ask:**
-- Are claims well-supported by theoretical analysis or experimental results?
-- Are the proofs correct? Are the experiments properly controlled?
-- Are baselines appropriate and fairly compared?
-- Is the methodology sound?
-
-**How to ensure high quality:**
-- Include complete proofs (main paper or appendix with sketches)
-- Use appropriate baselines (not strawmen)
-- Report variance/error bars with methodology
-- Document hyperparameter selection process
-
-### 2. Clarity (Writing & Organization)
-
-**What reviewers ask:**
-- Is the paper clearly written and well organized?
-- Can an expert in the field reproduce the results?
-- Is notation consistent? Are terms defined?
-- Is the paper self-contained?
-
-**How to ensure clarity:**
-- Use consistent terminology throughout
-- Define all notation at first use
-- Include reproducibility details (appendix acceptable)
-- Have non-authors read before submission
-
-### 3. Significance (Impact & Importance)
-
-**What reviewers ask:**
-- Are the results impactful for the community?
-- Will others build upon this work?
-- Does it address an important problem?
-- What is the potential for real-world impact?
-
-**How to demonstrate significance:**
-- Clearly articulate the problem's importance
-- Connect to broader research themes
-- Discuss potential applications
-- Compare to existing approaches meaningfully
-
-### 4. Originality (Novelty & Contribution)
-
-**What reviewers ask:**
-- Does this provide new insights?
-- How does it differ from prior work?
-- Is the contribution non-trivial?
-
-**Key insight from NeurIPS guidelines:**
-> "Originality does not necessarily require introducing an entirely new method. Papers that provide novel insights from evaluating existing approaches or shed light on why methods succeed can also be highly original."
+- [通用评估维度](#通用评估维度)
+- [NeurIPS 审稿人指南](#neurips-审稿人指南)
+- [ICML 审稿人指南](#icml-审稿人指南)
+- [ICLR 审稿人指南](#iclr-审稿人指南)
+- [ACL 审稿人指南](#acl-审稿人指南)
+- [何谓优秀的评审](#何谓优秀的评审)
+- [审稿人常见关切](#审稿人常见关切)
+- [如何回应审稿意见](#如何回应审稿意见)
 
 ---
 
-## NeurIPS Reviewer Guidelines
+## 通用评估维度
 
-### Scoring System (1-6 Scale)
+所有主要 ML 会议都从四个核心维度评估论文：
 
-| Score | Label | Description |
+### 1. 质量（Quality，技术稳健性）
+
+**审稿人会问：**
+- 论点是否由理论分析或实验结果充分支撑？
+- 证明是否正确？实验是否得到适当控制？
+- 基线是否合适且比较公平？
+- 方法学是否稳健？
+
+**如何确保高质量：**
+- 提供完整证明（正文或附录配概要）
+- 使用合适的基线（而非稻草人）
+- 报告方差/误差线及方法学
+- 记录超参数选择过程
+
+### 2. 清晰度（Clarity，写作与组织）
+
+**审稿人会问：**
+- 论文是否写得清楚、组织得当？
+- 该领域的专家能否复现结果？
+- 符号是否一致？术语是否定义？
+- 论文是否自洽？
+
+**如何确保清晰度：**
+- 全文使用一致的术语
+- 首次使用时定义所有符号
+- 提供可复现性细节（放附录可接受）
+- 投稿前让非作者读一遍
+
+### 3. 重要性（Significance，影响力）
+
+**审稿人会问：**
+- 结果对社区是否有影响力？
+- 其他人会在此基础上继续工作吗？
+- 是否针对一个重要问题？
+- 现实世界影响的潜力如何？
+
+**如何展示重要性：**
+- 清楚阐述问题的重要性
+- 联系更广泛的研究主题
+- 讨论潜在应用
+- 有意义地与既有方法对比
+
+### 4. 原创性（Originality，新颖性与贡献）
+
+**审稿人会问：**
+- 是否提供了新洞见？
+- 与既有工作有何不同？
+- 贡献是否非平凡？
+
+**来自 NeurIPS 指南的关键洞见：**
+> 「原创性不一定要求引入全新的方法。通过评估既有方法提供新洞见、或阐明方法为何成功的论文，也可以高度原创。」
+
+---
+
+## NeurIPS 审稿人指南
+
+### 评分系统（1–6 分制）
+
+| 分数 | 标签 | 描述 |
 |-------|-------|-------------|
-| **6** | Strong Accept | Groundbreaking, flawless work; top 2-3% of submissions |
-| **5** | Accept | Technically solid, high impact; would benefit the community |
-| **4** | Borderline Accept | Solid work with limited evaluation; leans accept |
-| **3** | Borderline Reject | Solid but weaknesses outweigh strengths; leans reject |
-| **2** | Reject | Technical flaws or weak evaluation |
-| **1** | Strong Reject | Well-known results or unaddressed ethics concerns |
+| **6** | Strong Accept（强接收） | 开创性、无瑕疵的工作；投稿的前 2–3% |
+| **5** | Accept（接收） | 技术稳健、高影响；将使社区受益 |
+| **4** | Borderline Accept（边缘接收） | 稳健但评估有限；倾向接收 |
+| **3** | Borderline Reject（边缘拒稿） | 稳健但弱点超过优点；倾向拒稿 |
+| **2** | Reject（拒稿） | 技术缺陷或评估薄弱 |
+| **1** | Strong Reject（强拒稿） | 众所周知的结果或未解决的伦理问题 |
 
-### Reviewer Instructions
+### 审稿人须知
 
-Reviewers are explicitly instructed to:
+审稿人被明确指示要：
 
-1. **Evaluate the paper as written** - not what it could be with revisions
-2. **Provide constructive feedback** - 3-5 actionable points
-3. **Not penalize honest limitations** - acknowledging weaknesses is encouraged
-4. **Assess reproducibility** - can the work be verified?
-5. **Consider ethical implications** - potential misuse or harm
+1. **就论文本身来评估**——而非它修订后可能成为的样子
+2. **提供建设性反馈**——3–5 条可操作的点
+3. **不要因作者诚实承认局限而惩罚他们**——鼓励承认弱点
+4. **评估可复现性**——该工作能否被验证？
+5. **考虑伦理含义**——潜在的误用或伤害
 
-### What Reviewers Should Avoid
+### 审稿人应避免的事
 
-- Superficial, uninformed reviews
-- Demanding unreasonable additional experiments
-- Penalizing authors for honest limitation acknowledgment
-- Rejecting for missing citations to reviewer's own work
+- 肤浅、不专业的评审
+- 要求不合理的额外实验
+- 因作者诚实承认局限而予以惩罚
+- 因缺少对审稿人自己工作的引用而拒稿
 
-### Timeline (NeurIPS 2025 — verify dates for current year)
+### 时间线（NeurIPS 2025——请核实当年日期）
 
-- Bidding: May 17-21
-- Reviewing period: May 29 - July 2
-- Author rebuttals: July 24-30
-- Discussion period: July 31 - August 13
-- Final notifications: September 18
+- 竞标（bidding）：5 月 17–21 日
+- 评审期：5 月 29 日 – 7 月 2 日
+- 作者反驳（rebuttal）：7 月 24–30 日
+- 讨论期：7 月 31 日 – 8 月 13 日
+- 最终通知：9 月 18 日
 
-> **Note**: These dates are from the 2025 cycle. Always check the current year's call for papers at the venue website.
-
----
-
-## ICML Reviewer Guidelines
-
-### Review Structure
-
-ICML reviewers provide:
-
-1. **Summary** - Brief description of contributions
-2. **Strengths** - Positive aspects
-3. **Weaknesses** - Areas for improvement
-4. **Questions** - Clarifications for authors
-5. **Limitations** - Assessment of stated limitations
-6. **Ethics** - Any concerns
-7. **Overall Score** - Recommendation
-
-### Scoring Guidelines
-
-ICML uses a similar 1-6 scale with calibration:
-- Top 25% of accepted papers: Score 5-6
-- Typical accepted paper: Score 4-5
-- Borderline: Score 3-4
-- Clear reject: Score 1-2
-
-### Key Evaluation Points
-
-1. **Reproducibility** - Are there enough details?
-2. **Experimental rigor** - Multiple seeds, proper baselines?
-3. **Writing quality** - Clear, organized, well-structured?
-4. **Novelty** - Non-trivial contribution?
+> **注意**：以上日期来自 2025 周期。务必在会议网站查看当年的征稿通知（CFP）。
 
 ---
 
-## ICLR Reviewer Guidelines
+## ICML 审稿人指南
 
-### OpenReview Process
+### 评审结构
 
-ICLR uses OpenReview with:
-- Public reviews (after acceptance decisions)
-- Author responses visible to reviewers
-- Discussion between reviewers and ACs
+ICML 审稿人提供：
 
-### Scoring
+1. **摘要（Summary）**——贡献的简要描述
+2. **优点（Strengths）**——正面方面
+3. **缺点（Weaknesses）**——待改进之处
+4. **问题（Questions）**——请作者澄清
+5. **局限（Limitations）**——对所陈述局限的评估
+6. **伦理（Ethics）**——任何顾虑
+7. **总分（Overall Score）**——推荐意见
 
-ICLR reviews include:
-- **Soundness**: 1-4 scale
-- **Presentation**: 1-4 scale
-- **Contribution**: 1-4 scale
-- **Overall**: 1-10 scale
-- **Confidence**: 1-5 scale
+### 评分指南
 
-### Unique ICLR Considerations
+ICML 使用类似的 1–6 分制并做校准：
+- 录取论文的前 25%：5–6 分
+- 典型录取论文：4–5 分
+- 边缘：3–4 分
+- 明确拒稿：1–2 分
 
-1. **LLM Disclosure** - Reviewers assess whether LLM use is properly disclosed
-2. **Reproducibility** - Emphasis on code availability
-3. **Reciprocal Reviewing** - Authors must also serve as reviewers
+### 关键评估点
 
----
-
-## ACL Reviewer Guidelines
-
-### ACL-Specific Criteria
-
-ACL adds NLP-specific evaluation:
-
-1. **Linguistic soundness** - Are linguistic claims accurate?
-2. **Resource documentation** - Are datasets/models properly documented?
-3. **Multilingual consideration** - If applicable, is language diversity addressed?
-
-### Limitations Section
-
-ACL specifically requires a Limitations section. Reviewers check:
-- Are limitations honest and comprehensive?
-- Do limitations undermine core claims?
-- Are potential negative impacts addressed?
-
-### Ethics Review
-
-ACL has a dedicated ethics review process for:
-- Dual-use concerns
-- Data privacy issues
-- Bias and fairness implications
+1. **可复现性**——细节是否充足？
+2. **实验严谨性**——多个随机种子、合适的基线？
+3. **写作质量**——清楚、有组织、结构良好？
+4. **新颖性**——非平凡的贡献？
 
 ---
 
-## AAAI Reviewer Guidelines
+## ICLR 审稿人指南
 
-### Evaluation Criteria
+### OpenReview 流程
 
-AAAI reviewers evaluate along similar axes to NeurIPS/ICML but with some differences:
+ICLR 使用 OpenReview，特点包括：
+- 公开评审（在接受决定之后）
+- 作者回复对审稿人可见
+- 审稿人与 AC 之间讨论
 
-| Criterion | Weight | Notes |
+### 评分
+
+ICLR 评审包括：
+- **稳健性（Soundness）**：1–4 分制
+- **呈现（Presentation）**：1–4 分制
+- **贡献（Contribution）**：1–4 分制
+- **总体（Overall）**：1–10 分制
+- **置信度（Confidence）**：1–5 分制
+
+### ICLR 独特考量
+
+1. **LLM 披露**——审稿人评估 LLM 使用是否被恰当披露
+2. **可复现性**——强调代码可用性
+3. **互惠审稿**——作者也必须担任审稿人
+
+---
+
+## ACL 审稿人指南
+
+### ACL 特定标准
+
+ACL 增加了 NLP 特定的评估：
+
+1. **语言学稳健性**——语言学论断是否准确？
+2. **资源文档**——数据集/模型是否被恰当记录？
+3. **多语言考量**——如适用，是否讨论了语言多样性？
+
+### Limitations 章节
+
+ACL 特别要求一个 Limitations 章节。审稿人检查：
+- 局限是否诚实且全面？
+- 局限是否会动摇核心论点？
+- 是否讨论了潜在的负面影响？
+
+### 伦理评审
+
+ACL 有专门的伦理评审流程，针对：
+- 双重用途（dual-use）问题
+- 数据隐私问题
+- 偏见与公平性含义
+
+---
+
+## AAAI 审稿人指南
+
+### 评估标准
+
+AAAI 审稿人沿与 NeurIPS/ICML 类似的轴线评估，但有一些差异：
+
+| 标准 | 权重 | 备注 |
 |-----------|--------|-------|
-| **Technical quality** | High | Soundness of approach, correctness of results |
-| **Significance** | High | Importance of the problem and contribution |
-| **Novelty** | Medium-High | New ideas, methods, or insights |
-| **Clarity** | Medium | Clear writing, well-organized presentation |
-| **Reproducibility** | Medium | Sufficient detail to reproduce results |
+| **技术质量** | 高 | 方法的稳健性、结果的正确性 |
+| **重要性** | 高 | 问题与贡献的重要性 |
+| **新颖性** | 中-高 | 新想法、新方法或新洞见 |
+| **清晰度** | 中 | 写作清楚、组织良好的呈现 |
+| **可复现性** | 中 | 有足够细节以复现结果 |
 
-### AAAI-Specific Considerations
+### AAAI 特定考量
 
-- **Broader AI scope**: AAAI covers all of AI, not just ML. Papers on planning, reasoning, knowledge representation, NLP, vision, robotics, and multi-agent systems are all in scope. Reviewers may not be deep ML specialists.
-- **Formatting strictness**: AAAI reviewers are instructed to flag formatting violations. Non-compliant papers may be desk-rejected before review.
-- **Application papers**: AAAI is more receptive to application-focused work than NeurIPS/ICML. Framing a strong application contribution is viable.
-- **Senior Program Committee**: AAAI uses SPCs (Senior Program Committee members) who mediate between reviewers and make accept/reject recommendations.
+- **更广的 AI 范围**：AAAI 涵盖整个 AI，不仅是 ML。规划、推理、知识表示、NLP、视觉、机器人和多智能体系统的论文都在范围内。审稿人未必是 ML 专才。
+- **格式严格性**：AAAI 审稿人被指示标记格式违规。不合规范的论文可能在评审前就被桌面拒稿。
+- **应用论文**：AAAI 比 NeurIPS/ICML 更欢迎以应用为导向的工作。构建一个强应用贡献是可行的。
+- **高级程序委员会**：AAAI 使用 SPC（Senior Program Committee members），他们在审稿人之间斡旋并给出接收/拒稿建议。
 
-### Scoring (AAAI Scale)
+### 评分（AAAI 分制）
 
-- **Strong Accept**: Clearly above threshold, excellent contribution
-- **Accept**: Above threshold, good contribution with minor issues
-- **Weak Accept**: Borderline, merits outweigh concerns
-- **Weak Reject**: Borderline, concerns outweigh merits
-- **Reject**: Below threshold, significant issues
-- **Strong Reject**: Well below threshold
+- **Strong Accept（强接收）**：明显高于阈值，贡献出色
+- **Accept（接收）**：高于阈值，贡献良好但有微小问题
+- **Weak Accept（弱接收）**：边缘，优点超过顾虑
+- **Weak Reject（弱拒稿）**：边缘，顾虑超过优点
+- **Reject（拒稿）**：低于阈值，问题显著
+- **Strong Reject（强拒稿）**：远低于阈值
 
 ---
 
-## COLM Reviewer Guidelines
+## COLM 审稿人指南
 
-### Evaluation Criteria
+### 评估标准
 
-COLM reviews focus on relevance to language modeling in addition to standard criteria:
+COLM 评审在标准之外，还聚焦于与语言建模的相关性：
 
-| Criterion | Weight | Notes |
+| 标准 | 权重 | 备注 |
 |-----------|--------|-------|
-| **Relevance** | High | Must be relevant to language modeling community |
-| **Technical quality** | High | Sound methodology, well-supported claims |
-| **Novelty** | Medium-High | New insights about language models |
-| **Clarity** | Medium | Clear presentation, reproducible |
-| **Significance** | Medium-High | Impact on LM research and practice |
+| **相关性** | 高 | 必须与语言建模社区相关 |
+| **技术质量** | 高 | 方法稳健、论点有支撑 |
+| **新颖性** | 中-高 | 关于语言模型的新洞见 |
+| **清晰度** | 中 | 呈现清楚、可复现 |
+| **重要性** | 中-高 | 对 LM 研究与实践的影响 |
 
-### COLM-Specific Considerations
+### COLM 特定考量
 
-- **Language model focus**: Reviewers will assess whether the contribution advances understanding of language models. General ML contributions need explicit LM framing.
-- **Newer venue norms**: COLM is newer than NeurIPS/ICML, so reviewer calibration varies more. Write more defensively — anticipate a wider range of reviewer expertise.
-- **ICLR-derived process**: Review process is modeled on ICLR (open reviews, author response period, discussion among reviewers).
-- **Broad interpretation of "language modeling"**: Includes training, evaluation, alignment, safety, efficiency, applications, theory, multimodality (if language is central), and social impact of LMs.
+- **语言模型聚焦**：审稿人会评估贡献是否推进了对语言模型的理解。通用 ML 贡献需要显式的 LM 框架。
+- **较新会议的规范**：COLM 比 NeurIPS/ICML 更新，因此审稿人校准差异更大。写得更保守——预见更广的审稿人专长范围。
+- **源自 ICLR 的流程**：评审流程模仿 ICLR（公开评审、作者回应期、审稿人之间的讨论）。
+- **对「语言建模」的广义理解**：包括训练、评估、对齐、安全、效率、应用、理论、多模态（若以语言为中心），以及 LM 的社会影响。
 
-### Scoring
+### 评分
 
-COLM uses an ICLR-style scoring system:
-- **8-10**: Strong accept (top papers)
-- **6-7**: Weak accept (solid contribution)
-- **5**: Borderline
-- **3-4**: Weak reject (below threshold)
-- **1-2**: Strong reject
+COLM 使用 ICLR 风格的评分系统：
+- **8–10**：强接收（顶级论文）
+- **6–7**：弱接收（稳健贡献）
+- **5**：边缘
+- **3–4**：弱拒稿（低于阈值）
+- **1–2**：强拒稿
 
 ---
 
-## What Makes Reviews Strong
+## 何谓优秀的评审
 
-### Following Daniel Dennett's Rules
+### 遵循 Daniel Dennett 的规则
 
-Good reviewers follow these principles:
+好的审稿人遵循以下原则：
 
-1. **Re-express the position fairly** - Show you understand the paper
-2. **List agreements** - Acknowledge what works well
-3. **List what you learned** - Credit the contribution
-4. **Only then critique** - After establishing understanding
+1. **公正地复述立场**——表明你理解了论文
+2. **列出同意之处**——承认哪些做得好
+3. **列出你学到了什么**——肯定其贡献
+4. **在此之后才批评**——在建立理解之后再批评
 
-### Review Structure Best Practices
+### 评审结构的最佳实践
 
-**Strong Review Structure:**
+**强评审结构：**
 ```
 Summary (1 paragraph):
 - What the paper does
@@ -304,66 +304,68 @@ Overall Assessment:
 - Clear recommendation with reasoning
 ```
 
----
-
-## Common Reviewer Concerns
-
-### Technical Concerns
-
-| Concern | How to Pre-empt |
-|---------|-----------------|
-| "Baselines too weak" | Use state-of-the-art baselines, cite recent work |
-| "Missing ablations" | Include systematic ablation study |
-| "No error bars" | Report std dev/error, multiple runs |
-| "Hyperparameters not tuned" | Document tuning process, search ranges |
-| "Claims not supported" | Ensure every claim has evidence |
-
-### Novelty Concerns
-
-| Concern | How to Pre-empt |
-|---------|-----------------|
-| "Incremental contribution" | Clearly articulate what's new vs prior work |
-| "Similar to [paper X]" | Explicitly compare to X in Related Work |
-| "Straightforward extension" | Highlight non-obvious aspects |
-
-### Clarity Concerns
-
-| Concern | How to Pre-empt |
-|---------|-----------------|
-| "Hard to follow" | Use clear structure, signposting |
-| "Notation inconsistent" | Review all notation, create notation table |
-| "Missing details" | Include reproducibility appendix |
-| "Figures unclear" | Self-contained captions, proper sizing |
-
-### Significance Concerns
-
-| Concern | How to Pre-empt |
-|---------|-----------------|
-| "Limited impact" | Discuss broader implications |
-| "Narrow evaluation" | Evaluate on multiple benchmarks |
-| "Only works in restricted setting" | Acknowledge scope, explain why still valuable |
+（译注：摘要（1 段）：论文做了什么、所声称的主要贡献；优点（3–5 条）：具体正面方面、为何重要；缺点（3–5 条）：具体顾虑、为何重要、改进建议；问题（2–4 项）：所需澄清、会改变评估的东西；次要问题（可选）：笔误、不清楚的句子、格式问题；总体评估：清晰的推荐意见及理由。）
 
 ---
 
-## How to Address Reviewer Feedback
+## 审稿人常见关切
 
-### Rebuttal Best Practices
+### 技术顾虑
 
-**Do:**
-- Thank reviewers for their time
-- Address each concern specifically
-- Provide evidence (new experiments if possible)
-- Be concise—reviewers are busy
-- Acknowledge valid criticisms
+| 顾虑 | 如何预防 |
+|---------|-----------------|
+| 「基线太弱」 | 使用 state-of-the-art 基线，引用近期工作 |
+| 「缺少消融」 | 加入系统的消融研究 |
+| 「没有误差线」 | 报告标准差/标准误，多次运行 |
+| 「超参数未调」 | 记录调参过程、搜索范围 |
+| 「论点无支撑」 | 确保每个论点都有证据 |
 
-**Don't:**
-- Be defensive or dismissive
-- Make promises you can't keep
-- Ignore difficult criticisms
-- Write excessively long rebuttals
-- Argue about subjective assessments
+### 新颖性顾虑
 
-### Rebuttal Template
+| 顾虑 | 如何预防 |
+|---------|-----------------|
+| 「贡献是渐进式的」 | 清楚阐述相对既有工作的新意 |
+| 「与 [论文 X] 类似」 | 在相关工作中显式与 X 比较 |
+| 「直白的扩展」 | 突出非平凡的方面 |
+
+### 清晰度顾虑
+
+| 顾虑 | 如何预防 |
+|---------|-----------------|
+| 「难以跟随」 | 使用清晰结构、路标（signposting） |
+| 「符号不一致」 | 审查所有符号，制作符号表 |
+| 「缺少细节」 | 加入可复现性附录 |
+| 「图不清楚」 | 自洽的标题、合适的尺寸 |
+
+### 重要性顾虑
+
+| 顾虑 | 如何预防 |
+|---------|-----------------|
+| 「影响有限」 | 讨论更广泛的含义 |
+| 「评估狭窄」 | 在多个基准上评估 |
+| 「只在受限场景有效」 | 承认范围，解释为何仍有价值 |
+
+---
+
+## 如何回应审稿意见
+
+### 反驳（Rebuttal）最佳实践
+
+**该做：**
+- 感谢审稿人付出的时间
+- 具体回应每一条关切
+- 提供证据（如可能，做新实验）
+- 简明扼要——审稿人很忙
+- 承认合理的批评
+
+**不该做：**
+- 防御性或轻蔑
+- 做出无法兑现的承诺
+- 忽略棘手的批评
+- 写过长的反驳
+- 争论主观评估
+
+### 反驳模板
 
 ```markdown
 We thank the reviewers for their thoughtful feedback.
@@ -387,47 +389,49 @@ If accepted, we will:
 3. [Specific change]
 ```
 
-### When to Accept Criticism
+（译注：我们感谢审稿人的细致反馈。审稿人 1：R1-Q1: [引用的关切]，[带证据的直接回应]；R1-Q2: …；审稿人 2：……；修改总结：若被接收，我们将：1. [具体改动]；2. [具体改动]；3. [具体改动]。）
 
-Some reviewer feedback should simply be accepted:
-- Valid technical errors
-- Missing important related work
-- Unclear explanations
-- Missing experimental details
+### 何时接受批评
 
-Acknowledge these gracefully: "The reviewer is correct that... We will revise to..."
+有些审稿意见应直接接受：
+- 有效的技术错误
+- 遗漏的重要相关工作
+- 不清楚的解释
+- 缺失的实验细节
 
-### When to Push Back
+得体地承认这些：「审稿人指出……是正确的。我们将修订为……」
 
-You can respectfully disagree when:
-- Reviewer misunderstood the paper
-- Requested experiments are out of scope
-- Criticism is factually incorrect
+### 何时据理力争
 
-Frame disagreements constructively: "We appreciate this perspective. However, [explanation]..."
+在以下情形可以礼貌地表达不同意见：
+- 审稿人误解了论文
+- 要求的实验超出范围
+- 批评在事实上不正确
+
+以建设性的方式表达分歧：「我们感谢这一视角。然而，[解释]……」
 
 ---
 
-## Pre-Submission Reviewer Simulation
+## 投稿前的审稿人模拟
 
-Before submitting, ask yourself:
+投稿前，问自己：
 
-**Quality:**
-- [ ] Would I trust these results if I saw them?
-- [ ] Are all claims supported by evidence?
-- [ ] Are baselines fair and recent?
+**质量：**
+- [ ] 如果我看到这些结果，我会信任它们吗？
+- [ ] 所有论点都有证据支撑吗？
+- [ ] 基线是否公平且近期？
 
-**Clarity:**
-- [ ] Can someone reproduce this from the paper?
-- [ ] Is the writing clear to non-experts in this subfield?
-- [ ] Are all terms and notation defined?
+**清晰度：**
+- [ ] 别人能否从论文复现此工作？
+- [ ] 写作对该子领域的非专家是否清楚？
+- [ ] 所有术语和符号是否都已定义？
 
-**Significance:**
-- [ ] Why should the community care about this?
-- [ ] What can people do with this work?
-- [ ] Is the problem important?
+**重要性：**
+- [ ] 社区为何应关注此工作？
+- [ ] 人们能用此工作做什么？
+- [ ] 问题是否重要？
 
-**Originality:**
-- [ ] What specifically is new here?
-- [ ] How does this differ from closest related work?
-- [ ] Is the contribution non-trivial?
+**原创性：**
+- [ ] 这里具体新在何处？
+- [ ] 与最接近的相关工作有何不同？
+- [ ] 贡献是否非平凡？

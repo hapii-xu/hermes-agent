@@ -1,15 +1,14 @@
-"""Pet generation — base-draft → hatch pipeline.
+"""Pet 生成 — 从基础草稿到孵化的流水线。
 
-Public surface used by the gateway RPCs, the CLI ``hermes pets generate``
-command, and tests:
+供 gateway RPC、CLI ``hermes pets generate`` 命令和测试使用的公开接口：
 
-- :func:`generate_base_drafts` / :func:`hatch_pet` — the two-step flow.
-- :class:`HatchResult`, :class:`GenerationError`.
-- :mod:`atlas` — deterministic frame extraction + atlas composition/validation.
+- :func:`generate_base_drafts` / :func:`hatch_pet` — 两步流程。
+- :class:`HatchResult`、:class:`GenerationError`。
+- :mod:`atlas` — 确定性的帧提取与 atlas 合成/校验。
 
-Image generation is delegated to the active reference-capable
-:class:`~agent.image_gen_provider.ImageGenProvider` (OpenAI gpt-image-2 or Krea);
-atlas assembly is fully deterministic so it's testable without any API calls.
+图像生成委托给当前激活的、支持参考图的
+:class:`~agent.image_gen_provider.ImageGenProvider`（OpenAI gpt-image-2 或 Krea）；
+atlas 组装完全确定性，因此无需任何 API 调用即可测试。
 """
 
 from __future__ import annotations

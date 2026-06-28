@@ -1,19 +1,17 @@
-"""Skill write-origin provenance — ContextVar for distinguishing agent-sediment skill writes from foreground user-directed writes.
+"""技能写入来源溯源——用一个 ContextVar 区分 agent 沉淀式技能写入与前台用户主导的写入。
 
-The curator only consolidates/prunes skills it autonomously created via the
-background self-improvement review fork. Skills a user asks a foreground
-agent to write belong to the user and must never be auto-curated.
+curator 只会合并/修剪那些由后台自我改进评审分叉自主创建的技能。
+而用户要求前台 agent 写入的技能归属于用户，绝不能被自动整理。
 
-This module exposes a ContextVar that run_agent.py sets before each tool
-loop so tool handlers (e.g. skill_manage create) can check whether they
-are executing inside the background-review fork.
+本模块暴露一个 ContextVar，由 run_agent.py 在每个工具循环之前设置，
+以便工具处理器（例如 skill_manage create）能够判断自己当前是否运行在
+后台评审分叉之中。
 
-The signal piggybacks on AIAgent._memory_write_origin, which is already
-set to "background_review" for review-fork instances (see
-_spawn_background_review in run_agent.py) and defaults to "assistant_tool"
-for normal (foreground) agents.
+该信号搭载在 AIAgent._memory_write_origin 上：对于评审分叉实例，它已被
+设为 "background_review"（见 run_agent.py 中的 _spawn_background_review）；
+对于普通（前台）agent，默认值为 "assistant_tool"。
 
-Usage:
+用法：
     from tools.skill_provenance import (
         set_current_write_origin,
         reset_current_write_origin,
@@ -22,11 +20,11 @@ Usage:
 
     token = set_current_write_origin("background_review")
     try:
-        ...  # tool runs here
+        ...  # 工具在这里运行
     finally:
         reset_current_write_origin(token)
 
-    # inside a tool:
+    # 在某个工具内部：
     if get_current_write_origin() == "background_review":
         mark_agent_created(skill_name)
 """
@@ -39,40 +37,37 @@ _write_origin: contextvars.ContextVar[str] = contextvars.ContextVar(
     default="foreground",
 )
 
-# The sentinel value the background review fork uses; mirrors
-# run_agent.py's AIAgent._memory_write_origin override in
-# _spawn_background_review().
+# 后台评审分叉所使用的哨兵值；与 run_agent.py 中
+# _spawn_background_review() 对 AIAgent._memory_write_origin 的覆盖保持一致。
 BACKGROUND_REVIEW = "background_review"
 
 
 def set_current_write_origin(origin: str) -> contextvars.Token[str]:
-    """Bind the active write origin to the current context.
+    """把当前生效的写入来源绑定到当前上下文。
 
-    Returns a Token the caller must pass to reset_current_write_origin
-    in a finally block.
+    返回一个 Token，调用方必须在 finally 块中把它传给
+    reset_current_write_origin。
     """
     return _write_origin.set(origin or "foreground")
 
 
 def reset_current_write_origin(token: contextvars.Token[str]) -> None:
-    """Restore the prior write origin context."""
+    """恢复先前的写入来源上下文。"""
     _write_origin.reset(token)
 
 
 def get_current_write_origin() -> str:
-    """Return the active write origin.
+    """返回当前生效的写入来源。
 
-    Default: "foreground" — any tool call made by a regular (non-review)
-    agent, from the CLI, the gateway, cron, or a subagent.
+    默认值："foreground"——由普通（非评审）agent 从 CLI、gateway、
+    cron 或子 agent 发起的任何工具调用。
 
-    "background_review" — the self-improvement review fork; only skills
-    created under this origin should be marked agent-created for curator
-    management.
+    "background_review"——自我改进评审分叉；只有在此来源下创建的技能
+    才应被标记为 agent 创建，交由 curator 管理。
     """
     return _write_origin.get()
 
 
 def is_background_review() -> bool:
-    """Convenience: True iff the current write origin is the background
-    review fork."""
+    """便捷方法：当且仅当前写入来源为后台评审分叉时返回 True。"""
     return get_current_write_origin() == BACKGROUND_REVIEW

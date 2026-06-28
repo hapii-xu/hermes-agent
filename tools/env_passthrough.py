@@ -1,20 +1,20 @@
-"""Environment variable passthrough registry.
+"""环境变量透传注册表。
 
-Skills that declare ``required_environment_variables`` in their frontmatter
-need those vars available in sandboxed execution environments (execute_code,
-terminal).  By default both sandboxes strip secrets from the child process
-environment for security.  This module provides a session-scoped allowlist
-so skill-declared vars (and user-configured overrides) pass through.
+在其 frontmatter 中声明了 ``required_environment_variables`` 的 skills
+需要这些变量在沙箱执行环境（execute_code、terminal）中可用。
+默认情况下，两个沙箱出于安全考虑都会从子进程环境中剥离密钥。
+本模块提供一个会话级（session-scoped）白名单，使 skill 声明的变量
+（以及用户配置的覆盖项）能够透传。
 
-Two sources feed the allowlist:
+两个来源向白名单提供条目：
 
-1. **Skill declarations** — when a skill is loaded via ``skill_view``, its
-   ``required_environment_variables`` are registered here automatically.
-2. **User config** — ``terminal.env_passthrough`` in config.yaml lets users
-   explicitly allowlist vars for non-skill use cases.
+1. **Skill 声明** —— 当一个 skill 通过 ``skill_view`` 加载时，其
+   ``required_environment_variables`` 会在此自动注册。
+2. **用户配置** —— config.yaml 中的 ``terminal.env_passthrough`` 让用户
+   可以为非 skill 的用例显式加入白名单。
 
-Both ``code_execution_tool.py`` and ``tools/environments/local.py`` consult
-:func:`is_env_passthrough` before stripping a variable.
+``code_execution_tool.py`` 和 ``tools/environments/local.py`` 都会在
+剥离某个变量之前查询 :func:`is_env_passthrough`。
 """
 
 from __future__ import annotations
@@ -26,13 +26,13 @@ from hermes_cli.config import cfg_get
 
 logger = logging.getLogger(__name__)
 
-# Session-scoped set of env var names that should pass through to sandboxes.
-# Backed by ContextVar to prevent cross-session data bleed in the gateway pipeline.
+# 应透传给沙箱的环境变量名组成的会话级集合。
+# 由 ContextVar 支撑，以防止在 gateway 流水线中出现跨会话数据泄漏。
 _allowed_env_vars_var: ContextVar[set[str]] = ContextVar("_allowed_env_vars")
 
 
 def _get_allowed() -> set[str]:
-    """Get or create the allowed env vars set for the current context/session."""
+    """获取或创建当前上下文/会话对应的允许的环境变量集合。"""
     try:
         return _allowed_env_vars_var.get()
     except LookupError:
@@ -41,24 +41,22 @@ def _get_allowed() -> set[str]:
         return val
 
 
-# Cache for the config-based allowlist (loaded once per process).
+# 基于配置的白名单缓存（每个进程加载一次）。
 _config_passthrough: frozenset[str] | None = None
 
 
 def _is_hermes_provider_credential(name: str) -> bool:
-    """True if ``name`` is a Hermes-managed provider credential (API key,
-    token, or similar) per ``_HERMES_PROVIDER_ENV_BLOCKLIST``.
+    """当 ``name`` 是 Hermes 托管的 provider 凭据（API key、
+    token 等），依据 ``_HERMES_PROVIDER_ENV_BLOCKLIST`` 返回 True。
 
-    Skill-declared ``required_environment_variables`` frontmatter must
-    not be able to override this list — that was the bypass in
-    GHSA-rhgp-j443-p4rf where a malicious skill registered
-    ``ANTHROPIC_TOKEN`` / ``OPENAI_API_KEY`` as passthrough and received
-    the credential in the ``execute_code`` child process, defeating the
-    sandbox's scrubbing guarantee.
+    Skill 声明的 ``required_environment_variables`` frontmatter 绝不能
+    覆盖此列表 —— 那正是 GHSA-rhgp-j443-p4rf 中的绕过手段：恶意 skill
+    将 ``ANTHROPIC_TOKEN`` / ``OPENAI_API_KEY`` 注册为透传，
+    并在 ``execute_code`` 子进程中获取到该凭据，
+    瓦解了沙箱的剥离保证。
 
-    Non-Hermes API keys (TENOR_API_KEY, NOTION_TOKEN, etc.) are NOT
-    in the blocklist and remain legitimately registerable — skills that
-    wrap third-party APIs still work.
+    非 Hermes 的 API key（TENOR_API_KEY、NOTION_TOKEN 等）不在
+    该黑名单中，仍可合法注册 —— 包装第三方 API 的 skills 照常工作。
     """
     try:
         from tools.environments.local import _HERMES_PROVIDER_ENV_BLOCKLIST
@@ -68,20 +66,18 @@ def _is_hermes_provider_credential(name: str) -> bool:
 
 
 def register_env_passthrough(var_names: Iterable[str]) -> None:
-    """Register environment variable names as allowed in sandboxed environments.
+    """将环境变量名注册为在沙箱环境中允许使用。
 
-    Typically called when a skill declares ``required_environment_variables``.
+    通常在某个 skill 声明 ``required_environment_variables`` 时调用。
 
-    Variables that are Hermes-managed provider credentials (from
-    ``_HERMES_PROVIDER_ENV_BLOCKLIST``) are rejected here to preserve
-    the ``execute_code`` sandbox's credential-scrubbing guarantee per
-    GHSA-rhgp-j443-p4rf. A skill that needs to talk to a Hermes-managed
-    provider should do so via the agent's main-process tools (web_search,
-    web_extract, etc.) where the credential remains safely in the main
-    process.
+    属于 Hermes 托管 provider 凭据的变量（来自
+    ``_HERMES_PROVIDER_ENV_BLOCKLIST``）在此被拒绝，以依据
+    GHSA-rhgp-j443-p4rf 保留 ``execute_code`` 沙箱的凭据剥离保证。
+    需要与 Hermes 托管 provider 通信的 skill 应通过 agent 的主进程工具
+    （web_search、web_extract 等）进行，这样凭据能安全地保留在主进程中。
 
-    Non-Hermes third-party API keys (TENOR_API_KEY, NOTION_TOKEN, etc.)
-    pass through normally — they were never in the sandbox scrub list.
+    非 Hermes 的第三方 API key（TENOR_API_KEY、NOTION_TOKEN 等）
+    照常透传 —— 它们本就不在沙箱剥离列表中。
     """
     for name in var_names:
         name = name.strip()
@@ -101,7 +97,7 @@ def register_env_passthrough(var_names: Iterable[str]) -> None:
 
 
 def _load_config_passthrough() -> frozenset[str]:
-    """Load ``tools.env_passthrough`` from config.yaml (cached)."""
+    """从 config.yaml 加载 ``tools.env_passthrough``（带缓存）。"""
     global _config_passthrough
     if _config_passthrough is not None:
         return _config_passthrough
@@ -116,11 +112,10 @@ def _load_config_passthrough() -> frozenset[str]:
                 if not isinstance(item, str) or not item.strip():
                     continue
                 name = item.strip()
-                # Mirror the skill-path filter in register_env_passthrough:
-                # Hermes-managed provider credentials must not be passed
-                # through to execute_code / terminal children, regardless of
-                # whether the request came from a skill or from config.yaml.
-                # See GHSA-rhgp-j443-p4rf.
+                # 与 register_env_passthrough 中的 skill 路径过滤保持一致：
+                # Hermes 托管的 provider 凭据绝不能透传给
+                # execute_code / terminal 子进程，无论请求来自 skill 还是 config.yaml。
+                # 参见 GHSA-rhgp-j443-p4rf。
                 if _is_hermes_provider_credential(name):
                     logger.warning(
                         "env passthrough: refusing to register Hermes "
@@ -141,10 +136,10 @@ def _load_config_passthrough() -> frozenset[str]:
 
 
 def is_env_passthrough(var_name: str) -> bool:
-    """Check whether *var_name* is allowed to pass through to sandboxes.
+    """检查 *var_name* 是否被允许透传给沙箱。
 
-    Returns ``True`` if the variable was registered by a skill or listed in
-    the user's ``tools.env_passthrough`` config.
+    如果该变量由 skill 注册或列在用户的 ``tools.env_passthrough`` 配置中，
+    则返回 ``True``。
     """
     if var_name in _get_allowed():
         return True
@@ -152,12 +147,11 @@ def is_env_passthrough(var_name: str) -> bool:
 
 
 def get_all_passthrough() -> frozenset[str]:
-    """Return the union of skill-registered and config-based passthrough vars."""
+    """返回 skill 注册的和基于配置的透传变量的并集。"""
     return frozenset(_get_allowed()) | _load_config_passthrough()
 
 
 def clear_env_passthrough() -> None:
-    """Reset the skill-scoped allowlist (e.g. on session reset)."""
+    """重置 skill 级别的白名单（例如在会话重置时）。"""
     _get_allowed().clear()
-
 

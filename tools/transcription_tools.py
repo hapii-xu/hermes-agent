@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """
-Transcription Tools Module
+语音转文字工具模块
 
-Provides speech-to-text transcription with six providers:
+提供六种语音转文字（speech-to-text）服务商：
 
-  - **local** (default, free) — faster-whisper running locally, no API key needed.
-    Auto-downloads the model (~150 MB for ``base``) on first use.
-  - **groq** (free tier) — Groq Whisper API, requires ``GROQ_API_KEY``.
-  - **openai** (paid) — OpenAI Whisper API, requires ``VOICE_TOOLS_OPENAI_KEY``.
-  - **mistral** — Mistral Voxtral Transcribe API, requires ``MISTRAL_API_KEY``.
-  - **xai** — xAI Grok STT API, requires ``XAI_API_KEY``. High accuracy,
-    Inverse Text Normalization, diarization, 21 languages.
-  - **elevenlabs** — ElevenLabs Scribe API, requires ``ELEVENLABS_API_KEY``.
+  - **local**（默认，免费）—— 本地运行的 faster-whisper，无需 API key。
+    首次使用时自动下载模型（``base`` 约 150 MB）。
+  - **groq**（免费额度）—— Groq Whisper API，需要 ``GROQ_API_KEY``。
+  - **openai**（付费）—— OpenAI Whisper API，需要 ``VOICE_TOOLS_OPENAI_KEY``。
+  - **mistral** —— Mistral Voxtral Transcribe API，需要 ``MISTRAL_API_KEY``。
+  - **xai** —— xAI Grok STT API，需要 ``XAI_API_KEY``。准确率高，
+    支持逆向文本归一化（Inverse Text Normalization）、说话人分离（diarization）、21 种语言。
+  - **elevenlabs** —— ElevenLabs Scribe API，需要 ``ELEVENLABS_API_KEY``。
 
-Used by the messaging gateway to automatically transcribe voice messages
-sent by users on Telegram, Discord, WhatsApp, Slack, and Signal.
+被消息网关（messaging gateway）用于自动转写用户在 Telegram、Discord、
+WhatsApp、Slack 和 Signal 上发送的语音消息。
 
-Supported input formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg, aac
+支持的输入格式：mp3、mp4、mpeg、mpga、m4a、wav、webm、ogg、aac
 
-Usage::
+用法::
 
     from tools.transcription_tools import transcribe_audio
 
@@ -48,11 +48,11 @@ from tools.tool_backend_helpers import (
 logger = logging.getLogger(__name__)
 
 def get_env_value(name, default=None):
-    """Read env values through the live config module.
+    """通过实时的 config 模块读取环境变量。
 
-    Tests may monkeypatch and later restore ``hermes_cli.config.get_env_value``
-    before this module is imported. Resolve the helper at call time so STT does
-    not keep a stale imported function for the rest of the test process.
+    测试可能会在本模块被导入之前 monkeypatch 并随后恢复
+    ``hermes_cli.config.get_env_value``。在调用时解析该辅助函数，
+    这样 STT 在测试进程的剩余时间里不会持有一个陈旧的已导入函数。
     """
     try:
         from hermes_cli.config import get_env_value as _get_env_value
@@ -62,7 +62,7 @@ def get_env_value(name, default=None):
     return default if value is None else value
 
 # ---------------------------------------------------------------------------
-# Optional imports — graceful degradation
+# 可选导入 —— 优雅降级
 # ---------------------------------------------------------------------------
 
 import importlib.util as _ilu
@@ -80,7 +80,7 @@ _HAS_OPENAI = _safe_find_spec("openai")
 _HAS_MISTRAL = _safe_find_spec("mistralai")
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 DEFAULT_PROVIDER = "local"
@@ -103,22 +103,22 @@ SUPPORTED_FORMATS = {".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm", 
 LOCAL_NATIVE_AUDIO_FORMATS = {".wav", ".aiff", ".aif"}
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
-# Known model sets for auto-correction
+# 用于自动纠错的已知模型集合
 OPENAI_MODELS = {"whisper-1", "gpt-4o-mini-transcribe", "gpt-4o-transcribe"}
 GROQ_MODELS = {"whisper-large-v3", "whisper-large-v3-turbo", "distil-whisper-large-v3-en"}
 
-# Singleton for the local model — loaded once, reused across calls
+# 本地模型的单例 —— 只加载一次，后续调用复用
 _local_model: Optional[object] = None
 _local_model_name: Optional[str] = None
 
 # ---------------------------------------------------------------------------
-# Config helpers
+# 配置辅助函数
 # ---------------------------------------------------------------------------
 
 
 
 def _load_stt_config() -> dict:
-    """Load the ``stt`` section from user config, falling back to defaults."""
+    """从用户配置中加载 ``stt`` 段，失败时回退到默认值。"""
     try:
         from hermes_cli.config import load_config
         return load_config().get("stt", {})
@@ -127,7 +127,7 @@ def _load_stt_config() -> dict:
 
 
 def is_stt_enabled(stt_config: Optional[dict] = None) -> bool:
-    """Return whether STT is enabled in config."""
+    """返回配置中是否启用了 STT。"""
     if stt_config is None:
         stt_config = _load_stt_config()
     enabled = stt_config.get("enabled", True)
@@ -135,7 +135,7 @@ def is_stt_enabled(stt_config: Optional[dict] = None) -> bool:
 
 
 def _has_openai_audio_backend() -> bool:
-    """Return True when OpenAI audio can use config credentials, env credentials, or the managed gateway."""
+    """当 OpenAI 音频可使用配置凭证、环境变量凭证或托管网关时返回 True。"""
     try:
         _resolve_openai_audio_client_config()
         return True
@@ -144,7 +144,7 @@ def _has_openai_audio_backend() -> bool:
 
 
 def _find_binary(binary_name: str) -> Optional[str]:
-    """Find a local binary, checking common Homebrew/local prefixes as well as PATH."""
+    """查找本地可执行文件，既检查常见的 Homebrew/本地前缀，也检查 PATH。"""
     for directory in COMMON_LOCAL_BIN_DIRS:
         candidate = Path(directory) / binary_name
         if candidate.exists() and os.access(candidate, os.X_OK):
@@ -180,12 +180,12 @@ def _has_local_command() -> bool:
 
 
 def _normalize_local_model(model_name: Optional[str]) -> str:
-    """Return a valid faster-whisper model size, mapping cloud-only names to the default.
+    """返回一个有效的 faster-whisper 模型尺寸，把仅限云端的名称映射为默认值。
 
-    Cloud providers like OpenAI use names such as ``whisper-1`` which are not
-    valid for faster-whisper (which expects ``tiny``, ``base``, ``small``,
-    ``medium``, or ``large-v*``).  When such a name is detected we fall back to
-    the default local model and emit a warning so the user knows what happened.
+    像 OpenAI 这样的云端服务商使用 ``whisper-1`` 之类的名称，这些名称
+    对 faster-whisper（它期望 ``tiny``、``base``、``small``、``medium``
+    或 ``large-v*``）无效。当检测到此类名称时，我们回退到默认的本地模型
+    并发出一条警告，让用户知道发生了什么。
     """
     if not model_name or model_name in OPENAI_MODELS or model_name in GROQ_MODELS:
         if model_name and (model_name in OPENAI_MODELS or model_name in GROQ_MODELS):
@@ -205,21 +205,20 @@ def _normalize_local_command_model(model_name: Optional[str]) -> str:
 
 
 def _try_lazy_install_stt() -> bool:
-    """Attempt to lazy-install faster-whisper and return True on success.
+    """尝试延迟安装 faster-whisper，成功则返回 True。
 
-    The module-level ``_HAS_FASTER_WHISPER`` flag is set at import time and
-    cached. If the package wasn't installed at startup, calling ``ensure()``
-    installs it. This function re-checks dynamically after installation so
-    the provider can use it immediately without a process restart.
+    模块级 ``_HAS_FASTER_WHISPER`` 标志在导入时设置并被缓存。如果在启动时
+    该包尚未安装，调用 ``ensure()`` 会安装它。本函数在安装完成后动态地
+    重新检查，这样服务商就能立即使用它而无需重启进程。
     """
     try:
         from tools.lazy_deps import ensure
-        # prompt=False: never raise a blocking input() prompt mid-session.
-        # Under the interactive CLI prompt_toolkit owns stdin, so a bare
-        # input() deadlocks the terminal (#40490). The install is already
-        # gated by security.allow_lazy_installs, so reaching here is opt-in.
+        # prompt=False：永不触发阻塞式的 input() 提示。
+        # 在交互式 CLI 下 prompt_toolkit 占用了 stdin，因此裸 input()
+        # 会卡死终端（#40490）。该安装已由 security.allow_lazy_installs 门控，
+        # 所以能走到这里本身就是用户主动选择的。
         ensure("stt.faster_whisper", prompt=False)
-        # Re-check dynamically after install
+        # 安装后动态重新检查
         import importlib.util as _iu
         if _iu.find_spec("faster_whisper"):
             return True
@@ -228,12 +227,11 @@ def _try_lazy_install_stt() -> bool:
     return False
 
 
-# Names of the 6 STT providers with native handlers in this module.
-# Kept in sync with ``agent.transcription_registry._BUILTIN_NAMES`` —
-# a regression test fails if they drift. The plugin hook from
-# issue #30398-style follow-up rejects plugins registering under any
-# of these names; the dispatcher in ``transcribe_audio`` short-circuits
-# them defensively as well.
+# 本模块中有原生处理器的 6 个 STT 服务商名称。
+# 与 ``agent.transcription_registry._BUILTIN_NAMES`` 保持同步 ——
+# 若二者出现偏差，回归测试会失败。issue #30398 式后续的插件钩子
+# 会拒绝在此任一名称下注册的插件；``transcribe_audio`` 中的分发器
+# 也会防御性地对它们短路处理。
 BUILTIN_STT_PROVIDERS = frozenset({
     "local",
     "local_command",
@@ -245,25 +243,24 @@ BUILTIN_STT_PROVIDERS = frozenset({
 
 
 # ---------------------------------------------------------------------------
-# Command-provider registry (``stt.providers.<name>: type: command``)
+# 命令行服务商注册表（``stt.providers.<name>: type: command``）
 # ---------------------------------------------------------------------------
 #
-# Mirrors the TTS command-provider registry shipped in PR #17843 — same
-# placeholder grammar, same shell-quote-aware rendering, same process-tree
-# termination on timeout. Lets any whisper CLI / ASR CLI / curl pipeline
-# become an STT backend with zero Python.
+# 镜像 PR #17843 中交付的 TTS 命令行服务商注册表 —— 相同的占位符语法、
+# 相同的 shell 引号感知渲染、相同的超时时进程树终止。让任何
+# whisper CLI / ASR CLI / curl 管道都能零 Python 代码地成为 STT 后端。
 #
-# Resolution order:
-#   1. Built-in (``local``, ``local_command``, ``groq``, ``openai``,
-#      ``mistral``, ``xai``)              → native handler. **Always wins.**
-#   2. ``stt.providers.<name>: type: command``  → command-provider runner.
-#   3. Plugin-registered TranscriptionProvider  → plugin dispatch.
-#   4. No match                                 → "No STT provider available".
+# 解析顺序：
+#   1. 内置（``local``、``local_command``、``groq``、``openai``、
+#      ``mistral``、``xai``）        → 原生处理器。**总是优先。**
+#   2. ``stt.providers.<name>: type: command``  → 命令行服务商运行器。
+#   3. 插件注册的 TranscriptionProvider  → 插件分发。
+#   4. 无匹配                           → "No STT provider available"。
 #
-# The single-env-var ``HERMES_LOCAL_STT_COMMAND`` escape hatch is preserved
-# untouched via the built-in ``local_command`` path. Use the command-provider
-# registry when you want MULTIPLE shell-driven STT engines, or you want a
-# named provider you can pick via ``stt.provider`` in config.yaml.
+# 单环境变量 ``HERMES_LOCAL_STT_COMMAND`` 这个逃生舱通过内置的
+# ``local_command`` 路径保持原样不动。当你需要多个 shell 驱动的 STT 引擎，
+# 或想要一个能通过 config.yaml 中的 ``stt.provider`` 来选择的具名服务商时，
+# 就使用命令行服务商注册表。
 DEFAULT_COMMAND_STT_TIMEOUT_SECONDS = 300
 DEFAULT_COMMAND_STT_LANGUAGE = "en"
 DEFAULT_COMMAND_STT_OUTPUT_FORMAT = "txt"
@@ -271,7 +268,7 @@ COMMAND_STT_OUTPUT_FORMATS = frozenset({"txt", "json", "srt", "vtt"})
 
 
 def _get_stt_section(stt_config: Dict[str, Any], name: str) -> Dict[str, Any]:
-    """Return an stt sub-section if it's a dict, else an empty dict."""
+    """如果某 stt 子段是 dict 就返回它，否则返回空 dict。"""
     if not isinstance(stt_config, dict):
         return {}
     section = stt_config.get(name)
@@ -282,25 +279,24 @@ def _get_named_stt_provider_config(
     stt_config: Dict[str, Any],
     name: str,
 ) -> Dict[str, Any]:
-    """Return the config dict for a user-declared STT command provider.
+    """返回用户声明的 STT 命令行服务商的配置 dict。
 
-    Looks up ``stt.providers.<name>`` first (the canonical location), and
-    falls back to ``stt.<name>`` so users who followed the built-in layout
-    still work. Returns an empty dict when the provider is not declared.
+    先查找 ``stt.providers.<name>``（规范位置），找不到则回退到
+    ``stt.<name>``，这样遵循内置布局的用户仍能正常工作。当该服务商
+    未声明时返回空 dict。
 
-    Built-in names are NOT special-cased here — the caller short-circuits
-    them before this is consulted, AND ``_is_command_stt_provider_config``
-    requires an explicit ``command:`` value, so a built-in section like
-    ``stt.openai`` (which has ``model``/``language`` but no ``command``)
-    can't accidentally be treated as a command provider.
+    内置名称在这里不做特殊处理 —— 调用方在查询本函数之前就已对其短路，
+    并且 ``_is_command_stt_provider_config`` 要求显式的 ``command:`` 值，
+    因此像 ``stt.openai``（它有 ``model``/``language`` 但没有 ``command``）
+    这样的内置段不会被误当作命令行服务商。
     """
     providers = _get_stt_section(stt_config, "providers")
     section = providers.get(name) if isinstance(providers, dict) else None
     if isinstance(section, dict):
         return section
-    # Back-compat: allow ``stt.<name>`` for user-declared providers too,
-    # but only when the name is not a built-in (so a user's ``stt.openai``
-    # block still means the OpenAI provider, not a custom command).
+    # 向后兼容：对用户声明的服务商也允许 ``stt.<name>``，
+    # 但仅当名称不是内置名称时（这样用户的 ``stt.openai`` 段
+    # 仍表示 OpenAI 服务商，而不是自定义命令）。
     if name.lower() not in BUILTIN_STT_PROVIDERS:
         legacy = _get_stt_section(stt_config, name)
         if legacy:
@@ -309,7 +305,7 @@ def _get_named_stt_provider_config(
 
 
 def _is_command_stt_provider_config(config: Dict[str, Any]) -> bool:
-    """Return True when *config* declares a command-type STT provider."""
+    """当 *config* 声明了一个 command 类型的 STT 服务商时返回 True。"""
     if not isinstance(config, dict):
         return False
     ptype = str(config.get("type") or "").strip().lower()
@@ -323,11 +319,10 @@ def _resolve_command_stt_provider_config(
     provider: str,
     stt_config: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """Return the provider config if *provider* resolves to a command type.
+    """当 *provider* 解析为 command 类型时返回该服务商配置。
 
-    Built-in provider names are rejected (they have native handlers).
-    Returns None when the name is a built-in, ``"none"``, unknown, or not
-    a command type.
+    内置服务商名称会被拒绝（它们有原生处理器）。当名称是内置、
+    ``"none"``、未知或不是 command 类型时返回 None。
     """
     if not provider:
         return None
@@ -341,7 +336,7 @@ def _resolve_command_stt_provider_config(
 
 
 def _iter_command_stt_providers(stt_config: Dict[str, Any]):
-    """Yield (name, config) pairs for every declared command-type STT provider."""
+    """为每个已声明的 command 类型 STT 服务商生成 (name, config) 对。"""
     if not isinstance(stt_config, dict):
         return
     providers = _get_stt_section(stt_config, "providers")
@@ -352,7 +347,7 @@ def _iter_command_stt_providers(stt_config: Dict[str, Any]):
 
 
 def _has_any_command_stt_provider(stt_config: Optional[Dict[str, Any]] = None) -> bool:
-    """Return True when any command-type STT provider is configured."""
+    """当配置了任意 command 类型的 STT 服务商时返回 True。"""
     if stt_config is None:
         stt_config = _load_stt_config()
     for _name, _cfg in _iter_command_stt_providers(stt_config):
@@ -361,7 +356,7 @@ def _has_any_command_stt_provider(stt_config: Optional[Dict[str, Any]] = None) -
 
 
 def _get_command_stt_timeout(config: Dict[str, Any]) -> float:
-    """Return timeout in seconds, falling back when invalid."""
+    """返回以秒为单位的超时时间，无效时回退。"""
     raw = config.get("timeout", config.get("timeout_seconds", DEFAULT_COMMAND_STT_TIMEOUT_SECONDS))
     try:
         value = float(raw)
@@ -373,7 +368,7 @@ def _get_command_stt_timeout(config: Dict[str, Any]) -> float:
 
 
 def _get_command_stt_output_format(config: Dict[str, Any]) -> str:
-    """Return the validated output format (txt/json/srt/vtt)."""
+    """返回校验过的输出格式（txt/json/srt/vtt）。"""
     raw = (
         config.get("format")
         or config.get("output_format")
@@ -384,11 +379,11 @@ def _get_command_stt_output_format(config: Dict[str, Any]) -> str:
 
 
 def _shell_quote_context_stt(command_template: str, position: int) -> Optional[str]:
-    """Return the shell quote character active right before *position*.
+    """返回在 *position* 之前生效的 shell 引号字符。
 
-    Mirrors ``tools.tts_tool._shell_quote_context`` — kept local to avoid
-    cross-module import of a private helper. Returns ``"'"`` / ``'"'`` when
-    inside a quoted region, ``None`` for bare context.
+    镜像 ``tools.tts_tool._shell_quote_context`` —— 保留为本地实现，
+    以避免跨模块导入私有辅助函数。当处于引号包围区域内时返回 ``"'"`` / ``'"'``，
+    处于裸上下文时返回 ``None``。
     """
     quote: Optional[str] = None
     escaped = False
@@ -416,9 +411,9 @@ def _shell_quote_context_stt(command_template: str, position: int) -> Optional[s
 
 
 def _quote_command_stt_placeholder(value: str, quote_context: Optional[str]) -> str:
-    """Quote a placeholder value for its position in a shell command template.
+    """为 shell 命令模板中某位置的占位符值做引号转义。
 
-    Mirrors ``tools.tts_tool._quote_command_tts_placeholder``.
+    镜像 ``tools.tts_tool._quote_command_tts_placeholder``。
     """
     if quote_context == "'":
         return value.replace("'", r"'\''")
@@ -439,14 +434,13 @@ def _render_command_stt_template(
     command_template: str,
     placeholders: Dict[str, str],
 ) -> str:
-    """Replace supported placeholders while preserving ``{{`` / ``}}``.
+    """替换受支持的占位符，同时保留 ``{{`` / ``}}``。
 
-    Mirrors ``tools.tts_tool._render_command_tts_template``. Placeholders
-    are shell-quote-aware: ``{voice}`` inside single quotes gets
-    single-quote-safe escaping, inside double quotes gets ``$``/`` ` ``/`` " ``
-    escaping, outside quotes gets ``shlex.quote``. Doubled braces ``{{`` and
-    ``}}`` are preserved as literal ``{`` / ``}`` for users who want to
-    embed JSON snippets in their command.
+    镜像 ``tools.tts_tool._render_command_tts_template``。占位符是 shell
+    引号感知的：单引号内的 ``{voice}`` 会做单引号安全转义，双引号内会做
+    ``$``/`` ` ``/`` " `` 转义，引号外则使用 ``shlex.quote``。连续双花括号
+    ``{{`` 和 ``}}`` 会被保留为字面量 ``{`` / ``}``，方便用户在命令里
+    嵌入 JSON 片段。
     """
     import re
 
@@ -476,9 +470,9 @@ def _render_command_stt_template(
 
 
 def _terminate_command_stt_process_tree(proc: subprocess.Popen) -> None:
-    """Best-effort termination of a shell process and all of its children.
+    """尽力终止一个 shell 进程及其所有子进程。
 
-    Mirrors ``tools.tts_tool._terminate_command_tts_process_tree``.
+    镜像 ``tools.tts_tool._terminate_command_tts_process_tree``。
     """
     if proc.poll() is not None:
         return
@@ -499,7 +493,7 @@ def _terminate_command_stt_process_tree(proc: subprocess.Popen) -> None:
     try:
         import psutil  # type: ignore
     except ImportError:
-        # psutil is optional — fall back to single-process terminate/kill
+        # psutil 是可选依赖 —— 回退到单进程的 terminate/kill
         proc.terminate()
         try:
             proc.wait(timeout=2)
@@ -541,9 +535,9 @@ def _terminate_command_stt_process_tree(proc: subprocess.Popen) -> None:
 
 
 def _run_command_stt(command: str, timeout: float) -> subprocess.CompletedProcess:
-    """Run a command-provider shell command with process-tree timeout cleanup.
+    """运行命令行服务商的 shell 命令，并在超时时清理整个进程树。
 
-    Mirrors ``tools.tts_tool._run_command_tts``.
+    镜像 ``tools.tts_tool._run_command_tts``。
     """
     popen_kwargs: Dict[str, Any] = {
         "shell": True,
@@ -584,19 +578,17 @@ def _run_command_stt(command: str, timeout: float) -> subprocess.CompletedProces
 
 
 def _read_command_stt_output(output_path: Path, stdout: str, fmt: str) -> str:
-    """Return the transcript text from a command-provider invocation.
+    """从命令行服务商调用的结果中返回转写文本。
 
-    Resolution:
-      1. If ``output_path`` exists and is non-empty → read it (raw text).
-      2. Else if ``stdout`` is non-empty → use stdout (lets users write
-         curl-style one-liners that emit transcript to stdout instead of
-         writing a file).
-      3. Else → raise RuntimeError (no usable output produced).
+    解析顺序：
+      1. 如果 ``output_path`` 存在且非空 → 读取它（原始文本）。
+      2. 否则如果 ``stdout`` 非空 → 使用 stdout（让用户可以写 curl 式的
+         单行命令，把转写文本输出到 stdout 而不是写入文件）。
+      3. 否则 → 抛出 RuntimeError（没有产生可用的输出）。
 
-    For JSON format, we still return the raw bytes — extracting a
-    ``text`` field is out of scope; users either configure ``format: txt``
-    or post-process JSON downstream. (Same trade-off as TTS: the runner
-    doesn't try to be clever about output shape.)
+    对于 JSON 格式，我们仍然返回原始字节 —— 提取 ``text`` 字段不在本函数
+    职责范围内；用户要么配置 ``format: txt``，要么在下游自行解析 JSON。
+    （与 TTS 同样的取舍：运行器不试图在输出结构上耍聪明。）
     """
     if output_path.exists():
         try:
@@ -620,24 +612,23 @@ def _transcribe_command_stt(
     stt_config: Dict[str, Any],
     model_override: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Transcribe via a user-declared ``stt.providers.<name>: type: command``.
+    """通过用户声明的 ``stt.providers.<name>: type: command`` 进行转写。
 
-    Placeholder grammar:
+    占位符语法：
 
-    | Placeholder       | Substituted with                                          |
+    | 占位符            | 替换为                                                    |
     |-------------------|-----------------------------------------------------------|
-    | ``{input_path}``  | absolute path to the audio file (original location)       |
-    | ``{output_path}`` | absolute path the provider should write its transcript to |
-    | ``{output_dir}``  | parent dir of ``{output_path}``                           |
-    | ``{format}``      | configured output format (``txt`` / ``json`` / ``srt`` / ``vtt``) |
-    | ``{language}``    | configured language code (default ``en``)                 |
-    | ``{model}``       | configured model id (empty when not set)                  |
+    | ``{input_path}``  | 音频文件的绝对路径（原始位置）                              |
+    | ``{output_path}`` | 服务商应将转写文本写入的绝对路径                            |
+    | ``{output_dir}``  | ``{output_path}`` 的父目录                                 |
+    | ``{format}``      | 配置的输出格式（``txt`` / ``json`` / ``srt`` / ``vtt``）   |
+    | ``{language}``    | 配置的语言代码（默认 ``en``）                              |
+    | ``{model}``       | 配置的模型 id（未设置时为空）                              |
 
-    All placeholders are shell-quote-aware (see ``_render_command_stt_template``).
-    Doubled braces ``{{`` and ``}}`` are preserved as literal braces.
+    所有占位符都是 shell 引号感知的（见 ``_render_command_stt_template``）。
+    连续双花括号 ``{{`` 和 ``}}`` 会被保留为字面花括号。
 
-    Returns the standard transcribe-response envelope (``success``,
-    ``transcript``, ``provider``, ``error``).
+    返回标准的转写响应封装（``success``、``transcript``、``provider``、``error``）。
     """
     command_template = str(config.get("command") or "").strip()
     if not command_template:
@@ -743,11 +734,11 @@ def _transcribe_command_stt(
 
 
 def _get_provider(stt_config: dict) -> str:
-    """Determine which STT provider to use.
+    """决定使用哪个 STT 服务商。
 
-    When ``stt.provider`` is explicitly set in config, that choice is
-    honoured — no silent cloud fallback.  When no provider is configured,
-    auto-detect tries: local > groq (free) > openai (paid).
+    当配置中显式设置了 ``stt.provider`` 时，尊重该选择 —— 不会无声地
+    回退到云端。当未配置任何服务商时，自动检测顺序为：
+    local > groq（免费）> openai（付费）。
     """
     if not is_stt_enabled(stt_config):
         return "none"
@@ -755,7 +746,7 @@ def _get_provider(stt_config: dict) -> str:
     explicit = "provider" in stt_config
     provider = stt_config.get("provider", DEFAULT_PROVIDER)
 
-    # --- Explicit provider: respect the user's choice ----------------------
+    # --- 显式服务商：尊重用户的选择 -------------------------------------
 
     if explicit:
         if provider == "local":
@@ -763,7 +754,7 @@ def _get_provider(stt_config: dict) -> str:
                 return "local"
             if _has_local_command():
                 return "local_command"
-            # Try lazy-install before giving up
+            # 在放弃之前先尝试延迟安装
             if _try_lazy_install_stt():
                 return "local"
             logger.warning(
@@ -826,17 +817,17 @@ def _get_provider(stt_config: dict) -> str:
             )
             return "none"
 
-        return provider  # Unknown — let it fail downstream
+        return provider  # 未知 —— 让它在下游失败
 
-    # --- Auto-detect (no explicit provider): local > groq > openai > xai > elevenlabs -
-    # mistral is intentionally skipped while `mistralai` is quarantined on
-    # PyPI (malicious 2.4.6 release on 2026-05-12).
+    # --- 自动检测（无显式服务商）：local > groq > openai > xai > elevenlabs -
+    # 当 `mistralai` 在 PyPI 被隔离期间（2026-05-12 的恶意 2.4.6 发布），
+    # 有意跳过 mistral。
 
     if _HAS_FASTER_WHISPER:
         return "local"
     if _has_local_command():
         return "local_command"
-    # Try lazy-install before falling through to cloud providers
+    # 在回退到云端服务商之前先尝试延迟安装
     if _try_lazy_install_stt():
         return "local"
     if _HAS_OPENAI and get_env_value("GROQ_API_KEY"):
@@ -845,9 +836,9 @@ def _get_provider(stt_config: dict) -> str:
     if _HAS_OPENAI and _has_openai_audio_backend():
         logger.info("No local STT available, using OpenAI Whisper API")
         return "openai"
-    # Only auto-select Mistral if the SDK is already present — don't trigger a
-    # lazy-install during passive auto-detection. Explicit `provider: mistral`
-    # (above) does lazy-install on first transcription call.
+    # 只有当 SDK 已存在时才自动选择 Mistral —— 在被动自动检测期间
+    # 不触发延迟安装。显式的 `provider: mistral`（见上文）会在首次
+    # 转写调用时做延迟安装。
     if _HAS_MISTRAL and get_env_value("MISTRAL_API_KEY"):
         logger.info("No local STT available, using Mistral Voxtral Transcribe API")
         return "mistral"
@@ -866,7 +857,7 @@ def _get_provider(stt_config: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Plugin provider dispatch (issue follow-up to #30398 — STT pluggability)
+# 插件服务商分发（issue 对 #30398 的后续 —— STT 可插拔化）
 # ---------------------------------------------------------------------------
 
 
@@ -878,50 +869,43 @@ def _dispatch_to_plugin_provider(
     model: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Route the call to a plugin-registered transcription provider, or
-    return None.
+    """把调用路由到插件注册的转写服务商，否则返回 None。
 
-    Returns the transcribe-response dict on dispatch, or ``None`` to
-    fall through to the legacy "No STT provider available" error path.
+    分发成功时返回转写响应 dict，返回 ``None`` 表示回退到传统的
+    "No STT provider available" 错误路径。
 
-    Resolution invariants enforced here:
+    此处强制执行的解析不变式：
 
-    1. Built-in provider names short-circuit — never reach the plugin
-       registry. The caller (``transcribe_audio``) handles ``local``,
-       ``groq``, ``openai``, etc. via its existing elif chain; this
-       function defensively rejects those names so a plugin can't be
-       silently dispatched under a built-in name even if it somehow
-       slipped past the registry's built-in shadow guard.
-    2. Same-name command-type provider declared under
-       ``stt.providers.<name>: type: command`` wins over a plugin. The
-       caller short-circuits to the command runner before reaching us,
-       but we re-verify here so a refactor of the caller can't silently
-       break the invariant (matches TTS PR #17843 precedence rule).
-    3. Plugin dispatch fires only when ``provider`` matches a
-       registered :class:`TranscriptionProvider` whose ``name`` equals
-       the configured value. Unknown names with no plugin registered
-       return None (caller surfaces the legacy "No STT provider"
-       message).
-    4. Availability gating: when the matched plugin reports
-       ``is_available() == False`` (missing API key, missing optional
-       SDK, etc.) this returns an error envelope identifying the
-       plugin as unavailable — **not** ``None`` — because the user
-       explicitly opted into this plugin via ``stt.provider`` and the
-       generic fallthrough message would be misleading.
+    1. 内置服务商名称短路 —— 永远不会进入插件注册表。调用方
+       （``transcribe_audio``）通过其既有的 elif 链处理 ``local``、
+       ``groq``、``openai`` 等；本函数防御性地拒绝这些名称，
+       因此即使某个插件以某种方式绕过了注册表的内置影子守卫，
+       也不会在内置名称下被无声地分发。
+    2. 在 ``stt.providers.<name>: type: command`` 下声明的同名
+       command 类型服务商优先于插件。调用方在到达本函数之前已短路到
+       命令运行器，但我们在此重新校验，这样调用方重构时不会无声地
+       破坏该不变式（与 TTS PR #17843 的优先级规则一致）。
+    3. 仅当 ``provider`` 匹配到某个已注册、且 ``name`` 等于配置值的
+       :class:`TranscriptionProvider` 时才触发插件分发。对于没有注册
+       插件的未知名称返回 None（调用方会呈现传统的 "No STT provider"
+       消息）。
+    4. 可用性门控：当匹配到的插件报告 ``is_available() == False``
+       （缺少 API key、缺少可选 SDK 等）时，本函数返回一个标识该插件
+       不可用的错误封装 —— 是错误封装而**不是** ``None`` —— 因为用户
+       是通过 ``stt.provider`` 显式选择了该插件，通用的回退消息会
+       产生误导。
 
-    Provider exceptions are caught and converted into the standard
-    error envelope (matches the legacy built-in error shapes — the
-    gateway/CLI caller already expects ``{success: False, error:
-    "...", transcript: ""}`` on failure).
+    服务商抛出的异常会被捕获并转换为标准错误封装（与传统内置错误
+    形状一致 —— 网关/CLI 调用方已经期望失败时得到
+    ``{success: False, error: "...", transcript: ""}``）。
     """
     if not provider:
         return None
     key = provider.lower().strip()
     if key in BUILTIN_STT_PROVIDERS or key == "none":
         return None
-    # Defense in depth: command-provider check should already have
-    # short-circuited the caller. If a same-name command config exists,
-    # bail so the command path wins.
+    # 纵深防御：命令行服务商检查本应已经在调用方短路过了。
+    # 如果存在同名命令配置，就退出以便命令路径胜出。
     if stt_config is not None and _is_command_stt_provider_config(
         _get_named_stt_provider_config(stt_config, key)
     ):
@@ -933,11 +917,10 @@ def _dispatch_to_plugin_provider(
         _ensure_plugins_discovered()
         plugin_provider = get_provider(key)
         if plugin_provider is None:
-            # Long-lived sessions may have discovered plugins before a
-            # bundled backend was patched in or before config changed.
-            # Retry once with a forced refresh before surfacing fall-
-            # through. Mirrors the image_gen / browser dispatcher
-            # recovery pattern.
+            # 长生命周期会话可能在某个捆绑后端被打补丁进去之前，
+            # 或在配置变更之前就已经发现了插件。在呈现回退之前，
+            # 先强制刷新并重试一次。镜像 image_gen / browser 分发器的
+            # 恢复模式。
             _ensure_plugins_discovered(force=True)
             plugin_provider = get_provider(key)
     except Exception as exc:  # noqa: BLE001 — discovery failure is non-fatal
@@ -946,17 +929,14 @@ def _dispatch_to_plugin_provider(
     if plugin_provider is None:
         return None
 
-    # Availability gate: when a plugin reports it's not configured
-    # (missing API key, missing optional SDK, etc.) surface a clean
-    # error envelope **instead of** falling through to the generic
-    # "No STT provider" message. The user explicitly set
-    # ``stt.provider: <plugin>`` in config — surfacing the plugin's
-    # own availability failure is more actionable than the generic
-    # auto-detect-failure error, and avoids routing the call into a
-    # plugin that's about to crash messily.
+    # 可用性门控：当插件报告自己未配置（缺少 API key、缺少可选 SDK 等）时，
+    # 呈现一个干净的错误封装，**而不是**回退到通用的 "No STT provider" 消息。
+    # 用户在配置里显式设置了 ``stt.provider: <plugin>`` —— 呈现插件自身的
+    # 可用性失败比通用的自动检测失败错误更具可操作性，并且避免把调用
+    # 路由到一个即将崩溃得很惨的插件。
     #
-    # ``is_available()`` MUST NOT raise per the ABC contract; defend
-    # anyway so a buggy plugin can't break dispatch for everyone.
+    # 按 ABC 契约 ``is_available()`` 不得抛异常；但我们仍防御性处理，
+    # 这样一个有 bug 的插件不会搞坏所有人的分发。
     try:
         available = plugin_provider.is_available()
     except Exception as exc:  # noqa: BLE001
@@ -998,9 +978,8 @@ def _dispatch_to_plugin_provider(
             "provider": key,
         }
 
-    # Defensive: plugins should return a dict matching the contract. If
-    # they don't, surface a clear error envelope rather than leaking a
-    # weird object back to the gateway.
+    # 防御性处理：插件应返回符合契约的 dict。如果不是，就呈现一个清晰
+    # 的错误封装，而不是把一个奇怪的对象泄露回网关。
     if not isinstance(result, dict):
         return {
             "success": False,
@@ -1008,18 +987,18 @@ def _dispatch_to_plugin_provider(
             "error": f"STT plugin '{key}' returned a non-dict result",
             "provider": key,
         }
-    # Stamp provider if the plugin forgot to.
+    # 如果插件忘了盖 provider 戳，就补上。
     result.setdefault("provider", key)
     return result
 
 
 # ---------------------------------------------------------------------------
-# Shared validation
+# 共享校验
 # ---------------------------------------------------------------------------
 
 
 def _validate_audio_file(file_path: str) -> Optional[Dict[str, Any]]:
-    """Validate the audio file.  Returns an error dict or None if OK."""
+    """校验音频文件。返回错误 dict，或没问题则返回 None。"""
     audio_path = Path(file_path)
 
     if os.path.islink(audio_path):
@@ -1048,19 +1027,17 @@ def _validate_audio_file(file_path: str) -> Optional[Dict[str, Any]]:
     return None
 
 # ---------------------------------------------------------------------------
-# Provider: local (faster-whisper)
+# 服务商：local（faster-whisper）
 # ---------------------------------------------------------------------------
 
 
-# Substrings that identify a missing/unloadable CUDA runtime library.  When
-# ctranslate2 (the backend for faster-whisper) cannot dlopen one of these, the
-# "auto" device picker has already committed to CUDA and the model can no
-# longer be used — we fall back to CPU and reload.
+# 用于识别缺失/无法加载的 CUDA 运行时库的子串。当 ctranslate2
+# （faster-whisper 的后端）无法 dlopen 其中之一时，"auto" 设备选择器
+# 已经选定 CUDA，而模型已无法再使用 —— 我们回退到 CPU 并重新加载。
 #
-# Deliberately narrow: we match on library-name tokens and dlopen phrasing so
-# we DO NOT accidentally catch legitimate runtime failures like "CUDA out of
-# memory" — those should surface to the user, not silently fall back to CPU
-# (a 32GB audio clip on CPU at int8 isn't useful either).
+# 刻意收窄匹配：我们匹配库名 token 和 dlopen 措辞，这样就不会误伤像
+# "CUDA out of memory" 这样的合法运行时失败 —— 那些应该呈现给用户，
+# 而不是无声地回退到 CPU（32GB 音频在 CPU 上以 int8 跑也没用）。
 _CUDA_LIB_ERROR_MARKERS = (
     "libcublas",
     "libcudnn",
@@ -1074,29 +1051,29 @@ _CUDA_LIB_ERROR_MARKERS = (
 
 
 def _looks_like_cuda_lib_error(exc: BaseException) -> bool:
-    """Heuristic: is this exception a missing/broken CUDA runtime library?
+    """启发式判断：这个异常是不是缺失/损坏的 CUDA 运行时库？
 
-    ctranslate2 raises plain RuntimeError with messages like
-    ``Library libcublas.so.12 is not found or cannot be loaded``.  We want to
-    catch missing/unloadable shared libs and driver-mismatch errors, NOT
-    legitimate runtime failures ("CUDA out of memory", model bugs, etc.).
+    ctranslate2 抛出的是普通 RuntimeError，消息形如
+    ``Library libcublas.so.12 is not found or cannot be loaded``。我们想
+    捕获的是缺失/无法加载的共享库以及驱动不匹配错误，而不是合法的
+    运行时失败（"CUDA out of memory"、模型 bug 等）。
     """
     msg = str(exc)
     return any(marker in msg for marker in _CUDA_LIB_ERROR_MARKERS)
 
 
 def _load_local_whisper_model(model_name: str):
-    """Load faster-whisper with graceful CUDA → CPU fallback.
+    """加载 faster-whisper，并在 CUDA → CPU 之间优雅回退。
 
-    faster-whisper's ``device="auto"`` picks CUDA when the ctranslate2 wheel
-    ships CUDA shared libs, even on hosts where the NVIDIA runtime
-    (``libcublas.so.12`` / ``libcudnn*``) isn't installed — common on WSL2
-    without CUDA-on-WSL, headless servers, and CPU-only developer machines.
-    On those hosts the load itself sometimes succeeds and the dlopen failure
-    only surfaces at first ``transcribe()`` call.
+    faster-whisper 的 ``device="auto"`` 在 ctranslate2 wheel 携带 CUDA
+    共享库时就会选择 CUDA，即便宿主机上并未安装 NVIDIA 运行时
+    （``libcublas.so.12`` / ``libcudnn*``）—— 这种情况在未启用 CUDA-on-WSL
+    的 WSL2、无头服务器以及纯 CPU 开发机上很常见。在这些宿主机上，
+    加载本身有时能成功，而 dlopen 失败直到第一次 ``transcribe()`` 调用时
+    才暴露出来。
 
-    We try ``auto`` first (fast CUDA path when it works), and on any CUDA
-    library load failure fall back to CPU + int8.
+    我们先尝试 ``auto``（可用时是快速的 CUDA 路径），一旦发生任何 CUDA
+    库加载失败就回退到 CPU + int8。
     """
     from faster_whisper import WhisperModel
     try:
@@ -1113,7 +1090,7 @@ def _load_local_whisper_model(model_name: str):
 
 
 def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using faster-whisper (local, free)."""
+    """使用 faster-whisper 进行转写（本地、免费）。"""
     global _local_model, _local_model_name
 
     if not _HAS_FASTER_WHISPER:
@@ -1121,13 +1098,13 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
             return {"success": False, "transcript": "", "error": "faster-whisper not installed"}
 
     try:
-        # Lazy-load the model (downloads on first use, ~150 MB for 'base')
+        # 延迟加载模型（首次使用时下载，'base' 约 150 MB）
         if _local_model is None or _local_model_name != model_name:
             logger.info("Loading faster-whisper model '%s' (first load downloads the model)...", model_name)
             _local_model = _load_local_whisper_model(model_name)
             _local_model_name = model_name
 
-        # Language: config.yaml (stt.local.language) > env var > auto-detect.
+        # 语言优先级：config.yaml (stt.local.language) > 环境变量 > 自动检测。
         _forced_lang = (
             _load_stt_config().get("local", {}).get("language")
             or os.getenv(LOCAL_STT_LANGUAGE_ENV)
@@ -1141,11 +1118,11 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
             segments, info = _local_model.transcribe(file_path, **transcribe_kwargs)
             transcript = " ".join(segment.text.strip() for segment in segments)
         except Exception as exc:
-            # CUDA runtime libs sometimes only fail at dlopen-on-first-use,
-            # AFTER the model loaded successfully.  Evict the broken cached
-            # model, reload on CPU, retry once.  Without this the module-
-            # global `_local_model` is poisoned and every subsequent voice
-            # message on this process fails identically until restart.
+            # CUDA 运行时库有时只在首次使用的 dlopen 阶段才失败，
+            # 而这发生在模型成功加载之后。驱逐这个已损坏的缓存模型，
+            # 在 CPU 上重新加载并重试一次。否则模块级的 `_local_model`
+            # 会被污染，本进程此后每条语音消息都会以同样方式失败，
+            # 直到重启进程。
             if not _looks_like_cuda_lib_error(exc):
                 raise
             logger.warning(
@@ -1174,7 +1151,7 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 def _prepare_local_audio(file_path: str, work_dir: str) -> tuple[Optional[str], Optional[str]]:
-    """Normalize audio for local CLI STT when needed."""
+    """必要时为本地 CLI STT 归一化音频。"""
     audio_path = Path(file_path)
     if audio_path.suffix.lower() in LOCAL_NATIVE_AUDIO_FORMATS:
         return file_path, None
@@ -1199,7 +1176,7 @@ def _prepare_local_audio(file_path: str, work_dir: str) -> tuple[Optional[str], 
 
 
 def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Run the configured local STT command template and read back a .txt transcript."""
+    """运行已配置的本地 STT 命令模板，并读回 .txt 转写文本。"""
     command_template = _get_local_command_template()
     if not command_template:
         return {
@@ -1210,7 +1187,7 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
             ),
         }
 
-    # Language: config.yaml (stt.local.language) > env var > "en" default.
+    # 语言优先级：config.yaml (stt.local.language) > 环境变量 > "en" 默认值。
     language = (
         _load_stt_config().get("local", {}).get("language")
         or os.getenv(LOCAL_STT_LANGUAGE_ENV)
@@ -1230,7 +1207,7 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
                 language=shlex.quote(language),
                 model=shlex.quote(normalized_model),
             )
-            # User-provided templates (env var) may contain shell syntax; auto-detected commands are safe for list mode.
+            # 用户提供的模板（环境变量）可能包含 shell 语法；自动检测到的命令可以安全地用 list 模式。
             use_shell = bool(os.getenv(LOCAL_STT_COMMAND_ENV, "").strip())
             if use_shell:
                 subprocess.run(command, shell=True, check=True, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
@@ -1270,12 +1247,12 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
         return {"success": False, "transcript": "", "error": f"Local transcription failed: {e}"}
 
 # ---------------------------------------------------------------------------
-# Provider: groq (Whisper API — free tier)
+# 服务商：groq（Whisper API —— 免费额度）
 # ---------------------------------------------------------------------------
 
 
 def _transcribe_groq(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using Groq Whisper API (free tier available)."""
+    """使用 Groq Whisper API 进行转写（提供免费额度）。"""
     api_key = get_env_value("GROQ_API_KEY")
     if not api_key:
         return {"success": False, "transcript": "", "error": "GROQ_API_KEY not set"}
@@ -1283,7 +1260,7 @@ def _transcribe_groq(file_path: str, model_name: str) -> Dict[str, Any]:
     if not _HAS_OPENAI:
         return {"success": False, "transcript": "", "error": "openai package not installed"}
 
-    # Auto-correct model if caller passed an OpenAI-only model
+    # 当调用方传入的是 OpenAI 专属模型时，自动纠错
     if model_name in OPENAI_MODELS:
         logger.info("Model %s not available on Groq, using %s", model_name, DEFAULT_GROQ_STT_MODEL)
         model_name = DEFAULT_GROQ_STT_MODEL
@@ -1322,12 +1299,12 @@ def _transcribe_groq(file_path: str, model_name: str) -> Dict[str, Any]:
         return {"success": False, "transcript": "", "error": f"Transcription failed: {e}"}
 
 # ---------------------------------------------------------------------------
-# Provider: openai (Whisper API)
+# 服务商：openai（Whisper API）
 # ---------------------------------------------------------------------------
 
 
 def _transcribe_openai(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using OpenAI Whisper API (paid)."""
+    """使用 OpenAI Whisper API 进行转写（付费）。"""
     try:
         api_key, base_url = _resolve_openai_audio_client_config()
     except ValueError as exc:
@@ -1340,7 +1317,7 @@ def _transcribe_openai(file_path: str, model_name: str) -> Dict[str, Any]:
     if not _HAS_OPENAI:
         return {"success": False, "transcript": "", "error": "openai package not installed"}
 
-    # Auto-correct model if caller passed a Groq-only model
+    # 当调用方传入的是 Groq 专属模型时，自动纠错
     if model_name in GROQ_MODELS:
         logger.info("Model %s not available on OpenAI, using %s", model_name, DEFAULT_STT_MODEL)
         model_name = DEFAULT_STT_MODEL
@@ -1379,15 +1356,15 @@ def _transcribe_openai(file_path: str, model_name: str) -> Dict[str, Any]:
         return {"success": False, "transcript": "", "error": f"Transcription failed: {e}"}
 
 # ---------------------------------------------------------------------------
-# Provider: mistral (Voxtral Transcribe API)
+# 服务商：mistral（Voxtral Transcribe API）
 # ---------------------------------------------------------------------------
 
 
 def _transcribe_mistral(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using Mistral Voxtral Transcribe API.
+    """使用 Mistral Voxtral Transcribe API 进行转写。
 
-    Uses the ``mistralai`` Python SDK to call ``/v1/audio/transcriptions``.
-    Requires ``MISTRAL_API_KEY`` environment variable.
+    使用 ``mistralai`` Python SDK 调用 ``/v1/audio/transcriptions``。
+    需要 ``MISTRAL_API_KEY`` 环境变量。
     """
     api_key = get_env_value("MISTRAL_API_KEY")
     if not api_key:
@@ -1423,16 +1400,16 @@ def _transcribe_mistral(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Provider: xAI (Grok STT API)
+# 服务商：xAI（Grok STT API）
 # ---------------------------------------------------------------------------
 
 
 def _transcribe_xai(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using xAI Grok STT API.
+    """使用 xAI Grok STT API 进行转写。
 
-    Uses the ``POST /v1/stt`` REST endpoint with multipart/form-data.
-    Supports Inverse Text Normalization, diarization, and word-level timestamps.
-    Requires ``XAI_API_KEY`` environment variable.
+    使用 ``POST /v1/stt`` REST 端点，以 multipart/form-data 方式提交。
+    支持逆向文本归一化（Inverse Text Normalization）、说话人分离（diarization）
+    以及词级时间戳。需要 ``XAI_API_KEY`` 环境变量。
     """
     from tools.xai_http import resolve_xai_http_credentials
 
@@ -1458,8 +1435,8 @@ def _transcribe_xai(file_path: str, model_name: str) -> Dict[str, Any]:
         or os.getenv("HERMES_LOCAL_STT_LANGUAGE")
         or DEFAULT_LOCAL_STT_LANGUAGE
     ).strip()
-    # .get("format", True) already defaults to True when the key is absent;
-    # is_truthy_value only normalizes truthy/falsy strings from config.
+    # .get("format", True) 在键缺失时已经默认为 True；
+    # is_truthy_value 只是把配置里的 truthy/falsy 字符串做归一化。
     use_format = is_truthy_value(xai_config.get("format", True))
     use_diarize = is_truthy_value(xai_config.get("diarize", False))
 
@@ -1530,12 +1507,12 @@ def _transcribe_xai(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Provider: ElevenLabs (Scribe STT API)
+# 服务商：ElevenLabs（Scribe STT API）
 # ---------------------------------------------------------------------------
 
 
 def _transcribe_elevenlabs(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using ElevenLabs Scribe STT API."""
+    """使用 ElevenLabs Scribe STT API 进行转写。"""
     api_key = get_env_value("ELEVENLABS_API_KEY")
     if not api_key:
         return {"success": False, "transcript": "", "error": "ELEVENLABS_API_KEY not set"}
@@ -1616,35 +1593,35 @@ def _transcribe_elevenlabs(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# 公共 API
 # ---------------------------------------------------------------------------
 
 
 def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, Any]:
     """
-    Transcribe an audio file using the configured STT provider.
+    使用已配置的 STT 服务商转写音频文件。
 
-    Provider priority:
-      1. User config (``stt.provider`` in config.yaml)
-      2. Auto-detect: local > Groq > OpenAI > Mistral > xAI > ElevenLabs
+    服务商优先级：
+      1. 用户配置（config.yaml 中的 ``stt.provider``）
+      2. 自动检测：local > Groq > OpenAI > Mistral > xAI > ElevenLabs
 
-    Args:
-        file_path: Absolute path to the audio file to transcribe.
-        model:     Override the model. If None, uses config or provider default.
+    参数：
+        file_path: 要转写的音频文件的绝对路径。
+        model:     覆盖模型。若为 None，则使用配置值或服务商默认值。
 
-    Returns:
-        dict with keys:
-          - "success" (bool): Whether transcription succeeded
-          - "transcript" (str): The transcribed text (empty on failure)
-          - "error" (str, optional): Error message if success is False
-          - "provider" (str, optional): Which provider was used
+    返回：
+        包含以下键的 dict：
+          - "success" (bool)：转写是否成功
+          - "transcript" (str)：转写文本（失败时为空）
+          - "error" (str, 可选)：当 success 为 False 时的错误消息
+          - "provider" (str, 可选)：实际使用的服务商
     """
-    # Validate input
+    # 校验输入
     error = _validate_audio_file(file_path)
     if error:
         return error
 
-    # Load config and determine provider
+    # 加载配置并决定服务商
     stt_config = _load_stt_config()
     if not is_stt_enabled(stt_config):
         return {
@@ -1684,7 +1661,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         return _transcribe_mistral(file_path, model_name)
 
     if provider == "xai":
-        # xAI Grok STT doesn't use a model parameter — pass through for logging
+        # xAI Grok STT 不使用 model 参数 —— 这里只是透传以便记录日志
         model_name = model or "grok-stt"
         return _transcribe_xai(file_path, model_name)
 
@@ -1693,12 +1670,11 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         model_name = model or elevenlabs_cfg.get("model_id", DEFAULT_ELEVENLABS_STT_MODEL)
         return _transcribe_elevenlabs(file_path, model_name)
 
-    # User-declared command-type provider
-    # (``stt.providers.<name>: type: command``). Fires after the built-in
-    # elif chain — built-in names short-circuit upstream so a user's
-    # ``stt.providers.openai.command`` can't override the real OpenAI
-    # handler — and BEFORE the plugin dispatcher, because config is more
-    # local than a plugin install (same precedence rule as TTS PR #17843).
+    # 用户声明的 command 类型服务商
+    # （``stt.providers.<name>: type: command``）。在内置 elif 链之后触发 ——
+    # 内置名称在上游已短路，因此用户的 ``stt.providers.openai.command``
+    # 无法覆盖真正的 OpenAI 处理器 —— 并且在插件分发器之前触发，
+    # 因为配置比插件安装更"本地"（与 TTS PR #17843 的优先级规则一致）。
     command_provider_config = _resolve_command_stt_provider_config(provider, stt_config)
     if command_provider_config is not None:
         return _transcribe_command_stt(
@@ -1709,19 +1685,16 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
             model_override=model,
         )
 
-    # Plugin-registered STT backend (e.g. OpenRouter, SenseAudio,
-    # Gemini-STT). Fires only when ``provider`` is neither a built-in
-    # nor ``"none"`` AND there is no same-name command provider. The
-    # dispatcher enforces built-ins-always-win + command-wins-over-plugin
-    # defensively. Returns None when no plugin is registered for the
-    # configured name, falling through to the legacy "No STT provider"
-    # error message below.
+    # 插件注册的 STT 后端（例如 OpenRouter、SenseAudio、Gemini-STT）。
+    # 仅当 ``provider`` 既不是内置也不是 ``"none"``、并且不存在同名命令行
+    # 服务商时才触发。分发器防御性地强制执行"内置总是优先 + 命令行优于插件"。
+    # 当配置的名称没有注册任何插件时返回 None，回退到下文传统的
+    # "No STT provider" 错误消息。
     #
-    # Plugin-scoped config namespace mirrors the built-in pattern
-    # (``stt.openai.model``, ``stt.mistral.model``): plugins read their
-    # per-provider config under ``stt.<provider>`` and the dispatcher
-    # forwards ``language`` from there. Top-level ``model`` argument
-    # overrides any config-set model.
+    # 插件作用域的配置命名空间镜像了内置模式
+    # （``stt.openai.model``、``stt.mistral.model``）：插件从
+    # ``stt.<provider>`` 下读取其各自的服务商配置，分发器从那里转发
+    # ``language``。顶层的 ``model`` 参数会覆盖任何配置里设置的模型。
     plugin_cfg = stt_config.get(provider, {}) if isinstance(stt_config.get(provider), dict) else {}
     plugin_language = plugin_cfg.get("language")
     plugin_model = model or plugin_cfg.get("model")
@@ -1735,7 +1708,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
     if plugin_result is not None:
         return plugin_result
 
-    # No provider available
+    # 没有可用的服务商
     return {
         "success": False,
         "transcript": "",
@@ -1751,7 +1724,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
 
 
 def _resolve_openai_audio_client_config() -> tuple[str, str]:
-    """Return direct OpenAI audio config or a managed gateway fallback."""
+    """返回直接的 OpenAI 音频配置，或托管网关回退。"""
     stt_config = _load_stt_config()
     openai_cfg = stt_config.get("openai", {})
     cfg_api_key = openai_cfg.get("api_key", "")
@@ -1781,7 +1754,7 @@ def _resolve_openai_audio_client_config() -> tuple[str, str]:
 
 
 def _extract_transcript_text(transcription: Any) -> str:
-    """Normalize text and JSON transcription responses to a plain string."""
+    """把 text 和 JSON 转写响应归一化为纯字符串。"""
     if isinstance(transcription, str):
         return transcription.strip()
 

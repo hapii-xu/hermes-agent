@@ -1,38 +1,38 @@
-# Benchmark Guide
+# 基准指南
 
-Complete guide to all 60+ evaluation tasks in lm-evaluation-harness, what they measure, and how to interpret results.
+lm-evaluation-harness 中全部 60+ 评估任务的完整指南——它们测量什么，以及如何解读结果。
 
-## Overview
+## 概览
 
-The lm-evaluation-harness includes 60+ benchmarks spanning:
-- Language understanding (MMLU, GLUE)
-- Mathematical reasoning (GSM8K, MATH)
-- Code generation (HumanEval, MBPP)
-- Instruction following (IFEval, AlpacaEval)
-- Long-context understanding (LongBench)
-- Multilingual capabilities (AfroBench, NorEval)
-- Reasoning (BBH, ARC)
-- Truthfulness (TruthfulQA)
+lm-evaluation-harness 包含 60+ 个基准，覆盖：
+- 语言理解（MMLU、GLUE）
+- 数学推理（GSM8K、MATH）
+- 代码生成（HumanEval、MBPP）
+- 指令遵循（IFEval、AlpacaEval）
+- 长上下文理解（LongBench）
+- 多语言能力（AfroBench、NorEval）
+- 推理（BBH、ARC）
+- 真实性（TruthfulQA）
 
-**List all tasks**:
+**列出所有任务**：
 ```bash
 lm_eval --tasks list
 ```
 
-## Major Benchmarks
+## 主要基准
 
-### MMLU (Massive Multitask Language Understanding)
+### MMLU（Massive Multitask Language Understanding，大规模多任务语言理解）
 
-**What it measures**: Broad knowledge across 57 subjects (STEM, humanities, social sciences, law).
+**测量什么**：跨 57 个学科（STEM、人文学科、社会科学、法学）的广泛知识。
 
-**Task variants**:
-- `mmlu`: Original 57-subject benchmark
-- `mmlu_pro`: More challenging version with reasoning-focused questions
-- `mmlu_prox`: Multilingual extension
+**任务变体**：
+- `mmlu`：原始 57 学科基准
+- `mmlu_pro`：更难的版本，题目侧重推理
+- `mmlu_prox`：多语言扩展
 
-**Format**: Multiple choice (4 options)
+**格式**：选择题（4 个选项）
 
-**Example**:
+**示例**：
 ```
 Question: What is the capital of France?
 A. Berlin
@@ -42,7 +42,7 @@ D. Madrid
 Answer: B
 ```
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -50,32 +50,32 @@ lm_eval --model hf \
   --num_fewshot 5
 ```
 
-**Interpretation**:
-- Random: 25% (chance)
-- GPT-3 (175B): 43.9%
-- GPT-4: 86.4%
-- Human expert: ~90%
+**解读**：
+- 随机：25%（靠猜）
+- GPT-3（175B）：43.9%
+- GPT-4：86.4%
+- 人类专家：约 90%
 
-**Good for**: Assessing general knowledge and domain expertise.
+**适合**：评估通识知识和领域专长。
 
-### GSM8K (Grade School Math 8K)
+### GSM8K（Grade School Math 8K，小学数学 8K）
 
-**What it measures**: Mathematical reasoning on grade-school level word problems.
+**测量什么**：在小学水平应用题上的数学推理。
 
-**Task variants**:
-- `gsm8k`: Base task
-- `gsm8k_cot`: With chain-of-thought prompting
-- `gsm_plus`: Adversarial variant with perturbations
+**任务变体**：
+- `gsm8k`：基础任务
+- `gsm8k_cot`：带思维链（chain-of-thought）提示
+- `gsm_plus`：带扰动的对抗性变体
 
-**Format**: Free-form generation, extract numerical answer
+**格式**：自由生成，提取数字答案
 
-**Example**:
+**示例**：
 ```
 Question: A baker made 200 cookies. He sold 3/5 of them in the morning and 1/4 of the remaining in the afternoon. How many cookies does he have left?
 Answer: 60
 ```
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -83,25 +83,25 @@ lm_eval --model hf \
   --num_fewshot 5
 ```
 
-**Interpretation**:
-- Random: ~0%
-- GPT-3 (175B): 17.0%
-- GPT-4: 92.0%
-- Llama 2 70B: 56.8%
+**解读**：
+- 随机：约 0%
+- GPT-3（175B）：17.0%
+- GPT-4：92.0%
+- Llama 2 70B：56.8%
 
-**Good for**: Testing multi-step reasoning and arithmetic.
+**适合**：测试多步推理和算术。
 
 ### HumanEval
 
-**What it measures**: Python code generation from docstrings (functional correctness).
+**测量什么**：从 docstring 生成 Python 代码（功能正确性）。
 
-**Task variants**:
-- `humaneval`: Standard benchmark
-- `humaneval_instruct`: For instruction-tuned models
+**任务变体**：
+- `humaneval`：标准基准
+- `humaneval_instruct`：用于指令微调模型
 
-**Format**: Code generation, execution-based evaluation
+**格式**：代码生成，基于执行的评估
 
-**Example**:
+**示例**：
 ```python
 def has_close_elements(numbers: List[float], threshold: float) -> bool:
     """ Check if in given list of numbers, are any two numbers closer to each other than
@@ -113,7 +113,7 @@ def has_close_elements(numbers: List[float], threshold: float) -> bool:
     """
 ```
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=codellama/CodeLlama-7b-hf \
@@ -121,28 +121,28 @@ lm_eval --model hf \
   --batch_size 1
 ```
 
-**Interpretation**:
-- Random: 0%
-- GPT-3 (175B): 0%
-- Codex: 28.8%
-- GPT-4: 67.0%
-- Code Llama 34B: 53.7%
+**解读**：
+- 随机：0%
+- GPT-3（175B）：0%
+- Codex：28.8%
+- GPT-4：67.0%
+- Code Llama 34B：53.7%
 
-**Good for**: Evaluating code generation capabilities.
+**适合**：评估代码生成能力。
 
-### BBH (BIG-Bench Hard)
+### BBH（BIG-Bench Hard）
 
-**What it measures**: 23 challenging reasoning tasks where models previously failed to beat humans.
+**测量什么**：23 个有挑战性的推理任务，在这些任务上模型此前无法超越人类。
 
-**Categories**:
-- Logical reasoning
-- Math word problems
-- Social understanding
-- Algorithmic reasoning
+**类别**：
+- 逻辑推理
+- 数学应用题
+- 社会理解
+- 算法推理
 
-**Format**: Multiple choice and free-form
+**格式**：选择题和自由生成
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -150,27 +150,27 @@ lm_eval --model hf \
   --num_fewshot 3
 ```
 
-**Interpretation**:
-- Random: ~25%
-- GPT-3 (175B): 33.9%
-- PaLM 540B: 58.3%
-- GPT-4: 86.7%
+**解读**：
+- 随机：约 25%
+- GPT-3（175B）：33.9%
+- PaLM 540B：58.3%
+- GPT-4：86.7%
 
-**Good for**: Testing advanced reasoning capabilities.
+**适合**：测试高级推理能力。
 
-### IFEval (Instruction-Following Evaluation)
+### IFEval（Instruction-Following Evaluation，指令遵循评估）
 
-**What it measures**: Ability to follow specific, verifiable instructions.
+**测量什么**：遵循具体、可验证指令的能力。
 
-**Instruction types**:
-- Format constraints (e.g., "answer in 3 sentences")
-- Length constraints (e.g., "use at least 100 words")
-- Content constraints (e.g., "include the word 'banana'")
-- Structural constraints (e.g., "use bullet points")
+**指令类型**：
+- 格式约束（如「用 3 句话回答」）
+- 长度约束（如「至少用 100 个词」）
+- 内容约束（如「包含单词 'banana'」）
+- 结构约束（如「使用项目符号」）
 
-**Format**: Free-form generation with rule-based verification
+**格式**：自由生成，带基于规则的验证
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-chat-hf \
@@ -178,29 +178,29 @@ lm_eval --model hf \
   --batch_size auto
 ```
 
-**Interpretation**:
-- Measures: Instruction adherence (not quality)
-- GPT-4: 86% instruction following
-- Claude 2: 84%
+**解读**：
+- 测量的是：指令遵循度（而非质量）
+- GPT-4：86% 指令遵循
+- Claude 2：84%
 
-**Good for**: Evaluating chat/instruct models.
+**适合**：评估 chat/instruct 模型。
 
-### GLUE (General Language Understanding Evaluation)
+### GLUE（General Language Understanding Evaluation，通用语言理解评估）
 
-**What it measures**: Natural language understanding across 9 tasks.
+**测量什么**：跨 9 个任务的自然语言理解。
 
-**Tasks**:
-- `cola`: Grammatical acceptability
-- `sst2`: Sentiment analysis
-- `mrpc`: Paraphrase detection
-- `qqp`: Question pairs
-- `stsb`: Semantic similarity
-- `mnli`: Natural language inference
-- `qnli`: Question answering NLI
-- `rte`: Recognizing textual entailment
-- `wnli`: Winograd schemas
+**任务**：
+- `cola`：语法可接受性
+- `sst2`：情感分析
+- `mrpc`：复述检测
+- `qqp`：问题对
+- `stsb`：语义相似度
+- `mnli`：自然语言推理
+- `qnli`：问答 NLI
+- `rte`：文本蕴含识别
+- `wnli`：Winograd 模式
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=bert-base-uncased \
@@ -208,26 +208,26 @@ lm_eval --model hf \
   --num_fewshot 0
 ```
 
-**Interpretation**:
-- BERT Base: 78.3 (GLUE score)
-- RoBERTa Large: 88.5
-- Human baseline: 87.1
+**解读**：
+- BERT Base：78.3（GLUE 分数）
+- RoBERTa Large：88.5
+- 人类基线：87.1
 
-**Good for**: Encoder-only models, fine-tuning baselines.
+**适合**：仅编码器模型、微调基线。
 
 ### LongBench
 
-**What it measures**: Long-context understanding (4K-32K tokens).
+**测量什么**：长上下文理解（4K-32K token）。
 
-**21 tasks covering**:
-- Single-document QA
-- Multi-document QA
-- Summarization
-- Few-shot learning
-- Code completion
-- Synthetic tasks
+**21 个任务覆盖**：
+- 单文档问答
+- 多文档问答
+- 摘要
+- few-shot 学习
+- 代码补全
+- 合成任务
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -235,22 +235,22 @@ lm_eval --model hf \
   --batch_size 1
 ```
 
-**Interpretation**:
-- Tests context utilization
-- Many models struggle beyond 4K tokens
-- GPT-4 Turbo: 54.3%
+**解读**：
+- 测试上下文利用能力
+- 很多模型在超过 4K token 时表现挣扎
+- GPT-4 Turbo：54.3%
 
-**Good for**: Evaluating long-context models.
+**适合**：评估长上下文模型。
 
-## Additional Benchmarks
+## 其他基准
 
 ### TruthfulQA
 
-**What it measures**: Model's propensity to be truthful vs. generate plausible-sounding falsehoods.
+**测量什么**：模型倾向于诚实还是生成听起来合理的假话。
 
-**Format**: Multiple choice with 4-5 options
+**格式**：选择题，4-5 个选项
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -258,21 +258,21 @@ lm_eval --model hf \
   --batch_size auto
 ```
 
-**Interpretation**:
-- Larger models often score worse (more convincing lies)
-- GPT-3: 58.8%
-- GPT-4: 59.0%
-- Human: ~94%
+**解读**：
+- 更大的模型往往得分更低（更令人信服的谎言）
+- GPT-3：58.8%
+- GPT-4：59.0%
+- 人类：约 94%
 
-### ARC (AI2 Reasoning Challenge)
+### ARC（AI2 Reasoning Challenge，AI2 推理挑战）
 
-**What it measures**: Grade-school science questions.
+**测量什么**：小学科学问题。
 
-**Variants**:
-- `arc_easy`: Easier questions
-- `arc_challenge`: Harder questions requiring reasoning
+**变体**：
+- `arc_easy`：较简单的问题
+- `arc_challenge`：需要推理的较难问题
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -280,18 +280,18 @@ lm_eval --model hf \
   --num_fewshot 25
 ```
 
-**Interpretation**:
-- ARC-Easy: Most models >80%
-- ARC-Challenge random: 25%
-- GPT-4: 96.3%
+**解读**：
+- ARC-Easy：大多数模型 >80%
+- ARC-Challenge 随机：25%
+- GPT-4：96.3%
 
 ### HellaSwag
 
-**What it measures**: Commonsense reasoning about everyday situations.
+**测量什么**：对日常情境的常识推理。
 
-**Format**: Choose most plausible continuation
+**格式**：选择最合理的续写
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -299,23 +299,23 @@ lm_eval --model hf \
   --num_fewshot 10
 ```
 
-**Interpretation**:
-- Random: 25%
-- GPT-3: 78.9%
-- Llama 2 70B: 85.3%
+**解读**：
+- 随机：25%
+- GPT-3：78.9%
+- Llama 2 70B：85.3%
 
 ### WinoGrande
 
-**What it measures**: Commonsense reasoning via pronoun resolution.
+**测量什么**：通过代词消解做的常识推理。
 
-**Example**:
+**示例**：
 ```
 The trophy doesn't fit in the brown suitcase because _ is too large.
 A. the trophy
 B. the suitcase
 ```
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -325,26 +325,26 @@ lm_eval --model hf \
 
 ### PIQA
 
-**What it measures**: Physical commonsense reasoning.
+**测量什么**：物理常识推理。
 
-**Example**: "To clean a keyboard, use compressed air or..."
+**示例**：「To clean a keyboard, use compressed air or...」（要清洁键盘，用压缩空气或者……）
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
   --tasks piqa
 ```
 
-## Multilingual Benchmarks
+## 多语言基准
 
 ### AfroBench
 
-**What it measures**: Performance across 64 African languages.
+**测量什么**：跨 64 种非洲语言的表现。
 
-**15 tasks**: NLU, text generation, knowledge, QA, math reasoning
+**15 个任务**：NLU、文本生成、知识、问答、数学推理
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -353,22 +353,22 @@ lm_eval --model hf \
 
 ### NorEval
 
-**What it measures**: Norwegian language understanding (9 task categories).
+**测量什么**：挪威语理解（9 个任务类别）。
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=NbAiLab/nb-gpt-j-6B \
   --tasks noreval
 ```
 
-## Domain-Specific Benchmarks
+## 领域专用基准
 
 ### MATH
 
-**What it measures**: High-school competition math problems.
+**测量什么**：高中竞赛数学题。
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -376,16 +376,16 @@ lm_eval --model hf \
   --num_fewshot 4
 ```
 
-**Interpretation**:
-- Very challenging
-- GPT-4: 42.5%
-- Minerva 540B: 33.6%
+**解读**：
+- 非常有挑战性
+- GPT-4：42.5%
+- Minerva 540B：33.6%
 
-### MBPP (Mostly Basic Python Problems)
+### MBPP（Mostly Basic Python Problems，基本 Python 问题集）
 
-**What it measures**: Python programming from natural language descriptions.
+**测量什么**：从自然语言描述生成 Python 代码。
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=codellama/CodeLlama-7b-hf \
@@ -395,20 +395,20 @@ lm_eval --model hf \
 
 ### DROP
 
-**What it measures**: Reading comprehension requiring discrete reasoning.
+**测量什么**：需要离散推理的阅读理解。
 
-**Command**:
+**命令**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
   --tasks drop
 ```
 
-## Benchmark Selection Guide
+## 基准选择指南
 
-### For General Purpose Models
+### 通用模型
 
-Run this suite:
+运行这套套件：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -416,7 +416,7 @@ lm_eval --model hf \
   --num_fewshot 5
 ```
 
-### For Code Models
+### 代码模型
 
 ```bash
 lm_eval --model hf \
@@ -425,7 +425,7 @@ lm_eval --model hf \
   --batch_size 1
 ```
 
-### For Chat/Instruct Models
+### Chat/Instruct 模型
 
 ```bash
 lm_eval --model hf \
@@ -434,7 +434,7 @@ lm_eval --model hf \
   --batch_size auto
 ```
 
-### For Long Context Models
+### 长上下文模型
 
 ```bash
 lm_eval --model hf \
@@ -443,46 +443,46 @@ lm_eval --model hf \
   --batch_size 1
 ```
 
-## Interpreting Results
+## 解读结果
 
-### Understanding Metrics
+### 理解指标
 
-**Accuracy**: Percentage of correct answers (most common)
+**Accuracy（准确率）**：正确答案的百分比（最常见）
 
-**Exact Match (EM)**: Requires exact string match (strict)
+**Exact Match（EM，精确匹配）**：要求精确字符串匹配（严格）
 
-**F1 Score**: Balances precision and recall
+**F1 Score（F1 分数）**：平衡精确率和召回率
 
-**BLEU/ROUGE**: Text generation similarity
+**BLEU/ROUGE**：文本生成相似度
 
-**Pass@k**: Percentage passing when generating k samples
+**Pass@k**：生成 k 个样本时通过的百分比
 
-### Typical Score Ranges
+### 典型分数区间
 
-| Model Size | MMLU | GSM8K | HumanEval | HellaSwag |
+| 模型规模 | MMLU | GSM8K | HumanEval | HellaSwag |
 |------------|------|-------|-----------|-----------|
 | 7B | 40-50% | 10-20% | 5-15% | 70-80% |
 | 13B | 45-55% | 20-35% | 15-25% | 75-82% |
 | 70B | 60-70% | 50-65% | 35-50% | 82-87% |
 | GPT-4 | 86% | 92% | 67% | 95% |
 
-### Red Flags
+### 危险信号
 
-- **All tasks at random chance**: Model not trained properly
-- **Exact 0% on generation tasks**: Likely format/parsing issue
-- **Huge variance across runs**: Check seed/sampling settings
-- **Better than GPT-4 on everything**: Likely contamination
+- **所有任务都在随机水平**：模型未正确训练
+- **生成类任务恰好 0%**：很可能是格式/解析问题
+- **跨运行方差巨大**：检查 seed/采样设置
+- **在所有任务上都比 GPT-4 好**：很可能是数据污染
 
-## Best Practices
+## 最佳实践
 
-1. **Always report few-shot setting**: 0-shot, 5-shot, etc.
-2. **Run multiple seeds**: Report mean ± std
-3. **Check for data contamination**: Search training data for benchmark examples
-4. **Compare to published baselines**: Validate your setup
-5. **Report all hyperparameters**: Model, batch size, max tokens, temperature
+1. **始终报告 few-shot 设置**：0-shot、5-shot 等。
+2. **跑多个 seed**：报告均值 ± 标准差。
+3. **检查数据污染**：在训练数据里搜索基准样例。
+4. **与已发表的基线比较**：验证你的设置。
+5. **报告所有超参数**：模型、batch size、max token、temperature。
 
-## References
+## 参考
 
-- Task list: `lm_eval --tasks list`
-- Task README: `lm_eval/tasks/README.md`
-- Papers: See individual benchmark papers
+- 任务列表：`lm_eval --tasks list`
+- 任务 README：`lm_eval/tasks/README.md`
+- 论文：参见各基准的原论文

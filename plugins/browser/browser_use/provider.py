@@ -1,29 +1,29 @@
-"""Browser Use cloud browser provider — plugin form.
+"""Browser Use 云浏览器 provider — 插件形式。
 
-Subclasses :class:`agent.browser_provider.BrowserProvider` (the plugin-facing
-ABC introduced in PR #25214). The legacy in-tree module
-``tools.browser_providers.browser_use`` was removed in the same PR; this file
-is now the canonical implementation.
+继承 :class:`agent.browser_provider.BrowserProvider`（PR #25214 中引入的
+面向插件的抽象基类）。旧的内嵌模块
+``tools.browser_providers.browser_use`` 已在同一 PR 中移除；此文件
+现在是规范实现。
 
-Browser Use is the only browser backend with dual auth: a direct
-``BROWSER_USE_API_KEY`` for self-billed users, or the managed Nous tool
-gateway (which Hermes uses to bill Browser Use sessions to a Nous
-subscription). The dispatch order — direct API key first, managed gateway
-second — preserves the pre-migration behaviour in
-``tools.browser_providers.browser_use.BrowserUseProvider._get_config_or_none``.
+Browser Use 是唯一支持双重认证的浏览器后端：直接使用的
+``BROWSER_USE_API_KEY`` 供自付费用户使用，或托管的 Nous tool
+gateway（Hermes 用它将 Browser Use 会话计费到 Nous
+订阅）。分派顺序——先直接 API key，再托管 gateway
+——保留了 ``tools.browser_providers.browser_use.BrowserUseProvider._get_config_or_none``
+中迁移前的行为。
 
-Config keys this provider responds to::
+此 provider 响应的配置键::
 
     browser:
-      cloud_provider: "browser-use"   # explicit selection
+      cloud_provider: "browser-use"   # 显式选择
     tool_gateway:
-      browser: "gateway"              # optional: prefer managed gateway
-                                      #   even when BROWSER_USE_API_KEY is set
+      browser: "gateway"              # 可选：优先使用托管 gateway
+                                      #   即使设置了 BROWSER_USE_API_KEY
 
-Auth env vars (one of)::
+认证环境变量（二选一）::
 
     BROWSER_USE_API_KEY=...           # https://browser-use.com
-    # OR a managed Nous gateway entry (configured via 'hermes setup')
+    # 或托管的 Nous gateway 条目（通过 'hermes setup' 配置）
 """
 
 from __future__ import annotations
@@ -40,10 +40,10 @@ from agent.browser_provider import BrowserProvider
 
 logger = logging.getLogger(__name__)
 
-# Idempotency tracking for managed-mode session creation. The managed Nous
-# gateway returns 409 "already in progress" on retried POSTs; we forward the
-# original idempotency key so the gateway can deduplicate. Cleared on
-# success or terminal failure.
+# 托管模式下会话创建的幂等性跟踪。托管的 Nous
+# gateway 在重试 POST 时返回 409 "already in progress"；我们转发
+# 原始幂等键以便 gateway 可以去重。成功或
+# 最终失败时清除。
 _pending_create_keys: Dict[str, str] = {}
 _pending_create_keys_lock = threading.Lock()
 
@@ -69,15 +69,15 @@ def _clear_pending_create_key(task_id: str) -> None:
 
 
 def _should_preserve_pending_create_key(response: requests.Response) -> bool:
-    """Decide whether to keep the idempotency key after a failed create.
+    """在创建失败后决定是否保留幂等键。
 
-    Preserve the key when the failure looks retryable (5xx) OR when the
-    gateway reports the original request is still in flight (409 "already
-    in progress") — in either case, retrying with the same key lets the
-    gateway deduplicate.
+    当失败看起来可重试（5xx）或 gateway 报告
+    原始请求仍在进行中（409 "already in progress"）时保留
+    该键——在这两种情况下，使用相同的键重试可以让
+    gateway 去重。
 
-    Drop the key on any other 4xx (auth failure, bad request, etc.) — those
-    won't succeed by being retried.
+    在任何其他 4xx（认证失败、错误请求等）时丢弃
+    该键——这些不会通过重试成功。
     """
     if response.status_code >= 500:
         return True
@@ -102,12 +102,12 @@ def _should_preserve_pending_create_key(response: requests.Response) -> bool:
 
 
 class BrowserUseBrowserProvider(BrowserProvider):
-    """Browser Use (https://browser-use.com) cloud browser backend.
+    """Browser Use (https://browser-use.com) 云浏览器后端。
 
-    Dual auth: prefers a direct BROWSER_USE_API_KEY when set, falling back
-    to the managed Nous tool gateway when ``tool_gateway.browser`` config
-    routes through it. Setting ``tool_gateway.browser: gateway`` flips the
-    order so managed billing wins even when BROWSER_USE_API_KEY is present.
+    双重认证：当设置了 BROWSER_USE_API_KEY 时优先使用，否则
+    回退到托管的 Nous tool gateway（当 ``tool_gateway.browser`` 配置
+    路由到它时）。设置 ``tool_gateway.browser: gateway`` 会翻转
+    顺序，使得即使存在 BROWSER_USE_API_KEY，托管计费也优先。
     """
 
     @property
@@ -122,21 +122,21 @@ class BrowserUseBrowserProvider(BrowserProvider):
         return self._get_config_or_none(refresh_token=False) is not None
 
     # ------------------------------------------------------------------
-    # Config resolution (direct API key OR managed Nous gateway)
+    # 配置解析（直接 API key 或托管 Nous gateway）
     # ------------------------------------------------------------------
 
     def _get_config_or_none(self, *, refresh_token: bool = True) -> Optional[Dict[str, Any]]:
-        # Import here to avoid a hard dependency at module-import time —
-        # managed_tool_gateway pulls in the Nous auth stack which can be
-        # heavy and is not needed for direct-API-key users.
+        # 在此处导入以避免在模块导入时产生硬依赖——
+        # managed_tool_gateway 会拉入 Nous 认证栈，这可能
+        # 很重，而且直接 API key 用户不需要它。
         from tools.managed_tool_gateway import (
             peek_nous_access_token,
             resolve_managed_tool_gateway,
         )
         from tools.tool_backend_helpers import prefers_gateway
 
-        # Direct API key wins unless the user has explicitly opted into the
-        # managed Nous gateway via ``tool_gateway.browser: gateway``.
+        # 除非用户通过 ``tool_gateway.browser: gateway`` 显式选择了
+        # 托管的 Nous gateway，否则直接 API key 优先。
         api_key = os.environ.get("BROWSER_USE_API_KEY")
         if api_key and not prefers_gateway("browser"):
             return {
@@ -145,7 +145,7 @@ class BrowserUseBrowserProvider(BrowserProvider):
                 "managed_mode": False,
             }
 
-        # Keep availability scans off the synchronous OAuth refresh path.
+        # 让可用性扫描远离同步 OAuth 刷新路径。
         managed = resolve_managed_tool_gateway(
             "browser-use",
             token_reader=None if refresh_token else peek_nous_access_token,
@@ -176,7 +176,7 @@ class BrowserUseBrowserProvider(BrowserProvider):
         return config
 
     # ------------------------------------------------------------------
-    # Session lifecycle
+    # 会话生命周期
     # ------------------------------------------------------------------
 
     def _headers(self, config: Dict[str, Any]) -> Dict[str, str]:
@@ -193,9 +193,9 @@ class BrowserUseBrowserProvider(BrowserProvider):
         if managed_mode:
             headers["X-Idempotency-Key"] = _get_or_create_pending_create_key(task_id)
 
-        # Keep gateway-backed sessions short so billing authorization does not
-        # default to a long Browser-Use timeout when Hermes only needs a task-
-        # scoped ephemeral browser.
+        # 保持 gateway 支持的会话短暂，以便计费授权不会
+        # 在 Hermes 只需要任务范围的临时浏览器时
+        # 默认使用较长的 Browser-Use 超时。
         payload = (
             {
                 "timeout": _DEFAULT_MANAGED_TIMEOUT_MINUTES,
@@ -213,9 +213,9 @@ class BrowserUseBrowserProvider(BrowserProvider):
                 timeout=30,
             )
         except requests.RequestException as exc:
-            # Managed mode: propagate raw so callers can retry with the
-            # preserved idempotency key. Direct mode: wrap network failures
-            # into a clean RuntimeError for end users.
+            # 托管模式：原样抛出，以便调用方可以使用保留的
+            # 幂等键重试。直接模式：将网络错误包装为
+            # 干净的 RuntimeError 以便终端用户理解。
             if managed_mode:
                 raise
             raise RuntimeError(

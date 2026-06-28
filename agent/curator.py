@@ -1,22 +1,21 @@
-"""Curator — background skill maintenance orchestrator.
+"""Curator — 后台 skill 维护编排器。
 
-The curator is an auxiliary-model task that periodically reviews agent-created
-skills and maintains the collection. It runs inactivity-triggered (no cron
-daemon): when the agent is idle and the last curator run was longer than
-``interval_hours`` ago, ``maybe_run_curator()`` spawns a forked AIAgent to do
-the review.
+curator 是一个辅助模型任务，会定期检查由 agent 创建的 skill 并维护整个集合。
+它基于空闲触发运行（无 cron 守护进程）：当 agent 处于空闲状态且距上次
+curator 运行时间超过 ``interval_hours`` 时，``maybe_run_curator()`` 会派生
+一个 fork 出来的 AIAgent 来执行审查。
 
-Responsibilities:
-  - Auto-transition lifecycle states based on derived skill activity timestamps
-  - Spawn a background review agent that can pin / archive / consolidate /
-    patch agent-created skills via skill_manage
-  - Persist curator state (last_run_at, paused, etc.) in .curator_state
+职责：
+  - 根据推导出的 skill 活动时间戳自动转换生命周期状态
+  - 派生一个后台审查 agent，通过 skill_manage 对 agent 创建的 skill 执行
+    pin / archive / consolidate / patch 操作
+  - 在 .curator_state 中持久化 curator 状态（last_run_at、paused 等）
 
-Strict invariants:
-  - Only touches agent-created skills (see tools/skill_usage.is_agent_created)
-  - Never auto-deletes — only archives. Archive is recoverable.
-  - Pinned skills bypass all auto-transitions
-  - Uses the auxiliary client; never touches the main session's prompt cache
+严格不变量：
+  - 只操作 agent 创建的 skill（参见 tools/skill_usage.is_agent_created）
+  - 从不自动删除 —— 只做归档。归档是可恢复的。
+  - 被 pin 的 skill 会跳过所有自动状态转换
+  - 使用辅助客户端；从不触碰主会话的 prompt cache
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ def _strip_aux_credential(value: Any) -> Optional[str]:
 
 
 class _ReviewRuntimeBinding(NamedTuple):
-    """Provider/model for the curator review fork plus optional per-slot overrides."""
+    """curator 审查 fork 所用的 provider/model，以及可选的每个 slot 的覆盖配置。"""
 
     provider: str
     model: str
@@ -57,15 +56,14 @@ DEFAULT_INTERVAL_HOURS = 24 * 7  # 7 days
 DEFAULT_MIN_IDLE_HOURS = 2
 DEFAULT_STALE_AFTER_DAYS = 30
 DEFAULT_ARCHIVE_AFTER_DAYS = 90
-# Consolidation (the LLM umbrella-building fork) is OFF by default. The
-# deterministic inactivity prune (apply_automatic_transitions) still runs
-# whenever the curator is enabled; only the opinionated, aux-model-cost
-# consolidation pass is opt-in.
+# 合并（LLM umbrella-building fork）默认关闭。确定性的非活动剪枝
+# （apply_automatic_transitions）在 curator 启用时仍然会运行；只有这个需要
+# 辅助模型开销的主观合并流程才是可选的。
 DEFAULT_CONSOLIDATE = False
 
 
 # ---------------------------------------------------------------------------
-# .curator_state — persistent scheduler + status
+# .curator_state — 持久化调度器和状态
 # ---------------------------------------------------------------------------
 
 def _state_file() -> Path:

@@ -1,17 +1,16 @@
-"""Language Server Protocol (LSP) integration for Hermes Agent.
+"""Hermes Agent 的 Language Server Protocol (LSP) 集成。
 
-Hermes runs full language servers (pyright, gopls, rust-analyzer,
-typescript-language-server, etc.) as subprocesses and pipes their
-``textDocument/publishDiagnostics`` output into the post-write lint
-delta filter used by ``write_file`` and ``patch``.
+Hermes 将完整的 language server（pyright、gopls、rust-analyzer、
+typescript-language-server 等）作为子进程运行，并将其
+``textDocument/publishDiagnostics`` 输出导入到 ``write_file`` 和
+``patch`` 使用的写入后 lint delta 过滤器中。
 
-LSP is **gated on git workspace detection** — if the agent's cwd is
-inside a git repository, LSP runs against that workspace; otherwise the
-file_operations layer falls back to its existing in-process syntax
-checks.  This keeps users on user-home cwd's (e.g. Telegram gateway
-chats) from spawning daemons they don't need.
+LSP **以 git 工作区检测为门控** — 如果 agent 的 cwd 位于 git
+仓库内，LSP 将针对该工作区运行；否则 file_operations 层会回退
+到其现有的进程内语法检查。这可以避免在用户主目录 cwd（例如
+Telegram gateway 聊天）中启动不必要的守护进程。
 
-Public API:
+公共 API：
 
     from agent.lsp import get_service
 
@@ -20,11 +19,11 @@ Public API:
         await svc.touch_file(path)
         diags = svc.diagnostics_for(path)
 
-The bulk of the wiring is internal — most callers only need the layer
-in :func:`tools.file_operations.FileOperations._check_lint_delta`,
-which is already wired (see that module).
+大部分连接逻辑是内部的 — 大多数调用者只需要
+:func:`tools.file_operations.FileOperations._check_lint_delta` 中的层，
+该层已经连接好了（参见该模块）。
 
-Architecture is documented in ``website/docs/user-guide/features/lsp.md``.
+架构文档见 ``website/docs/user-guide/features/lsp.md``。
 """
 from __future__ import annotations
 
@@ -43,16 +42,15 @@ _service_lock = threading.Lock()
 
 
 def get_service() -> Optional[LSPService]:
-    """Return the process-wide LSP service singleton, or None when disabled.
+    """返回进程级 LSP service 单例，禁用时返回 None。
 
-    The service is created lazily on first call.  ``None`` is returned
-    when LSP is disabled in config, when no workspace can be detected,
-    or when the platform doesn't support subprocess-based LSP servers.
+    service 在首次调用时延迟创建。当 LSP 在配置中被禁用、
+    无法检测到工作区、或平台不支持基于子进程的 LSP server 时，
+    返回 ``None``。
 
-    On first creation, registers an :mod:`atexit` handler that tears
-    down spawned language servers on Python exit so a long-running
-    CLI or gateway session doesn't leak pyright/gopls/etc. processes
-    when it terminates.
+    首次创建时，注册一个 :mod:`atexit` 处理器，在 Python 退出时
+    拆除已启动的 language server，避免长时间运行的 CLI 或 gateway
+    会话在终止时泄漏 pyright/gopls 等进程。
     """
     global _service, _atexit_registered
     if _service is not None:
@@ -62,25 +60,23 @@ def get_service() -> Optional[LSPService]:
             return _service if _service.is_active() else None
         _service = LSPService.create_from_config()
         if not _atexit_registered:
-            # ``atexit`` handlers run in LIFO order on normal Python
-            # exit and on SystemExit, but NOT on os._exit() or
-            # uncaught signals.  Language servers are stateless
-            # subprocesses — losing them on SIGKILL is fine; they'll
-            # be reaped by the kernel along with their parent.  We
-            # care about clean exits where Python flushes stdio
-            # before terminating; without this hook every
-            # ``hermes chat`` exit would leak pyright processes that
-            # outlive the parent for a few seconds while their
-            # stdout buffers drain.
+            # ``atexit`` 处理器在正常 Python 退出和 SystemExit 时
+            # 按 LIFO 顺序运行，但在 os._exit() 或未捕获的信号时
+            # 不会运行。Language server 是无状态子进程 — 在 SIGKILL
+            # 时丢失它们没有问题；内核会连同父进程一起回收它们。
+            # 我们关心的是 Python 在终止前刷新 stdio 的正常退出；
+            # 没有这个钩子，每次 ``hermes chat`` 退出都会泄漏
+            # pyright 进程，这些进程会在 stdout 缓冲区排空前比
+            # 父进程多存活几秒钟。
             atexit.register(_atexit_shutdown)
             _atexit_registered = True
     return _service if (_service is not None and _service.is_active()) else None
 
 
 def shutdown_service() -> None:
-    """Tear down the LSP service if one was started.
+    """如果已启动 LSP service 则将其拆除。
 
-    Safe to call multiple times; safe to call when no service was created.
+    可安全地多次调用；可安全地在未创建 service 时调用。
     """
     global _service
     with _service_lock:
@@ -94,9 +90,9 @@ def shutdown_service() -> None:
 
 
 def _atexit_shutdown() -> None:
-    """atexit-registered wrapper.  Logs at debug because by the time
-    atexit fires the user has already seen the agent's final output —
-    a noisy shutdown line on top of that is just clutter."""
+    """atexit 注册的包装器。以 debug 级别记录，因为 atexit
+    触发时用户已经看到了 agent 的最终输出 — 在上面加一行
+    嘈杂的关闭信息只是多余的。"""
     try:
         shutdown_service()
     except Exception as e:  # noqa: BLE001

@@ -1,15 +1,14 @@
-"""Implementation of the ``hermes bundles`` CLI subcommand.
+"""``hermes bundles`` CLI 子命令的实现。
 
-Mirrors the structure of ``hermes_cli/skills_hub.py`` but for skill
-bundles. Bundles are tiny YAML files that name a set of skills to load
-together via a single ``/<bundle>`` slash command.
+镜像 ``hermes_cli/skills_hub.py`` 的结构，但针对技能包（skill bundles）。
+技能包是小型 YAML 文件，通过单个 ``/<bundle>`` 斜杠命令批量加载一组技能。
 
-Subcommands:
-- list: show all bundles
-- show: dump one bundle's contents
-- create: build a new bundle from arguments or interactively
-- delete: remove a bundle
-- reload: re-scan the bundles directory
+子命令：
+- list: 显示所有技能包
+- show: 查看某个技能包的内容
+- create: 通过参数或交互方式创建新技能包
+- delete: 删除技能包
+- reload: 重新扫描技能包目录
 """
 
 from __future__ import annotations
@@ -32,9 +31,8 @@ from agent.skill_bundles import (
 
 
 def _console() -> Console:
-    # Bind to stderr so piping `hermes bundles list | grep …` doesn't
-    # garble rich markup with table styling. Tables and headings still
-    # render to a terminal; pure text columns survive piping.
+    # 绑定到 stderr，这样通过管道传输 `hermes bundles list | grep …` 时
+    # 不会因 rich 标记的表格样式而乱码。表格和标题仍可在终端中渲染；纯文本列在管道中正常输出。
     return Console()
 
 
@@ -164,11 +162,10 @@ def _cmd_reload(args) -> None:
 
 
 def register_cli(subparser) -> None:
-    """Build the ``hermes bundles`` argparse tree.
+    """构建 ``hermes bundles`` 的 argparse 命令树。
 
-    Called from ``hermes_cli/main.py`` where it owns the top-level
-    ``bundles`` subparser. Keeping registration here means the bundles
-    subcommand's argparse tree lives next to its handlers.
+    从 ``hermes_cli/main.py`` 中调用，负责顶层 ``bundles`` 子解析器的注册。
+    将注册逻辑放在此处，使 bundles 子命令的 argparse 树与其处理器紧密相连。
     """
     subs = subparser.add_subparsers(dest="bundles_action")
 
@@ -215,12 +212,12 @@ def register_cli(subparser) -> None:
     )
     p_reload.set_defaults(_bundles_handler=_cmd_reload)
 
-    # Ensure a fresh scan when any bundles subcommand runs.
+    # 确保在任何 bundles 子命令运行时进行一次新的扫描。
     scan_bundles()
 
 
 def bundles_command(args) -> None:
-    """Dispatch ``hermes bundles <subcommand>`` to the right handler."""
+    """将 ``hermes bundles <subcommand>`` 分发给对应的处理器。"""
     handler = getattr(args, "_bundles_handler", None)
     if handler is None:
         # No subcommand given — default to list.

@@ -1,25 +1,25 @@
-# Distributed Evaluation
+# 分布式评估
 
-Guide to running evaluation across multiple GPUs using data parallelism and tensor/pipeline parallelism.
+使用数据并行、张量/流水线并行跨多个 GPU 运行评估的指南。
 
-## Overview
+## 概览
 
-Distributed evaluation speeds up benchmarking by:
-- **Data Parallelism**: Split evaluation samples across GPUs (each GPU has full model copy)
-- **Tensor Parallelism**: Split model weights across GPUs (for large models)
-- **Pipeline Parallelism**: Split model layers across GPUs (for very large models)
+分布式评估通过以下方式加速基准测试：
+- **数据并行**：把评估样本切分到各 GPU（每张 GPU 拥有完整的模型副本）
+- **张量并行**：把模型权重切分到各 GPU（用于大模型）
+- **流水线并行**：把模型层切分到各 GPU（用于超大模型）
 
-**When to use**:
-- Data Parallel: Model fits on single GPU, want faster evaluation
-- Tensor/Pipeline Parallel: Model too large for single GPU
+**何时使用**：
+- 数据并行：模型装得下单张 GPU，想要更快的评估
+- 张量/流水线并行：模型对单张 GPU 太大
 
-## HuggingFace Models (`hf`)
+## HuggingFace 模型（`hf`）
 
-### Data Parallelism (Recommended)
+### 数据并行（推荐）
 
-Each GPU loads a full copy of the model and processes a subset of evaluation data.
+每张 GPU 加载完整的模型副本，并处理一部分评估数据。
 
-**Single Node (8 GPUs)**:
+**单节点（8 张 GPU）**：
 ```bash
 accelerate launch --multi_gpu --num_processes 8 \
   -m lm_eval --model hf \
@@ -28,15 +28,15 @@ accelerate launch --multi_gpu --num_processes 8 \
   --batch_size 16
 ```
 
-**Speedup**: Near-linear (8 GPUs = ~8× faster)
+**加速比**：近线性（8 张 GPU = 约 8× 加速）
 
-**Memory**: Each GPU needs full model (7B model ≈ 14GB × 8 = 112GB total)
+**显存**：每张 GPU 都需要完整模型（7B 模型 ≈ 14GB × 8 = 112GB 总计）
 
-### Tensor Parallelism (Model Sharding)
+### 张量并行（模型分片）
 
-Split model weights across GPUs for models too large for single GPU.
+把模型权重切分到各 GPU，用于单卡装不下的大模型。
 
-**Without accelerate launcher**:
+**不用 accelerate 启动器**：
 ```bash
 lm_eval --model hf \
   --model_args \
@@ -47,9 +47,9 @@ lm_eval --model hf \
   --batch_size 8
 ```
 
-**With 8 GPUs**: 70B model (140GB) / 8 = 17.5GB per GPU ✅
+**用 8 张 GPU**：70B 模型（140GB）/ 8 = 每张 GPU 17.5GB ✅
 
-**Advanced sharding**:
+**进阶分片**：
 ```bash
 lm_eval --model hf \
   --model_args \
@@ -62,17 +62,17 @@ lm_eval --model hf \
   --tasks mmlu
 ```
 
-**Options**:
-- `device_map_option`: `"auto"` (default), `"balanced"`, `"balanced_low_0"`
-- `max_memory_per_gpu`: Max memory per GPU (e.g., `"40GB"`)
-- `max_cpu_memory`: Max CPU memory for offloading
-- `offload_folder`: Disk offloading directory
+**选项**：
+- `device_map_option`：`"auto"`（默认）、`"balanced"`、`"balanced_low_0"`
+- `max_memory_per_gpu`：每张 GPU 的最大显存（如 `"40GB"`）
+- `max_cpu_memory`：用于卸载的最大 CPU 内存
+- `offload_folder`：磁盘卸载目录
 
-### Combined Data + Tensor Parallelism
+### 数据并行 + 张量并行组合
 
-Use both for very large models.
+对超大模型同时使用两者。
 
-**Example: 70B model on 16 GPUs (2 copies, 8 GPUs each)**:
+**示例：70B 模型用 16 张 GPU（2 份副本，每份 8 张 GPU）**：
 ```bash
 accelerate launch --multi_gpu --num_processes 2 \
   -m lm_eval --model hf \
@@ -84,11 +84,11 @@ accelerate launch --multi_gpu --num_processes 2 \
   --batch_size 8
 ```
 
-**Result**: 2× speedup from data parallelism, 70B model fits via tensor parallelism
+**结果**：数据并行带来 2× 加速，张量并行让 70B 模型装得下
 
-### Configuration with `accelerate config`
+### 用 `accelerate config` 配置
 
-Create `~/.cache/huggingface/accelerate/default_config.yaml`:
+创建 `~/.cache/huggingface/accelerate/default_config.yaml`：
 ```yaml
 compute_environment: LOCAL_MACHINE
 distributed_type: MULTI_GPU
@@ -98,20 +98,20 @@ gpu_ids: all
 mixed_precision: bf16
 ```
 
-**Then run**:
+**然后运行**：
 ```bash
 accelerate launch -m lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
   --tasks mmlu
 ```
 
-## vLLM Models (`vllm`)
+## vLLM 模型（`vllm`）
 
-vLLM provides highly optimized distributed inference.
+vLLM 提供高度优化的分布式推理。
 
-### Tensor Parallelism
+### 张量并行
 
-**Single Node (4 GPUs)**:
+**单节点（4 张 GPU）**：
 ```bash
 lm_eval --model vllm \
   --model_args \
@@ -123,11 +123,11 @@ lm_eval --model vllm \
   --batch_size auto
 ```
 
-**Memory**: 70B model split across 4 GPUs = ~35GB per GPU
+**显存**：70B 模型切分到 4 张 GPU = 每张 GPU 约 35GB
 
-### Data Parallelism
+### 数据并行
 
-**Multiple model replicas**:
+**多个模型副本**：
 ```bash
 lm_eval --model vllm \
   --model_args \
@@ -139,11 +139,11 @@ lm_eval --model vllm \
   --batch_size auto
 ```
 
-**Result**: 4 model replicas = 4× throughput
+**结果**：4 个模型副本 = 4× 吞吐
 
-### Combined Tensor + Data Parallelism
+### 张量 + 数据并行组合
 
-**Example: 8 GPUs = 4 TP × 2 DP**:
+**示例：8 张 GPU = 4 TP × 2 DP**：
 ```bash
 lm_eval --model vllm \
   --model_args \
@@ -156,17 +156,17 @@ lm_eval --model vllm \
   --batch_size auto
 ```
 
-**Result**: 70B model fits (TP=4), 2× speedup (DP=2)
+**结果**：70B 模型装得下（TP=4），2× 加速（DP=2）
 
-### Multi-Node vLLM
+### 多节点 vLLM
 
-vLLM doesn't natively support multi-node. Use Ray:
+vLLM 原生不支持多节点。使用 Ray：
 
 ```bash
-# Start Ray cluster
+# 启动 Ray 集群
 ray start --head --port=6379
 
-# Run evaluation
+# 运行评估
 lm_eval --model vllm \
   --model_args \
     pretrained=meta-llama/Llama-2-70b-hf,\
@@ -175,11 +175,11 @@ lm_eval --model vllm \
   --tasks mmlu
 ```
 
-## NVIDIA NeMo Models (`nemo_lm`)
+## NVIDIA NeMo 模型（`nemo_lm`）
 
-### Data Replication
+### 数据复制
 
-**8 replicas on 8 GPUs**:
+**8 份副本在 8 张 GPU 上**：
 ```bash
 torchrun --nproc-per-node=8 --no-python \
   lm_eval --model nemo_lm \
@@ -190,11 +190,11 @@ torchrun --nproc-per-node=8 --no-python \
   --batch_size 32
 ```
 
-**Speedup**: Near-linear (8× faster)
+**加速比**：近线性（8× 加速）
 
-### Tensor Parallelism
+### 张量并行
 
-**4-way tensor parallelism**:
+**4 路张量并行**：
 ```bash
 torchrun --nproc-per-node=4 --no-python \
   lm_eval --model nemo_lm \
@@ -206,9 +206,9 @@ torchrun --nproc-per-node=4 --no-python \
   --batch_size 16
 ```
 
-### Pipeline Parallelism
+### 流水线并行
 
-**2 TP × 2 PP on 4 GPUs**:
+**2 TP × 2 PP 在 4 张 GPU 上**：
 ```bash
 torchrun --nproc-per-node=4 --no-python \
   lm_eval --model nemo_lm \
@@ -221,15 +221,15 @@ torchrun --nproc-per-node=4 --no-python \
   --batch_size 8
 ```
 
-**Constraint**: `devices = TP × PP`
+**约束**：`devices = TP × PP`
 
-### Multi-Node NeMo
+### 多节点 NeMo
 
-Currently not supported by lm-evaluation-harness.
+lm-evaluation-harness 目前不支持。
 
-## SGLang Models (`sglang`)
+## SGLang 模型（`sglang`）
 
-### Tensor Parallelism
+### 张量并行
 
 ```bash
 lm_eval --model sglang \
@@ -241,9 +241,9 @@ lm_eval --model sglang \
   --batch_size auto
 ```
 
-### Data Parallelism (Deprecated)
+### 数据并行（已弃用）
 
-**Note**: SGLang is deprecating data parallelism. Use tensor parallelism instead.
+**注意**：SGLang 正在弃用数据并行。请改用张量并行。
 
 ```bash
 lm_eval --model sglang \
@@ -254,75 +254,75 @@ lm_eval --model sglang \
   --tasks mmlu
 ```
 
-## Performance Comparison
+## 性能对比
 
-### 70B Model Evaluation (MMLU, 5-shot)
+### 70B 模型评估（MMLU，5-shot）
 
-| Method | GPUs | Time | Memory/GPU | Notes |
+| 方法 | GPU 数 | 耗时 | 每张 GPU 显存 | 备注 |
 |--------|------|------|------------|-------|
-| HF (no parallel) | 1 | 8 hours | 140GB (OOM) | Won't fit |
-| HF (TP=8) | 8 | 2 hours | 17.5GB | Slower, fits |
-| HF (DP=8) | 8 | 1 hour | 140GB (OOM) | Won't fit |
-| vLLM (TP=4) | 4 | 30 min | 35GB | Fast! |
-| vLLM (TP=4, DP=2) | 8 | 15 min | 35GB | Fastest |
+| HF（不并行） | 1 | 8 小时 | 140GB（OOM） | 装不下 |
+| HF（TP=8） | 8 | 2 小时 | 17.5GB | 较慢，装得下 |
+| HF（DP=8） | 8 | 1 小时 | 140GB（OOM） | 装不下 |
+| vLLM（TP=4） | 4 | 30 分钟 | 35GB | 快！ |
+| vLLM（TP=4，DP=2） | 8 | 15 分钟 | 35GB | 最快 |
 
-### 7B Model Evaluation (Multiple Tasks)
+### 7B 模型评估（多任务）
 
-| Method | GPUs | Time | Speedup |
+| 方法 | GPU 数 | 耗时 | 加速比 |
 |--------|------|------|---------|
-| HF (single) | 1 | 4 hours | 1× |
-| HF (DP=4) | 4 | 1 hour | 4× |
-| HF (DP=8) | 8 | 30 min | 8× |
-| vLLM (DP=8) | 8 | 15 min | 16× |
+| HF（单卡） | 1 | 4 小时 | 1× |
+| HF（DP=4） | 4 | 1 小时 | 4× |
+| HF（DP=8） | 8 | 30 分钟 | 8× |
+| vLLM（DP=8） | 8 | 15 分钟 | 16× |
 
-**Takeaway**: vLLM is significantly faster than HuggingFace for inference.
+**结论**：在推理方面，vLLM 比 HuggingFace 快得多。
 
-## Choosing Parallelism Strategy
+## 选择并行策略
 
-### Decision Tree
+### 决策树
 
 ```
-Model fits on single GPU?
-├─ YES: Use data parallelism
-│   ├─ HF: accelerate launch --multi_gpu --num_processes N
-│   └─ vLLM: data_parallel_size=N (fastest)
+模型装得进单张 GPU 吗？
+├─ 是：使用数据并行
+│   ├─ HF：accelerate launch --multi_gpu --num_processes N
+│   └─ vLLM：data_parallel_size=N（最快）
 │
-└─ NO: Use tensor/pipeline parallelism
-    ├─ Model < 70B:
-    │   └─ vLLM: tensor_parallel_size=4
-    ├─ Model 70-175B:
-    │   ├─ vLLM: tensor_parallel_size=8
-    │   └─ Or HF: parallelize=True
-    └─ Model > 175B:
-        └─ Contact framework authors
+└─ 否：使用张量/流水线并行
+    ├─ 模型 < 70B：
+    │   └─ vLLM：tensor_parallel_size=4
+    ├─ 模型 70-175B：
+    │   ├─ vLLM：tensor_parallel_size=8
+    │   └─ 或 HF：parallelize=True
+    └─ 模型 > 175B：
+        └─ 联系框架作者
 ```
 
-### Memory Estimation
+### 显存估算
 
-**Rule of thumb**:
+**经验法则**：
 ```
-Memory (GB) = Parameters (B) × Precision (bytes) × 1.2 (overhead)
-```
-
-**Examples**:
-- 7B FP16: 7 × 2 × 1.2 = 16.8GB ✅ Fits A100 40GB
-- 13B FP16: 13 × 2 × 1.2 = 31.2GB ✅ Fits A100 40GB
-- 70B FP16: 70 × 2 × 1.2 = 168GB ❌ Need TP=4 or TP=8
-- 70B BF16: 70 × 2 × 1.2 = 168GB (same as FP16)
-
-**With tensor parallelism**:
-```
-Memory per GPU = Total Memory / TP
+显存（GB）= 参数量（B）× 精度（字节）× 1.2（开销）
 ```
 
-- 70B on 4 GPUs: 168GB / 4 = 42GB per GPU ✅
-- 70B on 8 GPUs: 168GB / 8 = 21GB per GPU ✅
+**示例**：
+- 7B FP16：7 × 2 × 1.2 = 16.8GB ✅ 装得进 A100 40GB
+- 13B FP16：13 × 2 × 1.2 = 31.2GB ✅ 装得进 A100 40GB
+- 70B FP16：70 × 2 × 1.2 = 168GB ❌ 需要 TP=4 或 TP=8
+- 70B BF16：70 × 2 × 1.2 = 168GB（与 FP16 相同）
 
-## Multi-Node Evaluation
+**使用张量并行时**：
+```
+每张 GPU 显存 = 总显存 / TP
+```
 
-### HuggingFace with SLURM
+- 70B 用 4 张 GPU：168GB / 4 = 每张 GPU 42GB ✅
+- 70B 用 8 张 GPU：168GB / 8 = 每张 GPU 21GB ✅
 
-**Submit job**:
+## 多节点评估
+
+### 使用 SLURM 的 HuggingFace
+
+**提交作业**：
 ```bash
 #!/bin/bash
 #SBATCH --nodes=4
@@ -337,14 +337,14 @@ srun accelerate launch --multi_gpu \
   --batch_size 16
 ```
 
-**Submit**:
+**提交**：
 ```bash
 sbatch eval_job.sh
 ```
 
-### Manual Multi-Node Setup
+### 手动多节点设置
 
-**On each node, run**:
+**在每个节点上，运行**：
 ```bash
 accelerate launch \
   --multi_gpu \
@@ -358,126 +358,126 @@ accelerate launch \
   --tasks mmlu
 ```
 
-**Environment variables**:
-- `MASTER_IP`: IP of rank 0 node
-- `NODE_RANK`: 0, 1, 2, 3 for each node
+**环境变量**：
+- `MASTER_IP`：rank 0 节点的 IP
+- `NODE_RANK`：每个节点分别为 0、1、2、3
 
-## Best Practices
+## 最佳实践
 
-### 1. Start Small
+### 1. 从小开始
 
-Test on small sample first:
+先在小样本上测试：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-70b-hf,parallelize=True \
   --tasks mmlu \
-  --limit 100  # Just 100 samples
+  --limit 100  # 仅 100 个样本
 ```
 
-### 2. Monitor GPU Usage
+### 2. 监控 GPU 使用率
 
 ```bash
-# Terminal 1: Run evaluation
+# 终端 1：运行评估
 lm_eval --model hf ...
 
-# Terminal 2: Monitor
+# 终端 2：监控
 watch -n 1 nvidia-smi
 ```
 
-Look for:
-- GPU utilization > 90%
-- Memory usage stable
-- All GPUs active
+关注：
+- GPU 利用率 > 90%
+- 显存使用稳定
+- 所有 GPU 都活跃
 
-### 3. Optimize Batch Size
+### 3. 优化 batch size
 
 ```bash
-# Auto batch size (recommended)
+# 自动 batch size（推荐）
 --batch_size auto
 
-# Or tune manually
---batch_size 16  # Start here
---batch_size 32  # Increase if memory allows
+# 或手动调
+--batch_size 16  # 从这里开始
+--batch_size 32  # 显存允许时再加大
 ```
 
-### 4. Use Mixed Precision
+### 4. 使用混合精度
 
 ```bash
---model_args dtype=bfloat16  # Faster, less memory
+--model_args dtype=bfloat16  # 更快，更省显存
 ```
 
-### 5. Check Communication
+### 5. 检查通信
 
-For data parallelism, check network bandwidth:
+对于数据并行，检查网络带宽：
 ```bash
-# Should see InfiniBand or high-speed network
+# 应能看到 InfiniBand 或高速网络
 nvidia-smi topo -m
 ```
 
-## Troubleshooting
+## 故障排查
 
-### "CUDA out of memory"
+### 「CUDA out of memory」（CUDA 内存不足）
 
-**Solutions**:
-1. Increase tensor parallelism:
+**解决方案**：
+1. 增加张量并行度：
    ```bash
-   --model_args tensor_parallel_size=8  # Was 4
+   --model_args tensor_parallel_size=8  # 原来是 4
    ```
 
-2. Reduce batch size:
+2. 降低 batch size：
    ```bash
-   --batch_size 4  # Was 16
+   --batch_size 4  # 原来是 16
    ```
 
-3. Lower precision:
+3. 降低精度：
    ```bash
-   --model_args dtype=int8  # Quantization
+   --model_args dtype=int8  # 量化
    ```
 
-### "NCCL error" or Hanging
+### 「NCCL error」或卡住
 
-**Check**:
-1. All GPUs visible: `nvidia-smi`
-2. NCCL installed: `python -c "import torch; print(torch.cuda.nccl.version())"`
-3. Network connectivity between nodes
+**检查**：
+1. 所有 GPU 可见：`nvidia-smi`
+2. 已安装 NCCL：`python -c "import torch; print(torch.cuda.nccl.version())"`
+3. 节点间网络连通
 
-**Fix**:
+**修复**：
 ```bash
-export NCCL_DEBUG=INFO  # Enable debug logging
-export NCCL_IB_DISABLE=0  # Use InfiniBand if available
+export NCCL_DEBUG=INFO  # 启用调试日志
+export NCCL_IB_DISABLE=0  # 如可用则使用 InfiniBand
 ```
 
-### Slow Evaluation
+### 评估缓慢
 
-**Possible causes**:
-1. **Data loading bottleneck**: Preprocess dataset
-2. **Low GPU utilization**: Increase batch size
-3. **Communication overhead**: Reduce parallelism degree
+**可能原因**：
+1. **数据加载瓶颈**：预处理数据集
+2. **GPU 利用率低**：增大 batch size
+3. **通信开销**：降低并行度
 
-**Profile**:
+**性能剖析**：
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
   --tasks mmlu \
   --limit 100 \
-  --log_samples  # Check timing
+  --log_samples  # 检查耗时
 ```
 
-### GPUs Imbalanced
+### GPU 不均衡
 
-**Symptom**: GPU 0 at 100%, others at 50%
+**症状**：GPU 0 在 100%，其他在 50%
 
-**Solution**: Use `device_map_option=balanced`:
+**解决方案**：使用 `device_map_option=balanced`：
 ```bash
 --model_args parallelize=True,device_map_option=balanced
 ```
 
-## Example Configurations
+## 示例配置
 
-### Small Model (7B) - Fast Evaluation
+### 小模型（7B）—— 快速评估
 
 ```bash
-# 8 A100s, data parallel
+# 8 张 A100，数据并行
 accelerate launch --multi_gpu --num_processes 8 \
   -m lm_eval --model hf \
   --model_args \
@@ -487,13 +487,13 @@ accelerate launch --multi_gpu --num_processes 8 \
   --num_fewshot 5 \
   --batch_size 32
 
-# Time: ~30 minutes
+# 耗时：约 30 分钟
 ```
 
-### Large Model (70B) - vLLM
+### 大模型（70B）—— vLLM
 
 ```bash
-# 8 H100s, tensor parallel
+# 8 张 H100，张量并行
 lm_eval --model vllm \
   --model_args \
     pretrained=meta-llama/Llama-2-70b-hf,\
@@ -504,16 +504,16 @@ lm_eval --model vllm \
   --num_fewshot 5 \
   --batch_size auto
 
-# Time: ~1 hour
+# 耗时：约 1 小时
 ```
 
-### Very Large Model (175B+)
+### 超大模型（175B+）
 
-**Requires specialized setup - contact framework maintainers**
+**需要专门设置——请联系框架维护者**
 
-## References
+## 参考
 
-- HuggingFace Accelerate: https://huggingface.co/docs/accelerate/
-- vLLM docs: https://docs.vllm.ai/
-- NeMo docs: https://docs.nvidia.com/nemo-framework/
-- lm-eval distributed guide: `docs/model_guide.md`
+- HuggingFace Accelerate：https://huggingface.co/docs/accelerate/
+- vLLM 文档：https://docs.vllm.ai/
+- NeMo 文档：https://docs.nvidia.com/nemo-framework/
+- lm-eval 分布式指南：`docs/model_guide.md`

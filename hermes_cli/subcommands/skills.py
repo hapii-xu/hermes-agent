@@ -1,7 +1,7 @@
-"""``hermes skills`` subcommand parser.
+"""``hermes skills`` 子命令解析器。
 
-Extracted from ``hermes_cli/main.py:main()`` (god-file Phase 2 follow-up).
-Handler injected to avoid importing ``main``.
+从 ``hermes_cli/main.py:main()`` 中提取（god-file 阶段 2 后续）。
+通过注入处理器避免导入 ``main``。
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from typing import Callable
 
 
 def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
-    """Attach the ``skills`` subcommand to ``subparsers``."""
+    """将 ``skills`` 子命令附加到 ``subparsers``。"""
     skills_parser = subparsers.add_parser(
         "skills",
         help="Search, install, configure, and manage skills",
@@ -290,7 +290,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
     tap_rm = tap_subparsers.add_parser("remove", help="Remove a tap")
     tap_rm.add_argument("name", help="Tap name to remove")
 
-    # config sub-action: interactive enable/disable
+    # config 子操作：交互式启用/禁用
     skills_subparsers.add_parser(
         "config",
         help="Interactive skill configuration — enable/disable individual skills",

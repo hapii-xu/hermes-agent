@@ -1,17 +1,16 @@
-"""Minimal LSP JSON-RPC 2.0 framer over async streams.
+"""基于异步流的轻量 LSP JSON-RPC 2.0 分帧器。
 
-LSP wire format:
+LSP 线路格式：
 
     Content-Length: <bytes>\\r\\n
     \\r\\n
     <utf-8 JSON body>
 
-The body is a JSON-RPC 2.0 envelope: request, response, or notification.
+消息体是 JSON-RPC 2.0 信封：request、response 或 notification。
 
-This module replaces what ``vscode-jsonrpc/node`` would do in a
-TypeScript implementation.  We keep it deliberately small — just the
-framer + envelope helpers — so :class:`agent.lsp.client.LSPClient` can
-focus on protocol semantics.
+本模块替代了 TypeScript 实现中 ``vscode-jsonrpc/node`` 的职责。
+我们刻意保持精简——仅提供分帧和信封辅助——让 :class:`agent.lsp.client.LSPClient`
+可以专注于协议语义。
 """
 from __future__ import annotations
 
@@ -22,7 +21,7 @@ from typing import Any, Optional, Tuple
 
 logger = logging.getLogger("agent.lsp.protocol")
 
-# LSP error codes we care about.  Full list in
+# 我们关心的 LSP 错误码。完整列表见
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#errorCodes
 ERROR_CONTENT_MODIFIED = -32801
 ERROR_REQUEST_CANCELLED = -32800
@@ -30,18 +29,17 @@ ERROR_METHOD_NOT_FOUND = -32601
 
 
 class LSPProtocolError(Exception):
-    """Raised when the wire protocol is violated.
+    """当线路协议被违反时抛出。
 
-    Distinct from :class:`LSPRequestError` which represents a server
-    returning a JSON-RPC error response — that's protocol-conformant.
-    This exception means the framing or envelope itself is broken.
+    与 :class:`LSPRequestError` 不同，后者表示服务器返回了 JSON-RPC
+    错误响应——这是符合协议的行为。本异常表示分帧或信封本身已损坏。
     """
 
 
 class LSPRequestError(Exception):
-    """Raised when an LSP request returns an error response.
+    """当 LSP 请求返回错误响应时抛出。
 
-    Carries the JSON-RPC ``code``, ``message``, and optional ``data``.
+    携带 JSON-RPC 的 ``code``、``message`` 和可选的 ``data``。
     """
 
     def __init__(self, code: int, message: str, data: Any = None) -> None:
@@ -52,11 +50,10 @@ class LSPRequestError(Exception):
 
 
 def encode_message(obj: dict) -> bytes:
-    """Encode a JSON-RPC envelope as a Content-Length framed byte string.
+    """将 JSON-RPC 信封编码为 Content-Length 分帧的字节串。
 
-    The body is encoded as compact UTF-8 JSON (no spaces between
-    separators) — matches what ``vscode-jsonrpc`` emits and keeps the
-    Content-Length count exact.
+    消息体编码为紧凑的 UTF-8 JSON（分隔符之间无空格）——与
+    ``vscode-jsonrpc`` 的输出一致，确保 Content-Length 计数精确。
     """
     body = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
@@ -64,13 +61,12 @@ def encode_message(obj: dict) -> bytes:
 
 
 async def read_message(reader: asyncio.StreamReader) -> Optional[dict]:
-    """Read one Content-Length framed JSON-RPC message from the stream.
+    """从流中读取一条 Content-Length 分帧的 JSON-RPC 消息。
 
-    Returns ``None`` on clean EOF (server closed stdout cleanly between
-    messages — typical shutdown).  Raises :class:`LSPProtocolError` on
-    malformed framing.
+    在正常 EOF 时返回 ``None``（服务器在消息之间干净地关闭了 stdout
+    ——典型的关闭流程）。在分帧格式错误时抛出 :class:`LSPProtocolError`。
 
-    The reader is advanced to just past the JSON body on success.
+    成功时读取位置会前进到 JSON 消息体之后。
     """
     headers: dict = {}
     header_bytes = 0
@@ -78,16 +74,15 @@ async def read_message(reader: asyncio.StreamReader) -> Optional[dict]:
         try:
             line = await reader.readuntil(b"\r\n")
         except asyncio.IncompleteReadError as e:
-            # EOF while reading headers.  If we hadn't started a header
-            # block, treat as clean EOF; otherwise the framing is bad.
+            # 读取头部时遇到 EOF。如果尚未开始头部块，视为正常 EOF；
+            # 否则视为分帧损坏。
             if not e.partial and not headers:
                 return None
             raise LSPProtocolError(
                 f"unexpected EOF while reading LSP headers (partial={e.partial!r})"
             ) from e
-        # Defensive cap against a server streaming headers without ever
-        # emitting CRLF-CRLF.  Caps total header bytes at 8 KiB — a
-        # well-behaved server fits in well under 200 bytes.
+        # 防御性上限：防止服务器持续发送头部但从不发出 CRLF-CRLF。
+        # 将总头部字节数限制在 8 KiB——正常服务器远低于 200 字节。
         header_bytes += len(line)
         if header_bytes > 8192:
             raise LSPProtocolError(
@@ -111,7 +106,7 @@ async def read_message(reader: asyncio.StreamReader) -> Optional[dict]:
         n = int(cl)
     except ValueError as e:
         raise LSPProtocolError(f"non-integer Content-Length: {cl!r}") from e
-    if n < 0 or n > 64 * 1024 * 1024:  # 64 MiB sanity cap
+    if n < 0 or n > 64 * 1024 * 1024:  # 64 MiB 安全检查上限
         raise LSPProtocolError(f"unreasonable Content-Length: {n}")
 
     try:
@@ -130,7 +125,7 @@ async def read_message(reader: asyncio.StreamReader) -> Optional[dict]:
 
 
 def make_request(req_id: int, method: str, params: Any) -> dict:
-    """Build a JSON-RPC 2.0 request envelope."""
+    """构建 JSON-RPC 2.0 请求信封。"""
     msg: dict = {"jsonrpc": "2.0", "id": req_id, "method": method}
     if params is not None:
         msg["params"] = params
@@ -138,7 +133,7 @@ def make_request(req_id: int, method: str, params: Any) -> dict:
 
 
 def make_notification(method: str, params: Any) -> dict:
-    """Build a JSON-RPC 2.0 notification envelope (no ``id``)."""
+    """构建 JSON-RPC 2.0 通知信封（无 ``id``）。"""
     msg: dict = {"jsonrpc": "2.0", "method": method}
     if params is not None:
         msg["params"] = params
@@ -146,12 +141,12 @@ def make_notification(method: str, params: Any) -> dict:
 
 
 def make_response(req_id: Any, result: Any) -> dict:
-    """Build a JSON-RPC 2.0 success response envelope."""
+    """构建 JSON-RPC 2.0 成功响应信封。"""
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
 def make_error_response(req_id: Any, code: int, message: str, data: Any = None) -> dict:
-    """Build a JSON-RPC 2.0 error response envelope."""
+    """构建 JSON-RPC 2.0 错误响应信封。"""
     err: dict = {"code": code, "message": message}
     if data is not None:
         err["data"] = data
@@ -159,11 +154,11 @@ def make_error_response(req_id: Any, code: int, message: str, data: Any = None) 
 
 
 def classify_message(msg: dict) -> Tuple[str, Any]:
-    """Return ``(kind, key)`` where kind is one of ``request``,
-    ``response``, ``notification``, ``invalid``.
+    """返回 ``(kind, key)``，其中 kind 为 ``request``、
+    ``response``、``notification``、``invalid`` 之一。
 
-    The key is the request id for request/response, the method name
-    for notifications, and ``None`` for invalid messages.
+    对于 request/response，key 为请求 id；对于 notification，
+    key 为方法名；对于 invalid 消息，key 为 ``None``。
     """
     if not isinstance(msg, dict):
         return "invalid", None

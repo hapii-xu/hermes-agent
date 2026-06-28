@@ -1,7 +1,7 @@
-"""Shared constants for Hermes Agent.
+"""Hermes Agent 的共享常量。
 
-Import-safe module with no dependencies — can be imported from anywhere
-without risk of circular imports.
+无依赖的导入安全模块——可从任意位置导入，
+不存在循环导入风险。
 """
 
 import os
@@ -20,22 +20,22 @@ _HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
 
 
 def set_hermes_home_override(path: str | Path | None) -> Token:
-    """Set a context-local Hermes home override and return its reset token.
+    """设置上下文本地的 Hermes home 覆盖值，并返回其重置 token。
 
-    This is for in-process, per-task scoping.  It deliberately does not mutate
-    ``os.environ`` because that is shared by every thread in the process.
+    用于进程内、按任务的作用域隔离。故意不修改 ``os.environ``，
+    因为它被进程中的所有线程共享。
     """
     value: str | object = _UNSET if path is None else str(path)
     return _HERMES_HOME_OVERRIDE.set(value)
 
 
 def reset_hermes_home_override(token: Token) -> None:
-    """Restore the previous context-local Hermes home override."""
+    """恢复之前的上下文本地 Hermes home 覆盖值。"""
     _HERMES_HOME_OVERRIDE.reset(token)
 
 
 def get_hermes_home_override() -> str | None:
-    """Return the active context-local Hermes home override, if any."""
+    """返回当前活跃的上下文本地 Hermes home 覆盖值（如果存在）。"""
     override = _HERMES_HOME_OVERRIDE.get()
     if override is _UNSET or not override:
         return None
@@ -43,7 +43,7 @@ def get_hermes_home_override() -> str | None:
 
 
 def _get_platform_default_hermes_home() -> Path:
-    """Return the platform-native default Hermes home path."""
+    """返回平台原生的默认 Hermes home 路径。"""
     if sys.platform == "win32":
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
@@ -52,20 +52,19 @@ def _get_platform_default_hermes_home() -> Path:
 
 
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: platform-native path).
+    """返回 Hermes home 目录（默认为平台原生路径）。
 
-    Reads HERMES_HOME env var, falls back to the platform-native default.
-    This is the single source of truth — all other copies should import this.
+    读取 HERMES_HOME 环境变量，回退到平台原生默认值。
+    这是唯一的事实来源——所有其他副本均应导入此函数。
 
-    When ``HERMES_HOME`` is unset but an ``active_profile`` file indicates
-    a non-default profile is active, logs a loud one-shot warning to
-    ``errors.log`` so cross-profile data corruption is diagnosable instead
-    of silent.  Behavior is unchanged otherwise — we still return
-    the platform-native default — because raising here would brick 30+ module-level
-    callers that import this at load time.  Subprocess spawners are
-    expected to propagate ``HERMES_HOME`` explicitly (see the systemd
-    template in ``hermes_cli/gateway.py`` and the kanban dispatcher in
-    ``hermes_cli/kanban_db.py``).  See https://github.com/NousResearch/hermes-agent/issues/18594.
+    当 ``HERMES_HOME`` 未设置但 ``active_profile`` 文件表明
+    某个非默认 profile 处于激活状态时，会向 ``errors.log``
+    写入一次性醒目警告，以便跨 profile 数据损坏可被诊断而非静默发生。
+    否则行为不变——仍返回平台原生默认值——因为在此抛出异常会导致
+    30+ 个在加载时导入本模块的模块级调用者崩溃。子进程派发器
+    应显式传播 ``HERMES_HOME``（参见 ``hermes_cli/gateway.py`` 中的
+    systemd 模板以及 ``hermes_cli/kanban_db.py`` 中的 kanban 调度器）。
+    参见 https://github.com/NousResearch/hermes-agent/issues/18594。
     """
     override = get_hermes_home_override()
     if override:
@@ -75,8 +74,8 @@ def get_hermes_home() -> Path:
     if val:
         return Path(val)
 
-    # Guard: if a non-default profile is sticky-active, warn once that
-    # the fallback to the default profile is almost certainly wrong.
+    # 守卫：若某个非默认 profile 处于持久激活状态，则警告一次，
+    # 回退到默认 profile 几乎肯定是错误的。
     global _profile_fallback_warned
     if not _profile_fallback_warned:
         try:
@@ -87,11 +86,9 @@ def get_hermes_home() -> Path:
             active = ""
         if active and active != "default":
             _profile_fallback_warned = True
-            # Write directly to stderr.  We intentionally do NOT route this
-            # through ``logging`` because (a) this function is called at
-            # module-import time from 30+ sites, often before logging is
-            # configured, and (b) root-logger propagation would double-emit
-            # on consoles where a StreamHandler is already attached.
+            # 直接写入 stderr。我们故意不通过 ``logging`` 路由，
+            # 因为：(a) 该函数在模块导入时被 30+ 处调用，通常在日志配置之前；
+            # (b) root-logger 传播会在已附加 StreamHandler 的控制台上重复输出。
             msg = (
                 f"[HERMES_HOME fallback] HERMES_HOME is unset but active "
                 f"profile is {active!r}. Falling back to {fallback_home}, which "
@@ -110,21 +107,20 @@ def get_hermes_home() -> Path:
 
 
 def get_default_hermes_root() -> Path:
-    """Return the root Hermes directory for profile-level operations.
+    """返回用于 profile 级操作的 Hermes 根目录。
 
-    In standard deployments this is the platform-native Hermes home
-    (``~/.hermes`` on POSIX, ``%LOCALAPPDATA%\\hermes`` on native Windows).
+    在标准部署中，这是平台原生的 Hermes home
+    （POSIX 上为 ``~/.hermes``，原生 Windows 上为 ``%LOCALAPPDATA%\\hermes``）。
 
-    In Docker or custom deployments where ``HERMES_HOME`` points outside
-    ``~/.hermes`` (e.g. ``/opt/data``), returns ``HERMES_HOME`` directly
-    — that IS the root.
+    在 Docker 或自定义部署中，若 ``HERMES_HOME`` 指向 ``~/.hermes`` 之外
+    （例如 ``/opt/data``），则直接返回 ``HERMES_HOME``——那就是根目录。
 
-    In profile mode where ``HERMES_HOME`` is ``<root>/profiles/<name>``,
-    returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.hermes/profiles/coder``) and Docker
-    (``/opt/data/profiles/coder``) layouts.
+    在 profile 模式下，``HERMES_HOME`` 为 ``<root>/profiles/<name>`` 时，
+    返回 ``<root>``，以便 ``profile list`` 能看到所有 profile。
+    同时支持标准（``~/.hermes/profiles/coder``）和 Docker
+    （``/opt/data/profiles/coder``）两种目录结构。
 
-    Import-safe — no dependencies beyond stdlib.
+    导入安全——除标准库外无其他依赖。
     """
     native_home = _get_platform_default_hermes_home()
     env_home = os.environ.get("HERMES_HOME", "")

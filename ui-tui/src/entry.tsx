@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --max-old-space-size=8192 --expose-gc
-// Must be first import. If the user explicitly opts into truecolor, this
-// nudges chalk / supports-color before either package is initialized.
+// 必须是第一个 import。如果用户明确启用了 truecolor，这会
+// 在 chalk / supports-color 包初始化之前提示它们。
 import './lib/forceTruecolor.js'
 
 import type { FrameEvent } from '@hermes/ink'
@@ -19,8 +19,8 @@ if (!process.stdin.isTTY) {
   process.exit(0)
 }
 
-// Start from a clean slate. If a previous TUI crashed or was kill -9'd, the
-// terminal tab can still have mouse/focus/paste modes enabled.
+// 从干净的状态开始。如果之前的 TUI 崩溃了或被 kill -9 杀掉了，
+// 终端标签页可能仍然启用着鼠标/焦点/粘贴模式。
 resetTerminalModes()
 
 // Final backstop for terminal cleanup. setupGracefulExit() resets modes on

@@ -1,6 +1,6 @@
-"""Shared concurrency helpers for plugin authors.
+"""插件作者的共享并发工具。
 
-The most common plugin footgun is the lazy process-wide singleton:
+插件最常见的陷阱是进程级懒加载单例：
 
     _client = None
 
@@ -8,25 +8,23 @@ The most common plugin footgun is the lazy process-wide singleton:
         global _client
         if _client is not None:
             return _client
-        _client = ExpensiveClient(...)   # <-- TOCTOU: two threads both run this
+        _client = ExpensiveClient(...)   # <-- TOCTOU：两个线程同时执行到这里
         return _client
 
-When two threads call ``get_client()`` before the singleton is set, both pass
-the ``is not None`` guard, both run the expensive initialization, and the
-second write clobbers the first — leaking whatever resource the first client
-opened (connections, file handles, background threads).
+当两个线程在单例设置之前都调用 ``get_client()`` 时，两者都通过
+``is not None`` 检查，都执行昂贵的初始化，第二次写入会覆盖第一次
+——导致第一个客户端打开的资源（连接、文件句柄、后台线程）泄漏。
 
-Multi-threaded agent sessions share one process (delegated tool calls,
-background workers, the self-improvement fork), so this race is reachable in
-practice. Rather than make every plugin author remember to hand-roll
-double-checked locking, this module gives them two thread-safe primitives:
+多线程 agent session 共享一个进程（委托 tool 调用、后台 worker、
+自我改进 fork），因此这个竞态条件在实践中是可能触发的。与其让每个插件
+作者都记住手动实现双重检查锁定，本模块为他们提供了两个线程安全的原语：
 
-* :func:`lazy_singleton` — decorator for the zero-arg accessor case.
-* :class:`SingletonSlot` — manual slot for accessors that build different
-  instances depending on a config/key argument.
+* :func:`lazy_singleton` — 零参数访问器场景的装饰器。
+* :class:`SingletonSlot` — 手动槽位，用于根据 config/key 参数构建不同
+  实例的访问器。
 
-Both are import-light (stdlib ``threading`` only) so any plugin can import
-them without dragging in heavyweight host modules.
+两者都是轻量导入（仅依赖 stdlib ``threading``），因此任何插件都可以导入
+它们而无需引入重量级的主机模块。
 """
 
 from __future__ import annotations
@@ -41,33 +39,33 @@ T = TypeVar("T")
 
 
 def lazy_singleton(factory: Callable[[], T]) -> Callable[[], T]:
-    """Wrap a zero-argument factory into a thread-safe lazy singleton accessor.
+    """将零参数工厂包装为线程安全的懒加载单例访问器。
 
-    The wrapped callable returns the same instance on every call; the factory
-    runs exactly once even under concurrent first calls, using double-checked
-    locking. A ``.reset()`` attribute is attached for tests/teardown.
+    包装后的可调用对象在每次调用时返回相同实例；即使并发首次调用，
+    工厂也仅执行一次，使用双重检查锁定。附加 ``.reset()`` 属性用于
+    测试/清理。
 
-    Example::
+    示例::
 
         @lazy_singleton
         def get_client():
             return ExpensiveClient(load_config())
 
-        client = get_client()   # built once, safe across threads
-        get_client.reset()      # drop the instance (next call rebuilds)
+        client = get_client()   # 构建一次，跨线程安全
+        get_client.reset()      # 丢弃实例（下次调用重新构建）
 
-    Note: if the factory raises, no instance is cached and the next call
-    retries (the lock is released either way).
+    注意：如果工厂抛出异常，不缓存任何实例，下次调用会重试
+    （无论如何锁都会被释放）。
     """
     lock = threading.Lock()
-    box: list = []  # one-element [instance]; empty == not yet built
+    box: list = []  # 单元素 [instance]；空 == 尚未构建
 
     @functools.wraps(factory)
     def accessor() -> T:
         if box:
             return box[0]
         with lock:
-            if box:  # re-check inside the lock
+            if box:  # 锁内重新检查
                 return box[0]
             instance = factory()
             box.append(instance)
@@ -82,15 +80,14 @@ def lazy_singleton(factory: Callable[[], T]) -> Callable[[], T]:
 
 
 class SingletonSlot(Generic[T]):
-    """Thread-safe lazy slot for accessors that take a build argument.
+    """线程安全的懒加载槽位，用于接受构建参数的访问器。
 
-    Use this when the cached instance depends on a config/key passed to the
-    accessor (so a bare zero-arg :func:`lazy_singleton` doesn't fit). The slot
-    caches the first successfully-built instance and ignores the argument on
-    subsequent calls — matching the established "first config wins" singleton
-    semantics most plugins already rely on.
+    当缓存的实例取决于传递给访问器的 config/key 时使用此槽位
+    （因此裸零参数 :func:`lazy_singleton` 不适用）。槽位缓存第一个
+    成功构建的实例，并在后续调用中忽略该参数——匹配大多数插件已经依赖的
+    已建立的"首次 config 获胜"单例语义。
 
-    Example::
+    示例::
 
         _slot: SingletonSlot[Honcho] = SingletonSlot()
 
@@ -100,8 +97,8 @@ class SingletonSlot(Generic[T]):
         def reset_honcho_client():
             _slot.reset()
 
-    The factory runs at most once even under concurrent first calls. If the
-    factory raises, nothing is cached and the next call retries.
+    即使并发首次调用，工厂最多运行一次。如果工厂抛出异常，
+    不缓存任何内容，下次调用会重试。
     """
 
     __slots__ = ("_lock", "_value", "_set")
@@ -112,12 +109,12 @@ class SingletonSlot(Generic[T]):
         self._set = False
 
     def get(self, factory: Callable[[], T]) -> T:
-        # Fast path: already built, no lock needed (a set bool + ref read is
-        # atomic under CPython's GIL).
+        # 快速路径：已构建，无需加锁（在 CPython 的 GIL 下，
+        # 一个 set 布尔值 + 引用读取是原子的）。
         if self._set:
             return self._value  # type: ignore[return-value]
         with self._lock:
-            if self._set:  # re-check inside the lock
+            if self._set:  # 锁内重新检查
                 return self._value  # type: ignore[return-value]
             value = factory()
             self._value = value
@@ -125,11 +122,11 @@ class SingletonSlot(Generic[T]):
             return value
 
     def peek(self) -> Optional[T]:
-        """Return the cached instance without building it (None if unset)."""
+        """返回缓存的实例而不构建它（如果未设置则返回 None）。"""
         return self._value if self._set else None
 
     def reset(self) -> None:
-        """Drop the cached instance so the next ``get()`` rebuilds it."""
+        """丢弃缓存的实例，使下次 ``get()`` 重新构建它。"""
         with self._lock:
             self._value = None
             self._set = False

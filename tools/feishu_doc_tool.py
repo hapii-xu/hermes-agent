@@ -1,7 +1,7 @@
-"""Feishu Document Tool -- read document content via Feishu/Lark API.
+"""飞书（Feishu）文档工具 —— 通过 Feishu/Lark API 读取文档内容。
 
-Provides ``feishu_doc_read`` for reading document content as plain text.
-Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
+提供 ``feishu_doc_read`` 用于把文档内容读取为纯文本。
+使用与 feishu_comment.py 相同的延迟导入 + BaseRequest 模式。
 """
 
 import json
@@ -12,17 +12,17 @@ from tools.registry import registry, tool_error, tool_result
 
 logger = logging.getLogger(__name__)
 
-# Thread-local storage for the lark client injected by feishu_comment handler.
+# 用于存放由 feishu_comment handler 注入的 lark 客户端的线程本地存储。
 _local = threading.local()
 
 
 def set_client(client):
-    """Store a lark client for the current thread (called by feishu_comment)."""
+    """为当前线程存储一个 lark 客户端（由 feishu_comment 调用）。"""
     _local.client = client
 
 
 def get_client():
-    """Return the lark client for the current thread, or None."""
+    """返回当前线程的 lark 客户端，若没有则返回 None。"""
     return getattr(_local, "client", None)
 
 
@@ -52,13 +52,12 @@ FEISHU_DOC_READ_SCHEMA = {
 
 
 def _check_feishu():
-    # Use ``importlib.util.find_spec`` — it checks whether ``lark_oapi``
-    # is importable without actually executing its ``__init__``.
-    # Executing the real import here costs ~5 seconds (the SDK eagerly
-    # loads websockets, dispatcher, every api/v2 model) and this probe
-    # fires at every ``hermes`` startup during tool-availability
-    # evaluation.  Correctness is preserved because the actual tool
-    # handler still does the real import when invoked.
+    # 使用 ``importlib.util.find_spec`` —— 它检查 ``lark_oapi``
+    # 是否可导入，而不会真正执行其 ``__init__``。
+    # 在此处执行真正的导入大约耗时 5 秒（该 SDK 会急切加载
+    # websockets、dispatcher 以及所有 api/v2 模型），而本探针在
+    # 每次 ``hermes`` 启动进行工具可用性评估时都会触发。
+    # 正确性不受影响，因为真正的工具 handler 在被调用时仍会做真正的导入。
     import importlib.util
     try:
         return importlib.util.find_spec("lark_oapi") is not None
@@ -91,8 +90,8 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
         .build()
     )
 
-    # Tool handlers run synchronously in a worker thread (no running event
-    # loop), so call the blocking lark client directly.
+    # 工具 handler 在工作线程中同步运行（没有运行中的事件循环），
+    # 因此直接调用阻塞式的 lark 客户端。
     response = client.request(request)
 
     code = getattr(response, "code", None)
@@ -109,7 +108,7 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
         except (json.JSONDecodeError, AttributeError):
             pass
 
-    # Fallback: try response.data
+    # 兜底：尝试 response.data
     data = getattr(response, "data", None)
     if data:
         if isinstance(data, dict):
@@ -122,7 +121,7 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# 注册
 # ---------------------------------------------------------------------------
 
 registry.register(

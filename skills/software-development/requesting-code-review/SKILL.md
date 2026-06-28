@@ -1,6 +1,6 @@
 ---
 name: requesting-code-review
-description: "Pre-commit review: security scan, quality gates, auto-fix."
+description: "提交前审查：安全扫描、质量门禁、自动修复。"
 version: 2.0.0
 author: Hermes Agent (adapted from obra/superpowers + MorAlekss)
 license: MIT
@@ -11,75 +11,72 @@ metadata:
     related_skills: [subagent-driven-development, plan, test-driven-development, github-code-review]
 ---
 
-# Pre-Commit Code Verification
+# 提交前代码验证
 
-Automated verification pipeline before code lands. Static scans, baseline-aware
-quality gates, an independent reviewer subagent, and an auto-fix loop.
+在代码落地之前运行的自动化验证管线。静态扫描、基线感知的质量门禁、独立的审查子代理，以及自动修复循环。
 
-**Core principle:** No agent should verify its own work. Fresh context finds what you miss.
+**核心原则：** 没有代理应当验证自己的工作。全新的上下文能发现你遗漏的问题。
 
-## When to Use
+## 何时使用
 
-- After implementing a feature or bug fix, before `git commit` or `git push`
-- When user says "commit", "push", "ship", "done", "verify", or "review before merge"
-- After completing a task with 2+ file edits in a git repo
-- After each task in subagent-driven-development (the two-stage review)
+- 在实现完某个功能或修复完 bug 之后，执行 `git commit` 或 `git push` 之前
+- 当用户说「commit」「push」「ship」「done」「verify」或「review before merge」时
+- 在 git 仓库中完成一个包含 2 处以上文件修改的任务之后
+- 在 subagent-driven-development（两阶段审查）中每完成一个任务之后
 
-**Skip for:** documentation-only changes, pure config tweaks, or when user says "skip verification".
+**跳过：** 仅文档改动、纯配置微调，或用户说「skip verification」时。
 
-**This skill vs github-code-review:** This skill verifies YOUR changes before committing.
-`github-code-review` reviews OTHER people's PRs on GitHub with inline comments.
+**本技能与 github-code-review 的区别：** 本技能验证的是你提交前的改动。
+`github-code-review` 是在 GitHub 上审查别人的 PR，并用行内评论反馈。
 
-## Step 1 — Get the diff
+## 第 1 步 —— 获取 diff
 
 ```bash
 git diff --cached
 ```
 
-If empty, try `git diff` then `git diff HEAD~1 HEAD`.
+如果为空，依次尝试 `git diff`，再试 `git diff HEAD~1 HEAD`。
 
-If `git diff --cached` is empty but `git diff` shows changes, tell the user to
-`git add <files>` first. If still empty, run `git status` — nothing to verify.
+如果 `git diff --cached` 为空但 `git diff` 显示有改动，告诉用户先执行
+`git add <files>`。如果仍为空，运行 `git status` —— 没有可验证的内容。
 
-If the diff exceeds 15,000 characters, split by file:
+如果 diff 超过 15,000 字符，按文件拆分：
 ```bash
 git diff --name-only
 git diff HEAD -- specific_file.py
 ```
 
-## Step 2 — Static security scan
+## 第 2 步 —— 静态安全扫描
 
-Scan added lines only. Any match is a security concern fed into Step 5.
+仅扫描新增的行。任何命中都是流入第 5 步的安全问题。
 
 ```bash
-# Hardcoded secrets
+# 硬编码的密钥
 git diff --cached | grep "^+" | grep -iE "(api_key|secret|password|token|passwd)\s*=\s*['\"][^'\"]{6,}['\"]"
 
-# Shell injection
+# Shell 注入
 git diff --cached | grep "^+" | grep -E "os\.system\(|subprocess.*shell=True"
 
-# Dangerous eval/exec
+# 危险的 eval/exec
 git diff --cached | grep "^+" | grep -E "\beval\(|\bexec\("
 
-# Unsafe deserialization
+# 不安全的反序列化
 git diff --cached | grep "^+" | grep -E "pickle\.loads?\("
 
-# SQL injection (string formatting in queries)
+# SQL 注入（查询里的字符串格式化）
 git diff --cached | grep "^+" | grep -E "execute\(f\"|\.format\(.*SELECT|\.format\(.*INSERT"
 ```
 
-## Step 3 — Baseline tests and linting
+## 第 3 步 —— 基线测试与 lint
 
-Detect the project language and run the appropriate tools. Capture the failure
-count BEFORE your changes as **baseline_failures** (stash changes, run, pop).
-Only NEW failures introduced by your changes block the commit.
+检测项目语言并运行合适的工具。在你的改动**之前**捕获失败计数作为 **baseline_failures**（暂存改动、运行、恢复）。只有你的改动**新增**的失败才会阻断提交。
 
-**Test frameworks** (auto-detect by project files):
+**测试框架**（按项目文件自动检测）：
 ```bash
-# Python (pytest)
+# Python（pytest）
 python -m pytest --tb=no -q 2>&1 | tail -5
 
-# Node (npm test)
+# Node（npm test）
 npm test -- --passWithNoTests 2>&1 | tail -5
 
 # Rust
@@ -89,7 +86,7 @@ cargo test 2>&1 | tail -5
 go test ./... 2>&1 | tail -5
 ```
 
-**Linting and type checking** (run only if installed):
+**Lint 与类型检查**（仅在已安装时运行）：
 ```bash
 # Python
 which ruff && ruff check . 2>&1 | tail -10
@@ -106,28 +103,26 @@ cargo clippy -- -D warnings 2>&1 | tail -10
 which go && go vet ./... 2>&1 | tail -10
 ```
 
-**Baseline comparison:** If baseline was clean and your changes introduce failures,
-that's a regression. If baseline already had failures, only count NEW ones.
+**基线对比：** 如果基线是干净的，而你的改动引入了失败，那就是回归。如果基线本来就有失败，只统计**新增**的失败。
 
-## Step 4 — Self-review checklist
+## 第 4 步 —— 自检清单
 
-Quick scan before dispatching the reviewer:
+在派发审查者之前快速扫一遍：
 
-- [ ] No hardcoded secrets, API keys, or credentials
-- [ ] Input validation on user-provided data
-- [ ] SQL queries use parameterized statements
-- [ ] File operations validate paths (no traversal)
-- [ ] External calls have error handling (try/catch)
-- [ ] No debug print/console.log left behind
-- [ ] No commented-out code
-- [ ] New code has tests (if test suite exists)
+- [ ] 没有硬编码的密钥、API key 或凭据
+- [ ] 对用户提供的数据做了输入校验
+- [ ] SQL 查询使用参数化语句
+- [ ] 文件操作校验了路径（无目录穿越）
+- [ ] 外部调用有错误处理（try/catch）
+- [ ] 没有遗留的调试 print/console.log
+- [ ] 没有被注释掉的代码
+- [ ] 新代码有测试（如果存在测试套件）
 
-## Step 5 — Independent reviewer subagent
+## 第 5 步 —— 独立审查子代理
 
-Call `delegate_task` directly — it is NOT available inside execute_code or scripts.
+直接调用 `delegate_task` —— 它在 execute_code 或脚本内部不可用。
 
-The reviewer gets ONLY the diff and static scan results. No shared context with
-the implementer. Fail-closed: unparseable response = fail.
+审查者只能看到 diff 和静态扫描结果。与实现者不共享上下文。失败即关闭（fail-closed）：无法解析的响应 = 失败。
 
 ```python
 delegate_task(
@@ -173,13 +168,13 @@ Return ONLY this JSON:
 )
 ```
 
-## Step 6 — Evaluate results
+## 第 6 步 —— 评估结果
 
-Combine results from Steps 2, 3, and 5.
+综合第 2、3、5 步的结果。
 
-**All passed:** Proceed to Step 8 (commit).
+**全部通过：** 进入第 8 步（提交）。
 
-**Any failures:** Report what failed, then proceed to Step 7 (auto-fix).
+**有任何失败：** 报告失败内容，然后进入第 7 步（自动修复）。
 
 ```
 VERIFICATION FAILED
@@ -191,12 +186,11 @@ New lint errors: [details]
 Suggestions (non-blocking): [list]
 ```
 
-## Step 7 — Auto-fix loop
+## 第 7 步 —— 自动修复循环
 
-**Maximum 2 fix-and-reverify cycles.**
+**最多 2 次 修复-再验证 循环。**
 
-Spawn a THIRD agent context — not you (the implementer), not the reviewer.
-It fixes ONLY the reported issues:
+派生第三个代理上下文 —— 不是你（实现者），也不是审查者。它只修复被报告的问题：
 
 ```python
 delegate_task(
@@ -219,62 +213,62 @@ Fix each issue precisely. Describe what you changed and why.""",
 )
 ```
 
-After the fix agent completes, re-run Steps 1-6 (full verification cycle).
-- Passed: proceed to Step 8
-- Failed and attempts < 2: repeat Step 7
-- Failed after 2 attempts: escalate to user with the remaining issues and
-  suggest `git stash` or `git reset` to undo
+修复代理完成后，重新运行第 1-6 步（完整验证循环）。
+- 通过：进入第 8 步
+- 失败且尝试次数 < 2：重复第 7 步
+- 尝试 2 次后仍失败：带上剩余问题上报给用户，
+  并建议用 `git stash` 或 `git reset` 撤销
 
-## Step 8 — Commit
+## 第 8 步 —— 提交
 
-If verification passed:
+如果验证通过：
 
 ```bash
 git add -A && git commit -m "[verified] <description>"
 ```
 
-The `[verified]` prefix indicates an independent reviewer approved this change.
+`[verified]` 前缀表示独立审查者已批准此改动。
 
-## Reference: Common Patterns to Flag
+## 参考：需要标记的常见模式
 
 ### Python
 ```python
-# Bad: SQL injection
+# 差：SQL 注入
 cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
-# Good: parameterized
+# 好：参数化
 cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
 
-# Bad: shell injection
+# 差：shell 注入
 os.system(f"ls {user_input}")
-# Good: safe subprocess
+# 好：安全的 subprocess
 subprocess.run(["ls", user_input], check=True)
 ```
 
 ### JavaScript
 ```javascript
-// Bad: XSS
+// 差：XSS
 element.innerHTML = userInput;
-// Good: safe
+// 好：安全
 element.textContent = userInput;
 ```
 
-## Integration with Other Skills
+## 与其他技能的集成
 
-**subagent-driven-development:** Run this after EACH task as the quality gate.
-The two-stage review (spec compliance + code quality) uses this pipeline.
+**subagent-driven-development：** 在每个任务之后运行本技能作为质量门禁。
+两阶段审查（规格符合度 + 代码质量）用的就是这套管线。
 
-**test-driven-development:** This pipeline verifies TDD discipline was followed —
-tests exist, tests pass, no regressions.
+**test-driven-development：** 本管线验证是否遵循了 TDD 纪律 ——
+测试存在、测试通过、无回归。
 
-**plan:** Validates implementation matches the plan requirements.
+**plan：** 验证实现是否符合计划要求。
 
-## Pitfalls
+## 陷阱
 
-- **Empty diff** — check `git status`, tell user nothing to verify
-- **Not a git repo** — skip and tell user
-- **Large diff (>15k chars)** — split by file, review each separately
-- **delegate_task returns non-JSON** — retry once with stricter prompt, then treat as FAIL
-- **False positives** — if reviewer flags something intentional, note it in fix prompt
-- **No test framework found** — skip regression check, reviewer verdict still runs
-- **Lint tools not installed** — skip that check silently, don't fail
-- **Auto-fix introduces new issues** — counts as a new failure, cycle continues
+- **空 diff** —— 检查 `git status`，告诉用户没有可验证的内容
+- **不是 git 仓库** —— 跳过并告诉用户
+- **大 diff（>15k 字符）** —— 按文件拆分，分别审查
+- **delegate_task 返回非 JSON** —— 用更严格的提示重试一次，然后视为失败
+- **误报** —— 如果审查者标记的是有意为之的东西，在修复提示中注明
+- **没找到测试框架** —— 跳过回归检查，审查者判定仍会运行
+- **未安装 lint 工具** —— 静默跳过该检查，不要报失败
+- **自动修复引入新问题** —— 算作一次新失败，循环继续

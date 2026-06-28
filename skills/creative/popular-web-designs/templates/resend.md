@@ -1,316 +1,316 @@
-# Design System: Resend
+# 设计系统：Resend
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Geist` | **Mono:** `Geist Mono`
-> - **Font stack (CSS):** `font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主要字体：** `Geist` | **等宽字体：** `Geist Mono`
+> - **字体栈（CSS）：** `font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` 技能（cloudflared tunnel）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Resend's website is a dark, cinematic canvas that treats email infrastructure like a luxury product. The entire page is draped in pure black (`#000000`) with text that glows in near-white (`#f0f0f0`), creating a theater-like experience where content performs on a void stage. This isn't the typical developer-tool darkness — it's the controlled darkness of a photography gallery, where every element is lit with intention and nothing competes for attention.
+Resend 的网站是一个深色、电影般的画布，把邮件基础设施当作奢侈品来对待。整个页面笼罩在纯黑（`#000000`）中，文字在近白（`#f0f0f0`）中发光，创造出一种剧场般的体验，内容在虚空舞台上表演。这不是典型的开发者工具的深色 —— 而是摄影画廊那种受控的深色，每个元素都被有意打光，没有东西在争夺注意力。
 
-The typography system is the star of the show. Three carefully chosen typefaces create a hierarchy that feels both editorial and technical: Domaine Display (a Klim Type Foundry serif) appears at massive 96px for hero headlines with barely-there line-height (1.00) and negative tracking (-0.96px), creating display text that feels like a magazine cover. ABC Favorit (by Dinamo) handles section headings with an even more aggressive letter-spacing (-2.8px at 56px), giving a compressed, engineered quality to mid-tier text. Inter takes over for body and UI, providing the clean readability that lets the display fonts shine. Commit Mono rounds out the family for code blocks.
+字体排版系统是主角。三种精心挑选的字体创造出一种既编辑式又技术性的层级：Domaine Display（Klim Type Foundry 的衬线字体）以巨大的 96px 出现在英雄标题上，配以几乎不存在的行高（1.00）和负字距（-0.96px），创造出感觉像杂志封面的展示文字。ABC Favorit（Dinamo 出品）以更激进的字间距（56px 时 -2.8px）处理区块标题，赋予中等层级文字一种压缩的、工程化的质感。Inter 接管正文和 UI，提供让展示字体得以闪耀的干净可读性。Commit Mono 为代码块收尾，完善了整个字体家族。
 
-What makes Resend distinctive is its icy, blue-tinted border system. Instead of neutral gray borders, Resend uses `rgba(214, 235, 253, 0.19)` — a frosty, slightly blue-tinted line at 19% opacity that gives every container and divider a cold, crystalline quality against the black background. Combined with pill-shaped buttons (9999px radius), multi-color accent system (orange, green, blue, yellow, red — each with its own CSS variable scale), and OpenType stylistic sets (`"ss01"`, `"ss03"`, `"ss04"`, `"ss11"`), the result is a design system that feels premium, precise, and quietly confident.
+让 Resend 与众不同的是它冰冷、带蓝色调的边框系统。Resend 不使用中性灰边框，而是使用 `rgba(214, 235, 253, 0.19)` —— 一条 19% 透明度的冰冷、略带蓝色调的线条，赋予每个容器和分隔符一种冷峻、水晶般的质感，与黑色背景形成对比。结合胶囊形按钮（9999px 圆角）、多色强调系统（橙色、绿色、蓝色、黄色、红色 —— 每种都有自己的 CSS 变量刻度）和 OpenType 风格集（`"ss01"`、`"ss03"`、`"ss04"`、`"ss11"`），最终的设计系统感觉高端、精确，且安静地自信。
 
-**Key Characteristics:**
-- Pure black background with near-white (`#f0f0f0`) text — theatrical, gallery-like darkness
-- Three-font hierarchy: Domaine Display (serif hero), ABC Favorit (geometric sections), Inter (body/UI)
-- Icy blue-tinted borders: `rgba(214, 235, 253, 0.19)` — every border has a cold, crystalline shimmer
-- Multi-color accent system: orange, green, blue, yellow, red — each with numbered CSS variable scales
-- Pill-shaped buttons and tags (9999px radius) with transparent backgrounds
-- OpenType stylistic sets (`"ss01"`, `"ss03"`, `"ss04"`, `"ss11"`) on display fonts
-- Commit Mono for code — monospace as a design element, not an afterthought
-- Whisper-level shadows using blue-tinted ring: `rgba(176, 199, 217, 0.145) 0px 0px 0px 1px`
+**关键特征：**
+- 纯黑背景配近白（`#f0f0f0`）文字 —— 剧场般的、画廊式的深色
+- 三字体层级：Domaine Display（衬线英雄）、ABC Favorit（几何区块）、Inter（正文/UI）
+- 冰冷蓝色调边框：`rgba(214, 235, 253, 0.19)` —— 每条边框都有冷峻、水晶般的微光
+- 多色强调系统：橙色、绿色、蓝色、黄色、红色 —— 每种都有带编号的 CSS 变量刻度
+- 胶囊形按钮和标签（9999px 圆角），配透明背景
+- 展示字体上的 OpenType 风格集（`"ss01"`、`"ss03"`、`"ss04"`、`"ss11"`）
+- Commit Mono 用于代码 —— 等宽字体作为设计元素，而非事后补丁
+- 使用蓝色调环的轻语级阴影：`rgba(176, 199, 217, 0.145) 0px 0px 0px 1px`
 
-## 2. Color Palette & Roles
+## 2. 色彩调色板与角色
 
-### Primary
-- **Void Black** (`#000000`): Page background, the defining canvas color (95% opacity via `--color-black-12`)
-- **Near White** (`#f0f0f0`): Primary text, button text, high-contrast elements
-- **Pure White** (`#ffffff`): `--color-white`, maximum emphasis text, link highlights
+### 主色
+- **Void Black**（`#000000`）：页面背景，定义性的画布色（通过 `--color-black-12` 实现 95% 透明度）
+- **Near White**（`#f0f0f0`）：主要文字、按钮文字、高对比度元素
+- **Pure White**（`#ffffff`）：`--color-white`，最大强调文字、链接高亮
 
-### Accent Scale — Orange
-- **Orange 4** (`#ff5900`): `--color-orange-4`, at 22% opacity — subtle warm glow
-- **Orange 10** (`#ff801f`): `--color-orange-10`, primary orange accent — warm, energetic
-- **Orange 11** (`#ffa057`): `--color-orange-11`, lighter orange for secondary use
+### 强调色刻度 —— 橙色
+- **Orange 4**（`#ff5900`）：`--color-orange-4`，22% 透明度 —— 微妙的暖光晕
+- **Orange 10**（`#ff801f`）：`--color-orange-10`，主要橙色强调 —— 温暖、充满活力
+- **Orange 11**（`#ffa057`）：`--color-orange-11`，较浅的橙色，用于次要用途
 
-### Accent Scale — Green
-- **Green 3** (`#22ff99`): `--color-green-3`, at 12% opacity — faint emerald wash
-- **Green 4** (`#11ff99`): `--color-green-4`, at 18% opacity — success indicator glow
+### 强调色刻度 —— 绿色
+- **Green 3**（`#22ff99`）：`--color-green-3`，12% 透明度 —— 淡翡翠色渲染
+- **Green 4**（`#11ff99`）：`--color-green-4`，18% 透明度 —— 成功指示器光晕
 
-### Accent Scale — Blue
-- **Blue 4** (`#0075ff`): `--color-blue-4`, at 34% opacity — medium blue accent
-- **Blue 5** (`#0081fd`): `--color-blue-5`, at 42% opacity — stronger blue
-- **Blue 10** (`#3b9eff`): `--color-blue-10`, bright blue — links, interactive elements
+### 强调色刻度 —— 蓝色
+- **Blue 4**（`#0075ff`）：`--color-blue-4`，34% 透明度 —— 中等蓝色强调
+- **Blue 5**（`#0081fd`）：`--color-blue-5`，42% 透明度 —— 更强的蓝色
+- **Blue 10**（`#3b9eff`）：`--color-blue-10`，亮蓝色 —— 链接、交互元素
 
-### Accent Scale — Other
-- **Yellow 9** (`#ffc53d`): `--color-yellow-9`, warm gold for warnings or highlights
-- **Red 5** (`#ff2047`): `--color-red-5`, at 34% opacity — error states, destructive actions
+### 强调色刻度 —— 其他
+- **Yellow 9**（`#ffc53d`）：`--color-yellow-9`，用于警告或高亮的暖金色
+- **Red 5**（`#ff2047`）：`--color-red-5`，34% 透明度 —— 错误状态、破坏性操作
 
-### Neutral Scale
-- **Silver** (`#a1a4a5`): Secondary text, muted links, descriptions
-- **Dark Gray** (`#464a4d`): Tertiary text, de-emphasized content
-- **Mid Gray** (`#5c5c5c`): Hover states, subtle emphasis
-- **Medium Gray** (`#494949`): Quaternary text
-- **Light Gray** (`#f8f8f8`): Light mode surface (if applicable)
-- **Border Gray** (`#eaeaea`): Light context borders
-- **Edge Gray** (`#ececec`): Subtle borders on light surfaces
-- **Mist Gray** (`#dedfdf`): Light dividers
-- **Soft Gray** (`#e5e6e6`): Alternate light border
+### 中性色刻度
+- **Silver**（`#a1a4a5`）：次要文字、柔和链接、描述
+- **Dark Gray**（`#464a4d`）：三级文字、弱化内容
+- **Mid Gray**（`#5c5c5c`）：悬停状态、微妙强调
+- **Medium Gray**（`#494949`）：四级文字
+- **Light Gray**（`#f8f8f8`）：浅色模式表面（如适用）
+- **Border Gray**（`#eaeaea`）：浅色语境边框
+- **Edge Gray**（`#ececec`）：浅色表面上微妙的边框
+- **Mist Gray**（`#dedfdf`）：浅色分隔符
+- **Soft Gray**（`#e5e6e6`）：替代的浅色边框
 
-### Surface & Overlay
-- **Frost Primary** (`#fcfdff`): Primary color token (slight blue tint, 94% opacity)
-- **White Hover** (`rgba(255, 255, 255, 0.28)`): Button hover state on dark
-- **White 60%** (`oklab(0.999994 ... / 0.577)`): Semi-transparent white for muted text
-- **White 64%** (`oklab(0.999994 ... / 0.642)`): Slightly brighter semi-transparent white
+### 表面与覆盖层
+- **Frost Primary**（`#fcfdff`）：主要颜色 token（轻微蓝色调，94% 透明度）
+- **White Hover**（`rgba(255, 255, 255, 0.28)`）：深色上的按钮悬停状态
+- **White 60%**（`oklab(0.999994 ... / 0.577)`）：半透明白，用于柔和文字
+- **White 64%**（`oklab(0.999994 ... / 0.642)`）：略亮的半透明白
 
-### Borders & Shadows
-- **Frost Border** (`rgba(214, 235, 253, 0.19)`): The signature — icy blue-tinted borders at 19% opacity
-- **Frost Border Alt** (`rgba(217, 237, 254, 0.145)`): Slightly lighter variant for list items
-- **Ring Shadow** (`rgba(176, 199, 217, 0.145) 0px 0px 0px 1px`): Blue-tinted shadow-as-border
-- **Focus Ring** (`rgb(0, 0, 0) 0px 0px 0px 8px`): Heavy black focus ring
-- **Subtle Shadow** (`rgba(0, 0, 0, 0.1) 0px 1px 3px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px`): Minimal card elevation
+### 边框与阴影
+- **Frost Border**（`rgba(214, 235, 253, 0.19)`）：标志性元素 —— 19% 透明度的冰冷蓝色调边框
+- **Frost Border Alt**（`rgba(217, 237, 254, 0.145)`）：略浅的变体，用于列表项
+- **Ring Shadow**（`rgba(176, 199, 217, 0.145) 0px 0px 0px 1px`）：蓝色调的阴影即边框
+- **Focus Ring**（`rgb(0, 0, 0) 0px 0px 0px 8px`）：沉重的黑色聚焦环
+- **Subtle Shadow**（`rgba(0, 0, 0, 0.1) 0px 1px 3px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px`）：最小的卡片凸起
 
-## 3. Typography Rules
+## 3. 字体排版规则
 
-### Font Families
-- **Display Serif**: `domaine` (Domaine Display by Klim Type Foundry) — hero headlines
-- **Display Sans**: `aBCFavorit` (ABC Favorit by Dinamo), fallbacks: `ui-sans-serif, system-ui` — section headings
-- **Body / UI**: `inter`, fallbacks: `ui-sans-serif, system-ui` — body text, buttons, navigation
-- **Monospace**: `commitMono`, fallbacks: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas`
-- **Secondary**: `Helvetica` — fallback for specific UI contexts
-- **System**: `-apple-system, system-ui, Segoe UI, Roboto` — embedded content
+### 字体族
+- **展示衬线**：`domaine`（Klim Type Foundry 的 Domaine Display）—— 英雄标题
+- **展示无衬线**：`aBCFavorit`（Dinamo 的 ABC Favorit），回退字体：`ui-sans-serif, system-ui` —— 区块标题
+- **正文 / UI**：`inter`，回退字体：`ui-sans-serif, system-ui` —— 正文、按钮、导航
+- **等宽**：`commitMono`，回退字体：`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas`
+- **次要**：`Helvetica` —— 特定 UI 语境的回退
+- **系统**：`-apple-system, system-ui, Segoe UI, Roboto` —— 嵌入内容
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 说明 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Hero | domaine | 96px (6.00rem) | 400 | 1.00 (tight) | -0.96px | `"ss01", "ss04", "ss11"` |
-| Display Hero Mobile | domaine | 76.8px (4.80rem) | 400 | 1.00 (tight) | -0.768px | Scaled for mobile |
-| Section Heading | aBCFavorit | 56px (3.50rem) | 400 | 1.20 (tight) | -2.8px | `"ss01", "ss04", "ss11"` |
-| Sub-heading | aBCFavorit | 20px (1.25rem) | 400 | 1.30 (tight) | normal | `"ss01", "ss04", "ss11"` |
-| Sub-heading Compact | aBCFavorit | 16px (1.00rem) | 400 | 1.50 | -0.8px | `"ss01", "ss04", "ss11"` |
-| Feature Title | inter | 24px (1.50rem) | 500 | 1.50 | normal | Section sub-headings |
-| Body Large | inter | 18px (1.13rem) | 400 | 1.50 | normal | Introductions |
-| Body | inter | 16px (1.00rem) | 400 | 1.50 | normal | Standard body text |
-| Body Semibold | inter | 16px (1.00rem) | 600 | 1.50 | normal | Emphasis, active states |
-| Nav Link | aBCFavorit | 14px (0.88rem) | 500 | 1.43 | 0.35px | `"ss01", "ss03", "ss04"` — positive tracking |
-| Button / Link | inter | 14px (0.88rem) | 500–600 | 1.43 | normal | Buttons, nav, CTAs |
-| Caption | inter | 14px (0.88rem) | 400 | 1.60 (relaxed) | normal | Descriptions |
-| Helvetica Caption | Helvetica | 14px (0.88rem) | 400–600 | 1.00–1.71 | normal | UI elements |
-| Small | inter | 12px (0.75rem) | 400–500 | 1.33 | normal | Tags, meta, fine print |
-| Small Uppercase | inter | 12px (0.75rem) | 500 | 1.33 | normal | `text-transform: uppercase` |
-| Small Capitalize | inter | 12px (0.75rem) | 500 | 1.33 | normal | `text-transform: capitalize` |
-| Code Body | commitMono | 16px (1.00rem) | 400 | 1.50 | normal | Code blocks |
-| Code Small | commitMono | 14px (0.88rem) | 400 | 1.43 | normal | Inline code |
-| Code Tiny | commitMono | 12px (0.75rem) | 400 | 1.33 | normal | Small code labels |
-| Heading (Helvetica) | Helvetica | 24px (1.50rem) | 400 | 1.40 | normal | Alternate heading context |
+| 展示英雄 | domaine | 96px (6.00rem) | 400 | 1.00（紧凑） | -0.96px | `"ss01", "ss04", "ss11"` |
+| 展示英雄移动端 | domaine | 76.8px (4.80rem) | 400 | 1.00（紧凑） | -0.768px | 为移动端缩放 |
+| 区块标题 | aBCFavorit | 56px (3.50rem) | 400 | 1.20（紧凑） | -2.8px | `"ss01", "ss04", "ss11"` |
+| 副标题 | aBCFavorit | 20px (1.25rem) | 400 | 1.30（紧凑） | normal | `"ss01", "ss04", "ss11"` |
+| 紧凑副标题 | aBCFavorit | 16px (1.00rem) | 400 | 1.50 | -0.8px | `"ss01", "ss04", "ss11"` |
+| 功能标题 | inter | 24px (1.50rem) | 500 | 1.50 | normal | 区块副标题 |
+| 大正文 | inter | 18px (1.13rem) | 400 | 1.50 | normal | 导语 |
+| 正文 | inter | 16px (1.00rem) | 400 | 1.50 | normal | 标准正文 |
+| 半粗正文 | inter | 16px (1.00rem) | 600 | 1.50 | normal | 强调、激活状态 |
+| 导航链接 | aBCFavorit | 14px (0.88rem) | 500 | 1.43 | 0.35px | `"ss01", "ss03", "ss04"` —— 正字距 |
+| 按钮 / 链接 | inter | 14px (0.88rem) | 500–600 | 1.43 | normal | 按钮、导航、CTA |
+| 说明 | inter | 14px (0.88rem) | 400 | 1.60（宽松） | normal | 描述 |
+| Helvetica 说明 | Helvetica | 14px (0.88rem) | 400–600 | 1.00–1.71 | normal | UI 元素 |
+| 小字 | inter | 12px (0.75rem) | 400–500 | 1.33 | normal | 标签、元数据、附属细则 |
+| 小字大写 | inter | 12px (0.75rem) | 500 | 1.33 | normal | `text-transform: uppercase` |
+| 小字首字母大写 | inter | 12px (0.75rem) | 500 | 1.33 | normal | `text-transform: capitalize` |
+| 代码正文 | commitMono | 16px (1.00rem) | 400 | 1.50 | normal | 代码块 |
+| 代码小字 | commitMono | 14px (0.88rem) | 400 | 1.43 | normal | 行内代码 |
+| 代码微字 | commitMono | 12px (0.75rem) | 400 | 1.33 | normal | 小型代码标签 |
+| 标题（Helvetica） | Helvetica | 24px (1.50rem) | 400 | 1.40 | normal | 替代标题语境 |
 
-### Principles
-- **Three-font editorial hierarchy**: Domaine Display (serif, hero), ABC Favorit (geometric sans, sections), Inter (readable body). Each font has a strict role — they never cross lanes.
-- **Aggressive negative tracking on display**: Domaine at -0.96px, ABC Favorit at -2.8px. The display type feels compressed, urgent, and designed — like a magazine masthead.
-- **Positive tracking on nav**: ABC Favorit nav links use +0.35px letter-spacing — the only positive tracking in the system. This creates airy, spaced-out navigation text that contrasts with the compressed headings.
-- **OpenType as identity**: The `"ss01"`, `"ss03"`, `"ss04"`, `"ss11"` stylistic sets are enabled on all ABC Favorit and Domaine text, activating alternate glyphs that give Resend's typography its unique character.
-- **Commit Mono as design element**: The monospace font isn't hidden in code blocks — it's used prominently for code examples and technical content, treated as a first-class visual element.
+### 原则
+- **三字体编辑层级**：Domaine Display（衬线、英雄）、ABC Favorit（几何无衬线、区块）、Inter（可读正文）。每种字体都有严格的角色 —— 它们从不跨界。
+- **展示上的激进负字距**：Domaine 在 -0.96px，ABC Favorit 在 -2.8px。展示字体感觉压缩、紧迫、有设计感 —— 像杂志刊头。
+- **导航上的正字距**：ABC Favorit 导航链接使用 +0.35px 字间距 —— 系统中唯一的正字距。这创造出通透、间距开阔的导航文字，与压缩的标题形成对比。
+- **OpenType 作为身份**：`"ss01"`、`"ss03"`、`"ss04"`、`"ss11"` 风格集在所有 ABC Favorit 和 Domaine 文字上启用，激活了赋予 Resend 字体独特个性的替代字形。
+- **Commit Mono 作为设计元素**：等宽字体并不藏在代码块里 —— 它被突出用于代码示例和技术内容，被视为一等视觉元素。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Transparent Pill**
-- Background: transparent
-- Text: `#f0f0f0`
-- Padding: 5px 12px
-- Radius: 9999px (full pill)
-- Border: `1px solid rgba(214, 235, 253, 0.19)` (frost border)
-- Hover: background `rgba(255, 255, 255, 0.28)` (white glass)
-- Use: Primary CTA on dark backgrounds
+**主要透明胶囊**
+- 背景：透明
+- 文字：`#f0f0f0`
+- 内边距：5px 12px
+- 圆角：9999px（完整胶囊）
+- 边框：`1px solid rgba(214, 235, 253, 0.19)`（霜边框）
+- 悬停：背景 `rgba(255, 255, 255, 0.28)`（白色玻璃）
+- 用途：深色背景上的主要 CTA
 
-**White Solid Pill**
-- Background: `#ffffff`
-- Text: `#000000`
-- Padding: 5px 12px
-- Radius: 9999px
-- Use: High-contrast CTA ("Get started")
+**白色实心胶囊**
+- 背景：`#ffffff`
+- 文字：`#000000`
+- 内边距：5px 12px
+- 圆角：9999px
+- 用途：高对比度 CTA（"Get started"）
 
-**Ghost Button**
-- Background: transparent
-- Text: `#f0f0f0`
-- Radius: 4px
-- No border
-- Hover: subtle background tint
-- Use: Secondary actions, tab items
+**幽灵按钮**
+- 背景：透明
+- 文字：`#f0f0f0`
+- 圆角：4px
+- 无边框
+- 悬停：微妙的背景色调
+- 用途：次要操作、标签项
 
-### Cards & Containers
-- Background: transparent or very subtle dark tint
-- Border: `1px solid rgba(214, 235, 253, 0.19)` (frost border)
-- Radius: 16px (standard cards), 24px (large sections/panels)
-- Shadow: `rgba(176, 199, 217, 0.145) 0px 0px 0px 1px` (ring shadow)
-- Dark product screenshots and code demos as card content
-- No traditional box-shadow elevation
+### 卡片与容器
+- 背景：透明或非常微妙的深色调
+- 边框：`1px solid rgba(214, 235, 253, 0.19)`（霜边框）
+- 圆角：16px（标准卡片）、24px（大区块/面板）
+- 阴影：`rgba(176, 199, 217, 0.145) 0px 0px 0px 1px`（环阴影）
+- 深色产品截图和代码演示作为卡片内容
+- 无传统 box-shadow 凸起
 
-### Inputs & Forms
-- Text: `#f0f0f0` on dark, `#000000` on light
-- Radius: 4px
-- Focus: shadow-based ring
-- Minimal styling — inherits dark theme
+### 输入与表单
+- 文字：深色上 `#f0f0f0`，浅色上 `#000000`
+- 圆角：4px
+- 聚焦：基于阴影的环
+- 最小化样式 —— 继承深色主题
 
-### Navigation
-- Sticky dark header with frost border bottom: `1px solid rgba(214, 235, 253, 0.19)`
-- "Resend" wordmark left-aligned
-- ABC Favorit 14px weight 500 with +0.35px tracking for nav links
-- Pill CTAs right-aligned
-- Mobile: hamburger collapse
+### 导航
+- 固定的深色页头，配霜边框底部：`1px solid rgba(214, 235, 253, 0.19)`
+- "Resend" 字标左对齐
+- ABC Favorit 14px 字重 500，配 +0.35px 字距用于导航链接
+- 胶囊 CTA 右对齐
+- 移动端：汉堡折叠
 
-### Image Treatment
-- Product screenshots and code demos dominate content sections
-- Dark-themed screenshots on dark background — seamless integration
-- Rounded corners: 12px–16px on images
-- Full-width sections with subtle gradient overlays
+### 图片处理
+- 产品截图和代码演示主导内容区块
+- 深色主题截图在深色背景上 —— 无缝集成
+- 圆角：图片上 12px–16px
+- 全宽区块配微妙的渐变覆盖层
 
-### Distinctive Components
+### 特色组件
 
-**Tab Navigation**
-- Horizontal tabs with subtle selection indicator
-- Tab items: 8px radius
-- Active state with subtle background differentiation
+**标签页导航**
+- 水平标签页，配微妙的选择指示器
+- 标签项：8px 圆角
+- 激活状态，配微妙的背景区分
 
-**Code Preview Panels**
-- Dark code blocks using Commit Mono
-- Frost borders (`rgba(214, 235, 253, 0.19)`)
-- Syntax-highlighted with multi-color accent tokens (orange, blue, green, yellow)
+**代码预览面板**
+- 深色代码块，使用 Commit Mono
+- 霜边框（`rgba(214, 235, 253, 0.19)`）
+- 用多色强调 token（橙色、蓝色、绿色、黄色）做语法高亮
 
-**Multi-color Accent Badges**
-- Each product feature has its own accent color from the CSS variable scale
-- Badges use the accent color at low opacity (12–42%) for background, full opacity for text
+**多色强调徽章**
+- 每个产品功能都有自己的强调色，来自 CSS 变量刻度
+- 徽章使用低透明度（12–42%）的强调色作为背景，全透明度作为文字
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 2px, 4px, 5px, 6px, 7px, 8px, 10px, 12px, 16px, 20px, 24px, 30px, 32px, 40px
+### 间距系统
+- 基本单位：8px
+- 刻度：1px、2px、4px、5px、6px、7px、8px、10px、12px、16px、20px、24px、30px、32px、40px
 
-### Grid & Container
-- Centered content with generous max-width
-- Full-width black sections with contained inner content
-- Single-column hero, expanding to feature grids below
-- Code preview panels as full-width or contained showcases
+### 网格与容器
+- 居中内容，配慷慨的最大宽度
+- 全宽黑色区块，内部内容受限
+- 单列英雄，向下展开为功能网格
+- 代码预览面板作为全宽或受限展示
 
-### Whitespace Philosophy
-- **Cinematic black space**: The black background IS the whitespace. Generous vertical spacing (80px–120px+) between sections creates a scroll-through-darkness experience where each section emerges like a scene.
-- **Tight content, vast surrounds**: Text blocks and cards are compact internally, but float in vast dark space — creating isolated "islands" of content.
-- **Typography-led rhythm**: The massive display fonts (96px) create their own vertical rhythm — each headline is a visual event that anchors the surrounding space.
+### 留白哲学
+- **电影般的黑色空间**：黑色背景就是留白。区块之间慷慨的纵向间距（80px–120px+）创造出一种穿越黑暗滚动的体验，每个区块像一个场景般浮现。
+- **紧凑内容，广阔环绕**：文字块和卡片内部紧凑，但漂浮在广阔的深色空间中 —— 创造出孤立的内容"岛屿"。
+- **字体排版驱动的节奏**：巨大的展示字体（96px）创造自己的纵向节奏 —— 每个标题都是一个锚定周围空间的视觉事件。
 
-### Border Radius Scale
-- Sharp (4px): Buttons (ghost), inputs, small interactive elements
-- Subtle (6px): Menu panels, navigation items
-- Standard (8px): Tabs, content blocks
-- Comfortable (10px): Accent elements
-- Card (12px): Clipboard buttons, medium containers
-- Large (16px): Feature cards, images, main buttons
-- Section (24px): Large panels, section containers
-- Pill (9999px): Primary CTAs, tags, badges
+### 圆角刻度
+- 锐利（4px）：按钮（幽灵）、输入、小型交互元素
+- 微妙（6px）：菜单面板、导航项
+- 标准（8px）：标签页、内容块
+- 舒适（10px）：强调元素
+- 卡片（12px）：剪贴板按钮、中等容器
+- 大（16px）：功能卡片、图片、主要按钮
+- 区块（24px）：大型面板、区块容器
+- 胶囊（9999px）：主要 CTA、标签、徽章
 
-## 6. Depth & Elevation
+## 6. 深度与凸起
 
-| Level | Treatment | Use |
+| 层级 | 处理方式 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow, transparent background | Default — most elements on dark void |
-| Ring (Level 1) | `rgba(176, 199, 217, 0.145) 0px 0px 0px 1px` | Shadow-as-border for cards, containers |
-| Frost Border (Level 1b) | `1px solid rgba(214, 235, 253, 0.19)` | Explicit borders — buttons, dividers, tabs |
-| Subtle (Level 2) | `rgba(0, 0, 0, 0.1) 0px 1px 3px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px` | Light card elevation |
-| Focus (Level 3) | `rgb(0, 0, 0) 0px 0px 0px 8px` | Heavy black focus ring — accessibility |
+| 平面（Level 0） | 无阴影，透明背景 | 默认 —— 深色虚空中大多数元素 |
+| 环（Level 1） | `rgba(176, 199, 217, 0.145) 0px 0px 0px 1px` | 卡片、容器的阴影即边框 |
+| 霜边框（Level 1b） | `1px solid rgba(214, 235, 253, 0.19)` | 明确的边框 —— 按钮、分隔符、标签页 |
+| 微妙（Level 2） | `rgba(0, 0, 0, 0.1) 0px 1px 3px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px` | 轻量卡片凸起 |
+| 聚焦（Level 3） | `rgb(0, 0, 0) 0px 0px 0px 8px` | 沉重的黑色聚焦环 —— 无障碍 |
 
-**Shadow Philosophy**: Resend barely uses shadows at all. On a pure black background, traditional shadows are invisible — you can't cast a shadow into the void. Instead, Resend creates depth through its signature frost borders (`rgba(214, 235, 253, 0.19)`) — thin, icy blue-tinted lines that catch light against the darkness. This creates a "glass panel floating in space" aesthetic where borders are the primary depth mechanism.
+**阴影哲学**：Resend 几乎不使用阴影。在纯黑背景上，传统阴影是不可见的 —— 你无法向虚空中投射阴影。相反，Resend 通过其标志性的霜边框（`rgba(214, 235, 253, 0.19)`）创造深度 —— 细而冰冷的蓝色调线条，在黑暗中捕捉光线。这创造出一种"玻璃面板漂浮在太空中"的美学，其中边框是主要的深度机制。
 
-### Decorative Depth
-- Subtle warm gradient glows behind hero content (orange/amber tints)
-- Product screenshots create visual depth through their own internal UI
-- No gradient backgrounds — depth comes from border luminance and content contrast
+### 装饰性深度
+- 英雄内容背后有微妙的暖色渐变光晕（橙色/琥珀色调）
+- 产品截图通过自身内部 UI 创造视觉深度
+- 无渐变背景 —— 深度来自边框亮度和内容对比
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use pure black (`#000000`) as the page background — the void is the canvas
-- Apply frost borders (`rgba(214, 235, 253, 0.19)`) for all structural lines — they're the blue-tinted signature
-- Use Domaine Display ONLY for hero headings (96px), ABC Favorit for section headings, Inter for everything else
-- Enable OpenType `"ss01"`, `"ss04"`, `"ss11"` on Domaine and ABC Favorit text
-- Apply pill radius (9999px) to primary CTAs and tags
-- Use the multi-color accent scale (orange/green/blue/yellow/red) with opacity variants for context-specific highlighting
-- Keep shadows at ring level (`0px 0px 0px 1px`) — on black, traditional shadows don't work
-- Use +0.35px letter-spacing on ABC Favorit nav links — the only positive tracking
+### 宜
+- 使用纯黑（`#000000`）作为页面背景 —— 虚空就是画布
+- 为所有结构性线条应用霜边框（`rgba(214, 235, 253, 0.19)`）—— 它们是蓝色调的签名
+- Domaine Display 仅用于英雄标题（96px），ABC Favorit 用于区块标题，Inter 用于其他一切
+- 在 Domaine 和 ABC Favorit 文字上启用 OpenType `"ss01"`、`"ss04"`、`"ss11"`
+- 主要 CTA 和标签应用胶囊圆角（9999px）
+- 使用多色强调刻度（橙/绿/蓝/黄/红），配透明度变体，用于特定语境的高亮
+- 阴影保持在环级别（`0px 0px 0px 1px`）—— 在黑色上，传统阴影不起作用
+- 在 ABC Favorit 导航链接上使用 +0.35px 字间距 —— 唯一的正字距
 
-### Don't
-- Don't lighten the background above `#000000` — the pure black void is non-negotiable
-- Don't use neutral gray borders — all borders must have the frost blue tint
-- Don't apply Domaine Display to body text — it's a display-only serif
-- Don't mix accent colors in the same component — each feature gets one accent color
-- Don't use box-shadow for elevation on the dark background — use frost borders instead
-- Don't skip the OpenType stylistic sets — they define the typographic character
-- Don't use negative letter-spacing on nav links — ABC Favorit nav uses positive +0.35px
-- Don't make buttons opaque on dark — transparency with frost border is the pattern
+### 忌
+- 不要把背景调亮到超过 `#000000` —— 纯黑虚空是不可妥协的
+- 不要使用中性灰边框 —— 所有边框都必须有霜蓝色调
+- 不要把 Domaine Display 用于正文 —— 它是仅限展示的衬线字体
+- 不要在同一组件中混用强调色 —— 每个功能获得一种强调色
+- 不要在深色背景上使用 box-shadow 进行凸起 —— 改用霜边框
+- 不要跳过 OpenType 风格集 —— 它们定义了字体排版的个性
+- 不要在导航链接上使用负字间距 —— ABC Favorit 导航使用正的 +0.35px
+- 不要让按钮在深色上不透明 —— 透明配霜边框才是模式
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile Small | <480px | Single column, tight padding, 76.8px hero |
-| Mobile | 480–600px | Standard mobile, stacked layout |
-| Desktop | >600px | Full layout, 96px hero, expanded sections |
+| 小型移动端 | <480px | 单列、紧凑内边距、76.8px 英雄 |
+| 移动端 | 480–600px | 标准移动端、堆叠布局 |
+| 桌面 | >600px | 完整布局、96px 英雄、展开区块 |
 
-*Note: Resend uses a minimal breakpoint system — only 480px and 600px detected. The design is desktop-first with a clean mobile collapse.*
+*注意：Resend 使用极简的断点系统 —— 仅检测到 480px 和 600px。设计是桌面优先，配干净的移动端折叠。*
 
-### Touch Targets
-- Pill buttons: adequate padding (5px 12px minimum)
-- Tab items: 8px radius with comfortable hit areas
-- Navigation links spaced with 0.35px tracking for visual separation
+### 触摸目标
+- 胶囊按钮：充足的内边距（最小 5px 12px）
+- 标签项：8px 圆角，配舒适的点击区域
+- 导航链接以 0.35px 字距分隔，获得视觉分离
 
-### Collapsing Strategy
-- Hero: Domaine 96px → 76.8px on mobile
-- Navigation: horizontal → hamburger
-- Feature sections: side-by-side → stacked
-- Code panels: maintain width, horizontal scroll if needed
-- Spacing compresses proportionally
+### 折叠策略
+- 英雄区：Domaine 96px → 移动端 76.8px
+- 导航：水平 → 汉堡
+- 功能区：并排 → 堆叠
+- 代码面板：保持宽度，需要时横向滚动
+- 间距按比例压缩
 
-### Image Behavior
-- Product screenshots maintain aspect ratio
-- Dark screenshots blend seamlessly with dark background at all sizes
-- Rounded corners (12px–16px) maintained across breakpoints
+### 图片行为
+- 产品截图保持纵横比
+- 深色截图在所有尺寸下都与深色背景无缝融合
+- 圆角（12px–16px）跨断点保持
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Background: Void Black (`#000000`)
-- Primary text: Near White (`#f0f0f0`)
-- Secondary text: Silver (`#a1a4a5`)
-- Border: Frost Border (`rgba(214, 235, 253, 0.19)`)
-- Orange accent: `#ff801f`
-- Green accent: `#11ff99` (at 18% opacity)
-- Blue accent: `#3b9eff`
-- Focus ring: `rgb(0, 0, 0) 0px 0px 0px 8px`
+### 快速颜色参考
+- 背景：Void Black（`#000000`）
+- 主要文字：Near White（`#f0f0f0`）
+- 次要文字：Silver（`#a1a4a5`）
+- 边框：Frost Border（`rgba(214, 235, 253, 0.19)`）
+- 橙色强调：`#ff801f`
+- 绿色强调：`#11ff99`（18% 透明度）
+- 蓝色强调：`#3b9eff`
+- 聚焦环：`rgb(0, 0, 0) 0px 0px 0px 8px`
 
-### Example Component Prompts
-- "Create a hero section on pure black (#000000) background. Headline at 96px Domaine Display weight 400, line-height 1.00, letter-spacing -0.96px, near-white (#f0f0f0) text, OpenType 'ss01 ss04 ss11'. Subtitle at 20px ABC Favorit weight 400, line-height 1.30. Two pill buttons: white solid (#ffffff, 9999px radius) and transparent with frost border (rgba(214,235,253,0.19))."
-- "Design a navigation bar: dark background with frost border bottom (1px solid rgba(214,235,253,0.19)). Nav links at 14px ABC Favorit weight 500, letter-spacing +0.35px, OpenType 'ss01 ss03 ss04'. White pill CTA right-aligned."
-- "Build a feature card: transparent background, frost border (rgba(214,235,253,0.19)), 16px radius. Title at 56px ABC Favorit weight 400, letter-spacing -2.8px. Body at 16px Inter weight 400, #a1a4a5 text."
-- "Create a code block using Commit Mono 16px on dark background. Frost border container (24px radius). Syntax colors: orange (#ff801f), blue (#3b9eff), green (#11ff99), yellow (#ffc53d)."
-- "Design an accent badge: background #ff5900 at 22% opacity, text #ffa057, 9999px radius, 12px Inter weight 500."
+### 组件提示示例
+- "在纯黑（#000000）背景上创建一个英雄区块。标题 96px Domaine Display 字重 400，行高 1.00，字间距 -0.96px，近白（#f0f0f0）文字，OpenType 'ss01 ss04 ss11'。副标题 20px ABC Favorit 字重 400，行高 1.30。两个胶囊按钮：白色实心（#ffffff，9999px 圆角）和透明配霜边框（rgba(214,235,253,0.19)）。"
+- "设计一个导航栏：深色背景配霜边框底部（1px solid rgba(214,235,253,0.19)）。导航链接 14px ABC Favorit 字重 500，字间距 +0.35px，OpenType 'ss01 ss03 ss04'。白色胶囊 CTA 右对齐。"
+- "构建一个功能卡片：透明背景，霜边框（rgba(214,235,253,0.19)），16px 圆角。标题 56px ABC Favorit 字重 400，字间距 -2.8px。正文 16px Inter 字重 400，#a1a4a5 文字。"
+- "用 Commit Mono 16px 在深色背景上创建一个代码块。霜边框容器（24px 圆角）。语法颜色：橙色（#ff801f）、蓝色（#3b9eff）、绿色（#11ff99）、黄色（#ffc53d）。"
+- "设计一个强调徽章：背景 #ff5900 22% 透明度，文字 #ffa057，9999px 圆角，12px Inter 字重 500。"
 
-### Iteration Guide
-1. Start with pure black — everything floats in the void
-2. Frost borders (`rgba(214, 235, 253, 0.19)`) are the universal structural element — not gray, not neutral
-3. Three fonts, three roles: Domaine (hero), ABC Favorit (sections), Inter (body) — never cross
-4. OpenType stylistic sets are mandatory on display fonts — they define the character
-5. Multi-color accents at low opacity (12–42%) for backgrounds, full opacity for text
-6. Pill shape (9999px) for CTAs and badges, standard radius (4px–16px) for containers
-7. No shadows — use frost borders for depth against the void
+### 迭代指南
+1. 从纯黑开始 —— 一切都漂浮在虚空中
+2. 霜边框（`rgba(214, 235, 253, 0.19)`）是通用的结构性元素 —— 不是灰色，不是中性
+3. 三种字体，三种角色：Domaine（英雄）、ABC Favorit（区块）、Inter（正文）—— 绝不跨界
+4. 展示字体上的 OpenType 风格集是强制性的 —— 它们定义个性
+5. 多色强调以低透明度（12–42%）作为背景，全透明度作为文字
+6. CTA 和徽章使用胶囊形（9999px），容器使用标准圆角（4px–16px）
+7. 无阴影 —— 用霜边框对抗虚空创造深度

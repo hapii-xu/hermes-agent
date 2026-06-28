@@ -1,32 +1,27 @@
-"""Kanban triage specifier — flesh out a one-liner into a real spec.
+"""Kanban triage 规格化器 — 将一句话想法充实为完整的 spec。
 
-Used by ``hermes kanban specify [task_id | --all]``. Takes a task that
-lives in the Triage column (a rough idea, typically only a title), calls
-the auxiliary LLM to produce:
+由 ``hermes kanban specify [task_id | --all]`` 使用。接收一个位于 Triage 列
+的任务（一个粗略想法，通常只有标题），调用辅助 LLM 生成：
 
-  * A tightened title (optional — only replaces if the model proposes a
-    materially different one)
-  * A concrete body: goal, proposed approach, acceptance criteria
+  * 精简后的标题（可选 — 仅在模型提出明显不同的标题时才替换）
+  * 具体的 body：目标、建议方法、验收标准
 
-and then flips the task ``triage -> todo`` via
-``kanban_db.specify_triage_task``. The dispatcher promotes it to
-``ready`` on its next tick (or immediately if there are no open parents).
+然后通过 ``kanban_db.specify_triage_task`` 将任务从 ``triage -> todo``
+翻转。调度器会在下一个 tick 将其提升为 ``ready``（如果没有未完成的父任务
+则立即提升）。
 
-Design notes
+设计说明
 ------------
 
-* This module intentionally mirrors ``hermes_cli/goals.py`` — same aux
-  client pattern, same "empty config => skip, don't crash" tolerance.
-  Keeps the surface area tiny and the failure modes predictable.
+* 本模块有意与 ``hermes_cli/goals.py`` 结构一致 — 相同的 aux 客户端模式，
+  相同的"空配置 => 跳过而非崩溃"容错机制。保持接口精简，失败模式可预测。
 
-* The prompt is a short system + user pair. We ask for JSON with
-  ``{title, body}``; if parsing fails, we fall back to treating the
-  whole response as the body and leave the title untouched. No
-  retry loop — one shot, keep cost bounded.
+* prompt 是一对简短的 system + user。我们要求返回 ``{title, body}`` 格式的
+  JSON；如果解析失败，回退为将整个响应视为 body，标题保持不变。无重试循环
+  — 一次调用，控制成本。
 
-* Structured output / JSON mode is not requested explicitly so the
-  specifier works on providers that don't implement it. The parse
-  is lenient (tolerates markdown code fences around the JSON).
+* 不显式请求 structured output / JSON mode，以便 specifier 可以在不支持
+  该功能的 provider 上工作。解析是宽容的（容忍 JSON 外部的 markdown 代码块）。
 """
 
 from __future__ import annotations
@@ -91,7 +86,7 @@ Current body:
 
 @dataclass
 class SpecifyOutcome:
-    """Result of specifying a single triage task."""
+    """指定单个 triage 任务的结果。"""
 
     task_id: str
     ok: bool
@@ -109,12 +104,11 @@ _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
 
 
 def _extract_json_blob(raw: str) -> Optional[dict]:
-    """Lenient JSON extraction — tolerates fenced code blocks and
-    leading/trailing whitespace. Returns None if nothing parses."""
+    """宽容的 JSON 提取 — 容忍代码块和前后空白。解析失败时返回 None。"""
     if not raw:
         return None
     stripped = _FENCE_RE.sub("", raw.strip())
-    # Greedy: find the first `{` and last `}` and try that slice.
+    # 贪心策略：找到第一个 `{` 和最后一个 `}` 并尝试解析该切片。
     first = stripped.find("{")
     last = stripped.rfind("}")
     if first == -1 or last == -1 or last <= first:
@@ -130,8 +124,8 @@ def _extract_json_blob(raw: str) -> Optional[dict]:
 
 
 def _profile_author() -> str:
-    """Mirror of ``hermes_cli.kanban._profile_author``. Kept local to
-    avoid a circular import when kanban.py imports this module."""
+    """``hermes_cli.kanban._profile_author`` 的镜像。本地保留以避免
+    kanban.py 导入本模块时产生循环导入。"""
     return (
         os.environ.get("HERMES_PROFILE")
         or os.environ.get("USER")
@@ -145,12 +139,11 @@ def specify_task(
     author: Optional[str] = None,
     timeout: Optional[int] = None,
 ) -> SpecifyOutcome:
-    """Specify a single triage task and promote it to ``todo``.
+    """指定单个 triage 任务并将其提升为 ``todo``。
 
-    Returns an outcome describing what happened. Never raises for expected
-    failure modes (task not in triage, no aux client configured, API
-    error, malformed response) — those surface via ``ok=False`` so the
-    ``--all`` sweep can continue past individual failures.
+    返回一个描述执行结果的对象。对可预见的失败模式（任务不在 triage、
+    未配置 aux 客户端、API 错误、响应格式错误）绝不抛出异常 — 这些
+    通过 ``ok=False`` 反映，以便 ``--all`` 扫描可以跳过单个失败继续执行。
     """
     with kb.connect_closing() as conn:
         task = kb.get_task(conn, task_id)
@@ -215,9 +208,9 @@ def specify_task(
     new_title: Optional[str]
     new_body: Optional[str]
     if parsed is None:
-        # Fall back: treat the whole reply as the body, leave title as-is.
-        # Worst case the user edits afterward — still better than stranding
-        # the task in triage on a malformed LLM reply.
+        # 回退策略：将整个回复视为 body，标题保持原样。
+        # 最坏情况是用户事后手动编辑 — 仍好过在 triage 中因 LLM 回复
+        # 格式错误而导致任务被搁置。
         stripped_raw = raw.strip()
         if not stripped_raw:
             return SpecifyOutcome(
@@ -250,8 +243,8 @@ def specify_task(
             author=author or _profile_author(),
         )
     if not ok:
-        # Race: someone else promoted / archived the task between our
-        # read above and the write. Report, don't crash.
+        # 竞态：在我们上面的读取和写入之间，其他人已经提升/归档了该任务。
+        # 报告错误，不崩溃。
         return SpecifyOutcome(
             task_id, False, "task moved out of triage before promotion"
         )
@@ -259,9 +252,9 @@ def specify_task(
 
 
 def list_triage_ids(*, tenant: Optional[str] = None) -> list[str]:
-    """Return task ids currently in the triage column.
+    """返回当前处于 triage 列的任务 id。
 
-    ``tenant`` narrows the sweep; ``None`` returns every triage task.
+    ``tenant`` 缩小扫描范围；``None`` 返回所有 triage 任务。
     """
     with kb.connect_closing() as conn:
         tasks = kb.list_tasks(

@@ -1,32 +1,28 @@
-"""security-guidance plugin — fast pattern-matched security warnings on file writes.
+"""security-guidance 插件 — 基于模式匹配的快速安全警告，在文件写入时触发。
 
-Wires one behaviour:
+提供一个行为钩子：
 
-* ``transform_tool_result`` hook — scans the *content being written* by
-  ``write_file`` / ``patch`` / ``skill_manage`` (write/patch modes) for known
-  dangerous code patterns (eval(, pickle.load, yaml.load, os.system,
-  subprocess(shell=True), dangerouslySetInnerHTML, verify=False, ECB,
-  XXE-prone XML parsers, GitHub Actions ``${{ github.event.* }}`` injection,
-  torch.load without ``weights_only=True``, ...). When any pattern matches,
-  the plugin appends a ``⚠️ Security warning`` block to the JSON tool-result
-  string. The file is still written; the model sees the warning in the next
-  turn's tool message and can self-correct.
+* ``transform_tool_result`` 钩子 — 扫描 ``write_file`` / ``patch`` /
+  ``skill_manage``（write/patch 模式）*正在写入的内容*，检测已知的危险代码模式
+  （eval(、pickle.load、yaml.load、os.system、subprocess(shell=True)、
+  dangerouslySetInnerHTML、verify=False、ECB、易受 XXE 攻击的 XML 解析器、
+  GitHub Actions ``${{ github.event.* }}`` 注入、未设置 ``weights_only=True`` 的
+  torch.load 等）。当任何模式匹配时，插件会在 JSON tool-result 字符串末尾
+  追加一个 ``⚠️ Security warning`` 块。文件仍会被写入；模型在下一次 turn
+  的 tool message 中看到警告并可以自行修正。
 
-Why not block? Patterns have a non-trivial false-positive rate (``eval(`` in
-a tokenizer, ``yaml.load`` already wrapped in ``yaml.SafeLoader``, ECB inside
-a test fixture). Blocking would force every false positive into an approval
-prompt or an interrupted workflow. Warning is the right severity for layer
-1 — the agent reads the warning and either fixes the code or briefly
-documents why the construct is safe.
+为什么不直接阻止？模式匹配存在不可忽视的误报率（tokenizer 中的 ``eval(``、
+已经用 ``yaml.SafeLoader`` 包装的 ``yaml.load``、测试数据中的 ECB 等）。
+直接阻止会将每个误报都变成审批提示或中断工作流。警告是第 1 层合适的
+严重程度 — 模型读取警告后要么修正代码，要么简要说明该用法为何是安全的。
 
-For block-mode (refuse the write entirely), set
-``SECURITY_GUIDANCE_BLOCK=1``. This trades convenience for strictness and
-is intended for shared dev environments where unsafe-by-default patterns
-are policy violations.
+如需严格阻止模式（完全拒绝写入），设置
+``SECURITY_GUIDANCE_BLOCK=1``。这会以严格性换取便利性，
+适用于默认不安全模式属于策略违规的共享开发环境。
 
-Pattern data lives in ``patterns.py``, forked verbatim from Anthropic's
-``claude-plugins-official`` under Apache-2.0. See ``LICENSE`` and ``NOTICE``
-in this directory.
+模式数据存放在 ``patterns.py`` 中，逐字 fork 自 Anthropic 的
+``claude-plugins-official``，遵循 Apache-2.0 协议。详见此目录下的
+``LICENSE`` 和 ``NOTICE``。
 """
 
 from __future__ import annotations
@@ -43,23 +39,23 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Configuration
+# 配置
 # ---------------------------------------------------------------------------
 
-# Tool names whose args carry "code being written to disk" we want to scan.
-# Maps tool name -> (path_arg_name, content_arg_names).  For tools with multiple
-# possible content fields (patch's old/new_string vs raw patch text), we scan
-# every populated string field.
+# 需要扫描其参数中"写入磁盘的代码内容"的工具名称。
+# 映射：工具名 -> (路径参数名, 内容参数名)。对于有多个可能
+# 内容字段的工具（patch 的 old/new_string 与原始 patch 文本），
+# 扫描所有已填充的字符串字段。
 _TARGET_TOOLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "write_file": ("path", ("content",)),
     "patch": ("path", ("new_string", "patch")),
-    # skill_manage write_file / patch sub-actions land here. file_path holds
-    # the relative path inside the skill dir; we scan it the same way.
+    # skill_manage 的 write_file / patch 子操作。file_path 保存
+    # skill 目录内的相对路径；我们以相同方式扫描。
     "skill_manage": ("file_path", ("file_content", "new_string")),
 }
 
-# Cap on how much content we scan. Above this we skip — pattern matching a
-# 10 MB blob has poor signal-to-noise and would slow down the agent loop.
+# 扫描内容的上限。超过此值则跳过 — 对 10 MB 的文件块做模式匹配
+# 信噪比很低，且会拖慢 agent 循环。
 _MAX_SCAN_BYTES = 256 * 1024
 
 
@@ -72,12 +68,12 @@ def _plugin_disabled() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Scanning
+# 扫描
 # ---------------------------------------------------------------------------
 
 
-# Pre-compile the regex patterns once.  Substring patterns stay as plain
-# strings — ``str.__contains__`` is faster than a regex of literal chars.
+# 预编译正则表达式（仅一次）。子串模式保留为普通字符串 —
+# ``str.__contains__`` 比纯字面字符的正则更快。
 _COMPILED: List[Dict[str, Any]] = []
 for _rule in _patterns.SECURITY_PATTERNS:
     _entry: Dict[str, Any] = {
@@ -102,19 +98,19 @@ for _rule in _patterns.SECURITY_PATTERNS:
 
 
 def _scan_content(path: str, content: str) -> List[Tuple[str, str]]:
-    """Return [(ruleName, reminder), ...] for every pattern that matches.
+    """返回 [(ruleName, reminder), ...]，包含所有匹配的模式。
 
-    ``path`` is used by per-rule path filters (path_filter / path_check).
-    Each rule fires at most once per call — multiple matches of the same
-    rule collapse into a single warning entry.
+    ``path`` 由每条规则的路径过滤器（path_filter / path_check）使用。
+    每次调用中每条规则最多触发一次 — 同一规则的多次匹配会
+    合并为单条警告记录。
     """
     if not content or len(content.encode("utf-8", errors="ignore")) > _MAX_SCAN_BYTES:
         return []
     hits: List[Tuple[str, str]] = []
     for entry in _COMPILED:
-        # path_check: rule fires PURELY on path match (no content regex). Used
-        # for blanket "you're editing a sensitive file, here are reminders"
-        # warnings — github_actions_workflow is the canonical example.
+        # path_check：规则仅根据路径匹配触发（不涉及内容正则）。
+        # 用于"你正在编辑敏感文件，此处提供提醒"类的全局警告 —
+        # github_actions_workflow 是典型示例。
         path_check = entry.get("path_check")
         if path_check is not None:
             try:
@@ -122,10 +118,10 @@ def _scan_content(path: str, content: str) -> List[Tuple[str, str]]:
                     hits.append((entry["ruleName"], entry["reminder"]))
             except Exception:
                 pass
-            # Path-check rules don't also pattern-match content; move on.
+            # 路径检查规则不做内容模式匹配；继续下一条。
             continue
-        # path_filter: rule is skipped when the path filter returns False
-        # (e.g. Python-only rules skip .js files; eval_injection skips .md)
+        # path_filter：当路径过滤器返回 False 时跳过该规则
+        # （例如仅适用于 Python 的规则跳过 .js 文件；eval_injection 跳过 .md）
         path_filter = entry.get("path_filter")
         if path_filter is not None:
             try:
@@ -147,7 +143,7 @@ def _scan_content(path: str, content: str) -> List[Tuple[str, str]]:
 
 
 def _extract_path_and_content(tool_name: str, args: Any) -> List[Tuple[str, str]]:
-    """Return [(path, content), ...] for a tool call.  Empty if nothing to scan."""
+    """返回 [(path, content), ...]，对应一次工具调用。无可扫描内容时返回空列表。"""
     spec = _TARGET_TOOLS.get(tool_name)
     if spec is None or not isinstance(args, dict):
         return []
@@ -164,7 +160,7 @@ def _extract_path_and_content(tool_name: str, args: Any) -> List[Tuple[str, str]
 
 
 def _format_warning_block(findings: List[Tuple[str, str]]) -> str:
-    """Render findings into a Markdown block appended to the tool result."""
+    """将匹配结果渲染为 Markdown 块，追加到工具结果末尾。"""
     names = ", ".join(name for name, _ in findings)
     lines = [
         "",
@@ -184,13 +180,13 @@ def _format_warning_block(findings: List[Tuple[str, str]]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Hooks
+# 钩子
 # ---------------------------------------------------------------------------
 
 
 def _scan_args(tool_name: str, args: Any) -> List[Tuple[str, str]]:
-    """Common scan path used by both pre_tool_call (block mode) and
-    transform_tool_result (warn mode)."""
+    """pre_tool_call（阻止模式）和 transform_tool_result（警告模式）
+    共用的扫描路径。"""
     if _plugin_disabled():
         return []
     findings: List[Tuple[str, str]] = []
@@ -204,10 +200,10 @@ def _on_pre_tool_call(
     args: Any = None,
     **_: Any,
 ) -> Optional[Dict[str, str]]:
-    """In block mode, refuse the write if any pattern matches.
+    """阻止模式：若有任何模式匹配，拒绝写入。
 
-    Default mode is non-blocking — we return None here and let
-    ``transform_tool_result`` append a warning to the result instead.
+    默认为非阻止模式 — 此处返回 None，由
+    ``transform_tool_result`` 在结果中追加警告。
     """
     if not _block_mode_enabled():
         return None
@@ -230,13 +226,13 @@ def _on_transform_tool_result(
     result: Any = None,
     **_: Any,
 ) -> Optional[str]:
-    """Warn-mode hook: append a security-warning block to the tool result.
+    """警告模式钩子：在工具结果末尾追加安全警告块。
 
-    Returning a string replaces the result that the model sees in the next
-    turn. Returning None leaves the result unchanged.
+    返回字符串会替换模型在下一轮 turn 中看到的结果。
+    返回 None 则保持结果不变。
     """
-    # Block mode handles findings via pre_tool_call; nothing for this hook
-    # to do in that case (the tool didn't run, so there's no result to wrap).
+    # 阻止模式通过 pre_tool_call 处理匹配结果；此钩子在那种情况下
+    # 无事可做（工具未运行，因此没有可包装的结果）。
     if _block_mode_enabled():
         return None
     findings = _scan_args(tool_name, args)
@@ -244,7 +240,7 @@ def _on_transform_tool_result(
         return None
     if not isinstance(result, str):
         return None
-    # Don't decorate error results — the model already has bigger problems.
+    # 不装饰错误结果 — 模型已经有更严重的问题需要处理。
     try:
         parsed = json.loads(result)
         if isinstance(parsed, dict) and "error" in parsed and len(parsed) <= 2:

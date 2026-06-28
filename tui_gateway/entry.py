@@ -1,11 +1,11 @@
 import os
 import sys
 
-# Stop a ``utils/`` (or ``proxy/``, ``ui/``) package in the launch directory
-# from shadowing Hermes's own top-level modules.  ``hermes_bootstrap`` lives at
-# the repo root next to this package, so importing it is safe before the guard
-# runs (its name won't collide with a user package), and it owns the canonical
-# path-hardening logic shared with the other entry points.
+# 阻止启动目录中的 ``utils/``（或 ``proxy/``、``ui/``）包
+# 遮蔽 Hermes 自身的顶层模块。``hermes_bootstrap`` 位于
+# 仓库根目录，与此包相邻，因此在守卫
+# 运行之前导入它是安全的（其名称不会与用户包冲突），
+# 它拥有与其他入口点共享的标准路径加固逻辑。
 import hermes_bootstrap
 
 hermes_bootstrap.harden_import_path()
@@ -22,18 +22,18 @@ from tui_gateway.transport import TeeTransport
 
 logger = logging.getLogger(__name__)
 
-# Handle for the background MCP tool-discovery thread (see main()).  The first
-# agent build briefly joins this so already-spawning fast servers land before
-# the agent snapshots its tool list (see wait_for_mcp_discovery).
+# 后台 MCP 工具发现线程的句柄（参见 main()）。第一个
+# 代理构建会短暂地 join 此线程，以便已经启动的快速服务器
+# 能在代理快照其工具列表之前落地（参见 wait_for_mcp_discovery）。
 _mcp_discovery_thread = None
 
 
 def _install_sidecar_publisher() -> None:
-    """Mirror every dispatcher emit to the dashboard sidebar via WS.
+    """通过 WS 将调度器的每次发送镜像到仪表板侧边栏。
 
-    Activated by `HERMES_TUI_SIDECAR_URL`, set by the dashboard's
-    ``/api/pty`` endpoint when a chat tab passes a ``channel`` query param.
-    Best-effort: connect failure or runtime drop falls back to stdio-only.
+    由 `HERMES_TUI_SIDECAR_URL` 激活，该环境变量由仪表板的
+    ``/api/pty`` 端点在聊天标签页传递 ``channel`` 查询参数时设置。
+    尽力而为：连接失败或运行时断开将回退到仅 stdio。
     """
     url = os.environ.get("HERMES_TUI_SIDECAR_URL")
 
@@ -47,14 +47,14 @@ def _install_sidecar_publisher() -> None:
     )
 
 
-# How long to wait for orderly shutdown (atexit + finalisers) before
-# falling back to ``os._exit(0)`` so a wedged worker mid-flush can't
-# strand the process.  1s covers the gateway's own shutdown work
-# (thread-pool drain + session finalize) on every machine we've
-# tested; override via ``HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S`` if a
-# slower environment needs more headroom (e.g. encrypted disks
-# flushing checkpoints) and accept that a longer grace also means a
-# longer wait when shutdown actually deadlocks.
+# 等待有序关闭（atexit + 终结器）的最长时间，超过后
+# 回退到 ``os._exit(0)``，防止正在刷新中的 worker
+# 使进程挂起。1 秒足以覆盖网关自身的关闭工作
+# （线程池排空 + 会话终结），在我们测试过的
+# 每台机器上都是如此；通过 ``HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S`` 覆盖，
+# 如果较慢的环境需要更多余量（例如加密磁盘
+# 正在刷新检查点），但请注意更长的宽限期也意味着
+# 当关闭真正死锁时等待时间更长。
 _DEFAULT_SHUTDOWN_GRACE_S = 1.0
 
 
@@ -70,26 +70,26 @@ def _shutdown_grace_seconds() -> float:
 
 
 def _log_signal(signum: int, frame) -> None:
-    """Capture WHICH thread and WHERE a termination signal hit us.
+    """捕获是哪个线程以及在哪里收到了终止信号。
 
-    SIG_DFL for SIGPIPE kills the process silently the instant any
-    background thread (TTS playback, beep, voice status emitter, etc.)
-    writes to a stdout the TUI has stopped reading.  Without this
-    handler the gateway-exited banner in the TUI has no trace — the
-    crash log never sees a Python exception because the kernel reaps
-    the process before the interpreter runs anything.
+    SIGPIPE 的 SIG_DFL 会在任何后台线程（TTS 播放、蜂鸣、
+    语音状态发射器等）写入 TUI 已停止读取的 stdout 时
+    立即静默杀死进程。没有这个
+    处理器，TUI 中的 gateway-exited 横幅将没有任何痕迹 —
+    崩溃日志看不到 Python 异常，因为内核在
+    解释器运行任何代码之前就已经回收了进程。
 
-    Termination semantics: ``sys.exit(0)`` here used to race the worker
-    pool — a thread holding ``_stdout_lock`` mid-flush would block the
-    interpreter shutdown indefinitely.  We now log the stack, give the
-    process the configured shutdown grace
-    (``HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S``, default
-    ``_DEFAULT_SHUTDOWN_GRACE_S``) to drain naturally on a background
-    thread, and fall back to ``os._exit(0)`` so a wedged write/flush
-    can never strand the process.
+    终止语义：此处的 ``sys.exit(0)`` 曾经与 worker
+    池竞争 — 持有 ``_stdout_lock`` 正在刷新的线程会
+    无限期阻塞解释器关闭。我们现在记录堆栈，
+    给进程配置的关闭宽限期
+    （``HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S``，默认
+    ``_DEFAULT_SHUTDOWN_GRACE_S``）让其在后台线程上自然排空，
+    然后回退到 ``os._exit(0)``，使卡住的写入/刷新
+    永远不会使进程挂起。
     """
-    # SIGPIPE and SIGHUP don't exist on Windows — build the lookup
-    # dict from attributes that actually exist on the current platform.
+    # SIGPIPE 和 SIGHUP 在 Windows 上不存在 — 从
+    # 当前平台上实际存在的属性构建查找字典。
     _signal_names: dict[int, str] = {}
     for _attr in ("SIGPIPE", "SIGTERM", "SIGHUP", "SIGINT", "SIGBREAK"):
         _sig = getattr(signal, _attr, None)
@@ -105,8 +105,8 @@ def _log_signal(signum: int, frame) -> None:
             if frame is not None:
                 f.write("main-thread stack at signal delivery:\n")
                 traceback.print_stack(frame, file=f)
-            # All live threads — signal may have been triggered by a
-            # background thread (write to broken stdout from TTS, etc.).
+            # 所有活跃线程 — 信号可能由后台线程触发
+            # （例如 TTS 写入损坏的 stdout）。
             import threading as _threading
             for tid, th in _threading._active.items():
                 f.write(f"\n--- thread {th.name} (id={tid}) ---\n")
@@ -118,23 +118,24 @@ def _log_signal(signum: int, frame) -> None:
     import threading as _threading
 
     def _hard_exit() -> None:
-        # If a worker thread is still mid-flush on a half-closed pipe,
-        # ``sys.exit(0)`` would wait forever for it to drop the GIL on
-        # interpreter shutdown.  ``os._exit`` skips atexit handlers but
-        # breaks the deadlock.  The crash log + stderr line above are
-        # the forensic trail.
+        # 如果 worker 线程仍在半关闭的管道上刷新，
+        # ``sys.exit(0)`` 会在解释器关闭时无限期等待它
+        # 释放 GIL。``os._exit`` 跳过 atexit 处理器但可以
+        # 打破死锁。上面的崩溃日志 + stderr 行是
+        # 取证线索。
         os._exit(0)
 
     timer = _threading.Timer(_shutdown_grace_seconds(), _hard_exit)
     timer.daemon = True
     timer.start()
 
-    # ── Flush sessions before exit ───────────────────────────────────
-    # The atexit handler (_shutdown_sessions) is registered in
-    # tui_gateway/server.py, but a worker thread holding the GIL or
-    # _stdout_lock can block atexit from completing within the grace
-    # window.  Explicitly finalize sessions here so that unpersisted
-    # messages reach state.db before the hard-exit timer fires.
+    # ── 退出前刷新会话 ───────────────────────────────────
+    # atexit 处理器（_shutdown_sessions）注册在
+    # tui_gateway/server.py 中，但持有 GIL 或
+    # _stdout_lock 的 worker 线程可能会阻止 atexit 在宽限
+    # 窗口内完成。在此处显式终结会话，
+    # 使未持久化的消息在硬退出定时器触发之前
+    # 到达 state.db。
     try:
         from tui_gateway.server import _shutdown_sessions
 
@@ -145,29 +146,30 @@ def _log_signal(signum: int, frame) -> None:
     try:
         sys.exit(0)
     except SystemExit:
-        # Re-raise so the main-thread interpreter unwinds and runs
-        # atexit + finalisers inside the grace window.  Python signal
-        # handlers always run on the main thread, but a worker thread
-        # holding ``_stdout_lock`` mid-flush can keep that unwind
-        # waiting indefinitely; the daemon timer above is the safety
-        # net for that exact case.
+        # 重新抛出，使主线程解释器展开并运行
+        # atexit + 终结器（在宽限窗口内）。Python 信号
+        # 处理器始终在主线程上运行，但持有
+        # ``_stdout_lock`` 正在刷新的 worker 线程可能会使展开
+        # 无限期等待；上面的守护定时器就是针对
+        # 这种情况的安全网。
         raise
 
 
-# SIGPIPE: ignore, don't exit. The old SIG_DFL killed the process
-# silently whenever a *background* thread (TTS playback chain, voice
-# debug stderr emitter, beep thread) wrote to a pipe the TUI had gone
-# quiet on — even though the main thread was perfectly fine waiting on
-# stdin.  Ignoring the signal lets Python raise BrokenPipeError on the
-# offending write (write_json already handles that with a clean
-# sys.exit(0) + _log_exit), which keeps the gateway alive as long as
-# the main command pipe is still readable.  Terminal signals still
-# route through _log_signal so kills and hangups are diagnosable.
+# SIGPIPE：忽略，不退出。旧的 SIG_DFL 会在任何 *后台*
+# 线程（TTS 播放链、语音调试 stderr 发射器、蜂鸣线程）
+# 写入 TUI 已不再读取的管道时静默杀死进程 —
+# 即使主线程在 stdin 上等待完全正常。
+# 忽略该信号让 Python 在违规写入时抛出 BrokenPipeError
+# （write_json 已经通过干净的 sys.exit(0) + _log_exit
+# 处理这种情况），只要主命令管道仍可读，
+# 网关就保持存活。终端信号仍然
+# 通过 _log_signal 路由，使终止和挂断可以被诊断。
 #
-# SIGPIPE and SIGHUP don't exist on Windows; guard each installation
-# with hasattr so ``python -m tui_gateway.entry`` (spawned by
-# ``hermes --tui``) imports cleanly there.  SIGBREAK (Windows' Ctrl+Break)
-# is installed when available as a weaker equivalent of SIGHUP.
+# SIGPIPE 和 SIGHUP 在 Windows 上不存在；用 hasattr 保护
+# 每次安装，使 ``python -m tui_gateway.entry``（由
+# ``hermes --tui`` 生成）能在 Windows 上正常导入。
+# SIGBREAK（Windows 的 Ctrl+Break）在可用时作为
+# SIGHUP 的较弱等价物安装。
 if hasattr(signal, "SIGPIPE"):
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 if hasattr(signal, "SIGTERM"):
@@ -175,22 +177,23 @@ if hasattr(signal, "SIGTERM"):
 if hasattr(signal, "SIGHUP"):
     signal.signal(signal.SIGHUP, _log_signal)
 elif hasattr(signal, "SIGBREAK"):
-    # Windows-only: Ctrl+Break in a console window delivers SIGBREAK.
-    # Route it through the same handler so kills are diagnosable.
+    # 仅 Windows：控制台窗口中的 Ctrl+Break 会发送 SIGBREAK。
+    # 通过相同的处理器路由，使终止可以被诊断。
     signal.signal(signal.SIGBREAK, _log_signal)
 if hasattr(signal, "SIGINT"):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 def _log_exit(reason: str) -> None:
-    """Record why the gateway subprocess is shutting down.
+    """记录网关子进程关闭的原因。
 
-    Three exit paths (startup write fail, parse-error-response write fail,
-    dispatch-response write fail, stdin EOF) all collapse into a silent
-    sys.exit(0) here.  Without this trail the TUI shows "gateway exited"
-    with no actionable clue about WHICH broken pipe or WHICH message
-    triggered it — the main reason voice-mode turns look like phantom
-    crashes when the real story is "TUI read pipe closed on this event".
+    三条退出路径（启动时写入失败、解析错误响应写入失败、
+    调度响应写入失败、stdin EOF）全部折叠为此处的静默
+    sys.exit(0)。没有这条记录，TUI 会显示 "gateway exited"
+    但没有任何关于哪个管道损坏或哪条消息
+    触发了它的可操作线索 — 这就是为什么语音模式会话
+    看起来像幽灵崩溃，而真正的原因是 "TUI 读取管道
+    在此事件上关闭了"。
     """
     try:
         os.makedirs(os.path.dirname(_CRASH_LOG), exist_ok=True)
@@ -205,20 +208,21 @@ def _log_exit(reason: str) -> None:
 
 
 def wait_for_mcp_discovery(timeout: "float | None" = None) -> None:
-    """Block until background MCP discovery finishes, up to the resolved bound.
+    """阻塞直到后台 MCP 发现完成，最多等待解析后的时间上限。
 
-    MCP discovery runs in a daemon thread spawned at startup (see main()) so a
-    slow/dead server can't freeze ``gateway.ready``.  But the agent snapshots
-    its tool list ONCE at build time and never re-reads it, so a reachable-but-
-    slow server that finishes connecting *after* the first prompt would be
-    invisible for the whole session.  Joining with a bounded timeout before the
-    first agent build lets already-spawning servers land without re-introducing
-    the startup hang: ``thread.join(timeout)`` returns the instant discovery
-    completes (so fast/no-MCP startups pay ~0s), and a dead server is simply not
-    waited on beyond the bound.  No-op when no discovery thread was started.
+    MCP 发现在启动时生成的守护线程中运行（参见 main()），
+    使慢/死服务器不会冻结 ``gateway.ready``。但代理在构建时
+    只快照一次工具列表，之后不再重新读取，因此一个可达但
+    慢的服务器如果在第一次提示 *之后* 才完成连接，
+    在整个会话中都将不可见。在第一次代理构建之前
+    以有限超时 join，让已经启动的服务器落地，
+    同时不会重新引入启动挂起：``thread.join(timeout)``
+    一旦发现完成就立即返回（因此快速/无 MCP 启动
+    约 0 秒开销），而死服务器 simply 不会被等待超过上限。
+    未启动发现线程时为空操作。
 
-    The bound comes from ``mcp_discovery_timeout`` in config (shared with the
-    CLI path via ``hermes_cli.mcp_startup``); ``timeout`` overrides it.
+    上限来自配置中的 ``mcp_discovery_timeout``（通过
+    ``hermes_cli.mcp_startup`` 与 CLI 路径共享）；``timeout`` 参数覆盖它。
     """
     thread = _mcp_discovery_thread
     if thread is None or not thread.is_alive():
@@ -233,24 +237,24 @@ def wait_for_mcp_discovery(timeout: "float | None" = None) -> None:
 
 
 def mcp_discovery_in_flight() -> bool:
-    """Return True if the background MCP discovery thread is still running.
+    """如果后台 MCP 发现线程仍在运行则返回 True。
 
-    Used by the agent-build path to decide whether to schedule a late tool
-    snapshot refresh: if discovery didn't land within the bounded
-    ``wait_for_mcp_discovery`` join, the agent was built without those tools
-    and the banner/tool count will be stale until they arrive.
+    代理构建路径使用此方法决定是否安排延迟工具
+    快照刷新：如果发现未在有限的
+    ``wait_for_mcp_discovery`` join 内落地，代理构建时就没有这些工具，
+    横幅/工具计数将是过时的，直到它们到达。
     """
     thread = _mcp_discovery_thread
     return thread is not None and thread.is_alive()
 
 
 def join_mcp_discovery(timeout: float | None = None) -> bool:
-    """Block until background MCP discovery finishes, up to ``timeout`` seconds.
+    """阻塞直到后台 MCP 发现完成，最多等待 ``timeout`` 秒。
 
-    Returns True if discovery has completed (thread absent or no longer alive),
-    False if it is still running after the timeout. Unlike
-    ``wait_for_mcp_discovery`` this accepts an unbounded/long wait and reports
-    the outcome, for the off-critical-path late-refresh waiter.
+    如果发现已完成（线程不存在或不再活跃）则返回 True，
+    如果超时后仍在运行则返回 False。与
+    ``wait_for_mcp_discovery`` 不同，此方法接受无界/长时间等待并报告
+    结果，供非关键路径的延迟刷新等待者使用。
     """
     thread = _mcp_discovery_thread
     if thread is None:
@@ -262,33 +266,33 @@ def join_mcp_discovery(timeout: float | None = None) -> bool:
 def main():
     _install_sidecar_publisher()
 
-    # MCP tool discovery — runs in a background daemon thread so a slow or
-    # unreachable MCP server can't freeze TUI startup.  Previously this ran
-    # inline before ``gateway.ready``, which meant any configured-but-down
-    # server stalled the whole shell on "summoning hermes…" for the full
-    # connect-retry backoff (e.g. a dead stdio/http server burns 1+2+4s of
-    # retries → ~7s of dead air before the composer appears).  Discovery is
-    # idempotent and registers tools into the shared registry as servers
-    # connect.  The agent isn't built until the first prompt, at which point
-    # ``_make_agent`` briefly joins this thread (``wait_for_mcp_discovery``,
-    # bounded) so already-spawning fast servers land in the tool snapshot —
-    # a dead server is simply not waited on past the bound.  ``/reload-mcp``
-    # rebuilds the snapshot for servers that connect later in the session.
+    # MCP 工具发现 — 在后台守护线程中运行，使慢或
+    # 不可达的 MCP 服务器不会冻结 TUI 启动。此前这是在
+    # ``gateway.ready`` 之前内联运行的，这意味着任何已配置但宕机的
+    # 服务器都会在整个连接重试退避期间阻塞整个 shell
+    # （例如一个死的 stdio/http 服务器会消耗 1+2+4 秒的
+    # 重试 → 在编辑器出现之前约 7 秒的死等）。发现是
+    # 幂等的，在服务器连接时将工具注册到共享注册表中。
+    # 代理直到第一次提示时才构建，此时
+    # ``_make_agent`` 会短暂 join 此线程（``wait_for_mcp_discovery``，
+    # 有限时），使已启动的快速服务器落入工具快照 —
+    # 死服务器 simply 不会被等待超过上限。``/reload-mcp``
+    # 为会话中稍后连接的服务器重建快照。
     #
-    # Cold-start guard: importing ``tools.mcp_tool`` transitively pulls the
-    # full MCP SDK (mcp, pydantic, httpx, jsonschema, starlette parsers —
-    # ~200ms on macOS).  The overwhelming majority of users have no
-    # ``mcp_servers`` configured, in which case every byte of that import is
-    # wasted.  Check the config first (cheap) and only spawn the discovery
-    # thread when there's actually MCP work to do, so the import cost stays
-    # off the path entirely for the common case.
+    # 冷启动保护：导入 ``tools.mcp_tool`` 会传递性地拉入
+    # 完整的 MCP SDK（mcp、pydantic、httpx、jsonschema、starlette 解析器 —
+    # 在 macOS 上约 200 毫秒）。绝大多数用户没有
+    # 配置 ``mcp_servers``，在这种情况下每一字节的导入都是
+    # 浪费的。先检查配置（开销低），只在确实有 MCP 工作
+    # 要做时才生成发现线程，这样常见情况下
+    # 导入成本完全不会出现在路径上。
     try:
         from hermes_cli.config import read_raw_config
         _mcp_servers = (read_raw_config() or {}).get("mcp_servers")
         _has_mcp_servers = isinstance(_mcp_servers, dict) and len(_mcp_servers) > 0
     except Exception:
-        # Be conservative: if we can't decide, fall back to attempting
-        # discovery (still backgrounded, so it can't block startup).
+        # 保守策略：如果无法确定，回退到尝试
+        # 发现（仍然在后台，不会阻塞启动）。
         _has_mcp_servers = True
     if _has_mcp_servers:
         def _discover_mcp_background() -> None:
@@ -307,8 +311,8 @@ def main():
             daemon=True,
         )
         _mcp_thread.start()
-        # Publish the handle so the first agent build can briefly wait for
-        # already-spawning fast servers to land (see wait_for_mcp_discovery).
+        # 发布句柄，使第一次代理构建可以短暂等待
+        # 已启动的快速服务器落地（参见 wait_for_mcp_discovery）。
         global _mcp_discovery_thread
         _mcp_discovery_thread = _mcp_thread
 

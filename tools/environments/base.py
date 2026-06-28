@@ -1,9 +1,8 @@
-"""Base class for all Hermes execution environment backends.
+"""所有 Hermes 执行环境后端的基类。
 
-Unified spawn-per-call model: every command spawns a fresh ``bash -c`` process.
-A session snapshot (env vars, functions, aliases) is captured once at init and
-re-sourced before each command. CWD persists via in-band stdout markers (remote)
-or a temp file (local).
+统一的每次调用生成模型：每条命令都会生成一个新的 ``bash -c`` 进程。
+会话快照（环境变量、函数、别名）在初始化时捕获一次，并在每条命令执行前
+重新加载。CWD 通过带内 stdout 标记（远程）或临时文件（本地）持久化。
 """
 
 import codecs
@@ -25,26 +24,26 @@ from tools.interrupt import is_interrupted
 
 logger = logging.getLogger(__name__)
 
-# Opt-in debug tracing for the interrupt/activity/poll machinery.  Set
-# HERMES_DEBUG_INTERRUPT=1 to log loop entry/exit, periodic heartbeats, and
-# every is_interrupted() state change from _wait_for_process.  Off by default
-# to avoid flooding production gateway logs.
+# 中断/活动/轮询机制的可选调试跟踪。设置
+# HERMES_DEBUG_INTERRUPT=1 以记录循环进入/退出、周期性心跳以及
+# _wait_for_process 中每次 is_interrupted() 的状态变化。默认关闭
+# 以避免生产网关日志过多。
 _DEBUG_INTERRUPT = bool(os.getenv("HERMES_DEBUG_INTERRUPT"))
 
 if _DEBUG_INTERRUPT:
-    # AIAgent's quiet_mode path (run_agent.py) forces the `tools` logger to
-    # ERROR on CLI startup, which would silently swallow every trace we emit.
-    # Force this module's own logger back to INFO so the trace is visible in
-    # agent.log regardless of quiet-mode.  Scoped to the opt-in case only.
+    # AIAgent 的 quiet_mode 路径（run_agent.py）会在 CLI 启动时把 `tools`
+    # 日志器强制设为 ERROR，这会静默吞掉我们发出的每一条跟踪。把本模块
+    # 自己的日志器强制设回 INFO，使跟踪无论 quiet-mode 如何都能在
+    # agent.log 中可见。仅作用于 opt-in 的情况。
     logger.setLevel(logging.INFO)
 
-# Thread-local activity callback.  The agent sets this before a tool call so
-# long-running _wait_for_process loops can report liveness to the gateway.
+# 线程局部的活动回调。agent 在一次工具调用之前设置它，使长时间运行的
+# _wait_for_process 循环可以向网关报告存活性。
 _activity_callback_local = threading.local()
 
 
 def set_activity_callback(cb: Callable[[str], None] | None) -> None:
-    """Register a callback that _wait_for_process fires periodically."""
+    """注册一个由 _wait_for_process 周期性触发的回调。"""
     _activity_callback_local.callback = cb
 
 
@@ -56,13 +55,13 @@ def touch_activity_if_due(
     state: dict,
     label: str,
 ) -> None:
-    """Fire the activity callback at most once every ``state['interval']`` seconds.
+    """最多每 ``state['interval']`` 秒触发一次活动回调。
 
-    *state* must contain ``last_touch`` (monotonic timestamp) and ``start``
-    (monotonic timestamp of the operation start).  An optional ``interval``
-    key overrides the default 10 s cadence.
+    *state* 必须包含 ``last_touch``（单调时间戳）和 ``start``
+    （操作开始的单调时间戳）。可选的 ``interval`` 键可覆盖默认的 10 秒
+    节奏。
 
-    Swallows all exceptions so callers don't need their own try/except.
+    吞掉所有异常，使调用方不需要自己的 try/except。
     """
     now = time.monotonic()
     interval = state.get("interval", 10.0)
@@ -79,10 +78,10 @@ def touch_activity_if_due(
 
 
 def get_sandbox_dir() -> Path:
-    """Return the host-side root for all sandbox storage (Docker workspaces,
-    Singularity overlays/SIF cache, etc.).
+    """返回所有沙箱存储的主机侧根目录（Docker 工作区、
+    Singularity overlay/SIF 缓存等）。
 
-    Configurable via TERMINAL_SANDBOX_DIR. Defaults to {HERMES_HOME}/sandboxes/.
+    可通过 TERMINAL_SANDBOX_DIR 配置。默认为 {HERMES_HOME}/sandboxes/。
     """
     custom = os.getenv("TERMINAL_SANDBOX_DIR")
     if custom:
@@ -94,34 +93,30 @@ def get_sandbox_dir() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Shared constants and utilities
+# 共享常量与工具
 # ---------------------------------------------------------------------------
 
 
 def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
-    """Write *data* to proc.stdin on a daemon thread to avoid pipe-buffer deadlocks.
+    """在一个守护线程上把 *data* 写入 proc.stdin，以避免管道缓冲区死锁。
 
-    On Windows, text-mode stdin (``text=True`` / ``encoding="utf-8"``)
-    translates ``\\n`` → ``\\r\\n`` as the data flows through the pipe —
-    which corrupts every write_file / patch call because the bytes that
-    land on disk include injected carriage returns.  The file IS created,
-    but every subsequent byte-count / content compare against the
-    caller's ``\\n``-only string fails.
+    在 Windows 上，文本模式的 stdin（``text=True`` / ``encoding="utf-8"``）
+    在数据流经管道时会把 ``\\n`` 转换为 ``\\r\\n``——这会破坏每一次
+    write_file / patch 调用，因为落到磁盘上的字节包含了被注入的回车符。
+    文件*确实*被创建了，但随后每一次针对调用方 ``\\n``-only 字符串的
+    字节计数/内容比较都会失败。
 
-    Workaround: write through ``proc.stdin.buffer`` (the underlying byte
-    buffer), encoding to UTF-8 ourselves.  That bypasses Python's
-    newline translation entirely on every platform.  No behaviour change
-    on POSIX — the byte sequence is identical to what text-mode would
-    produce there.
+    变通方法：通过 ``proc.stdin.buffer``（底层字节缓冲区）写入，由我们
+    自己编码为 UTF-8。这在每个平台上都完全绕过了 Python 的换行转换。
+    POSIX 上行为不变——字节序列与文本模式在那里产生的完全一致。
     """
 
     def _write():
         try:
-            # proc.stdin is a TextIOWrapper when text=True was set on the
-            # Popen.  Its ``.buffer`` attribute is the raw BufferedWriter
-            # that bypasses newline translation.  When Popen was created
-            # in byte mode, proc.stdin is already a BufferedWriter with
-            # no ``.buffer`` attribute — fall back to .write() directly.
+            # 当设置了 text=True 时，proc.stdin 是一个 TextIOWrapper。
+            # 它的 ``.buffer`` 属性是绕过换行转换的原始 BufferedWriter。
+            # 当 Popen 以字节模式创建时，proc.stdin 已经是一个
+            # BufferedWriter，没有 ``.buffer`` 属性——回退到直接 .write()。
             raw = data.encode("utf-8") if isinstance(data, str) else data
             target = getattr(proc.stdin, "buffer", proc.stdin)
             target.write(raw)
@@ -135,11 +130,11 @@ def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
 def _popen_bash(
     cmd: list[str], stdin_data: str | None = None, **kwargs
 ) -> subprocess.Popen:
-    """Spawn a subprocess with standard stdout/stderr/stdin setup.
+    """用标准的 stdout/stderr/stdin 设置派生一个子进程。
 
-    If *stdin_data* is provided, writes it asynchronously via :func:`_pipe_stdin`.
-    Backends with special Popen needs (e.g. local's ``preexec_fn``) can bypass
-    this and call :func:`_pipe_stdin` directly.
+    如果提供了 *stdin_data*，通过 :func:`_pipe_stdin` 异步写入它。有特殊
+    Popen 需求的后端（例如 local 的 ``preexec_fn``）可以绕过此处并直接
+    调用 :func:`_pipe_stdin`。
     """
     proc = subprocess.Popen(
         cmd,
@@ -155,7 +150,7 @@ def _popen_bash(
 
 
 def _load_json_store(path: Path) -> dict:
-    """Load a JSON file as a dict, returning ``{}`` on any error."""
+    """把一个 JSON 文件加载为字典，任何错误时返回 ``{}``。"""
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8"))
@@ -165,13 +160,13 @@ def _load_json_store(path: Path) -> dict:
 
 
 def _save_json_store(path: Path, data: dict) -> None:
-    """Write *data* as pretty-printed JSON to *path*."""
+    """把 *data* 作为美化打印的 JSON 写入 *path*。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
-    """Return ``(mtime, size)`` for cache comparison, or ``None`` if unreadable."""
+    """返回用于缓存比较的 ``(mtime, size)``，不可读则返回 ``None``。"""
     try:
         st = Path(host_path).stat()
         return (st.st_mtime, st.st_size)
@@ -180,15 +175,15 @@ def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
 
 
 # ---------------------------------------------------------------------------
-# ProcessHandle protocol
+# ProcessHandle 协议
 # ---------------------------------------------------------------------------
 
 
 class ProcessHandle(Protocol):
-    """Duck type that every backend's _run_bash() must return.
+    """每个后端的 _run_bash() 必须返回的鸭子类型。
 
-    subprocess.Popen satisfies this natively.  SDK backends (Modal, Daytona)
-    return _ThreadedProcessHandle which adapts their blocking calls.
+    subprocess.Popen 原生满足此类型。SDK 后端（Modal、Daytona）返回
+    _ThreadedProcessHandle，它适配了它们的阻塞调用。
     """
 
     def poll(self) -> int | None: ...
@@ -203,12 +198,12 @@ class ProcessHandle(Protocol):
 
 
 class _ThreadedProcessHandle:
-    """Adapter for SDK backends (Modal, Daytona) that have no real subprocess.
+    """用于没有真实子进程的 SDK 后端（Modal、Daytona）的适配器。
 
-    Wraps a blocking ``exec_fn() -> (output_str, exit_code)`` in a background
-    thread and exposes a ProcessHandle-compatible interface.  An optional
-    ``cancel_fn`` is invoked on ``kill()`` for backend-specific cancellation
-    (e.g. Modal sandbox.terminate, Daytona sandbox.stop).
+    把一个阻塞的 ``exec_fn() -> (output_str, exit_code)`` 包装在一个
+    后台线程中，并暴露一个与 ProcessHandle 兼容的接口。可选的
+    ``cancel_fn`` 在 ``kill()`` 时被调用，用于后端特定的取消
+    （例如 Modal sandbox.terminate、Daytona sandbox.stop）。
     """
 
     def __init__(
@@ -221,7 +216,7 @@ class _ThreadedProcessHandle:
         self._returncode: int | None = None
         self._error: Exception | None = None
 
-        # Pipe for stdout — drain thread in _wait_for_process reads the read end.
+        # 用于 stdout 的管道 —— _wait_for_process 中的排空线程读取读端。
         read_fd, write_fd = os.pipe()
         self._stdout = os.fdopen(read_fd, "r", encoding="utf-8", errors="replace")
         self._write_fd = write_fd
@@ -230,7 +225,7 @@ class _ThreadedProcessHandle:
             try:
                 output, exit_code = exec_fn()
                 self._returncode = exit_code
-                # Write output into the pipe so drain thread picks it up.
+                # 把输出写入管道，使排空线程能拿到它。
                 try:
                     os.write(self._write_fd, output.encode("utf-8", errors="replace"))
                 except OSError:
@@ -272,7 +267,7 @@ class _ThreadedProcessHandle:
 
 
 # ---------------------------------------------------------------------------
-# CWD marker for remote backends
+# 远程后端的 CWD 标记
 # ---------------------------------------------------------------------------
 
 
@@ -286,25 +281,24 @@ def _cwd_marker(session_id: str) -> str:
 
 
 class BaseEnvironment(ABC):
-    """Common interface and unified execution flow for all Hermes backends.
+    """所有 Hermes 后端的公共接口和统一执行流程。
 
-    Subclasses implement ``_run_bash()`` and ``cleanup()``.  The base class
-    provides ``execute()`` with session snapshot sourcing, CWD tracking,
-    interrupt handling, and timeout enforcement.
+    子类实现 ``_run_bash()`` 和 ``cleanup()``。基类提供带会话快照源、
+    CWD 跟踪、中断处理和超时强制的 ``execute()``。
     """
 
-    # Subclasses that embed stdin as a heredoc (Modal, Daytona) set this.
-    _stdin_mode: str = "pipe"  # "pipe" or "heredoc"
+    # 把 stdin 作为 heredoc 嵌入的子类（Modal、Daytona）设置此项。
+    _stdin_mode: str = "pipe"  # "pipe" 或 "heredoc"
 
-    # Snapshot creation timeout (override for slow cold-starts).
+    # 快照创建超时（为缓慢的冷启动覆盖）。
     _snapshot_timeout: int = 30
 
     def get_temp_dir(self) -> str:
-        """Return the backend temp directory used for session artifacts.
+        """返回用于会话制品的后端临时目录。
 
-        Most sandboxed backends use ``/tmp`` inside the target environment.
-        LocalEnvironment overrides this on platforms like Termux where ``/tmp``
-        may be missing and ``TMPDIR`` is the portable writable location.
+        大多数沙箱后端使用目标环境内的 ``/tmp``。LocalEnvironment 在
+        ``/tmp`` 可能缺失且 ``TMPDIR`` 是可移植可写位置的平台（如 Termux）
+        上覆盖此项。
         """
         return "/tmp"
 
@@ -321,7 +315,7 @@ class BaseEnvironment(ABC):
         self._snapshot_ready = False
 
     # ------------------------------------------------------------------
-    # Abstract methods
+    # 抽象方法
     # ------------------------------------------------------------------
 
     def _run_bash(
@@ -332,41 +326,40 @@ class BaseEnvironment(ABC):
         timeout: int = 120,
         stdin_data: str | None = None,
     ) -> ProcessHandle:
-        """Spawn a bash process to run *cmd_string*.
+        """派生一个 bash 进程来运行 *cmd_string*。
 
-        Returns a ProcessHandle (subprocess.Popen or _ThreadedProcessHandle).
-        Must be overridden by every backend.
+        返回一个 ProcessHandle（subprocess.Popen 或 _ThreadedProcessHandle）。
+        必须由每个后端覆盖。
         """
         raise NotImplementedError(f"{type(self).__name__} must implement _run_bash()")
 
     @abstractmethod
     def cleanup(self):
-        """Release backend resources (container, instance, connection)."""
+        """释放后端资源（容器、实例、连接）。"""
         ...
 
     # ------------------------------------------------------------------
-    # Session snapshot (init_session)
+    # 会话快照（init_session）
     # ------------------------------------------------------------------
 
     def init_session(self):
-        """Capture login shell environment into a snapshot file.
+        """把登录 shell 环境捕获到一个快照文件中。
 
-        Called once after backend construction.  On success, sets
-        ``_snapshot_ready = True`` so subsequent commands source the snapshot
-        instead of running with ``bash -l``.
+        在后端构造之后调用一次。成功时设置 ``_snapshot_ready = True``，
+        使后续命令 source 该快照，而不是用 ``bash -l`` 运行。
         """
-        # Full capture: env vars, functions (filtered), aliases, shell options.
-        # Restore configured cwd after login shell profile scripts, which may
-        # change the working directory (e.g. bashrc `cd ~`).  Without this,
-        # pwd -P captures the profile's directory, not terminal.cwd.
+        # 完整捕获：环境变量、函数（已过滤）、别名、shell 选项。
+        # 在登录 shell profile 脚本之后恢复已配置的 cwd，因为这些脚本可能
+        # 改变工作目录（例如 bashrc 的 `cd ~`）。没有这一步，pwd -P 捕获
+        # 的是 profile 的目录，而不是 terminal.cwd。
         _quoted_cwd = shlex.quote(self.cwd)
-        # Quote the snapshot / cwd-file paths so Git Bash on Windows handles
-        # ``C:/Users/...``-shaped paths without glob-splitting the colon or
-        # tripping on drive letters.  On POSIX this is a no-op (no colons /
-        # special chars in a /tmp path).  Previously unquoted interpolation
-        # caused ``C:/Users/.../hermes-snap-*.sh: No such file or directory``
-        # errors on Windows, leaking via stderr (merged into stdout on Linux
-        # backends) into every terminal-tool response.
+        # 给快照/cwd 文件路径加引号，使 Windows 上的 Git Bash 能处理
+        # ``C:/Users/...`` 形状的路径，而不会把冒号做 glob 拆分或在驱动器
+        # 字母上绊倒。POSIX 上这是 no-op（/tmp 路径中没有冒号/特殊字符）。
+        # 以前不加引号的插值会在 Windows 上导致
+        # ``C:/Users/.../hermes-snap-*.sh: No such file or directory`` 错误，
+        # 并通过 stderr（在 Linux 后端上合并进 stdout）泄漏到每个终端工具
+        # 响应中。
         _quoted_snap = shlex.quote(self._snapshot_path)
         _quoted_cwd_file = shlex.quote(self._cwd_file)
         bootstrap = (
@@ -400,12 +393,12 @@ class BaseEnvironment(ABC):
             self._snapshot_ready = False
 
     # ------------------------------------------------------------------
-    # Command wrapping
+    # 命令包装
     # ------------------------------------------------------------------
 
     @staticmethod
     def _quote_cwd_for_cd(cwd: str) -> str:
-        """Quote a ``cd`` target while preserving ``~`` expansion."""
+        """给 ``cd`` 目标加引号，同时保留 ``~`` 展开。"""
         if cwd == "~":
             return cwd
         if cwd == "~/":
@@ -415,50 +408,48 @@ class BaseEnvironment(ABC):
         return shlex.quote(cwd)
 
     def _wrap_command(self, command: str, cwd: str) -> str:
-        """Build the full bash script that sources snapshot, cd's, runs command,
-        re-dumps env vars, and emits CWD markers."""
+        """构建完整的 bash 脚本：source 快照、cd、运行命令、
+        重新导出环境变量，并发出 CWD 标记。"""
         escaped = command.replace("'", "'\\''")
 
-        # Quote the snapshot / cwd-file paths so Git Bash on Windows handles
-        # ``C:/Users/...``-shaped paths without glob-splitting the colon or
-        # tripping on drive letters.  POSIX paths are unaffected.  See
-        # :meth:`init_session` for the same fix on the bootstrap block.
+        # 给快照/cwd 文件路径加引号，使 Windows 上的 Git Bash 能处理
+        # ``C:/Users/...`` 形状的路径，而不会把冒号做 glob 拆分或在驱动器
+        # 字母上绊倒。POSIX 路径不受影响。引导块上的相同修复见
+        # :meth:`init_session`。
         _quoted_snap = shlex.quote(self._snapshot_path)
         _quoted_cwd_file = shlex.quote(self._cwd_file)
 
         parts = []
 
-        # Source snapshot (env vars from previous commands).
-        # Redirect stdout to /dev/null: on macOS (bash 3.2 and certain
-        # Homebrew bash builds) sourcing a file containing ``declare -x``
-        # can emit the declarations to stdout, leaking ~60 lines of env
-        # vars into every tool response (issue #15459).  Linux bash is
-        # silent here, but the redirect is harmless.
+        # source 快照（来自先前命令的环境变量）。
+        # 把 stdout 重定向到 /dev/null：在 macOS 上（bash 3.2 和某些
+        # Homebrew bash 构建）source 一个包含 ``declare -x`` 的文件会
+        # 把声明输出到 stdout，把约 60 行环境变量泄漏进每个工具响应
+        # （issue #15459）。Linux bash 在这里是静默的，但重定向无害。
         if self._snapshot_ready:
             parts.append(
                 f"source {_quoted_snap} >/dev/null 2>&1 || true"
             )
 
-        # Preserve bare ``~`` expansion, but rewrite ``~/...`` through
-        # ``$HOME`` so suffixes with spaces remain a single shell word.
+        # 保留裸 ``~`` 展开，但通过 ``$HOME`` 重写 ``~/...``，使带空格的
+        # 后缀仍是一个单一的 shell word。
         quoted_cwd = self._quote_cwd_for_cd(cwd)
-        # ``--`` keeps hyphen-prefixed directory names from being parsed as options.
+        # ``--`` 阻止以连字符为前缀的目录名被解析为选项。
         parts.append(f"builtin cd -- {quoted_cwd} || exit 126")
 
-        # Run the actual command
+        # 运行实际命令
         parts.append(f"eval '{escaped}'")
         parts.append("__hermes_ec=$?")
 
-        # Re-dump env vars to snapshot (last-writer-wins for concurrent calls)
+        # 把环境变量重新导出到快照（对并发调用是最后写入者获胜）
         if self._snapshot_ready:
             parts.append(f"export -p > {_quoted_snap} 2>/dev/null || true")
 
-        # Write CWD to file (local reads this) and stdout marker (remote parses this)
+        # 把 CWD 写入文件（local 读取此项）和 stdout 标记（remote 解析此项）
         parts.append(f"pwd -P > {_quoted_cwd_file} 2>/dev/null || true")
-        # Use a distinct line for the marker. The leading \n ensures
-        # the marker starts on its own line even if the command doesn't
-        # end with a newline (e.g. printf 'exact'). We'll strip this
-        # injected newline in _extract_cwd_from_output.
+        # 为标记使用单独一行。前导的 \n 确保标记即使命令不以换行符结尾
+        # （例如 printf 'exact'）也能另起一行。我们会在
+        # _extract_cwd_from_output 中剥掉这个注入的换行符。
         parts.append(
             f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\""
         )
@@ -467,71 +458,64 @@ class BaseEnvironment(ABC):
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
-    # Stdin heredoc embedding (for SDK backends)
+    # Stdin heredoc 嵌入（用于 SDK 后端）
     # ------------------------------------------------------------------
 
     @staticmethod
     def _embed_stdin_heredoc(command: str, stdin_data: str) -> str:
-        """Append stdin_data as a shell heredoc to the command string."""
+        """把 stdin_data 作为 shell heredoc 追加到命令字符串。"""
         delimiter = f"HERMES_STDIN_{uuid.uuid4().hex[:12]}"
         return f"{command} << '{delimiter}'\n{stdin_data}\n{delimiter}"
 
     # ------------------------------------------------------------------
-    # Process lifecycle
+    # 进程生命周期
     # ------------------------------------------------------------------
 
     def _wait_for_process(self, proc: ProcessHandle, timeout: int = 120) -> dict:
-        """Poll-based wait with interrupt checking and stdout draining.
+        """基于轮询的等待，带中断检查和 stdout 排空。
 
-        Shared across all backends — not overridden.
+        所有后端共享 —— 不被覆盖。
 
-        Fires the ``activity_callback`` (if set on this instance) every 10s
-        while the process is running so the gateway's inactivity timeout
-        doesn't kill long-running commands.
+        在进程运行期间每 10s 触发一次 ``activity_callback``（如果在此实例上
+        设置了的话），使网关的不活跃超时不会杀掉长时间运行的命令。
 
-        Also wraps the poll loop in a ``try/finally`` that guarantees we
-        call ``self._kill_process(proc)`` if we exit via ``KeyboardInterrupt``
-        or ``SystemExit``.  Without this, the local backend (which spawns
-        subprocesses with ``os.setsid`` into their own process group) leaves
-        an orphan with ``PPID=1`` when python is shut down mid-tool — the
-        ``sleep 300``-survives-30-min bug Physikal and I both hit.
+        还把轮询循环包装在一个 ``try/finally`` 中，保证当我们通过
+        ``KeyboardInterrupt`` 或 ``SystemExit`` 退出时调用
+        ``self._kill_process(proc)``。没有这一步，本地后端（它用
+        ``os.setsid`` 把子进程派生到自己的进程组中）在 python 中途关闭工具
+        时会留下一个 ``PPID=1`` 的孤儿——即 Physikal 和我都遇到过的
+        ``sleep 300`` 存活 30 分钟的 bug。
         """
         output_chunks: list[str] = []
 
-        # Non-blocking drain via select().
+        # 通过 select() 做非阻塞排空。
         #
-        # The old pattern — ``for line in proc.stdout`` — blocks on
-        # ``readline()`` until the pipe reaches EOF.  When the user's command
-        # backgrounds a process (``cmd &``, ``setsid cmd & disown``, etc.),
-        # that backgrounded grandchild inherits the write-end of our stdout
-        # pipe via ``fork()``.  Even after ``bash`` itself exits, the pipe
-        # stays open because the grandchild still holds it — so the drain
-        # thread never returns and the tool hangs for the full lifetime of
-        # the grandchild (issue #8340: users reported indefinite hangs when
-        # restarting uvicorn with ``setsid ... & disown``).
+        # 旧模式 —— ``for line in proc.stdout`` —— 会阻塞在
+        # ``readline()`` 上直到管道到达 EOF。当用户的命令后台化一个进程
+        # （``cmd &``、``setsid cmd & disown`` 等）时，那个被后台化的孙进程
+        # 通过 ``fork()`` 继承了我们 stdout 管道的写端。即使在 ``bash`` 本身
+        # 退出之后，管道仍保持打开，因为孙进程仍持有它——于是排空线程永不
+        # 返回，工具会挂起整个孙进程的生命周期（issue #8340：用户报告在用
+        # ``setsid ... & disown`` 重启 uvicorn 时出现无限挂起）。
         #
-        # The fix: select() with a short poll interval, and stop draining
-        # shortly after ``bash`` exits even if the pipe hasn't EOF'd yet.
-        # Any output the grandchild writes after that point goes to an
-        # orphaned pipe (harmless — the kernel reaps it when our end closes).
+        # 修复：用短轮询间隔的 select()，并在 ``bash`` 退出后不久停止排空，
+        # 即使管道尚未 EOF。孙进程在那之后写入的任何输出都进入一个孤儿管道
+        # （无害——当我们这一端关闭时内核会回收它）。
         #
-        # Decoding: we ``os.read()`` raw bytes in fixed-size chunks (4096)
-        # so a single multibyte UTF-8 character can split across reads.  An
-        # incremental decoder buffers partial sequences across chunks, and
-        # ``errors="replace"`` mirrors the baseline ``TextIOWrapper`` (which
-        # was constructed with ``encoding="utf-8", errors="replace"`` on
-        # ``Popen``) so binary or mis-encoded output is preserved with
-        # U+FFFD substitution rather than clobbering the whole buffer.
+        # 解码：我们以固定大小块（4096）``os.read()`` 原始字节，因此一个
+        # 多字节 UTF-8 字符可能跨读取被拆分。增量解码器跨块缓冲部分序列，
+        # 而 ``errors="replace"`` 镜像基线 ``TextIOWrapper``（它在
+        # ``Popen`` 上以 ``encoding="utf-8", errors="replace"`` 构造），
+        # 使二进制或错误编码的输出以 U+FFFD 替换保留，而不是破坏整个缓冲区。
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         def _drain_iterable(stream):
-            # Fallback path: ``stream`` is not backed by a real OS file
-            # descriptor (no usable ``fileno()``).  This covers in-memory
-            # ProcessHandle adapters that expose stdout as a plain iterator of
-            # already-collected output (the legacy ``for line in proc.stdout``
-            # contract) rather than a live pipe.  Iterate it to EOF.  Without
-            # this, the drain thread would raise an unhandled exception and die
-            # silently, losing all of the process's output.
+            # 回退路径：``stream`` 不由一个真实的 OS 文件描述符支撑
+            # （没有可用的 ``fileno()``）。这覆盖了把 stdout 暴露为已收集
+            # 输出的普通迭代器的内存 ProcessHandle 适配器（传统的
+            # ``for line in proc.stdout`` 契约），而不是一个实时管道。迭代
+            # 它到 EOF。没有这一步，排空线程会抛出一个未处理异常并静默死掉，
+            # 丢失进程的所有输出。
             try:
                 for piece in stream:
                     if piece is None:
@@ -551,12 +535,12 @@ class BaseEnvironment(ABC):
                     pass
 
         def _drain():
-            # Resolve a real OS file descriptor up front.  Real subprocesses and
-            # the SDK ``_ThreadedProcessHandle`` (os.pipe-backed) both return an
-            # integer fd here.  Mocks / iterator-style stdout streams either lack
-            # ``fileno()`` entirely or return a non-integer — in that case fall
-            # back to draining the stream as an iterable instead of crashing the
-            # thread (issue: 'list_iterator' object has no attribute 'fileno').
+            # 预先解析一个真实的 OS 文件描述符。真实的子进程和 SDK
+            # ``_ThreadedProcessHandle``（os.pipe 支撑）都在此返回一个整数
+            # fd。Mock / 迭代器式 stdout 流要么完全没有 ``fileno()``，要么
+            # 返回一个非整数——此时回退为以可迭代对象方式排空流，而不是
+            # 让线程崩溃（issue: 'list_iterator' object has no attribute
+            # 'fileno'）。
             stream = proc.stdout
             if stream is None:
                 return
@@ -568,9 +552,9 @@ class BaseEnvironment(ABC):
             if not isinstance(fd, int) or fd < 0:
                 _drain_iterable(stream)
                 return
-            # select.select does NOT work on pipe fds on Windows (only sockets).
-            # Use blocking os.read in a daemon thread instead — safe because
-            # EOF arrives promptly when bash exits.
+            # select.select 在 Windows 上对管道 fd 不起作用（仅对 socket）。
+            # 改为在守护线程中使用阻塞 os.read —— 安全，因为 bash 退出时
+            # EOF 会及时到达。
             if os.name == "nt":
                 try:
                     while True:
@@ -594,27 +578,26 @@ class BaseEnvironment(ABC):
                     try:
                         ready, _, _ = select.select([fd], [], [], 0.1)
                     except (ValueError, OSError):
-                        break  # fd already closed
+                        break  # fd 已关闭
                     if ready:
                         try:
                             chunk = os.read(fd, 4096)
                         except (ValueError, OSError):
                             break
                         if not chunk:
-                            break  # true EOF — all writers closed
+                            break  # 真正的 EOF —— 所有写入者都关闭了
                         output_chunks.append(decoder.decode(chunk))
                         idle_after_exit = 0
                     elif proc.poll() is not None:
-                        # bash is gone and the pipe was idle for ~100ms.  Give
-                        # it two more cycles to catch any buffered tail, then
-                        # stop — otherwise we wait forever on a grandchild pipe.
+                        # bash 已退出且管道空闲了约 100ms。再给它两个周期
+                        # 来捕获任何缓冲的尾部，然后停止——否则我们会永远
+                        # 等待一个孙进程管道。
                         idle_after_exit += 1
                         if idle_after_exit >= 3:
                             break
             finally:
-                # Flush any bytes buffered mid-sequence.  With ``errors="replace"``
-                # this emits U+FFFD for any final incomplete sequence rather than
-                # raising.
+                # 刷新任何在序列中途缓冲的字节。使用 ``errors="replace"``
+                # 时，这会为任何最终不完整序列发出 U+FFFD 而不是抛异常。
                 try:
                     tail = decoder.decode(b"", final=True)
                     if tail:
@@ -631,10 +614,9 @@ class BaseEnvironment(ABC):
             "start": _now,
         }
 
-        # --- Debug tracing (opt-in via HERMES_DEBUG_INTERRUPT=1) -------------
-        # Captures loop entry/exit, interrupt state changes, and periodic
-        # heartbeats so we can diagnose "agent never sees the interrupt"
-        # reports without reproducing locally.
+        # --- 调试跟踪（通过 HERMES_DEBUG_INTERRUPT=1 opt-in）-------------
+        # 捕获循环进入/退出、中断状态变化和周期性心跳，使我们能在不本地
+        # 复现的情况下诊断"agent 永远看不到中断"的报告。
         _tid = threading.current_thread().ident
         _pid = getattr(proc, "pid", None)
         _iter_count = 0
@@ -684,12 +666,11 @@ class BaseEnvironment(ABC):
                         else timeout_msg.lstrip(),
                         "returncode": 124,
                     }
-                # Periodic activity touch so the gateway knows we're alive
+                # 周期性活动触碰，使网关知道我们还活着
                 touch_activity_if_due(_activity_state, "terminal command running")
 
-                # Heartbeat every ~30s: proves the loop is alive and reports
-                # the activity-callback state (thread-local, can get clobbered
-                # by nested tool calls or executor thread reuse).
+                # 每约 30s 一次心跳：证明循环存活，并报告活动回调状态
+                # （线程局部，可能被嵌套工具调用或执行器线程复用破坏）。
                 if _DEBUG_INTERRUPT and time.monotonic() - _last_heartbeat >= 30.0:
                     _cb_now_none = _get_activity_callback() is None
                     logger.info(
@@ -705,25 +686,21 @@ class BaseEnvironment(ABC):
                     _last_heartbeat = time.monotonic()
                     _cb_was_none = _cb_now_none
 
-                # Adaptive poll: start at 5ms so fast commands (echo, pwd,
-                # date, cat short files) return in ~6ms instead of being
-                # stuck waiting for the next 200ms tick. Back off
-                # exponentially toward 200ms so long-running commands
-                # (builds, tests, sleeps) don't pay measurable CPU in the
-                # poll loop. For an `echo` this saves ~195ms per tool call;
-                # for a 10s build the steady-state poll rate is identical
-                # to the old behavior.
+                # 自适应轮询：从 5ms 起步，使快速命令（echo、pwd、
+                # date、短文件 cat）在约 6ms 内返回，而不是卡在等待下一个
+                # 200ms 的 tick。指数退避到 200ms，使长时间运行的命令
+                # （构建、测试、sleep）在轮询循环中不付出可衡量的 CPU。
+                # 对一个 `echo` 这每次工具调用节省约 195ms；对一个 10s 的
+                # 构建来说，稳态轮询速率与旧行为一致。
                 time.sleep(_poll_sleep)
                 if _poll_sleep < 0.2:
                     _poll_sleep = min(_poll_sleep * 1.5, 0.2)
         except (KeyboardInterrupt, SystemExit):
-            # Signal arrived (SIGTERM/SIGHUP/SIGINT) or sys.exit() was called
-            # while we were polling.  The local backend spawns subprocesses
-            # with os.setsid, which puts them in their own process group — so
-            # if we let the interrupt propagate without killing the child,
-            # python exits and the child is reparented to init (PPID=1) and
-            # keeps running as an orphan.  Killing the process group here
-            # guarantees the tool's side effects stop when the agent stops.
+            # 信号到达（SIGTERM/SIGHUP/SIGINT）或在我们轮询时调用了
+            # sys.exit()。本地后端用 os.setsid 派生子进程，这把它们放进自己
+            # 的进程组——因此如果我们让中断传播而不杀掉子进程，python 退出
+            # 而子进程被重新归属于 init（PPID=1）并作为孤儿继续运行。在这里
+            # 杀掉进程组保证工具的副作用在 agent 停止时停止。
             if _DEBUG_INTERRUPT:
                 logger.info(
                     "[interrupt-debug] _wait_for_process EXCEPTION_EXIT "
@@ -735,12 +712,12 @@ class BaseEnvironment(ABC):
                 self._kill_process(proc)
                 drain_thread.join(timeout=2)
             except Exception:
-                pass  # cleanup is best-effort
+                pass  # 清理是尽力而为
             raise
 
-        # Drain thread now exits promptly after bash does (~300ms idle
-        # check).  A short join is enough; a long one would be a bug since
-        # it means the non-blocking loop itself stopped cooperating.
+        # 排空线程现在在 bash 之后及时退出（约 300ms 空闲检查）。一个短的
+        # join 就够了；长的 join 会是一个 bug，因为那意味着非阻塞循环本身
+        # 停止了协作。
         drain_thread.join(timeout=2)
 
         try:
@@ -760,25 +737,25 @@ class BaseEnvironment(ABC):
         return {"output": "".join(output_chunks), "returncode": proc.returncode}
 
     def _kill_process(self, proc: ProcessHandle):
-        """Terminate a process. Subclasses may override for process-group kill."""
+        """终止一个进程。子类可覆盖以做进程组 kill。"""
         try:
             proc.kill()
         except (ProcessLookupError, PermissionError, OSError):
             pass
 
     # ------------------------------------------------------------------
-    # CWD extraction
+    # CWD 提取
     # ------------------------------------------------------------------
 
     def _update_cwd(self, result: dict):
-        """Extract CWD from command output. Override for local file-based read."""
+        """从命令输出中提取 CWD。本地基于文件读取时覆盖。"""
         self._extract_cwd_from_output(result)
 
     def _extract_cwd_from_output(self, result: dict):
-        """Parse the __HERMES_CWD_{session}__ marker from stdout output.
+        """从 stdout 输出中解析 __HERMES_CWD_{session}__ 标记。
 
-        Updates self.cwd and strips the marker from result["output"].
-        Used by remote backends (Docker, SSH, Modal, Daytona, Singularity).
+        更新 self.cwd 并从 result["output"] 中剥除标记。供远程后端使用
+        （Docker、SSH、Modal、Daytona、Singularity）。
         """
         output = result.get("output", "")
         marker = self._cwd_marker
@@ -786,8 +763,8 @@ class BaseEnvironment(ABC):
         if last == -1:
             return
 
-        # Find the opening marker before this closing one
-        search_start = max(0, last - 4096)  # CWD path won't be >4KB
+        # 在此闭合标记之前找到开始标记
+        search_start = max(0, last - 4096)  # CWD 路径不会 >4KB
         first = output.rfind(marker, search_start, last)
         if first == -1 or first == last:
             return
@@ -796,10 +773,10 @@ class BaseEnvironment(ABC):
         if cwd_path:
             self.cwd = cwd_path
 
-        # Strip the marker line AND the \n we injected before it.
-        # The wrapper emits: printf '\n__MARKER__%s__MARKER__\n'
-        # So the output looks like: <cmd output>\n__MARKER__path__MARKER__\n
-        # We want to remove everything from the injected \n onwards.
+        # 剥除标记行 AND 我们在它之前注入的 \n。
+        # 包装器发出：printf '\n__MARKER__%s__MARKER__\n'
+        # 所以输出形如：<cmd output>\n__MARKER__path__MARKER__\n
+        # 我们想移除从注入的 \n 起到结尾的所有内容。
         line_start = output.rfind("\n", 0, first)
         if line_start == -1:
             line_start = first
@@ -809,21 +786,20 @@ class BaseEnvironment(ABC):
         result["output"] = output[:line_start] + output[line_end:]
 
     # ------------------------------------------------------------------
-    # Hooks
+    # 钩子
     # ------------------------------------------------------------------
 
     def _before_execute(self) -> None:
-        """Hook called before each command execution.
+        """每次命令执行之前调用的钩子。
 
-        Remote backends (SSH, Modal, Daytona) override this to trigger
-        their FileSyncManager.  Bind-mount backends (Docker, Singularity)
-        and Local don't need file sync — the host filesystem is directly
-        visible inside the container/process.
+        远程后端（SSH、Modal、Daytona）覆盖此项以触发它们的
+        FileSyncManager。绑定挂载后端（Docker、Singularity）和 Local 不
+        需要文件同步——主机文件系统在容器/进程内直接可见。
         """
         pass
 
     # ------------------------------------------------------------------
-    # Unified execute()
+    # 统一的 execute()
     # ------------------------------------------------------------------
 
     def execute(
@@ -835,20 +811,20 @@ class BaseEnvironment(ABC):
         stdin_data: str | None = None,
         rewrite_compound_background: bool = True,
     ) -> dict:
-        """Execute a command, return {"output": str, "returncode": int}."""
+        """执行一条命令，返回 {"output": str, "returncode": int}。"""
         self._before_execute()
 
         exec_command, sudo_stdin = self._prepare_command(command)
-        # Guard against the `A && B &` subshell-wait trap by default.
-        # Some callers (spawn_via_env) already produce shell-safe wrappers and
-        # pass rewrite_compound_background=False.
+        # 默认防范 `A && B &` 的 subshell 等待陷阱。某些调用方
+        # （spawn_via_env）已经生成了 shell 安全的包装器，并传入
+        # rewrite_compound_background=False。
         if rewrite_compound_background:
             from tools.terminal_tool import _rewrite_compound_background
             exec_command = _rewrite_compound_background(exec_command)
         effective_timeout = timeout or self.timeout
         effective_cwd = cwd or self.cwd
 
-        # Merge sudo stdin with caller stdin
+        # 合并 sudo stdin 与调用方 stdin
         if sudo_stdin is not None and stdin_data is not None:
             effective_stdin = sudo_stdin + stdin_data
         elif sudo_stdin is not None:
@@ -856,14 +832,14 @@ class BaseEnvironment(ABC):
         else:
             effective_stdin = stdin_data
 
-        # Embed stdin as heredoc for backends that need it
+        # 为需要它的后端把 stdin 作为 heredoc 嵌入
         if effective_stdin and self._stdin_mode == "heredoc":
             exec_command = self._embed_stdin_heredoc(exec_command, effective_stdin)
             effective_stdin = None
 
         wrapped = self._wrap_command(exec_command, effective_cwd)
 
-        # Use login shell if snapshot failed (so user's profile still loads)
+        # 快照失败时使用登录 shell（使用户的 profile 仍会加载）
         login = not self._snapshot_ready
 
         proc = self._run_bash(
@@ -875,11 +851,11 @@ class BaseEnvironment(ABC):
         return result
 
     # ------------------------------------------------------------------
-    # Shared helpers
+    # 共享辅助
     # ------------------------------------------------------------------
 
     def stop(self):
-        """Alias for cleanup (compat with older callers)."""
+        """cleanup 的别名（兼容较老的调用方）。"""
         self.cleanup()
 
     def __del__(self):
@@ -889,7 +865,7 @@ class BaseEnvironment(ABC):
             pass
 
     def _prepare_command(self, command: str) -> tuple[str, str | None]:
-        """Transform sudo commands if SUDO_PASSWORD is available."""
+        """当 SUDO_PASSWORD 可用时转换 sudo 命令。"""
         from tools.terminal_tool import _transform_sudo_command
 
         return _transform_sudo_command(command)

@@ -1,16 +1,16 @@
-# Server Deployment Patterns
+# 服务器部署模式
 
-## Contents
-- Docker deployment
-- Kubernetes deployment
-- Load balancing with Nginx
-- Multi-node distributed serving
-- Production configuration examples
-- Health checks and monitoring
+## 目录
+- Docker 部署
+- Kubernetes 部署
+- 使用 Nginx 负载均衡
+- 多节点分布式服务
+- 生产配置示例
+- 健康检查与监控
 
-## Docker deployment
+## Docker 部署
 
-**Basic Dockerfile**:
+**基础 Dockerfile**：
 ```dockerfile
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
@@ -24,13 +24,13 @@ CMD ["vllm", "serve", "meta-llama/Llama-3-8B-Instruct", \
      "--gpu-memory-utilization", "0.9"]
 ```
 
-**Build and run**:
+**构建并运行**：
 ```bash
 docker build -t vllm-server .
 docker run --gpus all -p 8000:8000 vllm-server
 ```
 
-**Docker Compose** (with metrics):
+**Docker Compose**（带指标）：
 ```yaml
 version: '3.8'
 services:
@@ -53,9 +53,9 @@ services:
               capabilities: [gpu]
 ```
 
-## Kubernetes deployment
+## Kubernetes 部署
 
-**Deployment manifest**:
+**Deployment 清单**：
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -116,12 +116,12 @@ spec:
   type: LoadBalancer
 ```
 
-## Load balancing with Nginx
+## 使用 Nginx 负载均衡
 
-**Nginx configuration**:
+**Nginx 配置**：
 ```nginx
 upstream vllm_backend {
-    least_conn;  # Route to least-loaded server
+    least_conn;  # 路由到负载最低的服务器
     server localhost:8001;
     server localhost:8002;
     server localhost:8003;
@@ -135,38 +135,38 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
 
-        # Timeouts for long-running inference
+        # 针对长时间推理的超时设置
         proxy_read_timeout 300s;
         proxy_connect_timeout 75s;
     }
 
-    # Metrics endpoint
+    # 指标端点
     location /metrics {
         proxy_pass http://localhost:9090/metrics;
     }
 }
 ```
 
-**Start multiple vLLM instances**:
+**启动多个 vLLM 实例**：
 ```bash
-# Terminal 1
+# 终端 1
 vllm serve MODEL --port 8001 --tensor-parallel-size 1
 
-# Terminal 2
+# 终端 2
 vllm serve MODEL --port 8002 --tensor-parallel-size 1
 
-# Terminal 3
+# 终端 3
 vllm serve MODEL --port 8003 --tensor-parallel-size 1
 
-# Start Nginx
+# 启动 Nginx
 nginx -c /path/to/nginx.conf
 ```
 
-## Multi-node distributed serving
+## 多节点分布式服务
 
-For models too large for single node:
+对于单节点放不下的模型：
 
-**Node 1** (master):
+**节点 1**（master）：
 ```bash
 export MASTER_ADDR=192.168.1.10
 export MASTER_PORT=29500
@@ -178,7 +178,7 @@ vllm serve meta-llama/Llama-2-70b-hf \
   --pipeline-parallel-size 2
 ```
 
-**Node 2** (worker):
+**节点 2**（worker）：
 ```bash
 export MASTER_ADDR=192.168.1.10
 export MASTER_PORT=29500
@@ -190,9 +190,9 @@ vllm serve meta-llama/Llama-2-70b-hf \
   --pipeline-parallel-size 2
 ```
 
-## Production configuration examples
+## 生产配置示例
 
-**High throughput** (batch-heavy workload):
+**高吞吐**（批处理密集型负载）：
 ```bash
 vllm serve MODEL \
   --max-num-seqs 512 \
@@ -201,7 +201,7 @@ vllm serve MODEL \
   --trust-remote-code
 ```
 
-**Low latency** (interactive workload):
+**低延迟**（交互式负载）：
 ```bash
 vllm serve MODEL \
   --max-num-seqs 64 \
@@ -209,7 +209,7 @@ vllm serve MODEL \
   --enable-chunked-prefill
 ```
 
-**Memory-constrained** (40GB GPU for 70B model):
+**显存受限**（40GB GPU 跑 70B 模型）：
 ```bash
 vllm serve TheBloke/Llama-2-70B-AWQ \
   --quantization awq \
@@ -218,15 +218,15 @@ vllm serve TheBloke/Llama-2-70B-AWQ \
   --max-model-len 4096
 ```
 
-## Health checks and monitoring
+## 健康检查与监控
 
-**Health check endpoint**:
+**健康检查端点**：
 ```bash
 curl http://localhost:8000/health
-# Returns: {"status": "ok"}
+# 返回：{"status": "ok"}
 ```
 
-**Readiness check** (wait for model loaded):
+**就绪检查**（等待模型加载完成）：
 ```bash
 #!/bin/bash
 until curl -f http://localhost:8000/health; do
@@ -236,7 +236,7 @@ done
 echo "vLLM is ready!"
 ```
 
-**Prometheus scraping**:
+**Prometheus 抓取**：
 ```yaml
 # prometheus.yml
 scrape_configs:
@@ -247,9 +247,9 @@ scrape_configs:
     scrape_interval: 15s
 ```
 
-**Grafana dashboard** (key metrics):
-- Requests per second: `rate(vllm_request_success_total[5m])`
-- TTFT p50: `histogram_quantile(0.5, vllm_time_to_first_token_seconds_bucket)`
-- TTFT p99: `histogram_quantile(0.99, vllm_time_to_first_token_seconds_bucket)`
-- GPU cache usage: `vllm_gpu_cache_usage_perc`
-- Active requests: `vllm_num_requests_running`
+**Grafana 仪表盘**（关键指标）：
+- 每秒请求数：`rate(vllm_request_success_total[5m])`
+- TTFT p50：`histogram_quantile(0.5, vllm_time_to_first_token_seconds_bucket)`
+- TTFT p99：`histogram_quantile(0.99, vllm_time_to_first_token_seconds_bucket)`
+- GPU cache 使用率：`vllm_gpu_cache_usage_perc`
+- 活跃请求数：`vllm_num_requests_running`

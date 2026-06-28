@@ -1,4 +1,4 @@
-"""Shared file safety rules used by both tools and ACP shims."""
+"""由 tools 和 ACP shim 共同使用的文件安全规则。"""
 
 from __future__ import annotations
 
@@ -8,16 +8,16 @@ from typing import Optional
 
 
 def _hermes_home_path() -> Path:
-    """Resolve the active HERMES_HOME (profile-aware) without circular imports."""
+    """在不引入循环导入的情况下，解析当前活跃的 HERMES_HOME（感知 profile）。"""
     try:
-        from hermes_constants import get_hermes_home  # local import to avoid cycles
+        from hermes_constants import get_hermes_home  # 本地导入以避免循环依赖
         return get_hermes_home()
     except Exception:
         return Path(os.path.expanduser("~/.hermes"))
 
 
 def _hermes_root_path() -> Path:
-    """Resolve the Hermes root dir (always the parent of any profile, never per-profile)."""
+    """解析 Hermes 根目录（始终是所有 profile 的父目录，而非某个 profile 自身）。"""
     try:
         from hermes_constants import get_default_hermes_root  # local import to avoid cycles
         return get_default_hermes_root()
@@ -26,7 +26,7 @@ def _hermes_root_path() -> Path:
 
 
 def build_write_denied_paths(home: str) -> set[str]:
-    """Return exact sensitive paths that must never be written."""
+    """返回绝不允许写入的精确敏感路径集合。"""
     hermes_home = _hermes_home_path()
     hermes_root = _hermes_root_path()
     return {
@@ -36,15 +36,15 @@ def build_write_denied_paths(home: str) -> set[str]:
             os.path.join(home, ".ssh", "id_rsa"),
             os.path.join(home, ".ssh", "id_ed25519"),
             os.path.join(home, ".ssh", "config"),
-            # Active profile .env (or top-level .env when not in profile mode).
+            # 当前活跃 profile 的 .env（非 profile 模式下即顶层 .env）。
             str(hermes_home / ".env"),
-            # Top-level .env, even when running under a profile — overwriting it
-            # leaks credentials across every profile that inherits from root (#15981).
+            # 顶层 .env，即使在 profile 模式下运行也是如此——覆盖它会
+            # 导致凭据泄露到所有继承自根目录的 profile（#15981）。
             str(hermes_root / ".env"),
-            # Active profile Anthropic PKCE credential store.
+            # 当前活跃 profile 的 Anthropic PKCE 凭据存储。
             str(hermes_home / ".anthropic_oauth.json"),
-            # Top-level Anthropic PKCE credential store remains sensitive even
-            # when a profile is active; default/non-profile sessions still read it.
+            # 顶层 Anthropic PKCE 凭据存储，即使有 profile 激活也仍然敏感；
+            # 默认/非 profile 会话仍会读取它。
             str(hermes_root / ".anthropic_oauth.json"),
             os.path.join(home, ".netrc"),
             os.path.join(home, ".pgpass"),

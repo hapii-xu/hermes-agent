@@ -1,21 +1,19 @@
-"""disk-cleanup plugin — auto-cleanup of ephemeral Hermes session files.
+"""disk-cleanup 插件 — 自动清理 Hermes 临时会话文件。
 
-Wires three behaviours:
+连接三种行为：
 
-1. ``post_tool_call`` hook — inspects ``write_file`` and ``terminal``
-   tool results for newly-created paths matching test/temp patterns
-   under ``HERMES_HOME`` and tracks them silently.  Zero agent
-   compliance required.
+1. ``post_tool_call`` 钩子 — 检查 ``write_file`` 和 ``terminal``
+   工具结果中，在 ``HERMES_HOME`` 下匹配测试/临时模式的新创建路径
+   并静默追踪它们。无需 agent 配合。
 
-2. ``on_session_end`` hook — when any test files were auto-tracked
-   during the just-finished turn, runs :func:`disk_cleanup.quick` and
-   logs a single line to ``$HERMES_HOME/disk-cleanup/cleanup.log``.
+2. ``on_session_end`` 钩子 — 当本次对话中有测试文件被自动追踪时，
+   运行 :func:`disk_cleanup.quick` 并在 ``$HERMES_HOME/disk-cleanup/cleanup.log``
+   中记录一行日志。
 
-3. ``/disk-cleanup`` slash command — manual ``status``, ``dry-run``,
-   ``quick``, ``deep``, ``track``, ``forget``.
+3. ``/disk-cleanup`` 斜杠命令 — 手动执行 ``status``、``dry-run``、
+   ``quick``、``deep``、``track``、``forget``。
 
-Replaces PR #12212's skill-plus-script design: the agent no longer
-needs to remember to run commands.
+替代 PR #12212 的 skill+脚本设计：agent 不再需要记住运行命令。
 """
 
 from __future__ import annotations
@@ -32,21 +30,20 @@ from . import disk_cleanup as dg
 logger = logging.getLogger(__name__)
 
 
-# Per-task set of "test files newly tracked this turn".  Keyed by task_id
-# (or session_id as fallback) so on_session_end can decide whether to run
-# cleanup.  Guarded by a lock — post_tool_call can fire concurrently on
-# parallel tool calls.
+# 本次对话中"新追踪测试文件"的每任务集合。以 task_id
+#（或 session_id 作为备选）为键，使 on_session_end 可以决定是否运行
+# 清理。由锁保护 — post_tool_call 可在并行工具调用中并发触发。
 _recent_test_tracks: Dict[str, Set[str]] = {}
 _lock = threading.Lock()
 
 
-# Tool-call result shapes we can parse
+# 我们可以解析的工具调用结果形状
 _WRITE_FILE_PATH_KEY = "path"
 _TERMINAL_PATH_REGEX = re.compile(r"(?:^|\s)(/[^\s'\"`]+|\~/[^\s'\"`]+)")
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 def _tracker_key(task_id: str, session_id: str) -> str:
@@ -54,7 +51,7 @@ def _tracker_key(task_id: str, session_id: str) -> str:
 
 
 def _record_track(task_id: str, session_id: str, path: Path, category: str) -> None:
-    """Record that we tracked *path* as *category* during this turn."""
+    """记录本次对话中我们将 *path* 作为 *category* 追踪。"""
     if category != "test":
         return
     key = _tracker_key(task_id, session_id)
@@ -63,14 +60,14 @@ def _record_track(task_id: str, session_id: str, path: Path, category: str) -> N
 
 
 def _drain(task_id: str, session_id: str) -> Set[str]:
-    """Pop the set of test paths tracked during this turn."""
+    """弹出本次对话中追踪的测试路径集合。"""
     key = _tracker_key(task_id, session_id)
     with _lock:
         return _recent_test_tracks.pop(key, set())
 
 
 def _attempt_track(path_str: str, task_id: str, session_id: str) -> None:
-    """Best-effort auto-track. Never raises."""
+    """尽力而为的自动追踪。永不抛出异常。"""
     try:
         p = Path(path_str).expanduser()
     except Exception:
@@ -91,30 +88,29 @@ def _extract_paths_from_write_file(args: Dict[str, Any]) -> Set[str]:
 
 
 def _extract_paths_from_patch(args: Dict[str, Any]) -> Set[str]:
-    # The patch tool creates new files via the `mode="patch"` path too, but
-    # most of its use is editing existing files — we only care about new
-    # ephemeral creations, so treat patch conservatively and only pick up
-    # the single-file `path` arg.  Track-then-cleanup is idempotent, so
-    # re-tracking an already-tracked file is a no-op (dedup in track()).
+    # patch 工具也通过 `mode="patch"` 路径创建新文件，但
+    # 大多数用法是编辑现有文件 — 我们只关心新的临时创建，
+    # 因此保守地处理 patch，只提取单文件 `path` 参数。
+    # 追踪后清理是幂等的，因此重新追踪已追踪的文件是空操作（track() 中去重）。
     path = args.get("path")
     return {path} if isinstance(path, str) and path else set()
 
 
 def _extract_paths_from_terminal(args: Dict[str, Any], result: str) -> Set[str]:
-    """Best-effort: pull candidate filesystem paths from a terminal command
-    and its output, then let ``guess_category`` / ``is_safe_path`` filter.
+    """尽力而为：从终端命令及其输出中提取候选文件系统路径，
+    然后让 ``guess_category`` / ``is_safe_path`` 过滤。
     """
     paths: Set[str] = set()
     cmd = args.get("command") or ""
     if isinstance(cmd, str) and cmd:
-        # Tokenise the command — catches `touch /tmp/hermes-x/test_foo.py`
+        # 对命令进行分词 — 捕获 `touch /tmp/hermes-x/test_foo.py`
         try:
             for tok in shlex.split(cmd, posix=True):
                 if tok.startswith(("/", "~")):
                     paths.add(tok)
         except ValueError:
             pass
-    # Only scan the result text if it's a reasonable size (avoid 50KB dumps).
+    # 只在结果文本大小合理时扫描（避免 50KB 的转储）。
     if isinstance(result, str) and len(result) < 4096:
         for match in _TERMINAL_PATH_REGEX.findall(result):
             paths.add(match)
@@ -122,7 +118,7 @@ def _extract_paths_from_terminal(args: Dict[str, Any], result: str) -> Set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Hooks
+# 钩子
 # ---------------------------------------------------------------------------
 
 def _on_post_tool_call(
@@ -134,7 +130,7 @@ def _on_post_tool_call(
     tool_call_id: str = "",
     **_: Any,
 ) -> None:
-    """Auto-track ephemeral files created by recent tool calls."""
+    """自动追踪最近工具调用创建的临时文件。"""
     if not isinstance(args, dict):
         return
 
@@ -158,14 +154,13 @@ def _on_session_end(
     interrupted: bool = False,
     **_: Any,
 ) -> None:
-    """Run quick cleanup if any test files were tracked during this turn."""
-    # Drain both task-level and session-level buckets.  In practice only one
-    # is populated per turn; the other is empty.
+    """如果本次对话中有测试文件被追踪，则运行快速清理。"""
+    # 清空任务级和会话级两个桶。实际上每次对话只有一个被填充；
+    # 另一个为空。
     drained_session = _drain("", session_id)
-    # Also drain any task-scoped buckets that happen to exist.  This is a
-    # cheap sweep: if an agent spawned subagents (each with their own
-    # task_id) they'll have recorded into separate buckets; we want to
-    # cleanup them all at session end.
+    # 也清空可能存在的任务范围桶。这是廉价的扫描：如果 agent 生成了
+    # 子 agent（每个有自己的 task_id），它们会记录到独立的桶中；
+    # 我们想在会话结束时清理所有这些。
     with _lock:
         task_buckets = list(_recent_test_tracks.keys())
     for key in task_buckets:
@@ -254,8 +249,8 @@ def _handle_slash(raw_args: str) -> Optional[str]:
         return _fmt_summary(dg.quick())
 
     if sub == "deep":
-        # In-session deep can't prompt the user interactively — show what
-        # quick cleaned plus the items that WOULD need confirmation.
+        # 会话内的 deep 无法以交互方式提示用户 — 显示 quick 清理的内容
+        # 以及需要确认的项目。
         quick_summary = dg.quick()
         _auto, prompt_items = dg.dry_run()
         lines = [_fmt_summary(quick_summary)]
@@ -303,7 +298,7 @@ def _handle_slash(raw_args: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Plugin registration
+# 插件注册
 # ---------------------------------------------------------------------------
 
 def register(ctx) -> None:

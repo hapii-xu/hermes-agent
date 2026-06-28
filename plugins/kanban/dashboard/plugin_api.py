@@ -1,36 +1,31 @@
-"""Kanban dashboard plugin — backend API routes.
+"""Kanban 看板面板插件 — 后端 API 路由。
 
-Mounted at /api/plugins/kanban/ by the dashboard plugin system.
+由面板插件系统挂载在 /api/plugins/kanban/ 路径下。
 
-This layer is intentionally thin: every handler is a small wrapper around
-``hermes_cli.kanban_db`` or a direct SQL query. Writes use the same code
-paths the CLI and gateway ``/kanban`` command use, so the three surfaces
-cannot drift.
+本层有意保持精简：每个处理函数都是对 ``hermes_cli.kanban_db`` 或直接 SQL
+查询的轻量封装。写入操作使用与 CLI 和 gateway ``/kanban`` 命令相同的代码
+路径，因此三个入口不会发生不一致。
 
-Live updates arrive via the ``/events`` WebSocket, which tails the
-append-only ``task_events`` table on a short poll interval (WAL mode lets
-reads run alongside the dispatcher's IMMEDIATE write transactions).
+实时更新通过 ``/events`` WebSocket 实现，它以较短的轮询间隔追踪仅追加的
+``task_events`` 表（WAL 模式允许读取与调度器的 IMMEDIATE 写事务并行运行）。
 
-Security note
--------------
-Plugin HTTP routes go through the dashboard's session-token auth middleware
-(``web_server.auth_middleware``) just like core API routes — every
-``/api/plugins/...`` request must present the session bearer token (or the
-session cookie set when you load the dashboard HTML). The token is the
-random per-process ``_SESSION_TOKEN`` printed at startup; the dashboard's
-own pages inject it via ``window.__HERMES_SESSION_TOKEN__`` so logged-in
-browsers don't have to handle it manually.
+安全说明
+--------
+插件 HTTP 路由与核心 API 路由一样，都经过面板的 session-token 认证中间件
+（``web_server.auth_middleware``）——每个 ``/api/plugins/...`` 请求都必须
+携带 session bearer token（或加载面板 HTML 时设置的 session cookie）。
+该 token 是启动时打印的随机 per-process ``_SESSION_TOKEN``；面板自身的页面
+通过 ``window.__HERMES_SESSION_TOKEN__`` 注入它，因此已登录的浏览器无需
+手动处理。
 
-For the ``/events`` WebSocket we still require the session token as a
-``?token=`` query parameter (browsers cannot set the ``Authorization``
-header on an upgrade request), matching the established pattern used by
-the in-browser PTY bridge in ``hermes_cli/web_server.py``.
+对于 ``/events`` WebSocket，我们仍然要求 session token 作为 ``?token=``
+查询参数传递（浏览器无法在 upgrade 请求中设置 ``Authorization`` 头），
+这与 ``hermes_cli/web_server.py`` 中浏览器内 PTY 桥接使用的已建立模式一致。
 
-This means ``hermes dashboard --host 0.0.0.0`` is safe to run on a LAN:
-plugin routes are no longer an unauthenticated exception. The auth still
-isn't multi-user — anyone who can read the printed URL+token gets full
-dashboard access — but they can't ride along just because they can reach
-the port.
+这意味着 ``hermes dashboard --host 0.0.0.0`` 在 LAN 上运行是安全的：
+插件路由不再是未认证的例外。认证仍然不是多用户的——任何能读取打印的
+URL+token 的人都能获得完整的面板访问权限——但他们不能仅仅因为能访问
+该端口就搭便车。
 """
 
 from __future__ import annotations
@@ -57,50 +52,45 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Auth helper — WebSocket only (HTTP routes live behind the dashboard's
-# existing plugin-bypass; this is documented above).
+# 认证辅助函数 — 仅用于 WebSocket（HTTP 路由在面板现有的插件旁路后面，
+# 见上方文档）。
 # ---------------------------------------------------------------------------
 
 def _ws_upgrade_authorized(ws: "WebSocket") -> bool:
-    """Authorize a WebSocket upgrade by delegating to the dashboard's canonical
-    WS auth gate (``hermes_cli.web_server._ws_auth_ok``).
+    """通过委托给面板的规范 WS 认证门控来授权 WebSocket 升级
+    （``hermes_cli.web_server._ws_auth_ok``）。
 
-    Delegating (rather than re-implementing a ``_SESSION_TOKEN``-only check)
-    means this endpoint transparently accepts whatever the core gate accepts
-    in each mode:
+    委托（而不是重新实现仅检查 ``_SESSION_TOKEN``）意味着此端点在每种
+    模式下都透明地接受核心门控接受的任何内容：
 
-      * loopback / ``--insecure``: legacy ``?token=<_SESSION_TOKEN>``
-      * gated OAuth: single-use ``?ticket=`` (the browser SDK's
-        ``buildWsUrl`` mints one per connect)
-      * server-internal: the process-lifetime ``?internal=`` credential
+      * loopback / ``--insecure``：遗留的 ``?token=<_SESSION_TOKEN>``
+      * 受控 OAuth：一次性 ``?ticket=``（浏览器 SDK 的 ``buildWsUrl``
+        每次连接时生成一个）
+      * 服务器内部：进程生命周期的 ``?internal=`` 凭证
 
-    The previous bespoke check only understood ``_SESSION_TOKEN``, so the
-    kanban live-events WS was rejected on every OAuth-gated deployment even
-    though the rest of the dashboard worked. Routing through the shared gate
-    also means this can never drift from core auth again.
+    之前的自定义检查只理解 ``_SESSION_TOKEN``，因此 kanban 实时事件 WS
+    在每个 OAuth 受控部署上都被拒绝，即使面板的其余部分正常工作。通过
+    共享门控路由也意味着这再也不会与核心认证产生不一致。
 
-    Imported lazily so the plugin still loads in test contexts where the
-    dashboard ``web_server`` module isn't importable (e.g. the bare-FastAPI
-    test harness); there we accept so the tail loop stays testable, matching
-    the prior behaviour.
+    延迟导入，以便插件在测试上下文中仍能加载，这些上下文中面板的
+    ``web_server`` 模块不可导入（例如裸 FastAPI 测试工具）；在那里我们
+    接受以保持 tail 循环可测试，与之前的行为一致。
     """
     try:
         from hermes_cli import web_server as _ws
     except Exception:
-        # No dashboard context (tests). Accept so the tail loop is still
-        # testable; in production the dashboard module always imports
-        # cleanly because it's the caller.
+        # 无面板上下文（测试）。接受以保持 tail 循环可测试；在生产环境中
+        # 面板模块总是能成功导入，因为它是调用者。
         return True
     return bool(_ws._ws_auth_ok(ws))
 
 
 def _resolve_board(board: Optional[str]) -> Optional[str]:
-    """Validate and normalise a board slug from a query param.
+    """验证并规范化来自查询参数的看板 slug。
 
-    Raises :class:`HTTPException` 400 on malformed slugs so the browser
-    sees a clean error instead of a 500. Returns the normalised slug,
-    or ``None`` when the caller omitted the param (which then falls
-    through to the active board inside ``kb.connect()``).
+    在格式错误的 slug 上抛出 :class:`HTTPException` 400，使浏览器看到
+    清晰的错误而不是 500。返回规范化后的 slug，或当调用者省略参数时
+    返回 ``None``（然后在 ``kb.connect()`` 中回退到活动看板）。
     """
     if board is None or board == "":
         return None
@@ -117,16 +107,15 @@ def _resolve_board(board: Optional[str]) -> Optional[str]:
 
 
 def _conn(board: Optional[str] = None):
-    """Open a kanban_db connection, creating the schema on first use.
+    """打开一个 kanban_db 连接，首次使用时创建 schema。
 
-    Every handler that mutates the DB goes through this so the plugin
-    self-heals on a fresh install (no user-visible "no such table"
-    error if somebody hits POST /tasks before GET /board).
-    ``init_db`` is idempotent.
+    每个修改数据库的处理函数都通过此函数，因此插件在全新安装时能自我
+    修复（如果有人在 GET /board 之前访问 POST /tasks，不会出现用户可见的
+    "no such table" 错误）。``init_db`` 是幂等的。
 
-    ``board`` is the query-param slug (already normalised by
-    :func:`_resolve_board`). When ``None`` the active board is used
-    via the resolution chain (env var → ``current`` file → ``default``).
+    ``board`` 是查询参数 slug（已由 :func:`_resolve_board` 规范化）。当为
+    ``None`` 时，通过解析链使用活动看板（环境变量 → ``current`` 文件 →
+    ``default``）。
     """
     try:
         kanban_db.init_db(board=board)

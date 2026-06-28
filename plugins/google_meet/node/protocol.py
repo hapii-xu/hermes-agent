@@ -1,14 +1,14 @@
-"""Wire protocol for gateway ↔ node RPC.
+"""gateway ↔ node RPC 的线路协议。
 
-Everything is a JSON object with the same envelope shape:
+所有内容都是具有相同信封形状的 JSON 对象：
 
-    Request:   {"type": <str>, "id": <str>, "token": <str>, "payload": <dict>}
-    Response:  {"type": "<req-type>_res", "id": <req-id>, "payload": <dict>}
-    Error:     {"type": "error", "id": <req-id>, "error": <str>}
+    请求：  {"type": <str>, "id": <str>, "token": <str>, "payload": <dict>}
+    响应：  {"type": "<req-type>_res", "id": <req-id>, "payload": <dict>}
+    错误：  {"type": "error", "id": <req-id>, "error": <str>}
 
-Requests must carry the shared bearer token (set up via
-``hermes meet node approve`` on the gateway and read off disk on the
-server). Mismatched tokens are rejected before dispatch.
+请求必须携带共享 bearer token（通过
+``hermes meet node approve`` 在网关上设置，并由服务端从磁盘读取）。
+token 不匹配将在分发前被拒绝。
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ def make_request(
     payload: Dict[str, Any],
     req_id: str | None = None,
 ) -> Dict[str, Any]:
-    """Construct a request envelope.
+    """构造一个请求信封。
 
-    ``req_id`` is auto-generated (uuid4 hex) when not supplied so callers
-    can correlate async responses.
+    当未提供 ``req_id`` 时自动生成（uuid4 hex），以便调用方
+    可以关联异步响应。
     """
     if not isinstance(type, str) or not type:
         raise ValueError("type must be a non-empty string")
@@ -56,12 +56,12 @@ def make_request(
 
 
 def make_response(req_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Build a success response. The caller supplies the *request* type;
-    we suffix it with ``_res`` so clients can assert they got the right
-    reply.
+    """构建一个成功响应。调用方提供 *请求* 类型；
+    我们在其后附加 ``_res``，以便客户端可以断言他们收到了正确的
+    回复。
 
-    For simplicity we don't require the type here — clients usually just
-    key off ``id``. But we still emit a generic ``*_res`` envelope.
+    为简单起见，此处我们不需要类型 — 客户端通常只
+    依赖 ``id``。但我们仍然发出通用的 ``*_res`` 信封。
     """
     if not isinstance(payload, dict):
         raise ValueError("payload must be a dict")
@@ -73,16 +73,16 @@ def make_error(req_id: str, error: str) -> Dict[str, Any]:
 
 
 def encode(msg: Dict[str, Any]) -> str:
-    """Serialize a message envelope to a JSON string."""
+    """将消息信封序列化为 JSON 字符串。"""
     return json.dumps(msg, separators=(",", ":"), ensure_ascii=False)
 
 
 def decode(raw: str) -> Dict[str, Any]:
-    """Parse a JSON envelope, raising ValueError on anything malformed.
+    """解析 JSON 信封，对任何格式错误的内容抛出 ValueError。
 
-    Minimal type validation: must be an object, must contain ``type`` and
-    ``id``. Heavier validation (token match, payload shape) happens in
-    :func:`validate_request` on the server side.
+    最小类型验证：必须是对象，必须包含 ``type`` 和
+    ``id``。更重的验证（token 匹配、payload 形状）在
+    服务端的 :func:`validate_request` 中进行。
     """
     try:
         obj = json.loads(raw)
@@ -98,11 +98,11 @@ def decode(raw: str) -> Dict[str, Any]:
 
 
 def validate_request(msg: Dict[str, Any], expected_token: str) -> Tuple[bool, str]:
-    """Check a decoded request against the server's shared token.
+    """根据服务端的共享 token 检查已解码的请求。
 
-    Returns ``(True, "")`` when the envelope is acceptable or
-    ``(False, <reason>)`` otherwise. Reason strings are safe to surface
-    back to the client in an error envelope.
+    当信封可接受时返回 ``(True, "")``，
+    否则返回 ``(False, <reason>)``。Reason 字符串可以安全地
+    在错误信封中返回给客户端。
     """
     if not isinstance(msg, dict):
         return False, "envelope must be a dict"

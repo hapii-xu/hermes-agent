@@ -1,70 +1,70 @@
-# Geometry COMP Reference
+# Geometry COMP 参考
 
-## Creating Geometry COMPs
+## 创建 Geometry COMP
 
 ```python
 geo = root.create(geometryCOMP, 'geo1')
-# Remove default torus
+# 删除默认的圆环
 for c in list(geo.children):
     if c.valid: c.destroy()
-# Build your shape inside
+# 在内部构建你的形状
 ```
 
-## Correct Pattern (shapes inside geo)
+## 正确模式（形状放在 geo 内部）
 
 ```python
-# Create shape INSIDE the geo COMP
+# 在 geo COMP 内部创建形状
 box = geo.create(boxSOP, 'cube')
 box.par.sizex = 1.5; box.par.sizey = 1.5; box.par.sizez = 1.5
 
-# For POP-based geometry (TD 099), POPs must be inside:
+# 对于基于 POP 的几何体（TD 099），POP 必须位于内部：
 sph = geo.create(spherePOP, 'shape')
 out1 = geo.create(outPOP, 'out1')
 out1.inputConnectors[0].connect(sph.outputConnectors[0])
 ```
 
-## DO NOT: Common Mistakes
+## 不要这样做：常见错误
 
 ```python
-# BAD: Don't create geometry at parent level and wire into COMP
-box = root.create(boxPOP, 'box1')  # ← outside geo, won't render
+# 错误：不要在父层级创建几何体再连线进 COMP
+box = root.create(boxPOP, 'box1')  # ← 在 geo 外部，不会渲染
 
-# BAD: Don't reference parent operators from inside COMP
-choptopop1.par.chop = '../null1'  # ← hidden dependency, breaks on move
+# 错误：不要从 COMP 内部引用父级算子
+choptopop1.par.chop = '../null1'  # ← 隐藏依赖，移动时会失效
 ```
 
-## Instancing
+## 实例化
 
 ```python
 geo.par.instancing = True
-geo.par.instanceop = 'sopto1'    # relative path to CHOP/SOP with instance data
+geo.par.instanceop = 'sopto1'    # 指向包含实例数据的 CHOP/SOP 的相对路径
 geo.par.instancetx = 'tx'
 geo.par.instancety = 'ty'
 geo.par.instancetz = 'tz'
 ```
 
-### Instance Attribute Names by OP Type
+### 按 OP 类型划分的实例属性名
 
-| OP Type | Attribute Names |
+| OP 类型 | 属性名 |
 |---------|-----------------|
-| CHOP | Channel names: `tx`, `ty`, `tz` |
-| SOP/POP | `P(0)`, `P(1)`, `P(2)` for position |
-| DAT | Column header names from first row |
-| TOP | `r`, `g`, `b`, `a` |
+| CHOP | 通道名：`tx`、`ty`、`tz` |
+| SOP/POP | `P(0)`、`P(1)`、`P(2)` 表示位置 |
+| DAT | 第一行的列标题名 |
+| TOP | `r`、`g`、`b`、`a` |
 
-### Mixed Data Sources
+### 混合数据源
 
 ```python
-geo.par.instanceop = 'pos_chop'       # Position from CHOP
+geo.par.instanceop = 'pos_chop'       # 从 CHOP 取位置
 geo.par.instancetx = 'tx'
-geo.par.instancecolorop = 'color_top' # Color from TOP
+geo.par.instancecolorop = 'color_top' # 从 TOP 取颜色
 geo.par.instancecolorr = 'r'
 ```
 
-## Rendering Setup
+## 渲染设置
 
 ```python
-# Camera
+# 摄像机
 cam = root.create(cameraCOMP, 'cam1')
 cam.par.tx = 0; cam.par.ty = 0; cam.par.tz = 4
 
@@ -73,49 +73,49 @@ render = root.create(renderTOP, 'render1')
 render.par.outputresolution = 'custom'
 render.par.resolutionw = 1280; render.par.resolutionh = 720
 render.par.camera = cam.path
-render.par.geometry = geo.path  # accepts path string
+render.par.geometry = geo.path  # 接受路径字符串
 ```
 
-## POPs vs SOPs for Rendering
+## 用于渲染的 POP 与 SOP 对比
 
-In TD 099, `geometryCOMP` renders **POPs** but NOT SOPs. A `boxSOP` inside a geometry COMP is invisible — no errors.
+在 TD 099 中，`geometryCOMP` 渲染 **POP** 但不渲染 SOP。放在 geometry COMP 内部的 `boxSOP` 是不可见的——而且不会报错。
 
 ```python
-# WRONG — SOPs don't render (invisible, no errors)
-box = geo.create(boxSOP, 'cube')       # ✗ invisible
+# 错误 —— SOP 不会渲染（不可见，无报错）
+box = geo.create(boxSOP, 'cube')       # ✗ 不可见
 
-# CORRECT — POPs render
-box = geo.create(boxPOP, 'cube')       # ✓ visible
+# 正确 —— POP 会渲染
+box = geo.create(boxPOP, 'cube')       # ✓ 可见
 ```
 
-| SOP | POP | Notes |
+| SOP | POP | 说明 |
 |-----|-----|-------|
-| `boxSOP` | `boxPOP` | `sizex/y/z`, `surftype` |
-| `sphereSOP` | `spherePOP` | `radx/y/z`, `freq`, `type` (geodesic/grid/sharedpoles/tetrahedron) |
-| `torusSOP` | `torusPOP` | TD auto-creates in new geo COMPs |
+| `boxSOP` | `boxPOP` | `sizex/y/z`、`surftype` |
+| `sphereSOP` | `spherePOP` | `radx/y/z`、`freq`、`type`（geodesic/grid/sharedpoles/tetrahedron） |
+| `torusSOP` | `torusPOP` | TD 在新建 geo COMP 时会自动创建 |
 | `circleSOP` | `circlePOP` | |
 | `gridSOP` | `gridPOP` | |
 | `tubeSOP` | `tubePOP` | |
 
-New geometry COMPs auto-create: `in1` (inPOP), `out1` (outPOP), `torus1` (torusPOP). Always clean before building.
+新建的 geometry COMP 会自动创建：`in1`（inPOP）、`out1`（outPOP）、`torus1`（torusPOP）。构建前务必先清理。
 
-## Morphing Between Shapes (switchPOP)
+## 在形状之间变形（switchPOP）
 
 ```python
 sw = geo.create(switchPOP, 'shape_switch')
 sw.par.index.expr = 'int(absTime.seconds / 3) % 4'
-sw.inputConnectors[0].connect(tetra.outputConnectors[0])  # shape 0
-sw.inputConnectors[1].connect(box.outputConnectors[0])    # shape 1
-sw.inputConnectors[2].connect(octa.outputConnectors[0])   # shape 2
-sw.inputConnectors[3].connect(sphere.outputConnectors[0]) # shape 3
+sw.inputConnectors[0].connect(tetra.outputConnectors[0])  # 形状 0
+sw.inputConnectors[1].connect(box.outputConnectors[0])    # 形状 1
+sw.inputConnectors[2].connect(octa.outputConnectors[0])   # 形状 2
+sw.inputConnectors[3].connect(sphere.outputConnectors[0]) # 形状 3
 
 out = geo.create(outPOP, 'out1')
 out.inputConnectors[0].connect(sw.outputConnectors[0])
 ```
 
-`spherePOP.par.type` options: `geodesic`, `grid`, `sharedpoles`, `tetrahedron`. Use `tetrahedron` for platonic solid polyhedra.
+`spherePOP.par.type` 选项：`geodesic`、`grid`、`sharedpoles`、`tetrahedron`。对柏拉图多面体使用 `tetrahedron`。
 
-## Misc
+## 杂项
 
-- `connect()` replaces existing connections — no need to disconnect first
-- `project.name` returns the TOE filename, `project.folder` returns the directory
+- `connect()` 会替换已有连接——无需先断开
+- `project.name` 返回 TOE 文件名，`project.folder` 返回所在目录

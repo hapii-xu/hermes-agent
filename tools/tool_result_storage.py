@@ -1,25 +1,21 @@
-"""Tool result persistence -- preserves large outputs instead of truncating.
+"""工具结果持久化 —— 保留大输出而非截断。
 
-Defense against context-window overflow operates at three levels:
+针对上下文窗口溢出的防御分三层：
 
-1. **Per-tool output cap** (inside each tool): Tools like search_files
-   pre-truncate their own output before returning. This is the first line
-   of defense and the only one the tool author controls.
+1. **单工具输出上限**（在各工具内部）：search_files 等工具在返回前会先
+   截断自身输出。这是第一道防线，也是工具作者唯一能控制的一层。
 
-2. **Per-result persistence** (maybe_persist_tool_result): After a tool
-   returns, if its output exceeds the tool's registered threshold
-   (registry.get_max_result_size), the full output is written INTO THE
-   SANDBOX temp dir (for example /tmp/hermes-results/{tool_use_id}.txt on
-   standard Linux, or $TMPDIR/hermes-results/{tool_use_id}.txt on Termux)
-   via env.execute(). The in-context content is replaced with a preview +
-   file path reference. The model can read_file to access the full output
-   on any backend.
+2. **单结果持久化**（maybe_persist_tool_result）：工具返回后，若其输出
+   超过该工具注册的阈值（registry.get_max_result_size），完整输出会被
+   写入沙箱临时目录（例如标准 Linux 上的 /tmp/hermes-results/{tool_use_id}.txt，
+   或 Termux 上的 $TMPDIR/hermes-results/{tool_use_id}.txt），通过
+   env.execute() 完成。上下文中的内容被替换为预览 + 文件路径引用。
+   模型可以在任意后端上调用 read_file 来访问完整输出。
 
-3. **Per-turn aggregate budget** (enforce_turn_budget): After all tool
-   results in a single assistant turn are collected, if the total exceeds
-   MAX_TURN_BUDGET_CHARS (200K), the largest non-persisted results are
-   spilled to disk until the aggregate is under budget. This catches cases
-   where many medium-sized results combine to overflow context.
+3. **单轮聚合预算**（enforce_turn_budget）：单个助手轮次内收集完所有工具
+   结果后，若总量超过 MAX_TURN_BUDGET_CHARS（200K），会把最大的未持久化
+   结果逐个转储到磁盘，直到总量低于预算。这一层用于兜底——当许多中等大小
+   的结果叠加导致上下文溢出时。
 """
 
 import logging
@@ -42,7 +38,7 @@ _BUDGET_TOOL_NAME = "__budget_enforcement__"
 
 
 def _resolve_storage_dir(env) -> str:
-    """Return the best temp-backed storage dir for this environment."""
+    """返回当前环境下最适合的、由临时目录支撑的存储目录。"""
     if env is not None:
         get_temp_dir = getattr(env, "get_temp_dir", None)
         if callable(get_temp_dir):
@@ -58,7 +54,7 @@ def _resolve_storage_dir(env) -> str:
 
 
 def generate_preview(content: str, max_chars: int = DEFAULT_PREVIEW_SIZE_CHARS) -> tuple[str, bool]:
-    """Truncate at last newline within max_chars. Returns (preview, has_more)."""
+    """在 max_chars 范围内的最后一个换行处截断。返回 (preview, has_more)。"""
     if len(content) <= max_chars:
         return content, False
     truncated = content[:max_chars]
@@ -69,24 +65,23 @@ def generate_preview(content: str, max_chars: int = DEFAULT_PREVIEW_SIZE_CHARS) 
 
 
 def _heredoc_marker(content: str) -> str:
-    """Return a heredoc delimiter that doesn't collide with content."""
+    """返回一个不与内容冲突的 heredoc 分隔符。"""
     if HEREDOC_MARKER not in content:
         return HEREDOC_MARKER
     return f"HERMES_PERSIST_{uuid.uuid4().hex[:8]}"
 
 
 def _write_to_sandbox(content: str, remote_path: str, env) -> bool:
-    """Write content into the sandbox via env.execute(). Returns True on success.
+    """通过 env.execute() 将 content 写入沙箱。成功返回 True。
 
-    Pushes ``content`` through stdin rather than embedding it in the command
-    string. Linux's ``MAX_ARG_STRLEN`` caps any single argv element at 128 KB
-    (32 * PAGE_SIZE), so the previous heredoc-in-the-command-string approach
-    silently failed with ``OSError: [Errno 7] Argument list too long`` for any
-    tool result over ~128 KB — exactly the case persistence exists to handle.
-    Routing through stdin removes that ceiling on local + ssh (``_stdin_mode
-    == "pipe"``); remote backends with ``_stdin_mode == "heredoc"`` keep their
-    existing API-body sized limit, which is orders of magnitude larger than
-    the exec-arg ceiling.
+    通过 stdin 推送 ``content``，而不是将其嵌入命令字符串。Linux 的
+    ``MAX_ARG_STRLEN`` 将单个 argv 元素上限限制为 128 KB（32 * PAGE_SIZE），
+    因此之前把 heredoc 嵌入命令字符串的做法，在工具结果超过约 128 KB 时
+    会以 ``OSError: [Errno 7] Argument list too long`` 静默失败——而这
+    恰恰正是持久化机制要处理的场景。改为经 stdin 传输后，本地 + ssh
+    （``_stdin_mode == "pipe"``）上不再有这一上限；``_stdin_mode ==
+    "heredoc"`` 的远程后端仍保留其基于 API body 的体积上限，该上限比 exec
+    参数上限高出数个数量级。
     """
     storage_dir = os.path.dirname(remote_path)
     cmd = f"mkdir -p {shlex.quote(storage_dir)} && cat > {shlex.quote(remote_path)}"
@@ -100,7 +95,7 @@ def _build_persisted_message(
     original_size: int,
     file_path: str,
 ) -> str:
-    """Build the <persisted-output> replacement block."""
+    """构建 <persisted-output> 替换块。"""
     size_kb = original_size / 1024
     if size_kb >= 1024:
         size_str = f"{size_kb / 1024:.1f} MB"
@@ -127,22 +122,21 @@ def maybe_persist_tool_result(
     config: BudgetConfig = DEFAULT_BUDGET,
     threshold: int | float | None = None,
 ) -> str:
-    """Layer 2: persist oversized result into the sandbox, return preview + path.
+    """第二层：将超大结果持久化到沙箱，返回预览 + 路径。
 
-    Writes via env.execute() so the file is accessible from any backend
-    (local, Docker, SSH, Modal, Daytona). Falls back to inline truncation
-    if write fails or no env is available.
+    通过 env.execute() 写入，使文件可从任意后端访问（本地、Docker、SSH、
+    Modal、Daytona）。写入失败或没有 env 时，回退为内联截断。
 
-    Args:
-        content: Raw tool result string.
-        tool_name: Name of the tool (used for threshold lookup).
-        tool_use_id: Unique ID for this tool call (used as filename).
-        env: The active BaseEnvironment instance, or None.
-        config: BudgetConfig controlling thresholds and preview size.
-        threshold: Explicit override; takes precedence over config resolution.
+    参数：
+        content: 原始工具结果字符串。
+        tool_name: 工具名称（用于阈值查找）。
+        tool_use_id: 本次工具调用的唯一 ID（用作文件名）。
+        env: 当前活动的 BaseEnvironment 实例，或 None。
+        config: BudgetConfig，控制阈值与预览大小。
+        threshold: 显式覆盖；优先于配置解析结果。
 
-    Returns:
-        Original content if small, or <persisted-output> replacement.
+    返回：
+        若内容较小则返回原始内容，否则返回 <persisted-output> 替换块。
     """
     effective_threshold = threshold if threshold is not None else config.resolve_threshold(tool_name)
 
@@ -183,13 +177,12 @@ def enforce_turn_budget(
     env=None,
     config: BudgetConfig = DEFAULT_BUDGET,
 ) -> list[dict]:
-    """Layer 3: enforce aggregate budget across all tool results in a turn.
+    """第三层：对一轮内所有工具结果执行聚合预算控制。
 
-    If total chars exceed budget, persist the largest non-persisted results
-    first (via sandbox write) until under budget. Already-persisted results
-    are skipped.
+    若总字符数超出预算，优先（通过沙箱写入）持久化最大的未持久化结果，直到
+    总量低于预算。已持久化的结果会被跳过。
 
-    Mutates the list in-place and returns it.
+    就地修改该列表并返回。
     """
     candidates = []
     total_size = 0

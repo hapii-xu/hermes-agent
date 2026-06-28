@@ -1,243 +1,243 @@
-# Design System: Pinterest
+# 设计系统：Pinterest
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `DM Sans` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代方案：
+> - **主字体：** `DM Sans` | **等宽字体：** `system monospace stack`
+> - **字体栈 (CSS)：** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈 (CSS)：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Pinterest's website is a warm, inspiration-driven canvas that treats visual discovery like a lifestyle magazine. The design operates on a soft, slightly warm white background with Pinterest Red (`#e60023`) as the singular, bold brand accent. Unlike the cool blues of most tech platforms, Pinterest's neutral scale has a distinctly warm undertone — grays lean toward olive/sand (`#91918c`, `#62625b`, `#e5e5e0`) rather than cool steel, creating a cozy, craft-like atmosphere that invites browsing.
+Pinterest 的网站是一个温暖、以灵感为驱动的画布，将视觉发现当作一本生活方式杂志。设计建立在柔软、略带暖意的白色背景之上，以 Pinterest 红（`#e60023`）作为单一、大胆的品牌强调色。与大多数科技平台的冷蓝不同，Pinterest 的中性色阶有明显的暖底色——灰色倾向于橄榄/沙色（`#91918c`、`#62625b`、`#e5e5e0`）而非冷钢色，营造出温馨、手工艺般的氛围，引人浏览。
 
-The typography uses Pin Sans — a custom proprietary font with a broad fallback stack including Japanese fonts, reflecting Pinterest's global reach. At display scale (70px, weight 600), Pin Sans creates large, inviting headlines. At smaller sizes, the system is compact: buttons at 12px, captions at 12–14px. The CSS variable naming system (`--comp-*`, `--sema-*`, `--base-*`) reveals a sophisticated three-tier design token architecture: component-level, semantic-level, and base-level tokens.
+排版使用 Pin Sans——一款自定义专有字体，带有包含日文字体在内的广泛回退栈，反映了 Pinterest 的全球触达。在展示尺寸（70px，字重 600）下，Pin Sans 创造出大而亲切的标题。在较小尺寸下，系统是紧凑的：按钮 12px、说明 12–14px。CSS 变量命名系统（`--comp-*`、`--sema-*`、`--base-*`）揭示了一个成熟的三层设计 token 架构：组件级、语义级和基础级 token。
 
-What distinguishes Pinterest is its generous border-radius system (12px–40px, plus 50% for circles) and warm-tinted button backgrounds. The secondary button (`#e5e5e0`) has a distinctly warm, sand-like tone rather than cold gray. The primary red button uses 16px radius — rounded but not pill-shaped. Combined with warm badge backgrounds (`hsla(60,20%,98%,.5)` — a subtle yellow-warm wash) and photography-dominant layouts, the result is a design that feels handcrafted and personal, not corporate and sterile.
+Pinterest 的独特之处在于其慷慨的圆角系统（12px–40px，加 50% 用于圆形）和带暖色的按钮背景。次要按钮（`#e5e5e0`）有明显的温暖、沙般色调，而非冷灰色。主红色按钮使用 16px 圆角——圆润但非胶囊形。结合温暖的徽章背景（`hsla(60,20%,98%,.5)`——一种微妙的黄色暖洗）和以摄影为主导的布局，结果是一个感觉手工的、个人的设计，而非企业化、无菌的。
 
-**Key Characteristics:**
-- Warm white canvas with olive/sand-toned neutrals — cozy, not clinical
-- Pinterest Red (`#e60023`) as singular bold accent — never subtle, always confident
-- Pin Sans custom font with global fallback stack (including CJK)
-- Three-tier token architecture: `--comp-*` / `--sema-*` / `--base-*`
-- Warm secondary surfaces: sand gray (`#e5e5e0`), warm badge (`hsla(60,20%,98%,.5)`)
-- Generous border-radius: 16px standard, up to 40px for large containers
-- Photography-first content — pins/images are the primary visual element
-- Dark near-purple text (`#211922`) — warm, with a hint of plum
+**关键特征：**
+- 暖白色画布，配橄榄/沙色调中性色——温馨，不冰冷
+- Pinterest 红（`#e60023`）作为单一大胆强调色——从不微妙，始终自信
+- Pin Sans 自定义字体，配全球回退栈（含 CJK）
+- 三层 token 架构：`--comp-*` / `--sema-*` / `--base-*`
+- 温暖次要表面：沙灰（`#e5e5e0`）、暖徽章（`hsla(60,20%,98%,.5)`）
+- 慷慨圆角：16px 标准，大型容器最高 40px
+- 以摄影为先的内容——Pin/图片是主要视觉元素
+- 深近紫文字（`#211922`）——温暖，带一丝梅色调
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary Brand
-- **Pinterest Red** (`#e60023`): Primary CTA, brand accent — bold, confident red
-- **Green 700** (`#103c25`): `--base-color-green-700`, success/nature accent
-- **Green 700 Hover** (`#0b2819`): `--base-color-hover-green-700`, pressed green
+### 主品牌色
+- **Pinterest 红**（`#e60023`）：主 CTA、品牌强调色——大胆、自信的红
+- **绿 700**（`#103c25`）：`--base-color-green-700`，成功/自然强调色
+- **绿 700 悬停**（`#0b2819`）：`--base-color-hover-green-700`，按下绿
 
-### Text
-- **Plum Black** (`#211922`): Primary text — warm near-black with plum undertone
-- **Black** (`#000000`): Secondary text, button text
-- **Olive Gray** (`#62625b`): Secondary descriptions, muted text
-- **Warm Silver** (`#91918c`): `--comp-button-color-text-transparent-disabled`, disabled text, input borders
-- **White** (`#ffffff`): Text on dark/colored surfaces
+### 文字
+- **梅黑**（`#211922`）：主文字——温暖的近黑，带梅色底调
+- **黑**（`#000000`）：次要文字、按钮文字
+- **橄榄灰**（`#62625b`）：次要描述、弱化文字
+- **暖银**（`#91918c`）：`--comp-button-color-text-transparent-disabled`，禁用文字、输入边框
+- **白**（`#ffffff`）：深色/彩色表面上的文字
 
-### Interactive
-- **Focus Blue** (`#435ee5`): `--comp-button-color-border-focus-outer-transparent`, focus rings
-- **Performance Purple** (`#6845ab`): `--sema-color-hover-icon-performance-plus`, performance features
-- **Recommendation Purple** (`#7e238b`): `--sema-color-hover-text-recommendation`, AI recommendation
-- **Link Blue** (`#2b48d4`): Link text color
-- **Facebook Blue** (`#0866ff`): `--facebook-background-color`, social login
-- **Pressed Blue** (`#617bff`): `--base-color-pressed-blue-200`, pressed state
+### 交互色
+- **聚焦蓝**（`#435ee5`）：`--comp-button-color-border-focus-outer-transparent`，聚焦环
+- **性能紫**（`#6845ab`）：`--sema-color-hover-icon-performance-plus`，性能功能
+- **推荐紫**（`#7e238b`）：`--sema-color-hover-text-recommendation`，AI 推荐
+- **链接蓝**（`#2b48d4`）：链接文字颜色
+- **Facebook 蓝**（`#0866ff`）：`--facebook-background-color`，社交登录
+- **按下蓝**（`#617bff`）：`--base-color-pressed-blue-200`，按下状态
 
-### Surface & Border
-- **Sand Gray** (`#e5e5e0`): Secondary button background — warm, craft-like
-- **Warm Light** (`#e0e0d9`): Circular button backgrounds, badges
-- **Warm Wash** (`hsla(60, 20%, 98%, 0.5)`): `--comp-badge-color-background-wash-light`, subtle warm badge bg
-- **Fog** (`#f6f6f3`): Light surface (at 50% opacity)
-- **Border Disabled** (`#c8c8c1`): `--sema-color-border-disabled`, disabled borders
-- **Hover Gray** (`#bcbcb3`): `--base-color-hover-grayscale-150`, hover border
-- **Dark Surface** (`#33332e`): Dark section backgrounds
+### 表面与边框
+- **沙灰**（`#e5e5e0`）：次要按钮背景——温暖、手工艺感
+- **暖浅**（`#e0e0d9`）：圆形按钮背景、徽章
+- **暖洗**（`hsla(60, 20%, 98%, 0.5)`）：`--comp-badge-color-background-wash-light`，微妙温暖徽章背景
+- **雾**（`#f6f6f3`）：浅表面（50% 不透明度）
+- **边框禁用**（`#c8c8c1`）：`--sema-color-border-disabled`，禁用边框
+- **悬停灰**（`#bcbcb3`）：`--base-color-hover-grayscale-150`，悬停边框
+- **深表面**（`#33332e`）：深色区块背景
 
-### Semantic
-- **Error Red** (`#9e0a0a`): Checkbox/form error states
+### 语义色
+- **错误红**（`#9e0a0a`）：复选框/表单错误状态
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Family
-- **Primary**: `Pin Sans`, fallbacks: `-apple-system, system-ui, Segoe UI, Roboto, Oxygen-Sans, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, Helvetica, ヒラギノ角ゴ Pro W3, メイリオ, Meiryo, ＭＳ Ｐゴシック, Arial`
+### 字体族
+- **主字体**：`Pin Sans`，回退：`-apple-system, system-ui, Segoe UI, Roboto, Oxygen-Sans, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, Helvetica, ヒラギノ角ゴ Pro W3, メイリオ, Meiryo, ＭＳ Ｐゴシック, Arial`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 说明 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Hero | Pin Sans | 70px (4.38rem) | 600 | normal | normal | Maximum impact |
-| Section Heading | Pin Sans | 28px (1.75rem) | 700 | normal | -1.2px | Negative tracking |
-| Body | Pin Sans | 16px (1.00rem) | 400 | 1.40 | normal | Standard reading |
-| Caption Bold | Pin Sans | 14px (0.88rem) | 700 | normal | normal | Strong metadata |
-| Caption | Pin Sans | 12px (0.75rem) | 400–500 | 1.50 | normal | Small text, tags |
-| Button | Pin Sans | 12px (0.75rem) | 400 | normal | normal | Button labels |
+| 展示英雄 | Pin Sans | 70px (4.38rem) | 600 | normal | normal | 最大冲击 |
+| 章节标题 | Pin Sans | 28px (1.75rem) | 700 | normal | -1.2px | 负字距 |
+| 正文 | Pin Sans | 16px (1.00rem) | 400 | 1.40 | normal | 标准阅读 |
+| 说明粗 | Pin Sans | 14px (0.88rem) | 700 | normal | normal | 强元数据 |
+| 说明 | Pin Sans | 12px (0.75rem) | 400–500 | 1.50 | normal | 小文字、标签 |
+| 按钮 | Pin Sans | 12px (0.75rem) | 400 | normal | normal | 按钮标签 |
 
-### Principles
-- **Compact type scale**: The range is 12px–70px with a dramatic jump — most functional text is 12–16px, creating a dense, app-like information hierarchy.
-- **Warm weight distribution**: 600–700 for headings, 400–500 for body. No ultra-light weights — the type always feels substantial.
-- **Negative tracking on headings**: -1.2px on 28px headings creates cozy, intimate section titles.
-- **Single font family**: Pin Sans handles everything — no secondary display or monospace font detected.
+### 原则
+- **紧凑字号阶梯**：范围 12px–70px，跳跃显著——大多数功能性文字 12–16px，创造出密集的、应用般的信息层级。
+- **温暖字重分布**：标题 600–700，正文 400–500。无超轻字重——字体始终感觉厚实。
+- **标题负字距**：28px 标题上 -1.2px 创造温馨、亲密的章节标题。
+- **单一字体族**：Pin Sans 承担一切——未检测到次要展示或等宽字体。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Red**
-- Background: `#e60023` (Pinterest Red)
-- Text: `#000000` (black — unusual choice for contrast on red)
-- Padding: 6px 14px
-- Radius: 16px (generously rounded, not pill)
-- Border: `2px solid rgba(255, 255, 255, 0)` (transparent)
-- Focus: semantic border + outline via CSS variables
+**主红**
+- 背景：`#e60023`（Pinterest 红）
+- 文字：`#000000`（黑色——红色上对比度的不同寻常选择）
+- 内边距：6px 14px
+- 圆角：16px（慷慨圆角，非胶囊）
+- 边框：`2px solid rgba(255, 255, 255, 0)`（透明）
+- 聚焦：通过 CSS 变量的语义边框 + 轮廓
 
-**Secondary Sand**
-- Background: `#e5e5e0` (warm sand gray)
-- Text: `#000000`
-- Padding: 6px 14px
-- Radius: 16px
-- Focus: same semantic border system
+**次要沙色**
+- 背景：`#e5e5e0`（温暖沙灰）
+- 文字：`#000000`
+- 内边距：6px 14px
+- 圆角：16px
+- 聚焦：相同语义边框系统
 
-**Circular Action**
-- Background: `#e0e0d9` (warm light)
-- Text: `#211922` (plum black)
-- Radius: 50% (circle)
-- Use: Pin actions, navigation controls
+**圆形操作**
+- 背景：`#e0e0d9`（暖浅）
+- 文字：`#211922`（梅黑）
+- 圆角：50%（圆形）
+- 用途：Pin 操作、导航控件
 
-**Ghost / Transparent**
-- Background: transparent
-- Text: `#000000`
-- No border
-- Use: Tertiary actions
+**幽灵 / 透明**
+- 背景：透明
+- 文字：`#000000`
+- 无边框
+- 用途：三级操作
 
-### Cards & Containers
-- Photography-first pin cards with generous radius (12px–20px)
-- No traditional box-shadow on most cards
-- White or warm fog backgrounds
-- 8px white thick border on some image containers
+### 卡片与容器
+- 以摄影为先的 Pin 卡片，慷慨圆角（12px–20px）
+- 大多数卡片无传统 box-shadow
+- 白色或暖雾背景
+- 部分图片容器上有 8px 白色厚边框
 
-### Inputs
-- Email input: white background, `1px solid #91918c` border, 16px radius, 11px 15px padding
-- Focus: semantic border + outline system via CSS variables
+### 输入框
+- 邮箱输入：白色背景，`1px solid #91918c` 边框，16px 圆角，11px 15px 内边距
+- 聚焦：通过 CSS 变量的语义边框 + 轮廓系统
 
-### Navigation
-- Clean header on white or warm background
-- Pinterest logo + search bar centered
-- Pin Sans 16px for nav links
-- Pinterest Red accents for active states
+### 导航
+- 白色或暖背景上的干净页头
+- Pinterest logo + 搜索栏居中
+- Pin Sans 16px 用于导航链接
+- Pinterest 红色强调用于激活状态
 
-### Image Treatment
-- Pin-style masonry grid (signature Pinterest layout)
-- Rounded corners: 12px–20px on images
-- Photography as primary content — every pin is an image
-- Thick white borders (8px) on featured image containers
+### 图片处理
+- Pin 风格的瀑布流网格（Pinterest 标志性布局）
+- 圆角：图片上 12px–20px
+- 摄影作为主要内容——每个 Pin 都是一张图片
+- 精选图片容器上的厚白边框（8px）
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 4px, 6px, 7px, 8px, 10px, 11px, 12px, 16px, 18px, 20px, 22px, 24px, 32px, 80px, 100px
-- Large jumps: 32px → 80px → 100px for section spacing
+### 间距系统
+- 基础单位：8px
+- 阶梯：4px, 6px, 7px, 8px, 10px, 11px, 12px, 16px, 18px, 20px, 22px, 24px, 32px, 80px, 100px
+- 大跳跃：32px → 80px → 100px 用于区块间距
 
-### Grid & Container
-- Masonry grid for pin content (signature layout)
-- Centered content sections with generous max-width
-- Full-width dark footer
-- Search bar as primary navigation element
+### 网格与容器
+- 瀑布流网格用于 Pin 内容（标志性布局）
+- 居中内容区块，慷慨最大宽度
+- 全宽深色页脚
+- 搜索栏作为主要导航元素
 
-### Whitespace Philosophy
-- **Inspiration density**: The masonry grid packs pins tightly — the content density IS the value proposition. Whitespace exists between sections, not within the grid.
-- **Breathing above, density below**: Hero/feature sections get generous padding; the pin grid is compact and immersive.
+### 留白哲学
+- **灵感密度**：瀑布流网格紧密排列 Pin——内容密度本身就是价值主张。留白存在于区块之间，而非网格内部。
+- **上方呼吸，下方密集**：英雄/功能区获得慷慨内边距；Pin 网格紧凑而沉浸。
 
-### Border Radius Scale
-- Standard (12px): Small cards, links
-- Button (16px): Buttons, inputs, medium cards
-- Comfortable (20px): Feature cards
-- Large (28px): Large containers
-- Section (32px): Tab elements, large panels
-- Hero (40px): Hero containers, large feature blocks
-- Circle (50%): Action buttons, tab indicators
+### 圆角阶梯
+- 标准（12px）：小卡片、链接
+- 按钮（16px）：按钮、输入、中等卡片
+- 舒适（20px）：功能卡片
+- 大型（28px）：大型容器
+- 区块（32px）：标签元素、大面板
+- 英雄（40px）：英雄容器、大型功能块
+- 圆形（50%）：操作按钮、标签指示器
 
-## 6. Depth & Elevation
+## 6. 深度与抬升
 
-| Level | Treatment | Use |
+| 级别 | 处理 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | Default — pins rely on content, not shadow |
-| Subtle (Level 1) | Minimal shadow (from tokens) | Elevated overlays, dropdowns |
-| Focus (Accessibility) | `--sema-color-border-focus-outer-default` ring | Focus states |
+| 扁平（级别 0） | 无阴影 | 默认——Pin 依赖内容，而非阴影 |
+| 微妙（级别 1） | 极简阴影（来自 token） | 抬升覆盖层、下拉菜单 |
+| 聚焦（无障碍） | `--sema-color-border-focus-outer-default` 环 | 聚焦状态 |
 
-**Shadow Philosophy**: Pinterest uses minimal shadows. The masonry grid relies on content (photography) to create visual interest rather than elevation effects. Depth comes from the warmth of surface colors and the generous rounding of containers.
+**阴影哲学**：Pinterest 使用极简阴影。瀑布流网格依赖内容（摄影）创造视觉趣味，而非抬升效果。深度来自表面颜色的温暖和容器的慷慨圆角。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use warm neutrals (`#e5e5e0`, `#e0e0d9`, `#91918c`) — the warm olive/sand tone is the identity
-- Apply Pinterest Red (`#e60023`) only for primary CTAs — it's bold and singular
-- Use Pin Sans exclusively — one font for everything
-- Apply generous border-radius: 16px for buttons/inputs, 20px+ for cards
-- Keep the masonry grid dense — content density is the value
-- Use warm badge backgrounds (`hsla(60,20%,98%,.5)`) for subtle warm washes
-- Use `#211922` (plum black) for primary text — it's warmer than pure black
+### 宜
+- 使用温暖中性色（`#e5e5e0`、`#e0e0d9`、`#91918c`）——温暖的橄榄/沙色调是标识
+- 仅将 Pinterest 红（`#e60023`）用于主 CTA——它大胆且单一
+- 专门使用 Pin Sans——一种字体承担一切
+- 应用慷慨圆角：按钮/输入 16px，卡片 20px+
+- 保持瀑布流网格密集——内容密度即是价值
+- 使用温暖徽章背景（`hsla(60,20%,98%,.5)`）作微妙温暖洗色
+- 使用 `#211922`（梅黑）作主文字——它比纯黑更温暖
 
-### Don't
-- Don't use cool gray neutrals — always warm/olive-toned
-- Don't use pure black (`#000000`) as primary text — use plum black (`#211922`)
-- Don't use pill-shaped buttons — 16px radius is rounded but not pill
-- Don't add heavy shadows — Pinterest is flat by design, depth from content
-- Don't use small border-radius (<12px) on cards — the generous rounding is core
-- Don't introduce additional brand colors — red + warm neutrals is the complete palette
-- Don't use thin font weights — Pin Sans at 400 minimum
+### 忌
+- 不要用冷灰中性色——始终用温暖/橄榄色调
+- 不要用纯黑（`#000000`）作主文字——用梅黑（`#211922`）
+- 不要用胶囊形按钮——16px 圆角是圆润但非胶囊
+- 不要加重阴影——Pinterest 设计上是扁平的，深度来自内容
+- 不要在卡片上用小圆角（<12px）——慷慨圆角是核心
+- 不要引入额外的品牌色——红 + 暖中性色是完整调色板
+- 不要用细字重——Pin Sans 最低 400
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <576px | Single column, compact layout |
-| Mobile Large | 576–768px | 2-column pin grid |
-| Tablet | 768–890px | Expanded grid |
-| Desktop Small | 890–1312px | Standard masonry grid |
-| Desktop | 1312–1440px | Full layout |
-| Large Desktop | 1440–1680px | Expanded grid columns |
-| Ultra-wide | >1680px | Maximum grid density |
+| 移动 | <576px | 单列，紧凑布局 |
+| 大型移动 | 576–768px | 2 列 Pin 网格 |
+| 平板 | 768–890px | 扩展网格 |
+| 小型桌面 | 890–1312px | 标准瀑布流网格 |
+| 桌面 | 1312–1440px | 完整布局 |
+| 大型桌面 | 1440–1680px | 扩展网格列 |
+| 超宽 | >1680px | 最大网格密度 |
 
-### Collapsing Strategy
-- Pin grid: 5+ columns → 3 → 2 → 1
-- Navigation: search bar + icons → simplified mobile nav
-- Feature sections: side-by-side → stacked
-- Hero: 70px → scales down proportionally
-- Footer: dark multi-column → stacked
+### 折叠策略
+- Pin 网格：5+ 列 → 3 → 2 → 1
+- 导航：搜索栏 + 图标 → 简化的移动导航
+- 功能区：并排 → 堆叠
+- 英雄：70px → 按比例缩小
+- 页脚：深色多列 → 堆叠
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Brand: Pinterest Red (`#e60023`)
-- Background: White (`#ffffff`)
-- Text: Plum Black (`#211922`)
-- Secondary text: Olive Gray (`#62625b`)
-- Button surface: Sand Gray (`#e5e5e0`)
-- Border: Warm Silver (`#91918c`)
-- Focus: Focus Blue (`#435ee5`)
+### 快速颜色参考
+- 品牌：Pinterest 红（`#e60023`）
+- 背景：白色（`#ffffff`）
+- 文字：梅黑（`#211922`）
+- 次要文字：橄榄灰（`#62625b`）
+- 按钮表面：沙灰（`#e5e5e0`）
+- 边框：暖银（`#91918c`）
+- 聚焦：聚焦蓝（`#435ee5`）
 
-### Example Component Prompts
-- "Create a hero: white background. Headline at 70px Pin Sans weight 600, plum black (#211922). Red CTA button (#e60023, 16px radius, 6px 14px padding). Secondary sand button (#e5e5e0, 16px radius)."
-- "Design a pin card: white background, 16px radius, no shadow. Photography fills top, 16px Pin Sans weight 400 description below in #62625b."
-- "Build a circular action button: #e0e0d9 background, 50% radius, #211922 icon."
-- "Create an input field: white background, 1px solid #91918c, 16px radius, 11px 15px padding. Focus: blue outline via semantic tokens."
-- "Design the dark footer: #33332e background. Pinterest script logo in white. 12px Pin Sans links in #91918c."
+### 示例组件提示
+- "创建英雄区：白色背景。标题 70px Pin Sans 字重 600，梅黑（#211922）。红色 CTA 按钮（#e60023，16px 圆角，6px 14px 内边距）。次要沙色按钮（#e5e5e0，16px 圆角）。"
+- "设计一张 Pin 卡片：白色背景，16px 圆角，无阴影。摄影填满顶部，下方 16px Pin Sans 字重 400 描述，颜色 #62625b。"
+- "构建圆形操作按钮：#e0e0d9 背景，50% 圆角，#211922 图标。"
+- "创建输入框：白色背景，1px solid #91918c，16px 圆角，11px 15px 内边距。聚焦：通过语义 token 的蓝色轮廓。"
+- "设计深色页脚：#33332e 背景。Pinterest 草书 logo 白色。12px Pin Sans 链接，颜色 #91918c。"
 
-### Iteration Guide
-1. Warm neutrals everywhere — olive/sand grays, never cool steel
-2. Pinterest Red for CTAs only — bold and singular
-3. 16px radius on buttons/inputs, 20px+ on cards — generous but not pill
-4. Pin Sans is the only font — compact at 12px for UI, 70px for display
-5. Photography carries the design — the UI stays warm and minimal
-6. Plum black (#211922) for text — warmer than pure black
+### 迭代指南
+1. 处处用暖中性色——橄榄/沙灰，绝不冷钢色
+2. Pinterest 红仅用于 CTA——大胆且单一
+3. 按钮/输入 16px 圆角，卡片 20px+——慷慨但非胶囊
+4. Pin Sans 是唯一字体——UI 用 12px 紧凑，展示用 70px
+5. 摄影承载设计——UI 保持温暖和极简
+6. 文字用梅黑（#211922）——比纯黑更温暖

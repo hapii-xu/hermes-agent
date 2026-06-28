@@ -1,4 +1,4 @@
-"""Shared session-listing helpers for CLI and gateway slash surfaces."""
+"""CLI 和 gateway 斜杠命令界面共享的会话列表辅助函数。"""
 
 from __future__ import annotations
 

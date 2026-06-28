@@ -1,35 +1,35 @@
-## Bug Description
+## Bug 描述
 
-<!-- Clear, concise description of the bug -->
+<!-- 简明扼要地描述该 bug -->
 
-## Steps to Reproduce
+## 复现步骤
 
 1.
 2.
 3.
 
-## Expected Behavior
+## 期望行为
 
-<!-- What should happen -->
+<!-- 应该发生什么 -->
 
-## Actual Behavior
+## 实际行为
 
-<!-- What actually happens -->
+<!-- 实际发生了什么 -->
 
-## Environment
+## 环境
 
-- OS:
-- Version/Commit:
-- Python version:
-- Browser (if applicable):
+- OS：
+- Version/Commit：
+- Python 版本：
+- 浏览器（如适用）：
 
-## Error Output
+## 错误输出
 
-<!-- Paste relevant error messages, stack traces, or logs -->
+<!-- 粘贴相关的错误信息、堆栈跟踪或日志 -->
 
 ```
 ```
 
-## Additional Context
+## 补充信息
 
-<!-- Screenshots, related issues, workarounds discovered, etc. -->
+<!-- 截图、相关 issue、已发现的临时变通方法等 -->

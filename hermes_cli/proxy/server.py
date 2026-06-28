@@ -1,12 +1,12 @@
-"""HTTP server that forwards OpenAI-compatible requests to a configured upstream.
+"""HTTP 服务器，将 OpenAI 兼容的请求转发到已配置的上游。
 
-Listens on ``http://<host>:<port>/v1/<path>`` and forwards each request to
-``<upstream-base-url>/<path>`` with the client's ``Authorization`` header
-replaced by a freshly-resolved bearer from the configured adapter. The
-response is streamed back unmodified, preserving SSE.
+监听 ``http://<host>:<port>/v1/<path>`` 并将每个请求转发到
+``<upstream-base-url>/<path>``，同时将客户端的 ``Authorization`` 头
+替换为由已配置的 adapter 新解析的 bearer。
+响应会原样流式返回，保留 SSE。
 
-The server is intentionally minimal: it does NOT mediate, log, transform,
-or rewrite request/response bodies. It's a credential-attaching forwarder.
+该服务器刻意保持精简：它不会中介、记录、转换或
+重写请求/响应体。它只是一个凭证附加转发器。
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from hermes_cli.proxy.adapters.base import UpstreamAdapter, UpstreamCredential
 
 logger = logging.getLogger(__name__)
 
-# Headers we strip when forwarding to the upstream. ``host``/``content-length``
-# are recomputed by aiohttp; ``authorization`` is replaced with our bearer.
-# Everything else (content-type, accept, user-agent, x-* headers) passes through.
+# 转发到上游时需要剥离的 header。``host``/``content-length``
+# 由 aiohttp 重新计算；``authorization`` 由我们的 bearer 替换。
+# 其余所有 header（content-type、accept、user-agent、x-* header）均透传。
 _HOP_BY_HOP_HEADERS = frozenset(
     {
         "host",
@@ -44,7 +44,7 @@ _HOP_BY_HOP_HEADERS = frozenset(
         "trailers",
         "transfer-encoding",
         "upgrade",
-        "authorization",  # we replace this one
+        "authorization",  # 这个由我们替换
     }
 )
 
@@ -53,13 +53,13 @@ DEFAULT_HOST = "127.0.0.1"
 
 
 def _json_error(status: int, message: str, code: str = "proxy_error") -> "web.Response":
-    """Return an OpenAI-style error JSON response."""
+    """返回一个 OpenAI 风格的 error JSON 响应。"""
     body = {"error": {"message": message, "type": code, "code": code}}
     return web.json_response(body, status=status)
 
 
 def _filter_request_headers(headers: "aiohttp.typedefs.LooseHeaders") -> dict:
-    """Strip hop-by-hop + auth headers from the inbound request."""
+    """从入站请求中剥离 hop-by-hop 和 auth header。"""
     out = {}
     for key, value in headers.items():
         if key.lower() in _HOP_BY_HOP_HEADERS:
@@ -69,12 +69,12 @@ def _filter_request_headers(headers: "aiohttp.typedefs.LooseHeaders") -> dict:
 
 
 def _filter_response_headers(headers) -> dict:
-    """Strip hop-by-hop headers from the upstream response."""
+    """从上游响应中剥离 hop-by-hop header。"""
     out = {}
     for key, value in headers.items():
         if key.lower() in _HOP_BY_HOP_HEADERS:
             continue
-        # aiohttp recomputes Content-Encoding/Content-Length on stream — let it.
+        # aiohttp 在流式传输时重新计算 Content-Encoding/Content-Length — 让它处理。
         if key.lower() in {"content-encoding", "content-length"}:
             continue
         out[key] = value
@@ -82,7 +82,7 @@ def _filter_response_headers(headers) -> dict:
 
 
 def create_app(adapter: UpstreamAdapter) -> "web.Application":
-    """Build the aiohttp application bound to a specific upstream adapter."""
+    """构建绑定到特定上游 adapter 的 aiohttp 应用。"""
     if not AIOHTTP_AVAILABLE:
         raise RuntimeError(
             "aiohttp is required for `hermes proxy`. Install with: "
@@ -90,8 +90,7 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
         )
 
     app = web.Application()
-    # AppKey ensures forward-compat with future aiohttp versions that strip
-    # bare-string keys.
+    # AppKey 确保与未来移除裸字符串 key 的 aiohttp 版本向前兼容。
     _adapter_key = web.AppKey("adapter", UpstreamAdapter)
     app[_adapter_key] = adapter
 
@@ -105,7 +104,7 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
         )
 
     async def handle_proxy(request: "web.Request") -> "web.StreamResponse":
-        # Extract the path *after* /v1
+        # 提取 /v1 之后的路径
         rel_path = request.match_info.get("tail", "")
         rel_path = "/" + rel_path.lstrip("/")
 
@@ -124,17 +123,16 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
             logger.warning("proxy: credential resolution failed: %s", exc)
             return _json_error(401, str(exc), code="upstream_auth_failed")
 
-        # Forward body verbatim. Read into memory once — request bodies for
-        # chat/completions/embeddings are small (<1MB typically). If we ever
-        # need to forward large multipart uploads we'll switch to streaming
-        # the request body too.
+        # 原样转发请求体。一次性读入内存 — chat/completions/embeddings
+        # 的请求体很小（通常 <1MB）。如果将来需要转发大型 multipart
+        # 上传，我们会切换到流式传输请求体。
         body = await request.read()
 
         timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=300)
 
         async def _send_upstream(active_cred: UpstreamCredential):
             upstream_url = f"{active_cred.base_url.rstrip('/')}{rel_path}"
-            # Preserve query string verbatim.
+            # 原样保留 query string。
             if request.query_string:
                 upstream_url = f"{upstream_url}?{request.query_string}"
 
@@ -148,7 +146,7 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
 
             try:
                 session = aiohttp.ClientSession(timeout=timeout)
-            except Exception as exc:  # pragma: no cover - aiohttp setup issue
+            except Exception as exc:  # pragma: no cover - aiohttp 初始化问题
                 raise RuntimeError(f"proxy session init failed: {exc}") from exc
 
             try:
@@ -212,7 +210,7 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
                     return session_or_response
                 session = session_or_response
 
-        # Stream response back. Headers first, then chunked body.
+        # 流式返回响应。先发送 header，再发送分块 body。
         resp = web.StreamResponse(
             status=upstream_resp.status,
             headers=_filter_response_headers(upstream_resp.headers),
@@ -232,9 +230,9 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
         await resp.write_eof()
         return resp
 
-    # /health doesn't go through the upstream
+    # /health 不经过上游
     app.router.add_get("/health", handle_health)
-    # Catch-all under /v1 — forwards if the path is allowed.
+    # /v1 下的通配路由 — 如果路径被允许则转发。
     app.router.add_route("*", "/v1/{tail:.*}", handle_proxy)
 
     return app
@@ -246,9 +244,9 @@ async def run_server(
     port: int = DEFAULT_PORT,
     shutdown_event: Optional[asyncio.Event] = None,
 ) -> None:
-    """Run the proxy in the current event loop until shutdown_event is set.
+    """在当前事件循环中运行 proxy，直到 shutdown_event 被设置。
 
-    If shutdown_event is None, runs until cancelled (Ctrl+C or SIGTERM).
+    如果 shutdown_event 为 None，则持续运行直到被取消（Ctrl+C 或 SIGTERM）。
     """
     if not AIOHTTP_AVAILABLE:
         raise RuntimeError(
@@ -269,15 +267,15 @@ async def run_server(
 
     stop_event = shutdown_event or asyncio.Event()
 
-    # Wire signal handlers when we own the loop's lifetime.
+    # 当我们拥有事件循环的生命周期时，连接 signal handler。
     if shutdown_event is None:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
-                loop.add_signal_handler(sig, stop_event.set)  # windows-footgun: ok
+                loop.add_signal_handler(sig, stop_event.set)  # Windows 兼容性：没问题
             except NotImplementedError:
-                # Windows / restricted environments — Ctrl+C will still
-                # raise KeyboardInterrupt and unwind us.
+                # Windows / 受限环境 — Ctrl+C 仍然会
+                # 抛出 KeyboardInterrupt 并终止我们。
                 pass
 
     try:

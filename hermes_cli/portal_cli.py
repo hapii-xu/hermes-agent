@@ -1,22 +1,20 @@
-"""``hermes portal`` — the human-readable entry point for Nous Portal.
+"""``hermes portal`` — Nous Portal 的人类可读入口。
 
-Running ``hermes portal`` with no subcommand performs the one-shot Portal
-onboarding: OAuth login, pick a Nous model, switch the inference provider to
-Nous, and offer to enable the Tool Gateway. It is the friendly alias for
-``hermes auth add nous --type oauth`` (which still works), is identical to
-``hermes setup --portal``, and runs the same Nous flow as the first-time quick
-setup.
+不带子命令运行 ``hermes portal`` 会执行一次性 Portal
+引导流程：OAuth 登录、选择 Nous 模型、将推理提供商切换为
+Nous，并提供启用 Tool Gateway 的选项。它是
+``hermes auth add nous --type oauth``（仍然可用）的友好别名，等同于
+``hermes setup --portal``，并运行与首次快速设置相同的 Nous 流程。
 
-Subcommands:
-  (none)   Log in to Nous Portal + set it up (one-shot onboarding).
-  login    Explicit alias for the default one-shot onboarding.
-  info     Show Portal auth state + which Tool Gateway tools are routed.
-  open     Open the Portal subscription page in the user's default browser.
-  tools    List Tool Gateway tools and which are active in the current config.
+子命令：
+  (none)   登录 Nous Portal 并完成设置（一次性引导）。
+  login    默认一次性引导的显式别名。
+  info     显示 Portal 认证状态以及哪些 Tool Gateway 工具已被路由。
+  open     在用户的默认浏览器中打开 Portal 订阅页面。
+  tools    列出 Tool Gateway 工具及其在当前配置中的激活状态。
 
-This command is intentionally minimal — it does not duplicate functionality
-already in ``hermes auth`` or ``hermes tools``. It's the onboarding + discovery
-surface for the Portal subscription itself.
+此命令刻意保持精简 — 不会重复 ``hermes auth`` 或 ``hermes tools``
+中已有的功能。它是 Portal 订阅本身的引导与发现入口。
 """
 from __future__ import annotations
 
@@ -32,7 +30,7 @@ DOCS_URL = "https://hermes-agent.nousresearch.com/docs/user-guide/features/tool-
 
 
 def _cmd_status(args) -> int:
-    """Show Portal auth + Tool Gateway routing summary."""
+    """显示 Portal 认证 + Tool Gateway 路由摘要。"""
     from hermes_cli.auth import get_nous_auth_status
     from hermes_cli.nous_subscription import get_nous_subscription_features
 
@@ -60,7 +58,7 @@ def _cmd_status(args) -> int:
         print(f"  Sign up: {SUBSCRIPTION_URL}")
         print(f"  Login:   hermes portal")
 
-    # Provider selection (independent of auth)
+    # Provider 选择（独立于认证）
     model_cfg = config.get("model") if isinstance(config.get("model"), dict) else {}
     provider = str(model_cfg.get("provider") or "").strip().lower()
     if provider == "nous":
@@ -68,7 +66,7 @@ def _cmd_status(args) -> int:
     elif provider:
         print(f"  Model:   currently {provider} (switch with `hermes model`)")
 
-    # Tool Gateway routing
+    # Tool Gateway 路由
     print()
     print(color("  Tool Gateway", Colors.MAGENTA))
     print(color("  ────────────", Colors.MAGENTA))
@@ -104,7 +102,7 @@ def _cmd_status(args) -> int:
 
 
 def _cmd_open(args) -> int:
-    """Open the Portal subscription page in the default browser."""
+    """在默认浏览器中打开 Portal 订阅页面。"""
     target = SUBSCRIPTION_URL
     print(f"Opening {target}")
     try:
@@ -119,7 +117,7 @@ def _cmd_open(args) -> int:
 
 
 def _cmd_tools(args) -> int:
-    """List the Tool Gateway catalog + current routing."""
+    """列出 Tool Gateway 目录 + 当前路由。"""
     from hermes_cli.nous_subscription import get_nous_subscription_features
 
     config = load_config() or {}
@@ -129,7 +127,7 @@ def _cmd_tools(args) -> int:
         print("Could not resolve Tool Gateway state.", file=sys.stderr)
         return 1
 
-    # Static catalog — the partners Tool Gateway routes to today.
+    # 静态目录 — Tool Gateway 当前路由到的合作伙伴。
     catalog = [
         ("web",       "Web search & extract",  "Firecrawl"),
         ("image_gen", "Image generation",      "FAL"),
@@ -168,13 +166,13 @@ def _cmd_tools(args) -> int:
 
 
 def _cmd_login(args) -> int:
-    """Run the one-shot Nous Portal onboarding (login + model + provider + tools).
+    """运行一次性 Nous Portal 引导流程（登录 + 模型 + 提供商 + 工具）。
 
-    This is the human-readable front door for `hermes auth add nous --type
-    oauth`. It reuses the exact wiring behind `hermes setup --portal` (which in
-    turn runs the same Nous flow as the first-time quick setup), so the
-    commands stay in lockstep: device-code login, pick a Nous model, switch the
-    inference provider to Nous, then offer the Tool Gateway opt-in.
+    这是 `hermes auth add nous --type oauth` 的人类可读入口。
+    它复用了 `hermes setup --portal` 背后的完全相同的流程（后者
+    又运行与首次快速设置相同的 Nous 流程），因此各命令保持同步：
+    设备码登录、选择 Nous 模型、将推理提供商切换为 Nous，
+    然后提供 Tool Gateway 的可选启用。
     """
     from hermes_cli.setup import _run_portal_one_shot
 
@@ -189,15 +187,15 @@ def _cmd_login(args) -> int:
 
 
 def portal_command(args) -> int:
-    """Top-level dispatch for `hermes portal <subcommand>`."""
+    """`hermes portal <subcommand>` 的顶层分发。"""
     sub = getattr(args, "portal_command", None)
     if sub in {None, "", "login"}:
-        # Default to the one-shot onboarding — `hermes portal` is the
-        # human-readable alias for `hermes auth add nous --type oauth` /
-        # `hermes setup --portal`.
+        # 默认执行一次性引导 — `hermes portal` 是
+        # `hermes auth add nous --type oauth` / `hermes setup --portal`
+        # 的人类可读别名。
         return _cmd_login(args)
     if sub in {"info", "status"}:
-        # `status` kept as a back-compat alias for the prior default.
+        # `status` 作为先前默认行为的向后兼容别名保留。
         return _cmd_status(args)
     if sub == "open":
         return _cmd_open(args)
@@ -209,7 +207,7 @@ def portal_command(args) -> int:
 
 
 def add_parser(subparsers) -> None:
-    """Register `hermes portal` on the given argparse subparsers object."""
+    """在指定的 argparse subparsers 对象上注册 `hermes portal`。"""
     portal_parser = subparsers.add_parser(
         "portal",
         help="Set up Nous Portal (login, model pick, Tool Gateway); see also `portal info`",
@@ -231,7 +229,7 @@ def add_parser(subparsers) -> None:
         "info",
         help="Show Portal auth + Tool Gateway routing summary",
     )
-    # `status` retained as a hidden back-compat alias for `info`.
+    # `status` 作为 `info` 的隐藏向后兼容别名保留。
     portal_sub.add_parser("status")
     portal_sub.add_parser(
         "open",

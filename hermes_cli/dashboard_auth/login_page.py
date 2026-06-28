@@ -1,23 +1,19 @@
-"""Server-rendered /login page.
+"""服务端渲染的 /login 页面。
 
-No React, no JavaScript dependency. Listed providers come from the
-registry; clicking a provider sends a GET to
-``/auth/login?provider=<name>``.
+无 React，无 JavaScript 依赖。列出的提供者来自注册表；
+点击提供者会发送 GET 到 ``/auth/login?provider=<name>``。
 
-Visual styling mirrors the Nous Research design system (the
-``@nous-research/ui`` package the React dashboard uses): the same
-``Collapse`` / ``Rules Compressed`` typeface, amber-on-dark colour
-tokens (``#170d02`` / ``#ffac02`` / ``#fff``), uppercase + wide-tracking
-brand chrome, and the inset-bevel button shadow. Fonts are served
-out of the SPA's ``/fonts/`` directory which the dashboard-auth gate
-already allowlists pre-auth (see ``_GATE_PUBLIC_PREFIXES`` in
-``middleware.py``), so the page renders without needing the React
-bundle loaded.
+视觉样式镜像 Nous Research 设计系统（React dashboard 使用的
+``@nous-research/ui`` 包）：相同的 ``Collapse`` / ``Rules Compressed``
+字体，琥珀色+深色色彩令牌（``#170d02`` / ``#ffac02`` / ``#fff``），
+大写+宽字距品牌装饰，以及内凹斜角按钮阴影。字体从 SPA 的
+``/fonts/`` 目录提供，该目录已被 dashboard-auth 门控在认证前
+列入白名单（参见 ``middleware.py`` 中的 ``_GATE_PUBLIC_PREFIXES``），
+因此页面渲染无需加载 React 包。
 
-Test-stable class names: the existing test suite extracts the
-``class="provider-btn"`` anchor href to walk the OAuth flow. That
-class name MUST NOT change without updating
-``tests/hermes_cli/test_dashboard_auth_401_reauth.py``.
+测试稳定的类名：现有测试套件通过提取 ``class="provider-btn"``
+锚点的 href 来走 OAuth 流程。该类名不得更改，除非同时更新
+``tests/hermes_cli/test_dashboard_auth_401_reauth.py``。
 """
 from __future__ import annotations
 
@@ -25,13 +21,11 @@ import html
 
 from hermes_cli.dashboard_auth import list_providers
 
-# Inline minimal CSS. The dashboard's full skin lives in the React
-# bundle, which we deliberately do NOT load here — the login page must
-# not depend on the SPA build being present or on the injected session
-# token.
+# 内联最小 CSS。Dashboard 的完整样式在 React 包中，
+# 我们有意不在此加载——登录页不得依赖 SPA 构建产物
+# 或注入的 session token。
 #
-# Single curly braces are placeholders for ``str.format``; CSS curlies
-# are doubled (``{{`` / ``}}``).
+# 单花括号是 ``str.format`` 的占位符；CSS 花括号需双写（``{{`` / ``}}``）。
 _LOGIN_HTML_TEMPLATE = """\
 <!doctype html>
 <html lang="en">
@@ -40,7 +34,7 @@ _LOGIN_HTML_TEMPLATE = """\
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — Hermes Agent</title>
 <style>
-  /* Brand fonts shipped by @nous-research/ui — same files the SPA loads. */
+  /* @nous-research/ui 提供的品牌字体——与 SPA 加载的文件相同。 */
   @font-face {{
     font-family: 'Collapse';
     font-style: normal;
@@ -94,7 +88,7 @@ _LOGIN_HTML_TEMPLATE = """\
     -moz-osx-font-smoothing: grayscale;
   }}
 
-  /* Subtle dot-grid backdrop — DS idiom (see `.dither` in globals.css). */
+  /* 微妙的点阵背景——设计系统惯用法（见 globals.css 中的 `.dither`）。 */
   body {{
     background-image:
       radial-gradient(
@@ -110,7 +104,7 @@ _LOGIN_HTML_TEMPLATE = """\
     background-attachment: fixed;
   }}
 
-  /* Layout: vertically center on tall screens, top-anchor on short. */
+  /* 布局：在高屏幕上垂直居中，在矮屏幕上顶部锚定。 */
   body {{
     display: grid;
     place-items: center;
@@ -133,8 +127,7 @@ _LOGIN_HTML_TEMPLATE = """\
     main {{ animation: none; }}
   }}
 
-  /* Brand wordmark above the card — same uppercase + wide-tracking
-     idiom DS Buttons use. */
+  /* 卡片上方的品牌标识——与 DS 按钮使用的相同大写+宽字距惯用法。 */
   .brand {{
     text-align: center;
     margin-bottom: 1.75rem;
@@ -160,8 +153,8 @@ _LOGIN_HTML_TEMPLATE = """\
     padding: 2.25rem 2rem 2rem;
     background: color-mix(in srgb, #ffffff 2%, var(--background-base));
     border: 1px solid var(--hairline);
-    /* Hairline highlight + bevel shadow — matches DS Button SHADOW_DEFAULT
-       (`inset -1px -1px 0 #00000080, inset 1px 1px 0 #ffffff80`) at panel scale. */
+    /* 细线高亮 + 斜角阴影——匹配 DS 按钮的 SHADOW_DEFAULT
+       （`inset -1px -1px 0 #00000080, inset 1px 1px 0 #ffffff80`）面板级缩放。 */
     box-shadow:
       inset 1px 1px 0 0 color-mix(in srgb, #ffffff 5%, transparent),
       inset -1px -1px 0 0 rgba(0, 0, 0, 0.4),
@@ -189,8 +182,8 @@ _LOGIN_HTML_TEMPLATE = """\
     gap: 0.75rem;
   }}
 
-  /* Provider button — mirrors DS Button (default variant):
-     amber surface, dark text, uppercase + wide tracking, inset bevel. */
+  /* 提供者按钮——镜像 DS 按钮（默认变体）：
+     琥珀色表面、深色文字、大写+宽字距、内凹斜角。 */
   .provider-btn {{
     display: block;
     width: 100%;
@@ -206,7 +199,7 @@ _LOGIN_HTML_TEMPLATE = """\
     text-transform: uppercase;
     text-decoration: none;
     border: 0;
-    border-radius: 0;  /* DS Button is squared — no rounded corners. */
+    border-radius: 0;  /* DS 按钮是方形——无圆角。 */
     cursor: pointer;
     box-shadow:
       inset 1px 1px 0 0 rgba(255, 255, 255, 0.5),
@@ -217,7 +210,7 @@ _LOGIN_HTML_TEMPLATE = """\
     filter: brightness(1.08);
   }}
   .provider-btn:active {{
-    /* DS Button uses `active:invert` on the default surface. */
+    /* DS 按钮在默认表面上使用 `active:invert`。 */
     filter: invert(1);
   }}
   .provider-btn:focus-visible {{
@@ -225,8 +218,8 @@ _LOGIN_HTML_TEMPLATE = """\
     outline-offset: 3px;
   }}
 
-  /* Password provider form — same visual language as the OAuth buttons:
-     squared inputs, hairline borders, amber focus ring. */
+  /* 密码提供者表单——与 OAuth 按钮相同的视觉语言：
+     方形输入、细线边框、琥珀色焦点环。 */
   .provider-form {{
     display: grid;
     gap: 0.75rem;
@@ -293,7 +286,7 @@ _LOGIN_HTML_TEMPLATE = """\
     margin: 0 0.6em 0.2em;
   }}
 
-  /* Selection — DS uses midground bg + background text. */
+  /* 选中文字——DS 使用 midground 背景 + background 文字。 */
   ::selection {{
     background: var(--midground);
     color: var(--background-base);
@@ -401,14 +394,14 @@ auth gate (not recommended on untrusted networks).</p>
 """
 
 
-# Inline script that wires every password provider form to POST JSON to
-# ``/auth/password-login`` and navigate on success. Emitted ONLY when at
-# least one ``supports_password`` provider is listed (OAuth-only login
-# pages stay script-free, preserving the no-JS contract for that case).
+# 内联脚本，将每个密码提供者表单连接到 POST JSON 到
+# ``/auth/password-login`` 并在成功后导航。仅当至少列出了一个
+# ``supports_password`` 提供者时才发出（仅 OAuth 登录页保持无脚本，
+# 保留该情况下的无 JS 契约）。
 #
-# Plain string (NOT run through ``str.format``), so braces are literal —
-# do not double them. A single delegated submit handler covers all forms;
-# the provider name is read from the form's ``data-provider`` attribute.
+# 纯字符串（不经过 ``str.format``），因此花括号是字面的——
+# 不要双写。单个委托提交处理器覆盖所有表单；
+# 提供者名从表单的 ``data-provider`` 属性读取。
 _PASSWORD_FORM_SCRIPT = """\
 <script>
 (function () {
@@ -456,24 +449,22 @@ _PASSWORD_FORM_SCRIPT = """\
 
 
 def render_login_html(*, next_path: str = "") -> str:
-    """Return the full HTML for ``GET /login``.
+    """返回 ``GET /login`` 的完整 HTML。
 
-    ``next_path`` — when set, the post-login landing path the user
-    originally requested. Threaded into each provider button's ``href``
-    as a ``next=`` query parameter so the OAuth round trip carries it
-    end-to-end. The caller (``routes.login_page``) is responsible for
-    validating ``next_path`` against the same-origin rules before we
-    emit it; we still HTML-escape it as defence in depth.
+    ``next_path`` — 设置时，为用户最初请求的登录后着陆路径。
+    作为 ``next=`` 查询参数嵌入每个提供者按钮的 ``href`` 中，
+    以便 OAuth 往返端到端携带它。调用者（``routes.login_page``）
+    负责在我们发出之前根据同源规则验证 ``next_path``；
+    我们仍然对其进行 HTML 转义作为纵深防御。
     """
     providers = list_providers()
     if not providers:
         return _EMPTY_HTML
 
     if next_path:
-        # URL-encode then HTML-escape. The URL-encode step matches the
-        # gate's ``_safe_next_target`` output shape (also URL-encoded),
-        # so a value that round-tripped from /login?next=... back into
-        # the button href is byte-identical.
+        # URL 编码然后 HTML 转义。URL 编码步骤匹配门控的
+        # ``_safe_next_target`` 输出格式（也是 URL 编码的），
+        # 因此从 /login?next=... 往返到按钮 href 的值是字节一致的。
         from urllib.parse import quote
         next_qs = f"&next={html.escape(quote(next_path, safe=''), quote=True)}"
     else:
@@ -499,15 +490,13 @@ def render_login_html(*, next_path: str = "") -> str:
 
 
 def _render_password_form(provider, next_path: str) -> str:
-    """Render a username/password form for a ``supports_password`` provider.
+    """为 ``supports_password`` 提供者渲染用户名/密码表单。
 
-    The form is wired by :data:`_PASSWORD_FORM_SCRIPT` (a single delegated
-    submit handler) to POST JSON to ``/auth/password-login`` and navigate
-    on success. ``next_path`` is carried in a hidden field; it has already
-    been validated same-origin by the caller and is HTML-escaped here as
-    defence in depth. The provider ``name`` is emitted in a ``data-``
-    attribute (not a hidden input) so the script reads it without trusting
-    form-field ordering.
+    表单由 :data:`_PASSWORD_FORM_SCRIPT`（单个委托提交处理器）连接，
+    POST JSON 到 ``/auth/password-login`` 并在成功后导航。``next_path``
+    在隐藏字段中携带；调用者已验证其为同源，此处进行 HTML 转义作为
+    纵深防御。提供者 ``name`` 在 ``data-`` 属性中发出（非隐藏输入），
+    以便脚本读取而不依赖表单字段顺序。
     """
     pname = html.escape(provider.name, quote=True)
     plabel = html.escape(provider.display_name)

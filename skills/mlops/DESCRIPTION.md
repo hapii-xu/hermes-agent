@@ -1,3 +1,3 @@
 ---
-description: Knowledge and Tools for Machine Learning Operations - tools and frameworks for training, fine-tuning, deploying, and optimizing ML/AI models
+description: 机器学习运维（MLOps）相关的知识与工具——用于训练、微调、部署和优化 ML/AI 模型的工具和框架
 ---

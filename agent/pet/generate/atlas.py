@@ -1,24 +1,22 @@
-"""Deterministic spritesheet assembly — generated row strips → Hermes atlas.
+"""确定性的精灵图表组装 — 将生成的行条带 → Hermes atlas。
 
-Image-generation models are good at *drawing* a row of poses but bad at exact
-grid geometry, so the model never owns the atlas layout: it produces one loose
-horizontal strip per state, and these deterministic ops slice that strip into
-clean, centered, transparent ``192x208`` cells and pack them into the sheet our
-renderer reads.
+图像生成模型擅长*绘制*一行姿态，但不擅长精确的网格几何，因此模型永远不
+拥有 atlas 布局的所有权：它为每个状态生成一条松散的水平条带，然后这些确定
+性操作将条带切割为干净、居中、透明的 ``192x208`` 单元格，并打包到渲染器
+读取的图表中。
 
-The atlas follows the **petdex/Codex standard**: 8 columns x 9 rows of
-``192x208`` cells (``1536x1872``), with the row order + per-row frame counts
-from OpenAI's ``hatch-pet`` skill. Our renderer (:mod:`agent.pet.render`) keys
-frames as ``rows = states, cols = frames`` via
-:data:`agent.pet.constants.CODEX_STATE_ROWS`, and a pet built here is a valid
-``petdex submit`` spritesheet. Rows shorter than 8 columns leave the trailing
-cells fully transparent.
+atlas 遵循 **petdex/Codex 标准**：8 列 x 9 行的 ``192x208`` 单元格
+（``1536x1872``），行顺序和每行帧数来自 OpenAI 的 ``hatch-pet`` 技能。
+我们的渲染器（:mod:`agent.pet.render`）以 ``rows = states, cols = frames``
+的方式索引帧（参见 :data:`agent.pet.constants.CODEX_STATE_ROWS`），在此处
+构建的 pet 是有效的 ``petdex submit`` 精灵图表。短于 8 列的行将尾部单元
+格保持完全透明。
 
-Note ``running`` is the *working* state (in-place processing), NOT locomotion —
-``running-right`` / ``running-left`` are the actual directional walk cycles.
+注意 ``running`` 是*工作*状态（原地处理），不是运动 —
+``running-right`` / ``running-left`` 才是实际的方向行走循环。
 
-The frame-segmentation, fit-to-cell, and transparency-residue logic is adapted
-from OpenAI's ``hatch-pet`` skill (openai/skills, Apache-2.0).
+帧分割、适配单元格和透明度残留逻辑改编自 OpenAI 的 ``hatch-pet`` 技能
+（openai/skills，Apache-2.0）。
 """
 
 from __future__ import annotations
@@ -35,11 +33,10 @@ logger = logging.getLogger(__name__)
 CELL_WIDTH = FRAME_W
 CELL_HEIGHT = FRAME_H
 
-# (state, row index, frame count). Order/row indices MUST match
-# ``constants.CODEX_STATE_ROWS`` so the renderer crops the right row for each
-# driven state, and the per-row frame counts mirror the petdex/Codex
-# ``hatch-pet`` ``animation-rows`` spec. The renderer trims trailing blank
-# columns, so rows shorter than ``COLUMNS`` (8) just leave the tail transparent.
+# (状态, 行索引, 帧数)。顺序/行索引必须与
+# ``constants.CODEX_STATE_ROWS`` 匹配，以便渲染器为每个驱动状态裁剪正确的行，
+# 每行的帧数镜像 petdex/Codex ``hatch-pet`` 的 ``animation-rows`` 规范。渲染器
+# 会裁剪尾部的空白列，因此短于 ``COLUMNS``（8）的行只是让尾部保持透明。
 ROW_SPECS: list[tuple[str, int, int]] = [
     ("idle", 0, 6),
     ("running-right", 1, 8),
@@ -59,20 +56,19 @@ ATLAS_HEIGHT = ROWS * CELL_HEIGHT
 
 FRAME_COUNTS: dict[str, int] = {state: count for state, _, count in ROW_SPECS}
 
-# Alpha at/below which a pixel is "background" for component detection.
+# 低于或等于此 alpha 值的像素被视为"背景"，用于组件检测。
 _ALPHA_FLOOR = 16
-# Cell padding kept around a fitted sprite so poses never touch the edge.
+# 适配精灵周围的单元格内边距，确保姿态不会触碰边缘。
 _CELL_PAD = 10
-# Margin for the normalized pass — small, to fill the cell like real petdex pets
-# (they sit ~5px from the edges); the width clamp, not the pad, prevents clipping.
+# 归一化阶段的边距 — 较小，用于填满单元格，类似真实的 petdex pet
+# （它们距离边缘约 5px）；宽度钳制（而非内边距）防止裁剪。
 _NORMALIZE_PAD = 14
-# Side-lobe cutoff for fitted frames. Adjacent-pose bleed usually appears as a
-# small separated horizontal lobe beside the real subject; keep sizeable lobes so
-# we don't punish a legitimate wide pose.
+# 拟合帧的侧瓣截止值。相邻姿态的溢出通常表现为主体旁边的小型分离水平瓣；
+# 保留足够大的瓣，以免惩罚合法的宽姿态。
 _SIDE_LOBE_RATIO = 0.18
 
 
-# ───────────────────────── background removal ─────────────────────────
+# ───────────────────────── 背景移除 ─────────────────────────
 
 
 def _color_distance(r: int, g: int, b: int, key: tuple[int, int, int]) -> float:
@@ -80,9 +76,9 @@ def _color_distance(r: int, g: int, b: int, key: tuple[int, int, int]) -> float:
 
 
 def _has_transparency(image) -> bool:
-    """True if the strip already carries a real alpha background."""
+    """如果条带已具有真实的 alpha 背景则返回 True。"""
     extrema = image.getchannel("A").getextrema()
-    # Min alpha 0 somewhere and a meaningful share of fully-transparent pixels.
+    # 最小 alpha 在某处为 0，且有相当比例的完全透明像素。
     if extrema[0] > _ALPHA_FLOOR:
         return False
     hist = image.getchannel("A").histogram()
@@ -92,7 +88,7 @@ def _has_transparency(image) -> bool:
 
 
 def _dominant_corner_color(image) -> tuple[int, int, int]:
-    """Sample the four corners and return the most common opaque color."""
+    """采样四个角落并返回最常见的不透明颜色。"""
     from collections import Counter
 
     w, h = image.width, image.height
@@ -108,11 +104,11 @@ def _dominant_corner_color(image) -> tuple[int, int, int]:
 
 
 def _near_key_mask(image, key: tuple[int, int, int], tol: int = 48):
-    """An ``L`` mask, 255 where a pixel is within *tol* per-channel of *key*.
+    """生成一个 ``L`` 蒙版，在每个像素与 *key* 各通道差值在 *tol* 以内时为 255。
 
-    Tight on purpose: it only marks near-pure backdrop so trapped chroma pockets
-    seed the flood, while chroma-*tinted* character pixels stay outside it. Built
-    with channel point-ops (fast C), no per-pixel Python.
+    故意设置得严格：只标记接近纯色的背景，让被困的色斑口袋作为洪泛的种子，
+    而*色调染色*的角色像素则保持在其外部。使用通道点运算（快速 C）构建，
+    无逐像素 Python。
     """
     from PIL import ImageChops
 
@@ -128,14 +124,12 @@ def _near_key_mask(image, key: tuple[int, int, int], tol: int = 48):
 
 
 def _defringe(rgba):
-    """Shave the 1px antialiased edge ring left after keying.
+    """剃除键控后留下的 1px 抗锯齿边缘环。
 
-    Chroma keying can't catch the antialiased band where the sprite meets the
-    backdrop — those pixels are a key/sprite blend, too far from the key to be
-    removed, so they ring the cutout in magenta/green. Erode the alpha by one
-    pixel (a 3x3 min filter) to drop that contaminated ring; the sprite's own
-    thick dark outline keeps the silhouette intact. Built on a C-level filter, no
-    per-pixel Python.
+    色度键控无法捕获精灵与背景交汇处产生的抗锯齿带 — 这些像素是键色/精灵
+    的混合，离键色太远而无法被移除，因此它们在抠图周围形成洋红/绿色环。通过
+    腐蚀 alpha 一个像素（3x3 最小值滤波）来去除该污染环；精灵自身粗重的深色
+    轮廓保持剪影完整。基于 C 级滤波器构建，无逐像素 Python。
     """
     from PIL import ImageFilter
 

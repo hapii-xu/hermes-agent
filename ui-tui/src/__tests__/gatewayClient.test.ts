@@ -384,12 +384,12 @@ describe('GatewayClient websocket attach mode', () => {
   })
 
   it('redacts user-info credentials even on URLs the WHATWG parser rejects', () => {
-    // Port 99999 is outside the WHATWG URL parser's valid 0–65535
-    // range and survives `.trim()`, so the fixture deterministically
-    // exercises `redactUrl()`'s fallback branch across Node versions.
-    // (An earlier `%zz` user-info fixture did NOT actually throw in
-    // recent Node — WHATWG accepts malformed percent escapes there —
-    // which silently routed the test through the structured-URL path.)
+    // 端口 99999 超出了 WHATWG URL 解析器有效的 0–65535
+    // 范围，并且在 `.trim()` 后仍然存在，因此该 fixture
+    // 可以确定性地测试 `redactUrl()` 的回退分支（跨 Node 版本）。
+    //（早期的 `%zz` user-info fixture 在最近版本的 Node 中实际上
+    // 并没有抛出异常 —— WHATWG 接受了那里格式错误的百分号转义 ——
+    // 导致测试悄然走了结构化 URL 路径。）
     const fixture = 'ws://alice:hunter2@gateway.test:99999/api/ws?token=secret'
     expect(() => new URL(fixture)).toThrow()
 

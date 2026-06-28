@@ -1,18 +1,18 @@
-"""User-authorization methods for ``GatewayRunner``.
+"""``GatewayRunner`` 的用户授权方法。
 
-Extracted from ``gateway/run.py`` as part of the god-file decomposition campaign
-(``~/.hermes/plans/god-file-decomposition.md``, Phase 3 mechanical mixin lifts).
-This mixin holds the inbound-message authorization cluster: whether a user/chat
-is allowed to talk to the agent, the per-adapter DM policy, and the
-unauthorized-DM behavior.
+从 ``gateway/run.py`` 中提取，属于 god-file 分解工作的一部分
+（``~/.hermes/plans/god-file-decomposition.md``，阶段 3 机械化 mixin 提取）。
+此 mixin 包含入站消息授权逻辑集群：判断某个用户/聊天
+是否允许与 agent 通信、每个 adapter 的私信（DM）策略，以及
+未授权 DM 的处理行为。
 
-Behavior-neutral: every method is lifted verbatim from ``GatewayRunner``.
-``self.*`` calls resolve unchanged via the MRO. Neutral dependencies import at
-module top; the module-level ``logger`` is imported lazily inside the one method
-that uses it (``from gateway.run import logger`` resolves at call time, when
-``gateway.run`` is fully loaded) so this module never imports ``gateway.run`` at
-import time -> no import cycle. The lazy import preserves the exact logger name
-(``"gateway.run"``) so log records are unchanged.
+行为中性：每个方法均原样从 ``GatewayRunner`` 中迁移。
+``self.*`` 调用通过 MRO 保持不变地解析。中性依赖在
+模块顶部导入；模块级 ``logger`` 在使用它的方法内部惰性导入
+（``from gateway.run import logger`` 在调用时才解析，此时
+``gateway.run`` 已完全加载），因此此模块在导入时不会导入 ``gateway.run``
+-> 避免循环导入。惰性导入保留了原始 logger 名称
+（``"gateway.run"``），因此日志记录保持不变。
 """
 
 from __future__ import annotations
@@ -29,19 +29,19 @@ from gateway.whatsapp_identity import (
 
 
 class GatewayAuthorizationMixin:
-    """User/chat authorization methods for ``GatewayRunner``."""
+    """``GatewayRunner`` 的用户/聊天授权方法。"""
 
     def _adapter_authorization_is_upstream(self, platform: Optional[Platform]) -> bool:
-        """Whether the adapter for *platform* delegates authz to a trusted upstream.
+        """*platform* 对应的 adapter 是否将授权委托给可信的上游。
 
-        Mirrors ``BasePlatformAdapter.authorization_is_upstream``. The relay
-        adapter sets this True: the Team Gateway connector authenticates the
-        gateway's WS and resolves owner-only author bindings before delivering,
-        so an inbound relay event is already authorized as this instance's bound
-        user. Unlike ``_adapter_enforces_own_access_policy`` (a LOCAL config
-        policy the gateway mirrors only when it's an allowlist), this is an
-        UPSTREAM decision the gateway honors directly. Defaults to ``False`` when
-        the adapter is unknown or doesn't expose the flag.
+        对应 ``BasePlatformAdapter.authorization_is_upstream``。relay
+        adapter 将此设为 True：Team Gateway connector 对 gateway 的 WS 进行认证，
+        并在投递之前解析仅限 owner 的授权绑定，因此入站 relay 事件
+        已经作为此实例绑定的用户完成授权。与
+        ``_adapter_enforces_own_access_policy``（一个本地配置策略，gateway
+        仅在其为 allowlist 时遵循）不同，这是一个上游做出的决策，
+        gateway 直接遵守。当 adapter 未知或未暴露此标志时，
+        默认返回 ``False``。
         """
         if not platform:
             return False
@@ -54,23 +54,23 @@ class GatewayAuthorizationMixin:
         return bool(getattr(adapter, "authorization_is_upstream", False))
 
     def _adapter_enforces_own_access_policy(self, platform: Optional[Platform]) -> bool:
-        """Whether the adapter for *platform* gates access at intake itself.
+        """*platform* 对应的 adapter 是否在入口处自行进行访问控制。
 
-        Mirrors ``BasePlatformAdapter.enforces_own_access_policy``. Adapters
-        such as WeCom, Weixin, Yuanbao, QQBot, and WhatsApp evaluate their
-        documented ``dm_policy`` / ``group_policy`` / ``allow_from`` config before a
-        message is dispatched to the gateway. The flag alone is NOT "already
-        authorized": these adapters default to ``open``, which forwards every
-        sender, so ``_is_user_authorized`` only trusts the adapter when its
-        effective policy for the chat type is an actual ``allowlist`` restriction
-        (see that method). Defaults to ``False`` when the adapter is unknown or
-        doesn't expose the flag.
+        对应 ``BasePlatformAdapter.enforces_own_access_policy``。
+        WeCom、微信、元宝、QQBot 和 WhatsApp 等 adapter
+        在消息分发到 gateway 之前，会评估其文档中描述的
+        ``dm_policy`` / ``group_policy`` / ``allow_from`` 配置。仅此标志
+        并不意味着"已授权"：这些 adapter 默认为 ``open``，即转发所有
+        发送者，因此 ``_is_user_authorized`` 仅在该 adapter 对当前聊天类型
+        的有效策略为实际的 ``allowlist`` 限制时才信任该 adapter
+        （参见该方法）。当 adapter 未知或未暴露此标志时，
+        默认返回 ``False``。
         """
         if not platform:
             return False
-        # Some test helpers build a bare GatewayRunner via object.__new__ and
-        # never set ``adapters``; treat a missing/empty map as "no adapter"
-        # rather than raising (see pitfalls.md #17).
+        # 一些测试辅助工具会通过 object.__new__ 构造一个裸 GatewayRunner，
+        # 且从不设置 ``adapters``；把缺失/空的 map 当作“没有 adapter”处理，
+        # 而不是抛异常（参见 pitfalls.md #17）。
         adapters = getattr(self, "adapters", None)
         if not adapters:
             return False
@@ -80,20 +80,20 @@ class GatewayAuthorizationMixin:
         return bool(getattr(adapter, "enforces_own_access_policy", False))
 
     def _adapter_dm_policy(self, platform: Optional[Platform]) -> str:
-        """Best-effort read of an own-policy adapter's effective DM policy.
+        """best-effort 地读取某个 own-policy adapter 实际生效的 DM 策略。
 
-        Returns the lowercased ``dm_policy`` (``"open"`` / ``"allowlist"`` /
-        ``"disabled"`` / ``"pairing"``) for *platform*, or ``""`` when unknown.
-        Prefers the live adapter's resolved ``_dm_policy`` — which already folds
-        in both ``config.extra`` and the ``<PLATFORM>_DM_POLICY`` env var (the
-        env var is not always bridged back into ``config.extra``) — and falls
-        back to ``config.extra`` for bare runners built without a live adapter.
+        返回 *platform* 对应的小写 ``dm_policy``（``"open"`` / ``"allowlist"`` /
+        ``"disabled"`` / ``"pairing"``），未知时返回 ``""``。优先使用活动
+        adapter 已解析好的 ``_dm_policy`` —— 它已经同时融合了
+        ``config.extra`` 和 ``<PLATFORM>_DM_POLICY`` 环境变量（该环境变量并不
+        总是被桥接回 ``config.extra``）—— 并在没有活动 adapter 的裸 runner
+        上回退到 ``config.extra``。
 
-        Used by ``_is_user_authorized`` to decide whether an own-policy adapter
-        actually restricted DM senders to a configured allowlist (trustworthy)
-        or merely forwarded everyone under ``dm_policy: open`` / for a pairing
-        handshake (not authorization). "Reached the gateway" only carries an
-        authorization signal in the ``allowlist`` case.
+        由 ``_is_user_authorized`` 用于判断某个 own-policy adapter 是否真的
+        把 DM 发送者限制到了一个已配置的 allowlist（可信），还是仅仅在
+        ``dm_policy: open`` 下转发了所有人 / 或是用于一次配对握手（不构成
+        授权）。“到达了 gateway”这一事实只有在 ``allowlist`` 情况下才携带
+        授权信号。
         """
         if not platform:
             return ""
@@ -113,18 +113,17 @@ class GatewayAuthorizationMixin:
         return str(policy or "").strip().lower()
 
     def _adapter_group_policy(self, platform: Optional[Platform]) -> str:
-        """Best-effort read of an own-policy adapter's effective group policy.
+        """best-effort 地读取某个 own-policy adapter 实际生效的群组策略。
 
-        Mirror of ``_adapter_dm_policy`` for group / forum / channel traffic:
-        returns the lowercased ``group_policy`` (``"open"`` / ``"allowlist"`` /
-        ``"disabled"``) for *platform*, or ``""`` when unknown. Prefers the live
-        adapter's resolved ``_group_policy`` and falls back to ``config.extra``
-        for bare runners built without a live adapter.
+        对应 ``_adapter_dm_policy``，但面向 group / forum / channel 流量：
+        返回 *platform* 对应的小写 ``group_policy``（``"open"`` /
+        ``"allowlist"`` / ``"disabled"``），未知时返回 ``""``。优先使用活动
+        adapter 已解析好的 ``_group_policy``，并在没有活动 adapter 的裸
+        runner 上回退到 ``config.extra``。
 
-        Used by ``_is_user_authorized`` to decide whether an own-policy adapter
-        restricted group senders to a configured allowlist (trustworthy) or
-        forwarded the whole channel under ``group_policy: open`` (not
-        authorization).
+        由 ``_is_user_authorized`` 用于判断某个 own-policy adapter 是否把群组
+        发送者限制到了一个已配置的 allowlist（可信），还是在
+        ``group_policy: open`` 下转发了整个频道（不构成授权）。
         """
         if not platform:
             return ""
@@ -148,14 +147,14 @@ class GatewayAuthorizationMixin:
         platform: Optional[Platform],
         chat_id: Optional[str],
     ) -> bool:
-        """Whether a per-group sender allowlist gated this group message.
+        """某条群组消息是否被一个按群组的发送者 allowlist 所门控。
 
-        WeCom supports ``groups.<group_id>.allow_from`` on top of the top-level
-        ``group_policy``. A group may be open at the chat level while still
-        restricting which senders inside that group can invoke Hermes. If such a
-        message reached the gateway, the adapter already checked that sender
-        allowlist, so it is a trustworthy intake decision rather than the
-        fail-open ``group_policy: open`` case.
+        WeCom 在顶层的 ``group_policy`` 之外，还支持
+        ``groups.<group_id>.allow_from``。一个群组在聊天层面可能是 open 的，
+        但仍然会限制该群组内哪些发送者可以调用 Hermes。如果这样一条消息
+        到达了 gateway，说明 adapter 已经检查过那个发送者 allowlist，因此
+        这是一个可信的 intake 决策，而不是 fail-open 的
+        ``group_policy: open`` 情况。
         """
         if not platform or not chat_id:
             return False
@@ -197,51 +196,46 @@ class GatewayAuthorizationMixin:
 
     def _is_user_authorized(self, source: SessionSource) -> bool:
         """
-        Check if a user is authorized to use the bot.
-        
-        Checks in order:
-        1. Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
-        2. Environment variable allowlists (TELEGRAM_ALLOWED_USERS, etc.)
-        3. DM pairing approved list
-        4. Global allow-all (GATEWAY_ALLOW_ALL_USERS=true)
-        5. Default: deny
+        检查某用户是否被授权使用本 bot。
+
+        按以下顺序检查：
+        1. 每个平台的 allow-all flag（例如 DISCORD_ALLOW_ALL_USERS=true）
+        2. 环境变量 allowlist（TELEGRAM_ALLOWED_USERS 等）
+        3. DM 配对已批准列表
+        4. 全局 allow-all（GATEWAY_ALLOW_ALL_USERS=true）
+        5. 默认：拒绝
         """
         from gateway.run import logger
-        # Home Assistant events are system-generated (state changes), not
-        # user-initiated messages.  The HASS_TOKEN already authenticates the
-        # connection, so HA events are always authorized.
-        # Webhook events are authenticated via HMAC signature validation in
-        # the adapter itself — no user allowlist applies.
+        # Home Assistant 事件是系统生成的（状态变化），不是用户主动发起的消息。
+        # HASS_TOKEN 已经认证了连接，因此 HA 事件总是已授权的。
+        # Webhook 事件通过 adapter 自身的 HMAC 签名校验完成认证 —— 不适用
+        # 任何用户 allowlist。
         if source.platform in {Platform.HOMEASSISTANT, Platform.WEBHOOK}:
             return True
 
-        # Relay (and any adapter whose authorization is enforced by a trusted
-        # authenticated upstream): the Team Gateway connector authenticates this
-        # gateway's WS with a per-instance secret and resolves owner-only author
-        # bindings BEFORE delivering, so an inbound relay event was already
-        # authorized as this instance's bound user (the author id is the one the
-        # connector observed, never gateway-asserted). There is no local
-        # RELAY_ALLOWED_USERS env allowlist to consult, and default-denying for
-        # its absence is the bug this branch fixes. This is delegation to a
-        # trusted upstream, NOT a fail-open: it fires only for an event that was
-        # actually delivered over the authenticated relay WS (the transport
-        # stamps ``delivered_via_upstream_relay``), or whose platform's adapter
-        # explicitly declares ``authorization_is_upstream=True``; every direct
-        # network-exposed adapter leaves the flag False and its events unmarked,
-        # so the env-allowlist default-deny below still applies unchanged.
+        # Relay（以及任何其授权由可信的、已认证的上游来执行的 adapter）：
+        # Team Gateway connector 用一个 per-instance 的 secret 认证本 gateway
+        # 的 WS，并在投递 *之前* 解析仅限 owner 的授权绑定，因此一条入站的
+        # relay 事件已经作为本实例绑定的用户完成授权（author id 是 connector
+        # 观察到的那个，绝不由 gateway 断言）。不存在本地的
+        # RELAY_ALLOWED_USERS 环境 allowlist 可供查询，而因其缺失就默认拒绝，
+        # 正是本分支所修复的 bug。这是向可信上游的委托，而不是 fail-open：
+        # 它只对确实经由已认证 relay WS 投递的事件（transport 会打上
+        # ``delivered_via_upstream_relay`` 标记），或其平台 adapter 显式声明
+        # ``authorization_is_upstream=True`` 的事件触发；每个直接暴露在网络上
+        # 的 adapter 都让该 flag 保持 False，其事件也不打标记，因此下面的
+        # env-allowlist 默认拒绝依然原样适用。
         #
-        # The delivery marker is the PRIMARY signal: a relay *message* inbound
-        # carries the UNDERLYING platform (``source.platform`` == discord/…),
-        # NOT ``Platform.RELAY``, because that's what session-keying and egress
-        # need — so keying authz off ``source.platform`` would miss (the relay
-        # adapter is registered under ``Platform.RELAY``) and default-deny the
-        # user ("Unauthorized user <id> on discord"). The adapter-flag check is
-        # retained for events whose ``source.platform`` IS ``Platform.RELAY``
-        # (e.g. the interaction-passthrough path).
-        # ``is True`` (not just truthiness): the marker is a real bool on a
-        # SessionSource, and an explicit identity check refuses to authorize a
-        # non-bool stand-in (e.g. a MagicMock attribute auto-vivifies truthy in
-        # tests) — defensive against accidental fail-open.
+        # 投递标记是 *首要* 信号：一条 relay *消息* 入站时携带的是 *底层*
+        # 平台（``source.platform`` == discord/…），而不是 ``Platform.RELAY``，
+        # 因为那是会话键和出口所需的 —— 因此如果以 ``source.platform`` 来
+        # 决定授权就会漏掉（relay adapter 注册在 ``Platform.RELAY`` 下）并对
+        # 用户默认拒绝（"Unauthorized user <id> on discord"）。adapter-flag
+        # 检查之所以保留，是为了那些 ``source.platform`` 确实是
+        # ``Platform.RELAY`` 的事件（例如交互透传路径）。
+        # ``is True``（而非单纯的真值判断）：该标记在 SessionSource 上是一个
+        # 真正的 bool，显式的身份比较会拒绝授权一个非 bool 的替身（例如一个
+        # MagicMock 属性在测试中会自动具现化为真值）—— 防御意外的 fail-open。
         if source.delivered_via_upstream_relay is True or self._adapter_authorization_is_upstream(
             source.platform
         ):
@@ -249,16 +243,14 @@ class GatewayAuthorizationMixin:
 
         user_id = source.user_id
 
-        # Telegram (and similar) authorize entire group/forum/channel chats
-        # by chat ID via TELEGRAM_GROUP_ALLOWED_CHATS / QQ_GROUP_ALLOWED_USERS.
-        # That allowlist is chat-scoped, so it must work even when
-        # source.user_id is None — Telegram emits anonymous-admin posts,
-        # sender_chat traffic, and channel broadcasts with no `from_user`,
-        # and an operator who explicitly listed the chat expects those to
-        # be honored. Run this check before the no-user-id guard below so
-        # documented behavior matches reality
-        # (website/docs/reference/environment-variables.md,
-        # website/docs/user-guide/messaging/telegram.md).
+        # Telegram（以及类似平台）通过 TELEGRAM_GROUP_ALLOWED_CHATS /
+        # QQ_GROUP_ALLOWED_USERS 按 chat ID 授权整个 group/forum/channel 聊天。
+        # 该 allowlist 是聊天作用域的，因此即使在 source.user_id 为 None 时
+        # 也必须生效——Telegram 会发出匿名管理员发言、sender_chat 流量，以及
+        # 没有 `from_user` 的频道广播，而显式列出该聊天的运营者期望这些都能
+        # 被兑现。在下方 no-user-id 守卫之前运行此检查，从而文档化行为与实际
+        # 一致（website/docs/reference/environment-variables.md、
+        # website/docs/user-guide/messaging/telegram.md）。
         if source.chat_type in {"group", "forum", "channel"} and source.chat_id:
             chat_allowlist_env = {
                 Platform.TELEGRAM: "TELEGRAM_GROUP_ALLOWED_CHATS",
@@ -325,13 +317,13 @@ class GatewayAuthorizationMixin:
             Platform.QQBOT: "QQ_ALLOW_ALL_USERS",
             Platform.YUANBAO: "YUANBAO_ALLOW_ALL_USERS",
         }
-        # Bots admitted by {PLATFORM}_ALLOW_BOTS bypass the human allowlist (#4466).
+        # 由 {PLATFORM}_ALLOW_BOTS 放行的 bot 会绕过人类 allowlist（#4466）。
         platform_allow_bots_map = {
             Platform.DISCORD: "DISCORD_ALLOW_BOTS",
             Platform.FEISHU: "FEISHU_ALLOW_BOTS",
         }
 
-        # Plugin platforms: check the registry for auth env var names
+        # 插件平台：在注册表中查找授权用的环境变量名
         if source.platform not in platform_env_map:
             try:
                 from gateway.platform_registry import platform_registry
@@ -344,16 +336,16 @@ class GatewayAuthorizationMixin:
             except Exception:
                 pass
 
-        # Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
+        # 每个平台的 allow-all flag（例如 DISCORD_ALLOW_ALL_USERS=true）
         platform_allow_all_var = platform_allow_all_map.get(source.platform, "")
         if platform_allow_all_var and os.getenv(platform_allow_all_var, "").lower() in {"true", "1", "yes"}:
             return True
 
-        # Adapter-verified role auth: the Discord adapter already confirmed the
-        # user holds a role in DISCORD_ALLOWED_ROLES before dispatching the message.
-        # Compare with ``is True`` so the real bool field authorizes while a
-        # MagicMock source (test fixtures using ``object.__new__`` runners with
-        # mock sources) does not auto-truthy through this gate (see pitfall #13).
+        # adapter 已校验的角色授权：Discord adapter 在分发消息之前，已经确认
+        # 该用户持有 DISCORD_ALLOWED_ROLES 中的某个角色。
+        # 用 ``is True`` 比较，这样真正的 bool 字段才会授权，而一个
+        # MagicMock source（使用 ``object.__new__`` runner 和 mock source 的
+        # 测试夹具）不会在这个门控上自动通过真值判断（参见 pitfall #13）。
         if getattr(source, "role_authorized", False) is True:
             return True
 
@@ -362,12 +354,12 @@ class GatewayAuthorizationMixin:
             if allow_bots_var and os.getenv(allow_bots_var, "none").lower().strip() in {"mentions", "all"}:
                 return True
 
-        # Check pairing store (always checked, regardless of allowlists)
+        # 检查配对存储（总是检查，无论是否有 allowlist）
         platform_name = source.platform.value if source.platform else ""
         if self.pairing_store.is_approved(platform_name, user_id):
             return True
 
-        # Check platform-specific and global allowlists
+        # 检查平台特定和全局 allowlist
         platform_allowlist = os.getenv(platform_env_map.get(source.platform, ""), "").strip()
         group_user_allowlist = ""
         group_chat_allowlist = ""
@@ -377,29 +369,25 @@ class GatewayAuthorizationMixin:
         global_allowlist = os.getenv("GATEWAY_ALLOWED_USERS", "").strip()
 
         if not platform_allowlist and not group_user_allowlist and not group_chat_allowlist and not global_allowlist:
-            # No env allowlist configured. Adapters that own their own
-            # config-driven access policy (dm_policy / group_policy /
-            # allow_from / group_allow_from) gate access at intake, so for those
-            # platforms we can honor the adapter's decision instead of the
-            # env-only default-deny below -- but ONLY when that decision was an
-            # actual allowlist restriction.
+            # 没有配置 env allowlist。那些自身拥有配置驱动访问策略
+            # （dm_policy / group_policy / allow_from / group_allow_from）的
+            # adapter 会在 intake 处进行门控，因此对于这些平台，我们可以遵从
+            # adapter 的决策，而不是下面仅 env 的默认拒绝——但 *仅当* 该决策
+            # 是一个真正的 allowlist 限制时。
             #
-            # The adapters default dm_policy / group_policy to "open", which
-            # forwards EVERY sender. Reading "reached the gateway" as
-            # authorization in that case would admit the whole external network
-            # with no operator-configured allowlist -- the fail-open SECURITY.md
-            # §2.6 forbids ("an allowlist is required for every enabled
-            # network-exposed adapter ... code paths that fail open when no
-            # allowlist is configured are code bugs"). "disabled" never
-            # forwards, and "pairing" forwards unpaired DMs only so the gateway
-            # can run its pairing handshake (the pairing-store check above
-            # already denied this sender). So trust the adapter only when its
-            # effective policy for THIS chat type is "allowlist"; for "open" /
-            # "pairing" / anything else, fall through to default-deny, where
-            # GATEWAY_ALLOW_ALL_USERS, the per-platform {PLATFORM}_ALLOW_ALL_USERS
-            # flag (checked above), and the pairing flow remain the explicit
-            # opt-ins to broader access. (#34515 follow-up: trusting "open" was a
-            # fail-open.)
+            # adapter 默认把 dm_policy / group_policy 设为 "open"，这会转发
+            # *每一个* 发送者。在这种情况下把“到达了 gateway”解读为授权，
+            # 就会在没有任何运营者配置的 allowlist 的情况下放行整个外部网络
+            # ——这正是 SECURITY.md §2.6 所禁止的 fail-open（“每个启用的、暴露
+            # 在网络上的 adapter 都需要一个 allowlist ……在未配置 allowlist 时
+            # fail-open 的代码路径都是代码 bug”）。"disabled" 绝不转发，
+            # 而 "pairing" 只转发未配对的 DM，以便 gateway 能跑它的配对握手
+            # （上面的配对存储检查已经拒绝了该发送者）。因此，只有当 adapter
+            # 对 *本* 聊天类型实际生效的策略是 "allowlist" 时才信任它；对于
+            # "open" / "pairing" / 其他任何情况，都落入默认拒绝，在那里
+            # GATEWAY_ALLOW_ALL_USERS、每平台的 {PLATFORM}_ALLOW_ALL_USERS
+            # flag（已在上方检查）以及配对流程仍然是扩大访问的显式 opt-in。
+            # （#34515 的后续：信任 "open" 曾是一次 fail-open。）
             if self._adapter_enforces_own_access_policy(source.platform):
                 if source.chat_type in {"group", "forum", "channel"}:
                     effective_policy = self._adapter_group_policy(source.platform)
@@ -412,12 +400,12 @@ class GatewayAuthorizationMixin:
                     effective_policy = self._adapter_dm_policy(source.platform)
                 if effective_policy == "allowlist":
                     return True
-            # No allowlists configured -- check global allow-all flag
+            # 没有配置 allowlist —— 检查全局 allow-all flag
             return os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in {"true", "1", "yes"}
 
-        # Telegram can optionally authorize group traffic by chat ID.
-        # Keep this separate from TELEGRAM_GROUP_ALLOWED_USERS, which gates
-        # the sender user ID for group/forum messages.
+        # Telegram 可以选择按 chat ID 授权群组流量。
+        # 将此与 TELEGRAM_GROUP_ALLOWED_USERS 分开，后者用于门控 group/forum
+        # 消息的发送者 user ID。
         if group_chat_allowlist and source.chat_type in {"group", "forum"} and source.chat_id:
             allowed_group_ids = {
                 chat_id.strip() for chat_id in group_chat_allowlist.split(",") if chat_id.strip()
@@ -425,12 +413,12 @@ class GatewayAuthorizationMixin:
             if "*" in allowed_group_ids or source.chat_id in allowed_group_ids:
                 return True
 
-        # Backward-compat shim for #15027: prior to PR #17686,
-        # TELEGRAM_GROUP_ALLOWED_USERS was (mis)used as a chat-ID allowlist.
-        # Values starting with "-" are Telegram chat IDs, not user IDs, so if
-        # users still have those in TELEGRAM_GROUP_ALLOWED_USERS we honor them
-        # as chat IDs and warn once. The correct var is now
-        # TELEGRAM_GROUP_ALLOWED_CHATS.
+        # 针对向 #15027 的后向兼容垫片：在 PR #17686 之前，
+        # TELEGRAM_GROUP_ALLOWED_USERS 被（错误地）当作 chat-ID allowlist 使用。
+        # 以 "-" 开头的值是 Telegram chat ID，而非 user ID，因此如果用户的
+        # TELEGRAM_GROUP_ALLOWED_USERS 中仍有这些值，我们会把它们当作 chat ID
+        # 来兑现，并警告一次。现在正确的变量是
+        # TELEGRAM_GROUP_ALLOWED_CHATS。
         if (
             source.platform == Platform.TELEGRAM
             and group_user_allowlist
@@ -455,10 +443,10 @@ class GatewayAuthorizationMixin:
                 if source.chat_id in legacy_chat_ids:
                     return True
 
-        # Check if user is in any allowlist. In group/forum chats,
-        # TELEGRAM_GROUP_ALLOWED_USERS is the scoped allowlist and should not
-        # imply DM access; TELEGRAM_ALLOWED_USERS remains the platform-wide
-        # allowlist and still works everywhere for backward compatibility.
+        # 检查用户是否在任一 allowlist 中。在 group/forum 聊天中，
+        # TELEGRAM_GROUP_ALLOWED_USERS 是作用域 allowlist，不应隐含 DM 访问权；
+        # TELEGRAM_ALLOWED_USERS 仍然是平台范围的 allowlist，出于向后兼容，
+        # 它在任何地方都依然有效。
         allowed_ids = set()
         if platform_allowlist:
             allowed_ids.update(uid.strip() for uid in platform_allowlist.split(",") if uid.strip())
@@ -467,8 +455,8 @@ class GatewayAuthorizationMixin:
         if global_allowlist:
             allowed_ids.update(uid.strip() for uid in global_allowlist.split(",") if uid.strip())
 
-        # "*" in any allowlist means allow everyone (consistent with
-        # SIGNAL_GROUP_ALLOWED_USERS precedent)
+        # 任一 allowlist 中的 "*" 表示允许所有人（与 SIGNAL_GROUP_ALLOWED_USERS
+        # 的先例一致）
         if "*" in allowed_ids:
             return True
 
@@ -476,7 +464,7 @@ class GatewayAuthorizationMixin:
         if "@" in user_id:
             check_ids.add(user_id.split("@")[0])
 
-        # WhatsApp: resolve phone↔LID aliases from bridge session mapping files
+        # WhatsApp：从 bridge 的会话映射文件解析电话↔LID 别名
         if source.platform == Platform.WHATSAPP:
             normalized_allowed_ids = set()
             for allowed_id in allowed_ids:
@@ -489,14 +477,13 @@ class GatewayAuthorizationMixin:
             if normalized_user_id:
                 check_ids.add(normalized_user_id)
 
-        # SimpleX: SIMPLEX_ALLOWED_USERS accepts either the numeric contactId
-        # or the contact's display name. The adapter sets user_id=contactId for
-        # stability across renames, but the SimpleX UI never surfaces the
-        # numeric id — operators only see display names, so that's what they
-        # naturally put in the env var. Match both so the allowlist works
-        # regardless of which form was chosen.
-        # Plugin platform: compare by value since Platform.SIMPLEX is not a
-        # hardcoded enum member (it's a dynamic plugin platform).
+        # SimpleX：SIMPLEX_ALLOWED_USERS 既接受数字形式的 contactId，也接受该
+        # 联系人的显示名。adapter 把 user_id 设为 contactId 以在重命名后保持
+        # 稳定，但 SimpleX UI 从不展示数字 id —— 运营者只能看到显示名，因此
+        # 他们自然会把显示名放进环境变量里。同时匹配两者，这样无论选择了哪种
+        # 形式，allowlist 都能生效。
+        # 插件平台：按 value 比较，因为 Platform.SIMPLEX 不是硬编码的 enum 成员
+        # （它是一个动态插件平台）。
         if (
             source.platform is not None
             and source.platform.value == "simplex"
@@ -507,50 +494,48 @@ class GatewayAuthorizationMixin:
         return bool(check_ids & allowed_ids)
 
     def _get_unauthorized_dm_behavior(self, platform: Optional[Platform]) -> str:
-        """Return how unauthorized DMs should be handled for a platform.
+        """返回某平台上未授权 DM 应当如何处理。
 
-        Resolution order:
-        1. Explicit per-platform ``unauthorized_dm_behavior`` in config — always wins.
-        2. Email defaults to ``"ignore"`` unless explicitly opted into
-           pairing. Inboxes may contain arbitrary unread human messages, so
-           replying with pairing codes is not a safe platform default.
-        3. Explicit global ``unauthorized_dm_behavior`` in config — wins for
-           chat-shaped platforms when no per-platform override is set.
-        4. When an adapter-level DM policy opts into pairing or silent drop, honor it.
-        5. When an allowlist (``PLATFORM_ALLOWED_USERS``,
-           ``PLATFORM_GROUP_ALLOWED_USERS`` / ``PLATFORM_GROUP_ALLOWED_CHATS``,
-           or ``GATEWAY_ALLOWED_USERS``) is configured, default to ``"ignore"`` —
-           the allowlist signals that the owner has deliberately restricted
-           access; spamming unknown contacts with pairing codes is both noisy
-           and a potential info-leak. (#9337)
-        6. No allowlist and no explicit config → ``"pair"`` (open-gateway default).
+        解析顺序：
+        1. config 中显式的每平台 ``unauthorized_dm_behavior`` —— 总是胜出。
+        2. Email 默认为 ``"ignore"``，除非显式 opt-in 到配对。收件箱里可能
+           含有任意未读的人类消息，因此用配对码回复并不是一个安全的平台默认
+           行为。
+        3. config 中显式的全局 ``unauthorized_dm_behavior`` —— 在没有设置
+           每平台覆盖时，对聊天型平台胜出。
+        4. 当 adapter 层的 DM 策略 opt-in 到配对或静默丢弃时，遵从它。
+        5. 当配置了 allowlist（``PLATFORM_ALLOWED_USERS``、
+           ``PLATFORM_GROUP_ALLOWED_USERS`` / ``PLATFORM_GROUP_ALLOWED_CHATS``，
+           或 ``GATEWAY_ALLOWED_USERS``）时，默认为 ``"ignore"`` —— allowlist
+           表明 owner 已经刻意限制了访问；用配对码轰炸未知联系人既嘈杂，
+           又可能造成信息泄露。（#9337）
+        6. 没有 allowlist 且没有显式配置 → ``"pair"``（开放 gateway 的默认值）。
         """
         config = getattr(self, "config", None)
 
-        # Check for an explicit per-platform override first.
+        # 先检查是否有显式的每平台覆盖。
         if config and hasattr(config, "get_unauthorized_dm_behavior") and platform:
             platform_cfg = config.platforms.get(platform) if hasattr(config, "platforms") else None
             if platform_cfg and "unauthorized_dm_behavior" in getattr(platform_cfg, "extra", {}):
-                # Operator explicitly configured behavior for this platform — respect it.
+                # 运营者已为本平台显式配置了行为 —— 遵从它。
                 return config.get_unauthorized_dm_behavior(platform)
 
-        # Email is inbox-shaped, not chat-shaped: an agent mailbox may contain
-        # unrelated unread human email. Require an explicit per-platform
-        # ``unauthorized_dm_behavior: pair`` opt-in before replying to unknown
-        # senders with pairing codes. Keep this before the global fallback to
-        # match GatewayConfig.get_unauthorized_dm_behavior().
+        # Email 是收件箱形态，而非聊天形态：一个 agent 邮箱里可能含有不相关的
+        # 未读人类邮件。在用配对码回复未知发送者之前，要求显式的每平台
+        # ``unauthorized_dm_behavior: pair`` opt-in。把它放在全局回退之前，
+        # 以与 GatewayConfig.get_unauthorized_dm_behavior() 保持一致。
         if platform == Platform.EMAIL:
             return "ignore"
 
-        # Check for an explicit global config override.
+        # 检查是否有显式的全局 config 覆盖。
         if config and hasattr(config, "unauthorized_dm_behavior"):
-            if config.unauthorized_dm_behavior != "pair":  # non-default → explicit override
+            if config.unauthorized_dm_behavior != "pair":  # 非默认值 → 显式覆盖
                 return config.unauthorized_dm_behavior
 
-        # Config-driven dm_policy (WeCom / Weixin / Yuanbao / QQBot). An
-        # allowlist or disabled DM policy means the operator restricted access,
-        # so unauthorized DMs should be dropped silently rather than answered
-        # with a pairing code. An explicit pairing policy opts back into codes.
+        # 配置驱动的 dm_policy（WeCom / Weixin / Yuanbao / QQBot）。一个
+        # allowlist 或 disabled DM 策略意味着运营者限制了访问，因此未授权 DM
+        # 应当被静默丢弃，而不是用配对码回复。显式的 pairing 策略会重新
+        # opt-in 到配对码。
         if platform and config and hasattr(config, "platforms"):
             platform_cfg = config.platforms.get(platform)
             extra = getattr(platform_cfg, "extra", None) if platform_cfg else None
@@ -561,9 +546,9 @@ class GatewayAuthorizationMixin:
                 if dm_policy in {"allowlist", "disabled"}:
                     return "ignore"
 
-        # No explicit override.  Fall back to allowlist-aware default:
-        # if any allowlist is configured for this platform, silently drop
-        # unauthorized messages instead of sending pairing codes.
+        # 没有显式覆盖。回退到感知 allowlist 的默认行为：
+        # 如果为本平台配置了任何 allowlist，则静默丢弃未授权消息，而不是发送
+        # 配对码。
         if platform:
             platform_env_map = {
                 Platform.TELEGRAM: "TELEGRAM_ALLOWED_USERS",

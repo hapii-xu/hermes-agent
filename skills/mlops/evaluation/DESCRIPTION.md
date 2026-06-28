@@ -1,3 +1,3 @@
 ---
-description: Model evaluation benchmarks, experiment tracking, data curation, tokenizers, and interpretability tools.
+description: 模型评测基准、实验跟踪、数据策展、分词器和可解释性工具。
 ---

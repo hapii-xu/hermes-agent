@@ -1,47 +1,44 @@
-"""ntfy platform adapter (Hermes plugin).
+"""ntfy 平台适配器（Hermes 插件）。
 
-Subscribes to a topic on ntfy.sh or any self-hosted ntfy server via
-HTTP streaming (``/json`` endpoint with ``poll=false``) and publishes
-replies via HTTP POST. No external SDK — only httpx, which is already
-a Hermes dependency.
+通过 HTTP 流（``/json`` 端点，``poll=false``）订阅 ntfy.sh 或任何自托管
+ntfy 服务器上的 topic，并通过 HTTP POST 发布回复。无需外部 SDK——仅依赖
+httpx，而 httpx 已经是 Hermes 的依赖项。
 
-This adapter ships as a Hermes platform plugin under
-``plugins/platforms/ntfy/``. The Hermes plugin loader scans the
-directory at startup, calls :func:`register`, and the platform becomes
-available to ``gateway/run.py`` and ``tools/send_message_tool`` through
-the registry — no edits to core files required.
+此适配器作为 Hermes 平台插件部署在 ``plugins/platforms/ntfy/`` 目录下。
+Hermes 插件加载器在启动时扫描该目录，调用 :func:`register`，然后该平台
+便可通过注册表供 ``gateway/run.py`` 和 ``tools/send_message_tool`` 使用
+——无需修改核心文件。
 
-Configuration in config.yaml::
+config.yaml 中的配置::
 
     platforms:
       ntfy:
         enabled: true
         extra:
-          server: "https://ntfy.sh"       # or self-hosted URL
-          topic: "hermes-in"              # subscribe topic (incoming)
-          publish_topic: "hermes-out"     # optional — defaults to topic
-          token: "..."                    # optional Bearer / Basic auth token
-          markdown: true                  # optional — enable markdown (default: false)
+          server: "https://ntfy.sh"       # 或自托管 URL
+          topic: "hermes-in"              # 订阅的 topic（接收消息）
+          publish_topic: "hermes-out"     # 可选——默认与 topic 相同
+          token: "..."                    # 可选的 Bearer / Basic 认证 token
+          markdown: true                  # 可选——启用 markdown（默认: false）
 
-Environment variables (all read at adapter construct time, env wins over
-config.yaml ``extra``):
+环境变量（均在适配器构造时读取，环境变量优先级高于 config.yaml 的
+``extra`` 配置）:
 
-    NTFY_TOPIC                 Topic to subscribe to (required)
-    NTFY_SERVER_URL            Server URL (default: https://ntfy.sh)
-    NTFY_TOKEN                 Bearer token or 'user:pass' for Basic auth
-    NTFY_PUBLISH_TOPIC         Reply topic (defaults to NTFY_TOPIC)
-    NTFY_MARKDOWN              "true"/"1"/"yes" enables X-Markdown header
-    NTFY_ALLOWED_USERS         Allowlist (treated by gateway as user IDs;
-                               on ntfy these are topic names)
-    NTFY_ALLOW_ALL_USERS       Allow any topic — dev only
-    NTFY_HOME_CHANNEL          Default topic for cron / notification delivery
-    NTFY_HOME_CHANNEL_NAME     Human label for the home channel
+    NTFY_TOPIC                 要订阅的 topic（必需）
+    NTFY_SERVER_URL            服务器 URL（默认: https://ntfy.sh）
+    NTFY_TOKEN                 Bearer token 或用于 Basic 认证的 'user:pass'
+    NTFY_PUBLISH_TOPIC         回复 topic（默认使用 NTFY_TOPIC）
+    NTFY_MARKDOWN              "true"/"1"/"yes" 启用 X-Markdown header
+    NTFY_ALLOWED_USERS         白名单（gateway 将其视为 user ID；
+                               在 ntfy 中这些是 topic 名称）
+    NTFY_ALLOW_ALL_USERS       允许任何 topic——仅限开发环境使用
+    NTFY_HOME_CHANNEL          用于 cron / 通知投递的默认 topic
+    NTFY_HOME_CHANNEL_NAME     主频道的人类可读标签
 
-Identity model: ntfy has no native authenticated user identity. The
-``title`` field is publisher-controlled and is NOT used for
-authorization. Each topic is treated as a single trusted channel —
-``user_id`` is fixed to the topic name. Use a private topic protected
-by a read token for any real trust boundary.
+身份模型：ntfy 没有原生的认证用户身份。``title`` 字段由发布者控制，
+不用于授权。每个 topic 被视为一个单独的可信频道——``user_id`` 固定为
+topic 名称。对于任何真正的信任边界，请使用受 read token 保护的私有
+topic。
 """
 
 import asyncio
@@ -72,29 +69,28 @@ logger = logging.getLogger(__name__)
 
 
 class _FatalStreamError(Exception):
-    """Raised when a stream error is unrecoverable (e.g. 401, 404)."""
+    """当流错误不可恢复时抛出（例如 401、404）。"""
 
 
 DEFAULT_SERVER = "https://ntfy.sh"
-MAX_MESSAGE_LENGTH = 4096  # ntfy message body limit
+MAX_MESSAGE_LENGTH = 4096  # ntfy 消息体大小限制
 DEDUP_WINDOW_SECONDS = 300
 DEDUP_MAX_SIZE = 1000
 RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
-STREAM_TIMEOUT_SECONDS = 90  # ntfy keepalive default is 55s; give margin
-_ECHO_TAG = "hermes-agent"  # tag added to outgoing messages for echo-loop prevention
+STREAM_TIMEOUT_SECONDS = 90  # ntfy keepalive 默认值为 55s；留出余量
+_ECHO_TAG = "hermes-agent"  # 附加到出站消息的标签，用于防止回声循环
 
 
 def _build_auth_header(token: str) -> Dict[str, str]:
-    """Build an ``Authorization`` header from an ntfy token.
+    """根据 ntfy token 构建 ``Authorization`` header。
 
-    Shared by :class:`NtfyAdapter._auth_headers` and :func:`_standalone_send`
-    so both paths follow the same auth shape and whitespace-stripping rules.
+    由 :class:`NtfyAdapter._auth_headers` 和 :func:`_standalone_send` 共用，
+    确保两条路径遵循相同的认证格式和空白字符剥离规则。
 
-    Tokens are stripped of surrounding whitespace — pasted tokens often
-    carry trailing newlines that would otherwise render the header
-    malformed (``Authorization: Bearer foo\\n``).  ``user:pass`` tokens
-    become Basic auth; anything else is treated as a Bearer token.
-    Returns ``{}`` when no token is configured.
+    Token 会剥离首尾空白——粘贴的 token 经常带有尾部换行符，
+    否则会导致 header 格式错误（``Authorization: Bearer foo\\n``）。
+    ``user:pass`` 格式的 token 会使用 Basic 认证；其他任何内容都
+    视为 Bearer token。未配置 token 时返回 ``{}``。
     """
     if not token:
         return {}
@@ -109,10 +105,9 @@ def _build_auth_header(token: str) -> Dict[str, str]:
 
 
 def _truncate_body(message: str, *, context: str) -> bytes:
-    """Apply the ntfy 4096-char limit, logging a warning on truncation.
+    """应用 ntfy 的 4096 字符限制，截断时记录警告日志。
 
-    ``context`` is included in the log message so adapter and standalone
-    truncations can be told apart in logs.
+    ``context`` 会包含在日志消息中，以便区分适配器和独立发送两种截断场景。
     """
     if len(message) > MAX_MESSAGE_LENGTH:
         logger.warning(
@@ -123,11 +118,10 @@ def _truncate_body(message: str, *, context: str) -> bytes:
 
 
 def check_requirements() -> bool:
-    """Check whether the ntfy adapter is installable and minimally configured.
+    """检查 ntfy 适配器是否可安装且已进行最低限度配置。
 
-    Reads ``NTFY_TOPIC`` directly to avoid the cost of a full
-    ``load_gateway_config()`` (which also writes to ``os.environ``) on
-    every pre-flight check.
+    直接读取 ``NTFY_TOPIC`` 以避免每次预检时执行完整的
+    ``load_gateway_config()``（后者还会写入 ``os.environ``）。
     """
     if not HTTPX_AVAILABLE:
         return False
@@ -136,24 +130,24 @@ def check_requirements() -> bool:
 
 
 def validate_config(config) -> bool:
-    """Validate that the configured ntfy platform has a topic set."""
+    """验证已配置的 ntfy 平台是否设置了 topic。"""
     extra = getattr(config, "extra", {}) or {}
     topic = extra.get("topic") or os.getenv("NTFY_TOPIC", "")
     return bool(topic)
 
 
 def is_connected(config) -> bool:
-    """Check whether ntfy is configured (env or config.yaml)."""
+    """检查 ntfy 是否已配置（通过环境变量或 config.yaml）。"""
     extra = getattr(config, "extra", {}) or {}
     topic = os.getenv("NTFY_TOPIC") or extra.get("topic", "")
     return bool(topic)
 
 
 class NtfyAdapter(BasePlatformAdapter):
-    """ntfy adapter.
+    """ntfy 适配器。
 
-    Subscribes to a topic via HTTP streaming (``/json`` endpoint) and
-    publishes replies via HTTP POST. No external SDK — only httpx.
+    通过 HTTP 流（``/json`` 端点）订阅 topic，并通过 HTTP POST 发布回复。
+    无需外部 SDK——仅依赖 httpx。
     """
 
     MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH
@@ -178,13 +172,13 @@ class NtfyAdapter(BasePlatformAdapter):
         self._stream_task: Optional[asyncio.Task] = None
         self._http_client: Optional["httpx.AsyncClient"] = None
 
-        # Message deduplication: msg_id -> timestamp
+        # 消息去重：msg_id -> 时间戳
         self._seen_messages: Dict[str, float] = {}
 
-    # -- Connection lifecycle -----------------------------------------------
+    # -- 连接生命周期 -------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Connect to ntfy by starting the streaming subscription task."""
+        """启动流式订阅任务，连接到 ntfy。"""
         if not HTTPX_AVAILABLE:
             logger.warning("[%s] httpx not installed. Run: pip install httpx", self.name)
             return False
@@ -203,7 +197,7 @@ class NtfyAdapter(BasePlatformAdapter):
             return False
 
     async def _run_stream(self) -> None:
-        """Subscribe to the ntfy topic with automatic reconnection."""
+        """订阅 ntfy topic，支持自动重连。"""
         backoff_idx = 0
         stream_start: float = 0.0
         url = f"{self._server}/{self._topic}/json"
@@ -227,7 +221,7 @@ class NtfyAdapter(BasePlatformAdapter):
             if not self._running:
                 return
 
-            # Reset backoff if stream stayed alive for at least 60s
+            # 如果流保持连接超过 60s，重置退避计数器
             if time.monotonic() - stream_start >= 60.0:
                 backoff_idx = 0
             delay = RECONNECT_BACKOFF[min(backoff_idx, len(RECONNECT_BACKOFF) - 1)]
@@ -236,8 +230,8 @@ class NtfyAdapter(BasePlatformAdapter):
             backoff_idx += 1
 
     async def _consume_stream(self, url: str, headers: Dict[str, str]) -> None:
-        """Open an HTTP streaming connection and dispatch events."""
-        # poll=false keeps a persistent streaming connection alive with keepalive events
+        """打开 HTTP 流式连接并分发事件。"""
+        # poll=false 保持持久的流式连接，通过 keepalive 事件维持
         params = {"poll": "false"}
         async with self._http_client.stream(
             "GET",
@@ -284,7 +278,7 @@ class NtfyAdapter(BasePlatformAdapter):
                     await self._on_message(event)
 
     async def disconnect(self) -> None:
-        """Disconnect from ntfy."""
+        """断开与 ntfy 的连接。"""
         self._running = False
         self._mark_disconnected()
 
@@ -303,16 +297,16 @@ class NtfyAdapter(BasePlatformAdapter):
         self._seen_messages.clear()
         logger.info("[%s] Disconnected", self.name)
 
-    # -- Inbound message processing -----------------------------------------
+    # -- 入站消息处理 -------------------------------------------------------
 
     async def _on_message(self, event: Dict[str, Any]) -> None:
-        """Process an incoming ntfy message event."""
+        """处理传入的 ntfy 消息事件。"""
         msg_id = event.get("id") or uuid.uuid4().hex
         if self._is_duplicate(msg_id):
             logger.debug("[%s] Duplicate message %s, skipping", self.name, msg_id)
             return
 
-        # Echo-loop prevention: skip messages tagged by this adapter.
+        # 回声循环防护：跳过本适配器标记的消息
         tags = event.get("tags") or []
         if _ECHO_TAG in tags:
             logger.debug("[%s] Skipping own message (echo tag)", self.name)
@@ -324,12 +318,11 @@ class NtfyAdapter(BasePlatformAdapter):
             return
 
         topic = event.get("topic") or self._topic
-        # ntfy has no native authenticated user identity. The title field is
-        # publisher-controlled and must NOT be used for authorization — any
-        # publisher who knows the topic can set title to an allowed username.
-        # Treat ntfy as a single trusted channel; user_id is fixed to the
-        # topic name. NTFY_ALLOWED_USERS is only a real trust boundary when
-        # the topic itself is protected by a read token.
+        # ntfy 没有原生的认证用户身份。title 字段由发布者控制，
+        # 不应用于授权——任何知道 topic 的发布者都可以将 title 设为
+        # 允许的用户名。将 ntfy 视为单一可信频道；user_id 固定为
+        # topic 名称。仅当 topic 本身受 read token 保护时，
+        # NTFY_ALLOWED_USERS 才构成真正的信任边界。
         user_id = topic
         user_name = topic
 
@@ -362,10 +355,10 @@ class NtfyAdapter(BasePlatformAdapter):
         logger.debug("[%s] Message on topic %s: %s", self.name, topic, text[:80])
         await self.handle_message(message_event)
 
-    # -- Deduplication ------------------------------------------------------
+    # -- 消息去重 -----------------------------------------------------------
 
     def _is_duplicate(self, msg_id: str) -> bool:
-        """Return True if this message ID was already seen within the dedup window."""
+        """如果此消息 ID 在去重窗口内已被见过，返回 True。"""
         now = time.time()
         if len(self._seen_messages) > DEDUP_MAX_SIZE:
             cutoff = now - DEDUP_WINDOW_SECONDS
@@ -376,7 +369,7 @@ class NtfyAdapter(BasePlatformAdapter):
         self._seen_messages[msg_id] = now
         return False
 
-    # -- Outbound messaging -------------------------------------------------
+    # -- 出站消息 -----------------------------------------------------------
 
     async def send(
         self,
@@ -385,7 +378,7 @@ class NtfyAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Publish a message to the configured publish topic."""
+        """向已配置的 publish topic 发布消息。"""
         metadata = metadata or {}
         publish_topic = metadata.get("publish_topic") or self._publish_topic or chat_id
 
@@ -430,37 +423,35 @@ class NtfyAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(e))
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
-        """ntfy does not support typing indicators."""
+        """ntfy 不支持输入指示器。"""
         pass
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Return basic info about an ntfy topic."""
+        """返回 ntfy topic 的基本信息。"""
         return {"name": chat_id, "type": "dm"}
 
-    # -- Helpers ------------------------------------------------------------
+    # -- 辅助方法 -----------------------------------------------------------
 
     def _auth_headers(self) -> Dict[str, str]:
-        """Build Authorization header if a token is configured."""
+        """如果配置了 token，构建 Authorization header。"""
         return _build_auth_header(self._token)
 
 
 # ---------------------------------------------------------------------------
-# Plugin registration
+# 插件注册
 # ---------------------------------------------------------------------------
 
 
 def _env_enablement() -> dict | None:
-    """Seed ``PlatformConfig.extra`` from env vars during gateway config load.
+    """在 gateway 配置加载期间从环境变量初始化 ``PlatformConfig.extra``。
 
-    Called by the platform registry's env-enablement hook BEFORE adapter
-    construction, so ``gateway status`` and ``get_connected_platforms()``
-    reflect env-only configuration without instantiating the HTTP client.
-    Returns ``None`` when ntfy isn't minimally configured; the caller skips
-    auto-enabling.
+    由平台注册表的环境变量启用钩子在适配器构造之前调用，使
+    ``gateway status`` 和 ``get_connected_platforms()`` 能够反映仅通过
+    环境变量配置的状态，而无需实例化 HTTP client。
+    当 ntfy 未进行最低限度配置时返回 ``None``；调用方将跳过自动启用。
 
-    The special ``home_channel`` key in the returned dict is handled by the
-    core hook — it becomes a proper ``HomeChannel`` dataclass on the
-    ``PlatformConfig`` rather than being merged into ``extra``.
+    返回字典中的特殊 ``home_channel`` 键由核心钩子处理——它会成为
+    ``PlatformConfig`` 上的正式 ``HomeChannel`` 数据类，而不是合并到 ``extra`` 中。
     """
     topic = os.getenv("NTFY_TOPIC", "").strip()
     if not topic:
@@ -496,17 +487,16 @@ async def _standalone_send(
     media_files: Optional[List[str]] = None,
     force_document: bool = False,
 ) -> Dict[str, Any]:
-    """Out-of-process publish for cron / send_message_tool fallbacks.
+    """进程外发布，用于 cron / send_message_tool 的回退路径。
 
-    Used by ``tools/send_message_tool._send_via_adapter`` and the cron
-    scheduler when the gateway runner is not in this process (e.g.
-    ``hermes cron`` running standalone). Without this hook,
-    ``deliver=ntfy`` cron jobs fail with ``No live adapter for platform``.
+    由 ``tools/send_message_tool._send_via_adapter`` 和 cron 调度器在
+    gateway runner 不在当前进程中时使用（例如 ``hermes cron`` 独立运行）。
+    没有此钩子时，``deliver=ntfy`` 的 cron 任务会因
+    ``No live adapter for platform`` 而失败。
 
-    ``thread_id`` and ``media_files`` are accepted for signature parity
-    only — ntfy has no thread or attachment primitive. Markdown is
-    honored if ``NTFY_MARKDOWN`` is set OR ``pconfig.extra["markdown"]``
-    is True.
+    ``thread_id`` 和 ``media_files`` 仅为签名一致性而接受——ntfy 没有
+    消息线程或附件的原生支持。如果设置了 ``NTFY_MARKDOWN`` 或
+    ``pconfig.extra["markdown"]`` 为 True，则启用 markdown。
     """
     if not HTTPX_AVAILABLE:
         return {"error": "ntfy standalone send: httpx not installed"}
@@ -553,7 +543,7 @@ async def _standalone_send(
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system at startup."""
+    """插件入口点——由 Hermes 插件系统在启动时调用。"""
     ctx.register_platform(
         name="ntfy",
         label="ntfy",
@@ -563,24 +553,22 @@ def register(ctx) -> None:
         is_connected=is_connected,
         required_env=["NTFY_TOPIC"],
         install_hint="pip install httpx   # already a Hermes dependency",
-        # Env-driven auto-configuration: seeds PlatformConfig.extra so
-        # env-only setups show up in `hermes gateway status` without
-        # instantiating the HTTP client.
+        # 环境变量驱动的自动配置：初始化 PlatformConfig.extra，使仅通过环境变量
+        # 配置的设置能在 `hermes gateway status` 中显示，而无需实例化 HTTP client。
         env_enablement_fn=_env_enablement,
-        # Cron home-channel delivery support — `deliver=ntfy` cron jobs
-        # route to NTFY_HOME_CHANNEL when set.
+        # Cron home-channel 投递支持——设置后 `deliver=ntfy` 的 cron 任务
+        # 会路由到 NTFY_HOME_CHANNEL。
         cron_deliver_env_var="NTFY_HOME_CHANNEL",
-        # Out-of-process cron delivery. Without this hook, deliver=ntfy
-        # cron jobs fail with "No live adapter" when cron runs separately
-        # from the gateway.
+        # 进程外 cron 投递。没有此钩子时，当 cron 与 gateway 分开运行，
+        # deliver=ntfy 的 cron 任务会因 "No live adapter" 而失败。
         standalone_sender_fn=_standalone_send,
-        # Auth env vars for _is_user_authorized() integration.
+        # 用于 _is_user_authorized() 集成的认证环境变量。
         allowed_users_env="NTFY_ALLOWED_USERS",
         allow_all_env="NTFY_ALLOW_ALL_USERS",
         max_message_length=MAX_MESSAGE_LENGTH,
         emoji="🔔",
-        # ntfy publishers have no persistent identity — topic names are
-        # the only identifier, no phone numbers / emails to redact.
+        # ntfy 发布者没有持久身份——topic 名称是唯一的标识符，
+        # 没有手机号/邮箱等需要脱敏的信息。
         pii_safe=True,
         allow_update_command=True,
         platform_hint=(

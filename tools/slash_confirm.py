@@ -1,24 +1,24 @@
-"""Generic slash-command confirmation primitive (gateway-side).
+"""通用斜杠命令确认原语（gateway 端）。
 
-Slash commands that have a non-destructive but expensive side effect worth
-surfacing to the user (currently only ``/reload-mcp``, which invalidates
-the provider prompt cache) route through this module.
+那些副作用非破坏性但代价较高、值得提示给用户的斜杠命令
+（目前只有 ``/reload-mcp``，它会使 provider 的提示词缓存失效）
+都经由本模块处理。
 
-Two delivery paths:
+两条投递路径：
 
-  1. Button UI — adapters that override ``send_slash_confirm`` render
-     three inline buttons (Approve Once / Always Approve / Cancel).  The
-     button callback calls ``resolve(session_key, confirm_id, choice)``.
+  1. 按钮 UI —— 重写了 ``send_slash_confirm`` 的适配器会渲染
+     三个内联按钮（批准一次 / 始终批准 / 取消）。
+     按钮回调会调用 ``resolve(session_key, confirm_id, choice)``。
 
-  2. Text fallback — adapters without button UIs get a plain text prompt.
-     Users reply with ``/approve``, ``/always``, or ``/cancel``; the
-     gateway's ``_handle_message`` intercepts those replies and calls
-     ``resolve()`` directly.
+  2. 文本兜底 —— 没有按钮 UI 的适配器会收到一个纯文本提示。
+     用户用 ``/approve``、``/always`` 或 ``/cancel`` 回复；
+     gateway 的 ``_handle_message`` 会拦截这些回复并直接调用
+     ``resolve()``。
 
-State is stored module-level (like ``tools.approval``) so platform
-adapters can resolve callbacks without needing a backreference to the
-``GatewayRunner`` instance.  The CLI path (``cli.py``) uses a local
-synchronous variant — see ``_prompt_slash_confirm`` there.
+状态存储在模块级别（与 ``tools.approval`` 一样），这样平台
+适配器在解析回调时就无需持有 ``GatewayRunner`` 实例的反向引用。
+CLI 路径（``cli.py``）使用一个本地同步变体 —— 见那里的
+``_prompt_slash_confirm``。
 """
 
 from __future__ import annotations
@@ -31,20 +31,19 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# Pending confirmations keyed by gateway session_key.  Each entry:
+# 按 gateway 的 session_key 索引的待处理确认。每条记录：
 #   {
 #       "confirm_id": str,
-#       "command":    str,                       # e.g. "reload-mcp"
+#       "command":    str,                       # 例如 "reload-mcp"
 #       "handler":    Callable[[str], Awaitable[Optional[str]]],
 #       "created_at": float,                     # time.time()
 #   }
 _pending: Dict[str, Dict[str, Any]] = {}
 _lock = threading.RLock()
 
-# Default timeout — a pending confirm older than this is discarded when
-# the next message arrives for the same session.  Buttons work up until
-# the adapter drops the callback_data (Telegram: ~48h; Discord: ephemeral;
-# Slack: 3s ack + long-lived actions).
+# 默认超时 —— 当同一会话的下一条消息到达时，比此更久的待处理确认会被丢弃。
+# 按钮在适配器丢弃 callback_data 之前一直有效（Telegram：约 48 小时；
+# Discord：临时消息；Slack：3 秒 ack + 长时效的 actions）。
 DEFAULT_TIMEOUT_SECONDS = 300
 
 
@@ -54,10 +53,10 @@ def register(
     command: str,
     handler: Callable[[str], Awaitable[Optional[str]]],
 ) -> None:
-    """Register a pending slash-command confirmation.
+    """注册一个待处理的斜杠命令确认。
 
-    Overwrites any prior pending confirm for the same ``session_key`` — the
-    user invoking a new confirmable command supersedes the stale one.
+    会覆盖同一 ``session_key`` 上之前任何待处理的确认 ——
+    用户发起新的可确认命令会取代那条已过期的确认。
     """
     with _lock:
         _pending[session_key] = {
@@ -69,22 +68,22 @@ def register(
 
 
 def get_pending(session_key: str) -> Optional[Dict[str, Any]]:
-    """Return the pending confirm dict for a session, or None."""
+    """返回某个会话的待处理确认字典，若没有则返回 None。"""
     with _lock:
         entry = _pending.get(session_key)
         return dict(entry) if entry else None
 
 
 def clear(session_key: str) -> None:
-    """Drop the pending confirm for ``session_key`` without running it."""
+    """丢弃 ``session_key`` 对应的待处理确认，但不执行它。"""
     with _lock:
         _pending.pop(session_key, None)
 
 
 def clear_if_stale(session_key: str, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> bool:
-    """Drop the pending confirm if older than ``timeout`` seconds.
+    """如果待处理确认已超过 ``timeout`` 秒，则丢弃它。
 
-    Returns True if an entry was dropped.
+    如果丢弃了一条记录则返回 True。
     """
     with _lock:
         entry = _pending.get(session_key)
@@ -102,25 +101,23 @@ async def resolve(
     choice: str,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> Optional[str]:
-    """Resolve a pending confirm.
+    """解析一个待处理确认。
 
-    ``choice`` must be one of ``"once"``, ``"always"``, or ``"cancel"``.
-    Returns the handler's output string (to be sent as a follow-up
-    message), or ``None`` if the confirm was stale, already resolved, or
-    the confirm_id doesn't match.
+    ``choice`` 必须是 ``"once"``、``"always"`` 或 ``"cancel"`` 之一。
+    返回 handler 的输出字符串（作为后续消息发送），
+    若确认已过期、已解析或 confirm_id 不匹配则返回 ``None``。
 
-    Safe to call from an asyncio callback (button click) or from the
-    gateway's message intercept path.
+    可安全地从 asyncio 回调（按钮点击）或从 gateway 的消息拦截路径调用。
     """
     with _lock:
         entry = _pending.get(session_key)
         if not entry:
             return None
         if entry.get("confirm_id") != confirm_id:
-            # Stale confirm_id — superseded by a newer prompt on the same session.
+            # 过期的 confirm_id —— 已被同一会话上更新的提示取代。
             return None
-        # Pop before we run the handler to prevent duplicate callbacks
-        # (e.g. button double-click) from running it twice.
+        # 在运行 handler 之前先弹出，以防重复回调
+        #（例如按钮双击）把它运行两次。
         _pending.pop(session_key, None)
         if time.time() - float(entry.get("created_at", 0) or 0) > timeout:
             return None
@@ -146,11 +143,11 @@ def resolve_sync_compat(
     confirm_id: str,
     choice: str,
 ) -> Optional[str]:
-    """Synchronous helper: schedule resolve() on a loop and wait for the result.
+    """同步辅助：在事件循环上调度 resolve() 并等待结果。
 
-    Used by platform callback paths that run on a different thread than the
-    event loop (e.g. Discord's button click handler in some configurations).
-    Prefer the async ``resolve()`` from an async context.
+    供运行在与事件循环不同线程上的平台回调路径使用
+    （例如某些配置下 Discord 的按钮点击 handler）。
+    在异步上下文中请优先使用异步的 ``resolve()``。
     """
     try:
         from agent.async_utils import safe_schedule_threadsafe

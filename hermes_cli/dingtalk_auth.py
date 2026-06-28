@@ -1,14 +1,13 @@
 """
-DingTalk Device Flow authorization.
+钉钉设备流授权。
 
-Implements the same 3-step registration flow as dingtalk-openclaw-connector:
-  1. POST /app/registration/init   → get nonce
-  2. POST /app/registration/begin  → get device_code + verification_uri_complete
-  3. POST /app/registration/poll   → poll until SUCCESS → get client_id + client_secret
+实现与 dingtalk-openclaw-connector 相同的 3 步注册流程：
+  1. POST /app/registration/init   → 获取 nonce
+  2. POST /app/registration/begin  → 获取 device_code + verification_uri_complete
+  3. POST /app/registration/poll   → 轮询直到 SUCCESS → 获取 client_id + client_secret
 
-The verification_uri_complete is rendered as a QR code in the terminal so the
-user can scan it with DingTalk to authorize, yielding AppKey + AppSecret
-automatically.
+verification_uri_complete 会在终端中渲染为二维码，用户
+可以用钉钉扫描授权，自动获得 AppKey + AppSecret。
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# ── Configuration ──────────────────────────────────────────────────────────
+# ── 配置 ──────────────────────────────────────────────────────────
 
 REGISTRATION_BASE_URL = os.environ.get(
     "DINGTALK_REGISTRATION_BASE_URL", "https://oapi.dingtalk.com"
@@ -32,7 +31,7 @@ REGISTRATION_BASE_URL = os.environ.get(
 REGISTRATION_SOURCE = os.environ.get("DINGTALK_REGISTRATION_SOURCE", "openClaw")
 
 
-# ── API helpers ────────────────────────────────────────────────────────────
+# ── API 辅助函数 ──────────────────────────────────────────────────────────
 
 class RegistrationError(Exception):
     """Raised when a DingTalk registration API call fails."""

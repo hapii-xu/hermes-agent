@@ -1,22 +1,21 @@
 """
-Top-level argparse construction for the hermes CLI.
+hermes CLI 的顶层 argparse 构建。
 
-Lives in its own module so other modules (e.g. ``relaunch.py``) can
-introspect the parser to discover which flags exist without running the
-``main`` fn.
+单独放在一个模块中，以便其他模块（例如 ``relaunch.py``）可以
+内省解析器来发现存在哪些标志，而无需运行 ``main`` 函数。
 
-Only the top-level parser and the ``chat`` subparser live here. Every other
-subparser (model, gateway, sessions, …) is built inline in ``main.py``
-because its dispatch is tightly coupled to module-level ``cmd_*`` functions.
+只有顶层解析器和 ``chat`` 子解析器放在这里。其他所有
+子解析器（model、gateway、sessions 等）都在 ``main.py`` 中内联构建，
+因为它们的调度与模块级的 ``cmd_*`` 函数紧密耦合。
 """
 
 import argparse
 
 
-# `--profile` / `-p` is consumed by ``main._apply_profile_override`` before
-# argparse runs (it sets ``HERMES_HOME`` and strips itself from ``sys.argv``),
-# so it isn't on the parser. Listed here so all "carry over on relaunch"
-# metadata lives in one file.
+# `--profile` / `-p` 在 argparse 运行之前由 ``main._apply_profile_override`` 消费
+# （它设置 ``HERMES_HOME`` 并从 ``sys.argv`` 中移除自身），
+# 所以它不在解析器上。列在这里以便所有"在重新启动时携带"的
+# 元数据都存放在一个文件中。
 PRE_ARGPARSE_INHERITED_FLAGS: list[tuple[str, bool]] = [
     ("--profile", True),
     ("-p", True),
@@ -24,13 +23,13 @@ PRE_ARGPARSE_INHERITED_FLAGS: list[tuple[str, bool]] = [
 
 
 def _inherited_flag(parser, *args, **kwargs):
-    """Register a flag that ``hermes_cli.relaunch`` should carry over when
-    the CLI re-execs itself (e.g. after ``sessions browse`` picks a session,
-    or after the setup wizard launches chat).
+    """注册一个标志，当 CLI 重新执行自身时，``hermes_cli.relaunch`` 应携带该标志
+    （例如，在 ``sessions browse`` 选择一个会话之后，
+    或在设置向导启动 chat 之后）。
 
-    Equivalent to ``parser.add_argument(...)`` plus tagging the resulting
-    Action with ``inherit_on_relaunch = True`` so the relaunch table builder
-    can find it via introspection.
+    等价于 ``parser.add_argument(...)`` 加上将生成的 Action 标记为
+    ``inherit_on_relaunch = True``，以便重新启动表构建器
+    可以通过内省找到它。
     """
     action = parser.add_argument(*args, **kwargs)
     action.inherit_on_relaunch = True
@@ -82,11 +81,11 @@ For more help on a command:
 
 
 def build_top_level_parser():
-    """Build the top-level parser, the subparsers action, and the ``chat`` subparser.
+    """构建顶层解析器、子解析器动作和 ``chat`` 子解析器。
 
-    Returns ``(parser, subparsers, chat_parser)``. The caller wires
-    ``chat_parser.set_defaults(func=cmd_chat)`` and continues registering
-    other subparsers via ``subparsers.add_parser(...)``.
+    返回 ``(parser, subparsers, chat_parser)``。调用方负责连接
+    ``chat_parser.set_defaults(func=cmd_chat)`` 并继续通过
+    ``subparsers.add_parser(...)`` 注册其他子解析器。
     """
     parser = argparse.ArgumentParser(
         prog="hermes",
@@ -111,10 +110,10 @@ def build_top_level_parser():
             "auto-bypassed. Intended for scripts / pipes."
         ),
     )
-    # --model / --provider are accepted at the top level so they can pair
-    # with -z without needing the `chat` subcommand.  If neither -z nor a
-    # subcommand consumes them, they fall through harmlessly as None.
-    # Mirrors `hermes chat --model ... --provider ...` semantics.
+    # --model / --provider 在顶层被接受，这样它们可以与 -z 配对使用
+    # 而无需 `chat` 子命令。如果 -z 和子命令都没有消费它们，
+    # 它们会无害地以 None 形式传递。
+    # 镜像 `hermes chat --model ... --provider ...` 的语义。
     _inherited_flag(
         parser,
         "-m",
@@ -246,7 +245,7 @@ def build_top_level_parser():
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # =========================================================================
-    # chat command
+    # chat 命令
     # =========================================================================
     chat_parser = subparsers.add_parser(
         "chat",
@@ -277,10 +276,9 @@ def build_top_level_parser():
     _inherited_flag(
         chat_parser,
         "--provider",
-        # No `choices=` here: user-defined providers from config.yaml `providers:`
-        # are also valid values, and runtime resolution (resolve_runtime_provider)
-        # handles validation/error reporting consistently with the top-level
-        # `--provider` flag.
+        # 此处不设 `choices=`：config.yaml `providers:` 中用户自定义的提供商
+        # 也是有效值，运行时解析（resolve_runtime_provider）
+        # 会以与顶层 `--provider` 标志一致的方式处理验证和错误报告。
         default=None,
         help="Inference provider (default: auto). Built-in or a user-defined name from `providers:` in config.yaml.",
     )

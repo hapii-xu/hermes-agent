@@ -1,63 +1,63 @@
-# Interaction
+# 交互
 
-## Mouse Events
+## 鼠标事件
 
-### Continuous State
+### 持续状态
 
 ```javascript
-mouseX, mouseY          // current position (relative to canvas)
-pmouseX, pmouseY        // previous frame position
-mouseIsPressed          // boolean
-mouseButton             // LEFT, RIGHT, CENTER (during press)
-movedX, movedY          // delta since last frame
-winMouseX, winMouseY    // relative to window (not canvas)
+mouseX, mouseY          // 当前位置（相对于画布）
+pmouseX, pmouseY        // 上一帧的位置
+mouseIsPressed          // 布尔值
+mouseButton             // LEFT、RIGHT、CENTER（按下期间）
+movedX, movedY          // 相对上一帧的增量
+winMouseX, winMouseY    // 相对于窗口（而非画布）
 ```
 
-### Event Callbacks
+### 事件回调
 
 ```javascript
 function mousePressed() {
-  // fires once on press
-  // mouseButton tells you which button
+  // 按下时触发一次
+  // mouseButton 指示是哪个按键
 }
 
 function mouseReleased() {
-  // fires once on release
+  // 释放时触发一次
 }
 
 function mouseClicked() {
-  // fires after press+release (same element)
+  // 按下+释放后触发（同一元素）
 }
 
 function doubleClicked() {
-  // fires on double-click
+  // 双击时触发
 }
 
 function mouseMoved() {
-  // fires when mouse moves (no button pressed)
+  // 鼠标移动时触发（无按键按下）
 }
 
 function mouseDragged() {
-  // fires when mouse moves WITH button pressed
+  // 鼠标移动且按下按键时触发
 }
 
 function mouseWheel(event) {
-  // event.delta: positive = scroll down, negative = scroll up
+  // event.delta：正值 = 向下滚动，负值 = 向上滚动
   zoom += event.delta * -0.01;
-  return false;  // prevent page scroll
+  return false;  // 阻止页面滚动
 }
 ```
 
-### Mouse Interaction Patterns
+### 鼠标交互模式
 
-**Spawn on click:**
+**点击生成粒子：**
 ```javascript
 function mousePressed() {
   particles.push(new Particle(mouseX, mouseY));
 }
 ```
 
-**Mouse follow with spring:**
+**带弹簧的鼠标跟随：**
 ```javascript
 let springX, springY;
 function setup() {
@@ -73,7 +73,7 @@ function draw() {
 }
 ```
 
-**Drag interaction:**
+**拖拽交互：**
 ```javascript
 let dragging = false;
 let dragObj = null;
@@ -104,7 +104,7 @@ function mouseReleased() {
 }
 ```
 
-**Mouse repulsion (particles flee cursor):**
+**鼠标排斥（粒子逃离光标）：**
 ```javascript
 function draw() {
   let mousePos = createVector(mouseX, mouseY);
@@ -120,37 +120,37 @@ function draw() {
 }
 ```
 
-## Keyboard Events
+## 键盘事件
 
-### State
+### 状态
 
 ```javascript
-keyIsPressed         // boolean
-key                  // last key as string ('a', 'A', ' ')
-keyCode              // numeric code (LEFT_ARROW, UP_ARROW, etc.)
+keyIsPressed         // 布尔值
+key                  // 最后按下的键，字符串形式（'a'、'A'、' '）
+keyCode              // 数字代码（LEFT_ARROW、UP_ARROW 等）
 ```
 
-### Event Callbacks
+### 事件回调
 
 ```javascript
 function keyPressed() {
-  // fires once on press
+  // 按下时触发一次
   if (keyCode === LEFT_ARROW) { /* ... */ }
   if (key === 's') saveCanvas('output', 'png');
   if (key === ' ') CONFIG.paused = !CONFIG.paused;
-  return false;  // prevent default browser behavior
+  return false;  // 阻止浏览器默认行为
 }
 
 function keyReleased() {
-  // fires once on release
+  // 释放时触发一次
 }
 
 function keyTyped() {
-  // fires for printable characters only (not arrows, shift, etc.)
+  // 仅对可打印字符触发（不包括方向键、Shift 等）
 }
 ```
 
-### Continuous Key State (Multiple Keys)
+### 持续按键状态（多键同时按下）
 
 ```javascript
 let keys = {};
@@ -166,7 +166,7 @@ function draw() {
 }
 ```
 
-### Key Constants
+### 按键常量
 
 ```
 LEFT_ARROW, RIGHT_ARROW, UP_ARROW, DOWN_ARROW
@@ -174,27 +174,27 @@ BACKSPACE, DELETE, ENTER, RETURN, TAB, ESCAPE
 SHIFT, CONTROL, OPTION, ALT
 ```
 
-## Touch Events
+## 触摸事件
 
 ```javascript
-touches   // array of { x, y, id } — all current touches
+touches   // 由 { x, y, id } 组成的数组——所有当前触摸点
 
 function touchStarted() {
-  // fires on first touch
-  return false;  // prevent default (stops scroll on mobile)
+  // 首次触摸时触发
+  return false;  // 阻止默认行为（在移动端可阻止滚动）
 }
 
 function touchMoved() {
-  // fires on touch drag
+  // 触摸拖动时触发
   return false;
 }
 
 function touchEnded() {
-  // fires on touch release
+  // 触摸释放时触发
 }
 ```
 
-### Pinch Zoom
+### 双指捏合缩放
 
 ```javascript
 let prevDist = 0;
@@ -216,79 +216,79 @@ function touchEnded() {
 }
 ```
 
-## DOM Elements
+## DOM 元素
 
-### Creating Controls
+### 创建控件
 
 ```javascript
 function setup() {
   createCanvas(800, 800);
 
-  // Slider
-  let slider = createSlider(0, 255, 100, 1);  // min, max, default, step
+  // 滑块
+  let slider = createSlider(0, 255, 100, 1);  // 最小值、最大值、默认值、步长
   slider.position(10, height + 10);
   slider.input(() => { CONFIG.value = slider.value(); });
 
-  // Button
+  // 按钮
   let btn = createButton('Reset');
   btn.position(10, height + 40);
   btn.mousePressed(() => { resetSketch(); });
 
-  // Checkbox
+  // 复选框
   let check = createCheckbox('Show grid', false);
   check.position(10, height + 70);
   check.changed(() => { CONFIG.showGrid = check.checked(); });
 
-  // Select / dropdown
+  // 下拉选择
   let sel = createSelect();
   sel.position(10, height + 100);
   sel.option('Mode A');
   sel.option('Mode B');
   sel.changed(() => { CONFIG.mode = sel.value(); });
 
-  // Color picker
+  // 取色器
   let picker = createColorPicker('#ff0000');
   picker.position(10, height + 130);
   picker.input(() => { CONFIG.color = picker.value(); });
 
-  // Text input
+  // 文本输入框
   let inp = createInput('Hello');
   inp.position(10, height + 160);
   inp.input(() => { CONFIG.text = inp.value(); });
 }
 ```
 
-### Styling DOM Elements
+### 给 DOM 元素添加样式
 
 ```javascript
 let slider = createSlider(0, 100, 50);
 slider.position(10, 10);
 slider.style('width', '200px');
 slider.class('my-slider');
-slider.parent('controls-div');  // attach to specific DOM element
+slider.parent('controls-div');  // 挂载到指定 DOM 元素
 ```
 
-## Audio Input (p5.sound)
+## 音频输入（p5.sound）
 
-Requires `p5.sound.min.js` addon.
+需要 `p5.sound.min.js` 插件。
 
 ```html
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/addons/p5.sound.min.js"></script>
 ```
 
-### Microphone Input
+### 麦克风输入
 
 ```javascript
 let mic, fft, amplitude;
 
 function setup() {
   createCanvas(800, 800);
-  userStartAudio();  // required — user gesture to enable audio
+  userStartAudio();  // 必需——需要用户手势才能启用音频
 
   mic = new p5.AudioIn();
   mic.start();
 
-  fft = new p5.FFT(0.8, 256);  // smoothing, bins
+  fft = new p5.FFT(0.8, 256);  // 平滑系数、频段数
   fft.setInput(mic);
 
   amplitude = new p5.Amplitude();
@@ -296,21 +296,21 @@ function setup() {
 }
 
 function draw() {
-  let level = amplitude.getLevel();    // 0.0 to 1.0 (overall volume)
-  let spectrum = fft.analyze();         // array of 256 frequency values (0-255)
-  let waveform = fft.waveform();        // array of 256 time-domain samples (-1 to 1)
+  let level = amplitude.getLevel();    // 0.0 到 1.0（整体音量）
+  let spectrum = fft.analyze();         // 由 256 个频率值组成的数组（0-255）
+  let waveform = fft.waveform();        // 由 256 个时域采样值组成的数组（-1 到 1）
 
-  // Get energy in frequency bands
+  // 获取各频段能量
   let bass = fft.getEnergy('bass');          // 20-140 Hz
   let lowMid = fft.getEnergy('lowMid');      // 140-400 Hz
   let mid = fft.getEnergy('mid');            // 400-2600 Hz
   let highMid = fft.getEnergy('highMid');    // 2600-5200 Hz
   let treble = fft.getEnergy('treble');      // 5200-14000 Hz
-  // Each returns 0-255
+  // 每个返回值都在 0-255 之间
 }
 ```
 
-### Audio File Playback
+### 音频文件播放
 
 ```javascript
 let song, fft;
@@ -334,7 +334,7 @@ function mousePressed() {
 }
 ```
 
-### Beat Detection (Simple)
+### 节拍检测（简单版）
 
 ```javascript
 let prevBass = 0;
@@ -345,13 +345,13 @@ function detectBeat() {
   let bass = fft.getEnergy('bass');
   let isBeat = bass - prevBass > beatThreshold && beatCooldown <= 0;
   prevBass = bass;
-  if (isBeat) beatCooldown = 10;  // frames
+  if (isBeat) beatCooldown = 10;  // 帧数
   beatCooldown--;
   return isBeat;
 }
 ```
 
-## Scroll-Driven Animation
+## 滚动驱动的动画
 
 ```javascript
 let scrollProgress = 0;
@@ -359,7 +359,7 @@ let scrollProgress = 0;
 function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
   canvas.style('position', 'fixed');
-  // Make page scrollable
+  // 让页面可滚动
   document.body.style.height = '500vh';
 }
 
@@ -370,27 +370,27 @@ window.addEventListener('scroll', () => {
 
 function draw() {
   background(0);
-  // Use scrollProgress (0 to 1) to drive animation
+  // 用 scrollProgress（0 到 1）驱动动画
   let x = lerp(0, width, scrollProgress);
   ellipse(x, height/2, 50);
 }
 ```
 
-## Responsive Events
+## 响应式事件
 
 ```javascript
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  // Recreate buffers
+  // 重建缓冲
   bgLayer = createGraphics(width, height);
-  // Recalculate layout
+  // 重新计算布局
   recalculateLayout();
 }
 
-// Visibility change (tab switching)
+// 可见性变化（切换标签页）
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    noLoop();  // pause when tab not visible
+    noLoop();  // 标签页不可见时暂停
   } else {
     loop();
   }

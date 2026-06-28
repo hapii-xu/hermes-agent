@@ -1,16 +1,15 @@
-"""google_meet plugin — let the agent join a Meet call, transcribe it, follow up.
+"""google_meet 插件 — 让 agent 加入 Meet 通话、转录并跟进。
 
-v1: transcribe-only. Spawns a headless Chromium via Playwright, joins the Meet
-URL, enables live captions, scrapes them into a transcript file. The agent then
-has the transcript in its workspace and can do whatever followup work it needs
-using its regular tools.
+v1：仅转录。通过 Playwright 启动无头 Chromium，加入 Meet
+URL，启用实时字幕，将其抓取为转录文件。agent 随后
+在工作区中获得转录文件，可以使用常规工具完成所需的后续工作。
 
-v2 (not in this PR): realtime duplex audio so the agent can speak in the
-meeting, via OpenAI Realtime / Gemini Live + BlackHole / PulseAudio null-sink.
-``meet_say`` exists as a stub today so the tool surface is stable.
+v2（不在本 PR 中）：实时双工音频，使 agent 可以在
+会议中发言，通过 OpenAI Realtime / Gemini Live + BlackHole / PulseAudio null-sink。
+``meet_say`` 目前作为存根存在，以使工具接口稳定。
 
-Explicit-by-design: only joins ``https://meet.google.com/`` URLs explicitly
-passed in. No calendar scanning, no auto-dial, no consent announcement.
+设计上明确：仅加入显式传入的 ``https://meet.google.com/`` URL。
+不进行日历扫描、自动拨号或同意声明。
 """
 
 from __future__ import annotations
@@ -48,11 +47,11 @@ _TOOLS = (
 
 
 def _on_session_end(**kwargs) -> None:
-    """Best-effort cleanup — if a meet bot is still running when the session
-    ends, leave the call so we don't orphan a headless Chromium.
+    """尽力而为的清理 — 如果 meet 机器人在会话结束时仍在运行，
+    离开通话以免孤立无头 Chromium。
 
-    No-ops when nothing is active. Swallows all exceptions — session end must
-    not fail because the bot cleanup hit an edge case.
+    没有活跃内容时为空操作。吞噬所有异常 — 会话结束不得因
+    机器人清理遇到边缘情况而失败。
     """
     try:
         status = pm.status()
@@ -63,14 +62,13 @@ def _on_session_end(**kwargs) -> None:
 
 
 def register(ctx) -> None:
-    """Register tools, CLI, and lifecycle hooks.
+    """注册工具、CLI 和生命周期钩子。
 
-    Called once by the plugin loader when the plugin is enabled via
-    ``plugins.enabled`` in config.yaml.
+    当通过 config.yaml 中的 ``plugins.enabled`` 启用插件时，
+    由插件加载器调用一次。
     """
-    # Windows is not supported in v1 — audio routing for v2 doesn't have a
-    # tested path there and guest-join Chromium is flakier. Refuse to register
-    # rather than half-working.
+    # v1 不支持 Windows — v2 的音频路由在 Windows 上没有经过测试的路径，
+    # 且访客加入 Chromium 更不稳定。拒绝注册而非半工作状态。
     system = platform.system().lower()
     if system not in {"linux", "darwin"}:
         logger.info(

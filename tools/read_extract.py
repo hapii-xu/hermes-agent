@@ -1,8 +1,8 @@
-"""Stdlib document-to-text extraction for ``read_file``.
+"""供 ``read_file`` 使用的、基于标准库的文档转文本提取。
 
-Supports Jupyter notebooks, DOCX, and XLSX without adding hard dependencies.
-Malformed documents raise :class:`ExtractionError`; callers can then fall back to
-normal text/binary handling.
+支持 Jupyter notebook、DOCX 和 XLSX，且不引入硬依赖。
+格式不正确的文档会抛出 :class:`ExtractionError`；调用方随后可回退到
+普通的文本/二进制处理。
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ _NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 
 class ExtractionError(Exception):
-    """Raised when a supported-looking document cannot be rendered as text."""
+    """当一个看起来受支持的文档无法被渲染为文本时抛出。"""
 
 
 def _extension(path: str) -> str:

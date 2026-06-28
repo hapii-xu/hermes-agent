@@ -1,37 +1,36 @@
-"""Migrate Hermes' MCP server config and Codex's installed curated plugins
-to the format Codex expects in ~/.codex/config.toml.
+"""将 Hermes 的 MCP 服务器配置和 Codex 已安装的精选插件
+迁移到 Codex 在 ~/.codex/config.toml 中期望的格式。
 
-When the user enables the codex_app_server runtime, the codex subprocess
-runs its own MCP client and its own plugin runtime (Linear, Atlassian,
-Asana, plus per-account ChatGPT apps via app/list). For both of those to
-be useful, the user's choices need to be visible to codex too. This
-module:
+当用户启用 codex_app_server 运行时，codex 子进程
+会运行自己的 MCP 客户端和自己的插件运行时（Linear、Atlassian、
+Asana，以及通过 app/list 的每账户 ChatGPT 应用）。为了让这两者
+都有用，用户的选择也需要对 codex 可见。本模块：
 
-  1. Reads Hermes' YAML and writes equivalent [mcp_servers.<name>]
-     entries to ~/.codex/config.toml.
-  2. Queries codex's `plugin/list` for the openai-curated marketplace
-     and writes [plugins."<name>@<marketplace>"] entries for any plugin
-     the user has installed=true on their codex CLI. (This is what
-     OpenClaw calls "migrate native codex plugins" — the YouTube-video-
-     worthy bit Pash highlighted: Canva, GitHub, Calendar, Gmail
-     pre-configured.)
-  3. Writes a [permissions] default profile so users on this runtime
-     don't get an approval prompt on every write attempt.
+  1. 读取 Hermes 的 YAML 并将等效的 [mcp_servers.<name>]
+     条目写入 ~/.codex/config.toml。
+  2. 查询 codex 的 `plugin/list` 获取 openai-curated 市场，
+     并为用户在 codex CLI 上设置 installed=true 的任何插件
+     写入 [plugins."<name>@<marketplace>"] 条目。（这就是
+     OpenClaw 所说的"迁移原生 codex 插件"——Pash 强调的
+     值得在 YouTube 视频中展示的部分：Canva、GitHub、Calendar、
+     Gmail 预配置。）
+  3. 写入 [permissions] 默认配置文件，这样使用此运行时的用户
+     不会在每次写入尝试时都收到审批提示。
 
-What translates (MCP servers):
-  Hermes mcp_servers.<n>.command/args/env  → codex stdio transport
-  Hermes mcp_servers.<n>.url/headers       → codex streamable_http transport
+可转换的内容（MCP 服务器）：
+  Hermes mcp_servers.<n>.command/args/env  → codex stdio 传输
+  Hermes mcp_servers.<n>.url/headers       → codex streamable_http 传输
   Hermes mcp_servers.<n>.timeout           → codex tool_timeout_sec
   Hermes mcp_servers.<n>.connect_timeout   → codex startup_timeout_sec
 
-What does NOT translate (warned + skipped):
-  Hermes-specific keys (sampling, etc.) — codex's MCP client has no
-  equivalent. Listed in the per-server skipped[] field of the report.
+不可转换的内容（警告并跳过）：
+  Hermes 特有的键（sampling 等）—— codex 的 MCP 客户端没有
+  等效配置。列在报告的每个服务器的 skipped[] 字段中。
 
-What's NOT migrated (intentional):
-  AGENTS.md — codex respects this file natively in its cwd. Hermes' own
-  AGENTS.md (project-level) is already in the worktree, so codex picks
-  it up without translation. No code needed.
+不迁移的内容（有意为之）：
+  AGENTS.md —— codex 在其 cwd 中原生尊重此文件。Hermes 自身的
+  AGENTS.md（项目级别）已在工作树中，因此 codex 无需
+  转换即可获取它。不需要代码处理。
 """
 
 from __future__ import annotations
@@ -45,8 +44,8 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-# Marker comments wrapping the managed section so re-runs can detect
-# what's ours and what's user-edited. Both must appear or strip is a no-op.
+# 标记注释包裹受管理的部分，以便重新运行时能够检测
+# 哪些是我们的，哪些是用户编辑的。两者都必须出现，否则剥离操作无效。
 MIGRATION_MARKER = (
     "# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section"
 )

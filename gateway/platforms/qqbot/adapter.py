@@ -1,32 +1,32 @@
 """
-QQ Bot platform adapter using the Official QQ Bot API (v2).
+使用官方 QQ Bot API (v2) 的 QQ Bot 平台适配器。
 
-Connects to the QQ Bot WebSocket Gateway for inbound events and uses the
-REST API (``api.sgroup.qq.com``) for outbound messages and media uploads.
+通过 QQ Bot WebSocket Gateway 接收入站事件，并使用
+REST API（``api.sgroup.qq.com``）发送消息和上传媒体文件。
 
-Configuration in config.yaml:
+config.yaml 中的配置：
     platforms:
       qq:
         enabled: true
         extra:
-          app_id: "your-app-id"            # or QQ_APP_ID env var
-          client_secret: "your-secret"     # or QQ_CLIENT_SECRET env var
-          markdown_support: true           # enable QQ markdown (msg_type 2)
+          app_id: "your-app-id"            # 或使用 QQ_APP_ID 环境变量
+          client_secret: "your-secret"     # 或使用 QQ_CLIENT_SECRET 环境变量
+          markdown_support: true           # 启用 QQ markdown（msg_type 2）
           dm_policy: "open"                # open | allowlist | disabled
           allow_from: ["openid_1"]
           group_policy: "open"             # open | allowlist | disabled
           group_allow_from: ["group_openid_1"]
-          stt:                             # Voice-to-text config (optional)
-            provider: "zai"                # zai (GLM-ASR), openai (Whisper), etc.
+          stt:                             # 语音转文字配置（可选）
+            provider: "zai"                # zai（GLM-ASR）、openai（Whisper）等
             baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4"
-            apiKey: "your-stt-api-key"     # or set QQ_STT_API_KEY env var
-            model: "glm-asr"               # glm-asr, whisper-1, etc.
+            apiKey: "your-stt-api-key"     # 或设置 QQ_STT_API_KEY 环境变量
+            model: "glm-asr"               # glm-asr、whisper-1 等
 
-    Voice transcription priority:
-      1. QQ's built-in ``asr_refer_text`` (Tencent ASR — free, always tried first)
-      2. Configured STT provider via ``stt`` config or ``QQ_STT_*`` env vars
+    语音转写优先级：
+      1. QQ 内置的 ``asr_refer_text``（腾讯 ASR — 免费，总是优先尝试）
+      2. 通过 ``stt`` 配置或 ``QQ_STT_*`` 环境变量配置的 STT 提供者
 
-Reference: https://bot.q.qq.com/wiki/develop/api-v2/
+参考文档：https://bot.q.qq.com/wiki/develop/api-v2/
 """
 
 from __future__ import annotations
@@ -76,9 +76,9 @@ logger = logging.getLogger(__name__)
 
 
 class QQCloseError(Exception):
-    """Raised when QQ WebSocket closes with a specific code.
+    """当 QQ WebSocket 以特定关闭码断开时抛出。
 
-    Carries the close code and reason for proper handling in the reconnect loop.
+    携带关闭码和原因，以便在重连循环中正确处理。
     """
 
     def __init__(self, code, reason=""):
@@ -88,7 +88,7 @@ class QQCloseError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Constants — imported from the shared constants module.
+# 常量 — 从共享 constants 模块导入。
 # ---------------------------------------------------------------------------
 
 from gateway.platforms.qqbot.constants import (
@@ -137,12 +137,12 @@ from gateway.platforms.qqbot.keyboards import (
 
 
 def check_qq_requirements() -> bool:
-    """Check if QQ runtime dependencies are available."""
+    """检查 QQ 运行时依赖是否可用。"""
     return AIOHTTP_AVAILABLE and HTTPX_AVAILABLE
 
 
 def _coerce_list(value: Any) -> List[str]:
-    """Coerce config values into a trimmed string list."""
+    """将配置值强制转换为去空白后的字符串列表。"""
     return _coerce_list_impl(value)
 
 
@@ -152,36 +152,35 @@ def _coerce_list(value: Any) -> List[str]:
 
 
 class QQAdapter(BasePlatformAdapter):
-    """QQ Bot adapter backed by the official QQ Bot WebSocket Gateway + REST API."""
+    """基于官方 QQ Bot WebSocket Gateway + REST API 的 QQ Bot 适配器。"""
 
-    # QQ Bot API does not support editing sent messages.
+    # QQ Bot API 不支持编辑已发送的消息。
     SUPPORTS_MESSAGE_EDITING = False
     MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH
-    _TYPING_INPUT_SECONDS = 60  # input_notify duration reported to QQ
-    _TYPING_DEBOUNCE_SECONDS = 50  # refresh before it expires
+    _TYPING_INPUT_SECONDS = 60  # 上报给 QQ 的 input_notify 时长
+    _TYPING_DEBOUNCE_SECONDS = 50  # 在过期前刷新
 
     @property
     def _log_tag(self) -> str:
-        """Log prefix including app_id for multi-instance disambiguation."""
+        """日志前缀，包含 app_id 以便区分多实例。"""
         app_id = getattr(self, "_app_id", None)
         if app_id:
             return f"QQBot:{app_id}"
         return "QQBot"
 
     def _fail_pending(self, reason: str) -> None:
-        """Fail all pending response futures."""
+        """使所有待处理的响应 future 失败。"""
         for fut in self._pending_responses.values():
             if not fut.done():
                 fut.set_exception(RuntimeError(reason))
         self._pending_responses.clear()
 
     def _mark_transport_disconnected(self) -> None:
-        """Mark QQ WS down without stopping the reconnect loop.
+        """将 QQ WS 标记为断开，但不停止重连循环。
 
-        BasePlatformAdapter uses _running for both process lifecycle and
-        connection status. QQBot needs to keep the listener task alive across
-        transient transport drops so it can continue reconnect attempts after a
-        short-lived gateway or network failure.
+        BasePlatformAdapter 使用 _running 同时表示进程生命周期和连接状态。
+        QQBot 需要在短暂传输断开期间保持监听任务存活，以便在短暂的
+        gateway 或网络故障后能继续尝试重连。
         """
         if self.has_fatal_error:
             return
@@ -194,7 +193,7 @@ class QQAdapter(BasePlatformAdapter):
 
     @property
     def is_connected(self) -> bool:
-        """Return True only when the QQ WebSocket transport is usable."""
+        """仅当 QQ WebSocket 传输可用时返回 True。"""
         return bool(self._running and self._ws and not self._ws.closed)
 
     def __init__(self, config: PlatformConfig):
@@ -207,7 +206,7 @@ class QQAdapter(BasePlatformAdapter):
         ).strip()
         self._markdown_support = bool(extra.get("markdown_support", True))
 
-        # Auth/ACL policies
+        # 认证/访问控制策略
         self._dm_policy = str(extra.get("dm_policy", "open")).strip().lower()
         self._allow_from = _coerce_list(
             extra.get("allow_from") or extra.get("allowFrom")
@@ -217,52 +216,50 @@ class QQAdapter(BasePlatformAdapter):
             extra.get("group_allow_from") or extra.get("groupAllowFrom")
         )
 
-        # Connection state
+        # 连接状态
         self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._http_client: Optional[httpx.AsyncClient] = None
         self._listen_task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
-        self._heartbeat_interval: float = 30.0  # seconds, updated by Hello
+        self._heartbeat_interval: float = 30.0  # 秒，由 Hello 更新
         self._session_id: Optional[str] = None
         self._last_seq: Optional[int] = None
         self._chat_type_map: Dict[str, str] = {}  # chat_id → "c2c"|"group"|"guild"|"dm"
 
-        # Request/response correlation
+        # 请求/响应关联
         self._pending_responses: Dict[str, asyncio.Future] = {}
         self._seen_messages: Dict[str, float] = {}
 
-        # Last inbound message ID per chat — used by send_typing
+        # 每个会话最后入站消息 ID — 供 send_typing 使用
         self._last_msg_id: Dict[str, str] = {}
-        # Typing debounce: chat_id → last send_typing timestamp
+        # 输入指示去抖：chat_id → 上次 send_typing 时间戳
         self._typing_sent_at: Dict[str, float] = {}
 
-        # Token cache
+        # token 缓存
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
         self._token_lock = asyncio.Lock()
 
-        # Upload cache: content_hash -> {file_info, file_uuid, expires_at}
+        # 上传缓存：content_hash -> {file_info, file_uuid, expires_at}
         self._upload_cache: Dict[str, Dict[str, Any]] = {}
 
-        # Inline-keyboard interaction routing. The callback (if set) is invoked
-        # for every INTERACTION_CREATE event after the adapter has already
-        # ACKed it. Callers (gateway wiring for approvals / update prompts)
-        # register via set_interaction_callback().
+        # 内联键盘交互路由。该回调（如已设置）会在适配器对每个
+        # INTERACTION_CREATE 事件 ACK 之后被调用。调用方（审批/更新提示的
+        # gateway 装配代码）通过 set_interaction_callback() 注册。
         self._interaction_callback: Optional[
             Callable[[InteractionEvent], Awaitable[None]]
         ] = None
 
-        # Default interaction dispatcher: routes approval-button clicks to
-        # tools.approval.resolve_gateway_approval() and update-prompt clicks
-        # to ~/.hermes/.update_response. Set here so the cross-adapter gateway
-        # contract (send_exec_approval / send_update_prompt) works out of the
-        # box; callers can override with set_interaction_callback(None) or
-        # register a custom handler.
+        # 默认交互分发器：将审批按钮点击路由到
+        # tools.approval.resolve_gateway_approval()，将更新提示按钮点击路由到
+        # ~/.hermes/.update_response。在此设置以便跨适配器的 gateway
+        # 契约（send_exec_approval / send_update_prompt）开箱即用；
+        # 调用方可通过 set_interaction_callback(None) 覆盖，或注册自定义 handler。
         self._interaction_callback = self._default_interaction_dispatch
 
     # ------------------------------------------------------------------
-    # Properties
+    # 属性
     # ------------------------------------------------------------------
 
     @property
@@ -271,15 +268,15 @@ class QQAdapter(BasePlatformAdapter):
 
     @property
     def enforces_own_access_policy(self) -> bool:
-        """QQBot gates DM/group access at intake via dm_policy/group_policy."""
+        """QQBot 在入口处通过 dm_policy/group_policy 控制私聊/群聊访问。"""
         return True
 
     # ------------------------------------------------------------------
-    # Connection lifecycle
+    # 连接生命周期
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Authenticate, obtain gateway URL, and open the WebSocket."""
+        """认证、获取 gateway URL 并打开 WebSocket。"""
         if not AIOHTTP_AVAILABLE:
             message = "QQ startup failed: aiohttp not installed"
             self._set_fatal_error("qq_missing_dependency", message, retryable=True)
@@ -296,13 +293,13 @@ class QQAdapter(BasePlatformAdapter):
             logger.warning("[%s] %s", self._log_tag, message)
             return False
 
-        # Prevent duplicate connections with the same credentials
+        # 防止使用相同凭据重复连接
         if not self._acquire_platform_lock("qqbot-appid", self._app_id, "QQBot app ID"):
             return False
 
         try:
-            # Tighter keepalive pool so idle CLOSE_WAIT sockets drain
-            # faster behind proxies like Cloudflare Warp (#18451).
+            # 收紧 keepalive 连接池，使空闲的 CLOSE_WAIT 套接字在
+            # Cloudflare Warp 等代理后更快排空（#18451）。
             from gateway.platforms._http_client_limits import platform_httpx_limits
             self._http_client = httpx.AsyncClient(
                 timeout=30.0,
@@ -311,17 +308,17 @@ class QQAdapter(BasePlatformAdapter):
                 limits=platform_httpx_limits(),
             )
 
-            # 1. Get access token
+            # 1. 获取 access token
             await self._ensure_token()
 
-            # 2. Get WebSocket gateway URL
+            # 2. 获取 WebSocket gateway URL
             gateway_url = await self._get_gateway_url()
             logger.info("[%s] Gateway URL: %s", self._log_tag, gateway_url)
 
-            # 3. Open WebSocket
+            # 3. 打开 WebSocket
             await self._open_ws(gateway_url)
 
-            # 4. Start listeners
+            # 4. 启动监听器
             self._listen_task = asyncio.create_task(self._listen_loop())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             self._mark_connected()
@@ -336,7 +333,7 @@ class QQAdapter(BasePlatformAdapter):
             return False
 
     async def disconnect(self) -> None:
-        """Close all connections and stop listeners."""
+        """关闭所有连接并停止监听器。"""
         self._running = False
         self._mark_disconnected()
 
@@ -361,7 +358,7 @@ class QQAdapter(BasePlatformAdapter):
         logger.info("[%s] Disconnected", self._log_tag)
 
     async def _cleanup(self) -> None:
-        """Close WebSocket, HTTP session, and client."""
+        """关闭 WebSocket、HTTP session 和 client。"""
         if self._ws and not self._ws.closed:
             await self._ws.close()
         self._ws = None
@@ -374,23 +371,23 @@ class QQAdapter(BasePlatformAdapter):
             await self._http_client.aclose()
             self._http_client = None
 
-        # Fail pending
+        # 使待处理项失败
         for fut in self._pending_responses.values():
             if not fut.done():
                 fut.set_exception(RuntimeError("Disconnected"))
         self._pending_responses.clear()
 
     # ------------------------------------------------------------------
-    # Token management
+    # Token 管理
     # ------------------------------------------------------------------
 
     async def _ensure_token(self) -> str:
-        """Return a valid access token, refreshing if needed (with singleflight)."""
+        """返回有效的 access token，必要时刷新（带 singleflight 去重）。"""
         if self._access_token and time.time() < self._token_expires_at - 60:
             return self._access_token
 
         async with self._token_lock:
-            # Double-check after acquiring lock
+            # 加锁后二次检查
             if self._access_token and time.time() < self._token_expires_at - 60:
                 return self._access_token
 
@@ -420,7 +417,7 @@ class QQAdapter(BasePlatformAdapter):
             return self._access_token
 
     async def _get_gateway_url(self) -> str:
-        """Fetch the WebSocket gateway URL from the REST API."""
+        """从 REST API 获取 WebSocket gateway URL。"""
         token = await self._ensure_token()
         try:
             resp = await self._http_client.get(
@@ -442,12 +439,12 @@ class QQAdapter(BasePlatformAdapter):
         return url
 
     # ------------------------------------------------------------------
-    # WebSocket lifecycle
+    # WebSocket 生命周期
     # ------------------------------------------------------------------
 
     async def _open_ws(self, gateway_url: str) -> None:
-        """Open a WebSocket connection to the QQ Bot gateway."""
-        # Only clean up WebSocket resources — keep _http_client alive for REST API calls.
+        """打开到 QQ Bot gateway 的 WebSocket 连接。"""
+        # 仅清理 WebSocket 资源 — 保持 _http_client 存活以供 REST API 调用。
         if self._ws and not self._ws.closed:
             await self._ws.close()
         self._ws = None
@@ -455,8 +452,8 @@ class QQAdapter(BasePlatformAdapter):
             await self._session.close()
         self._session = None
 
-        # Honor WSL proxy env for QQ WebSocket. Hermes upgrades overwrite this
-        # local patch, so QQ can regress to direct-connect timeouts after update.
+        # 遵循 WSL 代理环境变量以连接 QQ WebSocket。Hermes 升级会覆盖此
+        # 本地补丁，因此 QQ 在升级后可能回退为直连超时。
         self._session = aiohttp.ClientSession(trust_env=True)
         ws_proxy = (
             os.getenv("WSS_PROXY")
@@ -477,14 +474,14 @@ class QQAdapter(BasePlatformAdapter):
         logger.info("[%s] WebSocket connected to %s", self._log_tag, gateway_url)
 
     async def _listen_loop(self) -> None:
-        """Read WebSocket events and reconnect on errors.
+        """读取 WebSocket 事件并在出错时重连。
 
-        Close code handling follows the OpenClaw qqbot reference implementation:
-          4004 → invalid token, refresh and reconnect
-          4006/4007/4009 → session invalid, clear session and re-identify
-          4008 → rate limited, back off 60s
-          4914 → bot offline/sandbox, stop reconnecting
-          4915 → bot banned, stop reconnecting
+        关闭码处理遵循 OpenClaw qqbot 参考实现：
+          4004 → token 无效，刷新并重连
+          4006/4007/4009 → session 无效，清除 session 并重新 identify
+          4008 → 被限流，退避 60 秒
+          4914 → bot 离线/沙箱，停止重连
+          4915 → bot 被封禁，停止重连
         """
         backoff_idx = 0
         connect_time = 0.0
@@ -510,7 +507,7 @@ class QQAdapter(BasePlatformAdapter):
                     exc.reason,
                 )
 
-                # Quick disconnect detection (permission issues, misconfiguration)
+                # 快速断连检测（权限问题、配置错误）
                 duration = time.monotonic() - connect_time
                 if duration < QUICK_DISCONNECT_THRESHOLD and connect_time > 0:
                     quick_disconnect_count += 1
@@ -538,17 +535,17 @@ class QQAdapter(BasePlatformAdapter):
                 self._mark_transport_disconnected()
                 self._fail_pending("Connection closed")
 
-                # Stop reconnecting for fatal codes (unrecoverable errors)
+                # 对致命错误码停止重连（不可恢复的错误）
                 if code in {
-                        4001,  # Invalid opcode
-                        4002,  # Invalid payload
-                        4010,  # Invalid shard
-                        4011,  # Sharding required
-                        4012,  # Invalid API version
-                        4013,  # Invalid intent
-                        4014,  # Intent not authorized
-                        4914,  # Offline/sandbox-only
-                        4915,  # Banned
+                        4001,  # 无效 opcode
+                        4002,  # 无效 payload
+                        4010,  # 无效 shard
+                        4011,  # 需要 sharding
+                        4012,  # 无效 API 版本
+                        4013,  # 无效 intent
+                        4014,  # intent 未授权
+                        4914,  # 仅离线/沙箱
+                        4915,  # 已封禁
                 }:
                     fatal_descriptions = {
                         4001: "invalid opcode",
@@ -570,7 +567,7 @@ class QQAdapter(BasePlatformAdapter):
                     )
                     return
 
-                # Rate limited
+                # 被限流
                 if code == 4008:
                     logger.info(
                         "[%s] Rate limited (4008), waiting %ds",
@@ -588,7 +585,7 @@ class QQAdapter(BasePlatformAdapter):
                         backoff_idx += 1
                     continue
 
-                # Token invalid → clear cached token so _ensure_token() refreshes
+                # token 无效 → 清除缓存的 token 以便 _ensure_token() 刷新
                 if code == 4004:
                     logger.info(
                         "[%s] Invalid token (4004), will refresh and reconnect",
@@ -597,9 +594,9 @@ class QQAdapter(BasePlatformAdapter):
                     self._access_token = None
                     self._token_expires_at = 0.0
 
-                # Session invalid → clear session, will re-identify on next Hello
-                # Note: 4009 (connection timeout) is NOT included here — it is
-                # resumable per the QQ protocol and should preserve session state.
+                # Session 无效 → 清除 session，下次 Hello 时重新 identify。
+                # 注意：此处不包含 4009（连接超时）—— 按 QQ 协议它可恢复，
+                # 应保留 session 状态。
                 if code in {
                         4006,
                         4007,
@@ -655,7 +652,7 @@ class QQAdapter(BasePlatformAdapter):
                     backoff_idx += 1
 
     async def _reconnect(self, backoff_idx: int) -> bool:
-        """Attempt to reconnect the WebSocket. Returns True on success."""
+        """尝试重连 WebSocket。成功返回 True。"""
         delay = RECONNECT_BACKOFF[min(backoff_idx, len(RECONNECT_BACKOFF) - 1)]
         logger.info(
             "[%s] Reconnecting in %ds (attempt %d)...",
@@ -665,7 +662,7 @@ class QQAdapter(BasePlatformAdapter):
         )
         await asyncio.sleep(delay)
 
-        self._heartbeat_interval = 30.0  # reset until Hello
+        self._heartbeat_interval = 30.0  # 重置，直到收到 Hello
         try:
             await self._ensure_token()
             gateway_url = await self._get_gateway_url()
@@ -678,14 +675,14 @@ class QQAdapter(BasePlatformAdapter):
             return False
 
     async def _read_events(self) -> None:
-        """Read WebSocket frames until connection closes."""
+        """读取 WebSocket 帧，直到连接关闭。"""
         if not self._ws:
             raise RuntimeError("WebSocket not connected")
         if self._ws.closed:
-            # A closed-but-non-None ws makes the while-condition false on entry,
-            # so this would return normally — which _listen_loop treats as a
-            # clean read and immediately retries with backoff reset to 0,
-            # producing a 100% CPU spin. Raise so the reconnect/backoff path runs.
+            # 一个已关闭但非 None 的 ws 会让 while 条件在进入时即为假，
+            # 于是此处会正常返回 —— _listen_loop 会将其视为一次干净读取，
+            # 并立即以退避值重置为 0 重试，从而导致 100% CPU 空转。
+            # 在此抛出异常，以走重连/退避路径。
             raise RuntimeError("WebSocket closed")
 
         while self._running and self._ws and not self._ws.closed:
@@ -695,7 +692,7 @@ class QQAdapter(BasePlatformAdapter):
                 if payload:
                     self._dispatch_payload(payload)
             elif msg.type in {aiohttp.WSMsgType.PING,}:
-                # aiohttp auto-replies with PONG
+                # aiohttp 自动回复 PONG
                 pass
             elif msg.type == aiohttp.WSMsgType.CLOSE:
                 raise QQCloseError(msg.data, msg.extra)
@@ -703,10 +700,10 @@ class QQAdapter(BasePlatformAdapter):
                 raise RuntimeError("WebSocket closed")
 
     async def _heartbeat_loop(self) -> None:
-        """Send periodic heartbeats (QQ Gateway expects op 1 heartbeat with latest seq).
+        """周期性发送心跳（QQ Gateway 期望 op 1 心跳携带最新 seq）。
 
-        The interval is set from the Hello (op 10) event's heartbeat_interval.
-        QQ's default is ~41s; we send at 80% of the interval to stay safe.
+        心跳间隔由 Hello（op 10）事件的 heartbeat_interval 决定。
+        QQ 默认约为 41 秒；我们按间隔的 80% 发送以留出安全余量。
         """
         try:
             while self._running:
@@ -714,7 +711,7 @@ class QQAdapter(BasePlatformAdapter):
                 if not self._ws or self._ws.closed:
                     continue
                 try:
-                    # d should be the latest sequence number received, or null
+                    # d 应为已接收的最新序列号，或 null
                     await self._ws.send_json({"op": 1, "d": self._last_seq})
                 except Exception as exc:
                     logger.debug("[%s] Heartbeat failed: %s", self._log_tag, exc)
@@ -722,13 +719,12 @@ class QQAdapter(BasePlatformAdapter):
             pass
 
     async def _send_identify(self) -> None:
-        """Send op 2 Identify to authenticate the WebSocket connection.
+        """发送 op 2 Identify 以认证 WebSocket 连接。
 
-        After receiving op 10 Hello, the client must send op 2 Identify with
-        the bot token and intents. On success the server replies with a
-        READY dispatch event.
+        收到 op 10 Hello 后，客户端必须发送携带 bot token 和 intents 的
+        op 2 Identify。成功时服务器会回复一个 READY 派发事件。
 
-        Reference: https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/reference.html
+        参考文档：https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/reference.html
         """
         token = await self._ensure_token()
         identify_payload = {
@@ -759,9 +755,9 @@ class QQAdapter(BasePlatformAdapter):
             logger.error("[%s] Failed to send Identify: %s", self._log_tag, exc)
 
     async def _send_resume(self) -> None:
-        """Send op 6 Resume to re-authenticate after a reconnection.
+        """发送 op 6 Resume 以在重连后重新认证。
 
-        Reference: https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/reference.html
+        参考文档：https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/reference.html
         """
         token = await self._ensure_token()
         resume_payload = {
@@ -787,16 +783,16 @@ class QQAdapter(BasePlatformAdapter):
                 )
         except Exception as exc:
             logger.error("[%s] Failed to send Resume: %s", self._log_tag, exc)
-            # If resume fails, clear session and fall back to identify on next Hello
+            # 若 resume 失败，清除 session，下次 Hello 时回退到 identify
             self._session_id = None
             self._last_seq = None
 
     @staticmethod
     def _create_task(coro):
-        """Schedule a coroutine, silently skipping if no event loop is running.
+        """调度一个协程，若没有正在运行的事件循环则静默跳过。
 
-        This avoids ``RuntimeError: no running event loop`` when tests call
-        ``_dispatch_payload`` synchronously outside of ``asyncio.run()``.
+        这样可避免测试在 ``asyncio.run()`` 之外同步调用
+        ``_dispatch_payload`` 时出现 ``RuntimeError: no running event loop``。
         """
         try:
             loop = asyncio.get_running_loop()
@@ -805,7 +801,7 @@ class QQAdapter(BasePlatformAdapter):
             return None
 
     def _dispatch_payload(self, payload: Dict[str, Any]) -> None:
-        """Route inbound WebSocket payloads (dispatch synchronously, spawn async handlers)."""
+        """路由入站 WebSocket 载荷（同步派发，派生异步处理任务）。"""
         op = payload.get("op")
         t = payload.get("t")
         s = payload.get("s")
@@ -813,11 +809,11 @@ class QQAdapter(BasePlatformAdapter):
         if isinstance(s, int) and (self._last_seq is None or s > self._last_seq):
             self._last_seq = s
 
-        # op 10 = Hello (heartbeat interval) — must reply with Identify/Resume
+        # op 10 = Hello（心跳间隔）—— 必须回复 Identify/Resume
         if op == 10:
             d_data = d if isinstance(d, dict) else {}
             interval_ms = d_data.get("heartbeat_interval", 30000)
-            # Send heartbeats at 80% of the server interval to stay safe
+            # 按服务器间隔的 80% 发送心跳以留出安全余量
             self._heartbeat_interval = interval_ms / 1000.0 * 0.8
             logger.debug(
                 "[%s] Hello received, heartbeat_interval=%dms (sending every %.1fs)",
@@ -825,15 +821,15 @@ class QQAdapter(BasePlatformAdapter):
                 interval_ms,
                 self._heartbeat_interval,
             )
-            # Authenticate: send Resume if we have a session, else Identify.
-            # Use _create_task which is safe when no event loop is running (tests).
+            # 认证：若有 session 则发送 Resume，否则发送 Identify。
+            # 使用 _create_task，在没有事件循环运行时（测试场景）也是安全的。
             if self._session_id and self._last_seq is not None:
                 self._create_task(self._send_resume())
             else:
                 self._create_task(self._send_identify())
             return
 
-        # op 0 = Dispatch
+        # op 0 = Dispatch（派发）
         if op == 0 and t:
             if t == "READY":
                 self._handle_ready(d)
@@ -853,21 +849,20 @@ class QQAdapter(BasePlatformAdapter):
                 logger.debug("[%s] Unhandled dispatch: %s", self._log_tag, t)
             return
 
-        # op 11 = Heartbeat ACK
+        # op 11 = Heartbeat ACK（心跳确认）
         if op == 11:
             return
 
-        # op 7 = Server Reconnect — server asks client to reconnect (e.g.
-        # load-balancing, maintenance).  Close the WS so _read_events raises
-        # and the outer loop triggers a reconnect with Resume.
+        # op 7 = Server Reconnect（服务器要求重连，例如负载均衡、维护）。
+        # 关闭 WS 使 _read_events 抛出异常，外层循环随之触发带 Resume 的重连。
         if op == 7:
             logger.info("[%s] Server requested reconnect (op 7)", self._log_tag)
             if self._ws and not self._ws.closed:
                 self._create_task(self._ws.close())
             return
 
-        # op 9 = Invalid Session — d=True means session is resumable,
-        # d=False means we must re-identify from scratch.
+        # op 9 = Invalid Session（无效 session）—— d=True 表示 session 可恢复，
+        # d=False 表示必须从头重新 identify。
         if op == 9:
             resumable = bool(d) if d is not None else False
             if not resumable:
@@ -886,13 +881,13 @@ class QQAdapter(BasePlatformAdapter):
         logger.debug("[%s] Unknown op: %s", self._log_tag, op)
 
     def _handle_ready(self, d: Any) -> None:
-        """Handle the READY event — store session_id for resume."""
+        """处理 READY 事件 —— 保存 session_id 以供 resume 使用。"""
         if isinstance(d, dict):
             self._session_id = d.get("session_id")
             logger.info("[%s] Ready, session_id=%s", self._log_tag, self._session_id)
 
     # ------------------------------------------------------------------
-    # JSON helpers
+    # JSON 辅助函数
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -906,27 +901,27 @@ class QQAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _next_msg_seq(msg_id: str) -> int:
-        """Generate a message sequence number in 0..65535 range."""
+        """生成一个 0..65535 范围内的消息序列号。"""
         time_part = int(time.time()) % 100000000
         rand = int(uuid.uuid4().hex[:4], 16)
         return (time_part ^ rand) % 65536
 
     # ------------------------------------------------------------------
-    # Inbound message handling
+    # 入站消息处理
     # ------------------------------------------------------------------
 
     async def handle_message(self, event: MessageEvent) -> None:
-        """Cache the last message ID per chat, then delegate to base."""
+        """按会话缓存最后一条消息 ID，然后委托给基类处理。"""
         if event.message_id and event.source.chat_id:
             self._last_msg_id[event.source.chat_id] = event.message_id
         await super().handle_message(event)
 
     async def _on_message(self, event_type: str, d: Any) -> None:
-        """Process an inbound QQ Bot message event."""
+        """处理入站 QQ Bot 消息事件。"""
         if not isinstance(d, dict):
             return
 
-        # Extract common fields
+        # 提取公共字段
         msg_id = str(d.get("id", ""))
         if not msg_id or self._is_duplicate(msg_id):
             logger.debug(
@@ -938,7 +933,7 @@ class QQAdapter(BasePlatformAdapter):
         content = str(d.get("content", "")).strip()
         author = d.get("author") if isinstance(d.get("author"), dict) else {}
 
-        # Route by event type
+        # 按事件类型路由
         if event_type == "C2C_MESSAGE_CREATE":
             await self._handle_c2c_message(d, msg_id, content, author, timestamp)
         elif event_type in {"GROUP_AT_MESSAGE_CREATE",}:
@@ -949,31 +944,30 @@ class QQAdapter(BasePlatformAdapter):
             await self._handle_dm_message(d, msg_id, content, author, timestamp)
 
     # ------------------------------------------------------------------
-    # Inline-keyboard interactions (INTERACTION_CREATE)
+    # 内联键盘交互（INTERACTION_CREATE）
     # ------------------------------------------------------------------
 
     def set_interaction_callback(
         self,
         callback: Optional[Callable[[InteractionEvent], Awaitable[None]]],
     ) -> None:
-        """Register (or clear) the interaction callback.
+        """注册（或清除）交互回调。
 
-        Invoked once per ``INTERACTION_CREATE`` event *after* the adapter has
-        ACKed the interaction. The callback is responsible for routing the
-        button click to the right subsystem (approval resolver, update-prompt
-        resolver, etc.) based on the ``button_data`` payload.
+        在适配器对每个 ``INTERACTION_CREATE`` 事件完成 ACK *之后* 调用一次。
+        回调负责根据 ``button_data`` 载荷，将按钮点击路由到正确的子系统
+        （审批解析器、更新提示解析器等）。
         """
         self._interaction_callback = callback
 
     async def _on_interaction(self, d: Any) -> None:
-        """Handle an ``INTERACTION_CREATE`` event.
+        """处理 ``INTERACTION_CREATE`` 事件。
 
-        Responsibilities:
+        职责：
 
-        1. Parse the raw payload into an :class:`InteractionEvent`.
-        2. ACK the interaction (``PUT /interactions/{id}``) so the client
-           stops showing a loading indicator on the button.
-        3. Dispatch to the registered interaction callback, if any.
+        1. 将原始载荷解析为 :class:`InteractionEvent`。
+        2. ACK 该交互（``PUT /interactions/{id}``），使客户端停止在按钮上
+           显示加载指示器。
+        3. 若已注册交互回调，则派发给该回调。
         """
         if not isinstance(d, dict):
             return
@@ -991,8 +985,8 @@ class QQAdapter(BasePlatformAdapter):
             )
             return
 
-        # ACK the interaction promptly — per the QQ docs the client will show
-        # an error icon on the button if we don't respond quickly.
+        # 及时 ACK 交互 —— 按 QQ 文档，若未快速响应，客户端会在按钮上
+        # 显示错误图标。
         try:
             await self._acknowledge_interaction(event.id)
         except Exception as exc:
@@ -1027,11 +1021,10 @@ class QQAdapter(BasePlatformAdapter):
             interaction_id: str,
             code: int = 0,
     ) -> None:
-        """ACK a button interaction via ``PUT /interactions/{id}``.
+        """通过 ``PUT /interactions/{id}`` ACK 一次按钮交互。
 
-        :param interaction_id: The ``id`` field from the
-            ``INTERACTION_CREATE`` event.
-        :param code: Response code (``0`` = success).
+        :param interaction_id: ``INTERACTION_CREATE`` 事件中的 ``id`` 字段。
+        :param code: 响应码（``0`` = 成功）。
         """
         if not self._http_client:
             raise RuntimeError("HTTP client not initialized — not connected?")
@@ -1053,11 +1046,10 @@ class QQAdapter(BasePlatformAdapter):
                 f"{resp.text[:200]}"
             )
 
-    # Mapping from QQ keyboard button decisions → the ``choice`` vocabulary
-    # accepted by ``tools.approval.resolve_gateway_approval``. QQ's 3-button
-    # layout (mobile-space constraint) collapses "session" and "always" into
-    # a single "always" button; users wanting session-only approval can fall
-    # back to the ``/approve session`` text command.
+    # QQ 键盘按钮决策 → ``tools.approval.resolve_gateway_approval`` 接受的
+    # ``choice`` 词表的映射。QQ 的三按钮布局（受移动端空间限制）将
+    # "session" 与 "always" 合并为单个 "always" 按钮；只想要 session 级别
+    # 审批的用户可改用 ``/approve session`` 文本命令。
     _APPROVAL_BUTTON_TO_CHOICE = {
         "allow-once": "once",
         "allow-always": "always",
@@ -1066,7 +1058,7 @@ class QQAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _parse_gateway_session_key(session_key: str) -> Optional[Dict[str, str]]:
-        """Parse ``agent:main:<platform>:<chat_type>:<chat_id>[:<user_id>]``."""
+        """解析 ``agent:main:<platform>:<chat_type>:<chat_id>[:<user_id>]``。"""
         parts = str(session_key or "").split(":")
         if len(parts) < 5 or parts[0] != "agent" or parts[1] != "main":
             return None
@@ -1084,7 +1076,7 @@ class QQAdapter(BasePlatformAdapter):
             event: InteractionEvent,
             session_key: str,
     ) -> bool:
-        """Authorize approval/update interactions against session + operator."""
+        """基于 session 与操作者对审批/更新交互进行授权校验。"""
         parsed = self._parse_gateway_session_key(session_key)
         operator = str(event.operator_openid or "").strip()
         if not parsed or parsed.get("platform") != "qqbot" or not operator:
@@ -1108,20 +1100,19 @@ class QQAdapter(BasePlatformAdapter):
             self,
             event: InteractionEvent,
     ) -> None:
-        """Route ``INTERACTION_CREATE`` button clicks to the right subsystem.
+        """将 ``INTERACTION_CREATE`` 按钮点击路由到正确的子系统。
 
         - ``approve:<session_key>:<decision>`` →
           :func:`tools.approval.resolve_gateway_approval`
-          (unblocks the agent thread waiting on a dangerous-command approval).
+          （解除等待危险命令审批的 agent 线程阻塞）。
         - ``update_prompt:<answer>`` →
-          writes the answer to ``~/.hermes/.update_response`` for the
-          detached ``hermes update --gateway`` process to consume.
-        - Anything else is logged at DEBUG and ignored.
+          将答案写入 ``~/.hermes/.update_response``，供分离运行的
+          ``hermes update --gateway`` 进程消费。
+        - 其他内容以 DEBUG 级别记录并忽略。
 
-        Installed as the adapter's default interaction callback in
-        ``__init__``. Callers can replace via
-        :meth:`set_interaction_callback` to route clicks elsewhere (or pass
-        ``None`` to drop them entirely).
+        在 ``__init__`` 中安装为适配器的默认交互回调。调用方可通过
+        :meth:`set_interaction_callback` 替换以将点击路由到别处
+        （或传入 ``None`` 以彻底丢弃）。
         """
         button_data = event.button_data
         if not button_data:
@@ -1145,8 +1136,8 @@ class QQAdapter(BasePlatformAdapter):
                 )
                 return
             try:
-                # Import lazily to keep the adapter importable in tests that
-                # don't exercise the approval subsystem.
+                # 延迟导入，以保证适配器在未运行审批子系统的测试中
+                # 仍可被导入。
                 from tools.approval import resolve_gateway_approval
                 count = resolve_gateway_approval(session_key, choice)
                 logger.info(
@@ -1181,12 +1172,12 @@ class QQAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _write_update_response(answer: str, operator: str = "") -> None:
-        """Atomically write the update-prompt answer to ``.update_response``.
+        """以原子方式将更新提示的答案写入 ``.update_response``。
 
-        Mirrors the Discord / Telegram / Feishu adapters: the detached
-        ``hermes update --gateway`` watcher polls this file for a ``y``/``n``
-        response to its interactive prompts (stash-restore, config migration).
-        Writes via ``tmp + rename`` so a partial write can't fool the reader.
+        与 Discord / Telegram / 飞书适配器保持一致：分离运行的
+        ``hermes update --gateway`` 监视器轮询此文件，以获取对其交互式
+        提示（暂存恢复、配置迁移）的 ``y``/``n`` 响应。通过
+        ``tmp + rename`` 写入，使不完整的写入无法误导读取方。
         """
         try:
             from hermes_constants import get_hermes_home
@@ -1210,7 +1201,7 @@ class QQAdapter(BasePlatformAdapter):
             author: Dict[str, Any],
             timestamp: str,
     ) -> None:
-        """Handle a C2C (private) message event."""
+        """处理 C2C（私聊）消息事件。"""
         user_openid = str(author.get("user_openid", ""))
         if not user_openid:
             return
@@ -1242,20 +1233,20 @@ class QQAdapter(BasePlatformAdapter):
                         _att.get("filename", ""),
                     )
 
-        # Process all attachments uniformly (images, voice, files)
+        # 统一处理所有附件（图片、语音、文件）
         att_result = await self._process_attachments(attachments_raw)
         image_urls = att_result["image_urls"]
         image_media_types = att_result["image_media_types"]
         voice_transcripts = att_result["voice_transcripts"]
         attachment_info = att_result["attachment_info"]
 
-        # Append voice transcripts to the text body
+        # 将语音转写追加到文本正文
         if voice_transcripts:
             voice_block = "\n".join(voice_transcripts)
             text = (
                 (text + "\n\n" + voice_block).strip() if text.strip() else voice_block
             )
-        # Append non-media attachment info
+        # 追加非媒体附件信息
         if attachment_info:
             text = (
                 (text + "\n\n" + attachment_info).strip()
@@ -1270,7 +1261,7 @@ class QQAdapter(BasePlatformAdapter):
             len(voice_transcripts),
         )
 
-        # Merge any quoted-message context (message_type=103 → msg_elements[0]).
+        # 合并引用消息的上下文（message_type=103 → msg_elements[0]）。
         quoted = await self._process_quoted_context(d)
         text = self._merge_quote_into(text, quoted["quote_block"])
         if quoted["image_urls"]:
@@ -1305,7 +1296,7 @@ class QQAdapter(BasePlatformAdapter):
             author: Dict[str, Any],
             timestamp: str,
     ) -> None:
-        """Handle a group @-message event."""
+        """处理群 @ 消息事件。"""
         group_openid = str(d.get("group_openid", ""))
         if not group_openid:
             return
@@ -1314,7 +1305,7 @@ class QQAdapter(BasePlatformAdapter):
         ):
             return
 
-        # Strip the @bot mention prefix from content
+        # 去除内容中的 @bot 提及前缀
         text = self._strip_at_mention(content)
         att_result = await self._process_attachments(d.get("attachments"))
         image_urls = att_result["image_urls"]
@@ -1322,7 +1313,7 @@ class QQAdapter(BasePlatformAdapter):
         voice_transcripts = att_result["voice_transcripts"]
         attachment_info = att_result["attachment_info"]
 
-        # Append voice transcripts
+        # 追加语音转写
         if voice_transcripts:
             voice_block = "\n".join(voice_transcripts)
             text = (
@@ -1335,7 +1326,7 @@ class QQAdapter(BasePlatformAdapter):
                 else attachment_info
             )
 
-        # Merge any quoted-message context (message_type=103 → msg_elements[0]).
+        # 合并引用消息的上下文（message_type=103 → msg_elements[0]）。
         quoted = await self._process_quoted_context(d)
         text = self._merge_quote_into(text, quoted["quote_block"])
         if quoted["image_urls"]:
@@ -1370,14 +1361,13 @@ class QQAdapter(BasePlatformAdapter):
             author: Dict[str, Any],
             timestamp: str,
     ) -> None:
-        """Handle a guild/channel message event."""
+        """处理频道/子频道消息事件。"""
         channel_id = str(d.get("channel_id", ""))
         if not channel_id:
             return
 
-        # Apply group_policy ACL — guild channels are group-like contexts.
-        # Without this check any member of any guild the bot is in could
-        # bypass the configured allowlist.
+        # 应用 group_policy ACL —— 频道属于类群组场景。
+        # 若不做此检查，bot 所在任意频道的任意成员都能绕过配置的 allowlist。
         guild_id = str(d.get("guild_id", ""))
         author_id = str(author.get("id", ""))
         if not self._is_group_allowed(guild_id or channel_id, author_id):
@@ -1409,7 +1399,7 @@ class QQAdapter(BasePlatformAdapter):
                 else attachment_info
             )
 
-        # Merge any quoted-message context (message_type=103 → msg_elements[0]).
+        # 合并引用消息的上下文（message_type=103 → msg_elements[0]）。
         quoted = await self._process_quoted_context(d)
         text = self._merge_quote_into(text, quoted["quote_block"])
         if quoted["image_urls"]:
@@ -1445,14 +1435,14 @@ class QQAdapter(BasePlatformAdapter):
             author: Dict[str, Any],
             timestamp: str,
     ) -> None:
-        """Handle a guild DM message event."""
+        """处理频道私聊（DM）消息事件。"""
         guild_id = str(d.get("guild_id", ""))
         if not guild_id:
             return
 
-        # Apply dm_policy ACL — guild DMs were previously unauthenticated.
-        # Without this check any member of any guild the bot is in could
-        # bypass the configured allowlist via direct messages.
+        # 应用 dm_policy ACL —— 此前频道私聊未做鉴权。
+        # 若不做此检查，bot 所在任意频道的任意成员都能通过私信绕过
+        # 配置的 allowlist。
         author_id = str(author.get("id", ""))
         if not self._is_dm_allowed(author_id):
             logger.debug(
@@ -1480,7 +1470,7 @@ class QQAdapter(BasePlatformAdapter):
                 else attachment_info
             )
 
-        # Merge any quoted-message context (message_type=103 → msg_elements[0]).
+        # 合并引用消息的上下文（message_type=103 → msg_elements[0]）。
         quoted = await self._process_quoted_context(d)
         text = self._merge_quote_into(text, quoted["quote_block"])
         if quoted["image_urls"]:
@@ -1508,46 +1498,43 @@ class QQAdapter(BasePlatformAdapter):
         await self.handle_message(event)
 
     # ------------------------------------------------------------------
-    # Quoted-message handling
+    # 引用消息处理
     # ------------------------------------------------------------------
 
     async def _process_quoted_context(
             self,
             d: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Process the quoted message a user is replying to.
+        """处理用户回复时所引用的消息。
 
-        When a user replies while quoting another message, the platform sets
-        ``message_type = 103`` and pushes the referenced message's content and
-        attachments inside ``msg_elements[0]``. The old adapter ignored
-        ``msg_elements`` entirely, so:
+        当用户在引用另一条消息的情况下回复时，平台会设置
+        ``message_type = 103``，并将被引用消息的内容和附件放入
+        ``msg_elements[0]``。旧适配器完全忽略 ``msg_elements``，因此：
 
-        - Quoted text was surfaced only when the user typed something of
-          their own — bare quote-replies showed nothing.
-        - Quoted attachments (images, voice, files) were never downloaded
-          or described.
-        - Quoted voice messages specifically produced no transcript, so the
-          LLM had no way to see what the user was referring to.
+        - 引用文本仅在用户自己也输入了内容时才会呈现 —— 纯引用回复
+          什么也看不到。
+        - 引用附件（图片、语音、文件）从不被下载或描述。
+        - 引用的语音消息尤其不会产生转写，因此 LLM 无从得知用户
+          所指内容。
 
-        This method parses ``msg_elements`` and runs the quoted attachments
-        through the same :meth:`_process_attachments` pipeline as the main
-        message body, so quoted voice messages get STT transcripts and
-        quoted images are cached identically.
+        本方法解析 ``msg_elements``，并将被引用附件送入与消息主体相同的
+        :meth:`_process_attachments` 流水线，使被引用的语音消息获得 STT
+        转写、被引用的图片得到一致的缓存处理。
 
-        :param d: Raw inbound message dict (from the WS dispatch payload).
-        :returns: Dict with keys:
+        :param d: 原始入站消息字典（来自 WS 派发载荷）。
+        :returns: 包含以下键的字典：
 
-            - ``quote_block``: string to prepend to the user's text body
-              (empty when there's nothing quoted).
-            - ``image_urls``: list of cached quoted-image paths.
-            - ``image_media_types``: parallel list of image MIME types.
+            - ``quote_block``：要前置到用户文本正文的字符串
+              （无引用内容时为空）。
+            - ``image_urls``：被引用图片的已缓存本地路径列表。
+            - ``image_media_types``：与之平行的图片 MIME 类型列表。
         """
         empty = {
             "quote_block": "",
             "image_urls": [],
             "image_media_types": [],
         }
-        # Short-circuit: only message_type 103 indicates a quote.
+        # 短路：仅 message_type 103 表示引用。
         try:
             if int(d.get("message_type", 0) or 0) != 103:
                 return empty
@@ -1558,9 +1545,8 @@ class QQAdapter(BasePlatformAdapter):
         if not isinstance(elements, list) or not elements:
             return empty
 
-        # msg_elements[0] carries the referenced message. Additional elements
-        # (if any) are very rare in practice; we concatenate their text and
-        # union their attachments for completeness.
+        # msg_elements[0] 承载被引用的消息。额外的 element（若有）
+        # 在实践中极为罕见；为完整性起见，我们拼接它们的文本并合并附件。
         quoted_text_parts: List[str] = []
         all_attachments: List[Dict[str, Any]] = []
         for elem in elements:
@@ -1595,8 +1581,7 @@ class QQAdapter(BasePlatformAdapter):
         if lines:
             quote_block = "[Quoted message]:\n" + "\n".join(lines)
         else:
-            # Images-only quote: give the LLM at least a marker so it knows
-            # context was referenced.
+            # 仅图片引用：至少给 LLM 一个标记，让它知道有上下文被引用。
             quote_block = "[Quoted message]: (image)"
 
         return {
@@ -1607,7 +1592,7 @@ class QQAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _merge_quote_into(text: str, quote_block: str) -> str:
-        """Prepend ``quote_block`` to *text*, separated by a blank line."""
+        """将 ``quote_block`` 前置到 *text*，中间以空行分隔。"""
         if not quote_block:
             return text
         if text.strip():
@@ -1615,12 +1600,12 @@ class QQAdapter(BasePlatformAdapter):
         return quote_block
 
     # ------------------------------------------------------------------
-    # Attachment processing
+    # 附件处理
     # ------------------------------------------------------------------
 
     @staticmethod
     def _detect_message_type(media_urls: list, media_types: list):
-        """Determine MessageType from attachment content types."""
+        """根据附件的 content type 判定 MessageType。"""
         if not media_urls:
             return MessageType.TEXT
         if not media_types:
@@ -1642,16 +1627,15 @@ class QQAdapter(BasePlatformAdapter):
             self,
             attachments: Any,
     ) -> Dict[str, Any]:
-        """Process inbound attachments (all message types).
+        """处理入站附件（所有消息类型）。
 
-        Mirrors OpenClaw's ``processAttachments`` — handles images, voice, and
-        other files uniformly.
+        对应 OpenClaw 的 ``processAttachments`` —— 统一处理图片、语音和其他文件。
 
-        Returns a dict with:
-        - image_urls: list[str]  — cached local image paths
-        - image_media_types: list[str] — MIME types of cached images
-        - voice_transcripts: list[str] — STT transcripts for voice messages
-        - attachment_info: str — text description of non-image, non-voice attachments
+        返回的字典包含：
+        - image_urls: list[str]  —— 已缓存的本地图片路径
+        - image_media_types: list[str] —— 已缓存图片的 MIME 类型
+        - voice_transcripts: list[str] —— 语音消息的 STT 转写
+        - attachment_info: str —— 非图片、非语音附件的文本描述
         """
         if not isinstance(attachments, list):
             return {
@@ -1690,7 +1674,7 @@ class QQAdapter(BasePlatformAdapter):
             )
 
             if self._is_voice_content_type(ct, filename):
-                # Voice: use QQ's asr_refer_text first, then voice_wav_url, then STT.
+                # 语音：优先使用 QQ 的 asr_refer_text，其次 voice_wav_url，最后 STT。
                 asr_refer = (
                     str(att.get("asr_refer_text", "")).strip()
                     if isinstance(att.get("asr_refer_text"), str)
@@ -1716,7 +1700,7 @@ class QQAdapter(BasePlatformAdapter):
                     logger.warning("[%s] Voice STT failed for %s", self._log_tag, url[:60])
                     voice_transcripts.append("[Voice] [语音识别失败]")
             elif ct.startswith("image/"):
-                # Image: download and cache locally.
+                # 图片：下载并缓存到本地。
                 try:
                     cached_path = await self._download_and_cache(url, ct, filename)
                     if cached_path and os.path.isfile(cached_path):
@@ -1731,7 +1715,7 @@ class QQAdapter(BasePlatformAdapter):
                 except Exception as exc:
                     logger.debug("[%s] Failed to cache image: %s", self._log_tag, exc)
             else:
-                # Other attachments (video, file, etc.): download and record with path.
+                # 其他附件（视频、文件等）：下载并记录路径。
                 try:
                     cached_path = await self._download_and_cache(url, ct, filename)
                     if cached_path:
@@ -1754,10 +1738,10 @@ class QQAdapter(BasePlatformAdapter):
     async def _download_and_cache(
             self, url: str, content_type: str, original_name: str = "",
     ) -> Optional[str]:
-        """Download a URL and cache it locally.
+        """下载 URL 并缓存到本地。
 
-        :param original_name: Preferred filename from attachment metadata.
-            Falls back to the URL path basename if empty.
+        :param original_name: 附件元数据中的首选文件名。
+            为空时回退到 URL 路径的 basename。
         """
         from tools.url_safety import is_safe_url
 
@@ -1785,8 +1769,8 @@ class QQAdapter(BasePlatformAdapter):
             ext = mimetypes.guess_extension(content_type) or ".jpg"
             return cache_image_from_bytes(data, ext)
         elif content_type == "voice" or content_type.startswith("audio/"):
-            # QQ voice messages are typically .amr or .silk format.
-            # Convert to .wav using ffmpeg so STT engines can process it.
+            # QQ 语音消息通常为 .amr 或 .silk 格式。
+            # 使用 ffmpeg 转换为 .wav，以便 STT 引擎处理。
             return await self._convert_audio_to_wav(data, url)
         else:
             filename = (
@@ -1798,7 +1782,7 @@ class QQAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _is_voice_content_type(content_type: str, filename: str) -> bool:
-        """Check if an attachment is a voice/audio message."""
+        """检查附件是否为语音/音频消息。"""
         ct = content_type.strip().lower()
         fn = filename.strip().lower()
         if ct == "voice" or ct.startswith("audio/"):
@@ -1819,11 +1803,10 @@ class QQAdapter(BasePlatformAdapter):
         return False
 
     def _qq_media_headers(self) -> Dict[str, str]:
-        """Return Authorization headers for QQ multimedia CDN downloads.
+        """返回用于 QQ 多媒体 CDN 下载的 Authorization 请求头。
 
-        QQ's multimedia URLs (multimedia.nt.qq.com.cn) require the bot's
-        access token in an Authorization header, otherwise the download
-        returns a non-200 status.
+        QQ 的多媒体 URL（multimedia.nt.qq.com.cn）要求在 Authorization
+        请求头中携带 bot 的 access token，否则下载会返回非 200 状态。
         """
         if self._access_token:
             return {"Authorization": f"QQBot {self._access_token}"}
@@ -1838,23 +1821,23 @@ class QQAdapter(BasePlatformAdapter):
             asr_refer_text: Optional[str] = None,
             voice_wav_url: Optional[str] = None,
     ) -> Optional[str]:
-        """Download a voice attachment, convert to wav, and transcribe.
+        """下载语音附件，转换为 wav，并转写。
 
-        Priority:
-        1. QQ's built-in ``asr_refer_text`` (Tencent's own ASR — free, no API call).
-        2. Self-hosted STT on ``voice_wav_url`` (pre-converted WAV from QQ, avoids SILK decoding).
-        3. Self-hosted STT on the original attachment URL (requires SILK→WAV conversion).
+        优先级：
+        1. QQ 内置的 ``asr_refer_text``（腾讯自研 ASR —— 免费，无需 API 调用）。
+        2. 在 ``voice_wav_url`` 上的自托管 STT（QQ 预转换的 WAV，避免 SILK 解码）。
+        3. 在原始附件 URL 上的自托管 STT（需要 SILK→WAV 转换）。
 
-        Returns the transcript text, or None on failure.
+        返回转写文本，失败返回 None。
         """
-        # 1. Use QQ's built-in ASR text if available
+        # 1. 若可用，使用 QQ 内置的 ASR 文本
         if asr_refer_text:
             logger.debug(
                 "[%s] STT: using QQ asr_refer_text: %r", self._log_tag, asr_refer_text[:100]
             )
             return asr_refer_text
 
-        # Determine which URL to download (prefer voice_wav_url — already WAV)
+        # 决定下载哪个 URL（优先 voice_wav_url —— 已是 WAV）
         download_url = url
         is_pre_wav = False
         if voice_wav_url:
@@ -1870,7 +1853,7 @@ class QQAdapter(BasePlatformAdapter):
             return None
 
         try:
-            # 2. Download audio (QQ CDN requires Authorization header)
+            # 2. 下载音频（QQ CDN 需要 Authorization 请求头）
             if not self._http_client:
                 logger.warning("[%s] STT: no HTTP client", self._log_tag)
                 return None
@@ -1906,7 +1889,7 @@ class QQAdapter(BasePlatformAdapter):
                 )
                 return None
 
-            # 3. Convert to wav (skip if we already have a pre-converted WAV)
+            # 3. 转换为 wav（若已有预转换的 WAV 则跳过）
             if is_pre_wav:
                 import tempfile
 
@@ -1929,11 +1912,11 @@ class QQAdapter(BasePlatformAdapter):
                     )
                     return None
 
-            # 4. Call STT API
+            # 4. 调用 STT API
             logger.debug("[%s] STT: calling ASR on %s", self._log_tag, wav_path)
             transcript = await self._call_stt(wav_path)
 
-            # 5. Cleanup temp file
+            # 5. 清理临时文件
             try:
                 os.unlink(wav_path)
             except OSError:
@@ -1956,12 +1939,12 @@ class QQAdapter(BasePlatformAdapter):
     async def _convert_audio_to_wav_file(
             self, audio_data: bytes, filename: str
     ) -> Optional[str]:
-        """Convert audio bytes to a temp .wav file using pilk (SILK) or ffmpeg.
+        """使用 pilk（SILK）或 ffmpeg 将音频字节转换为临时 .wav 文件。
 
-        QQ voice messages are typically SILK format which ffmpeg cannot decode.
-        Strategy: always try pilk first, fall back to ffmpeg if pilk fails.
+        QQ 语音消息通常为 SILK 格式，ffmpeg 无法解码。
+        策略：始终先尝试 pilk，若 pilk 失败再回退到 ffmpeg。
 
-        Returns the wav file path, or None on failure.
+        返回 wav 文件路径，失败返回 None。
         """
         import tempfile
 
@@ -1984,18 +1967,18 @@ class QQAdapter(BasePlatformAdapter):
 
         wav_path = src_path.rsplit(".", 1)[0] + ".wav"
 
-        # Try pilk first (handles SILK and many other formats)
+        # 先尝试 pilk（可处理 SILK 及许多其他格式）
         result = await self._convert_silk_to_wav(src_path, wav_path)
 
-        # If pilk failed, try ffmpeg
+        # 若 pilk 失败，尝试 ffmpeg
         if not result:
             result = await self._convert_ffmpeg_to_wav(src_path, wav_path)
 
-        # If ffmpeg also failed, try writing raw PCM as WAV (last resort)
+        # 若 ffmpeg 也失败，尝试将原始 PCM 写成 WAV（最后的手段）
         if not result:
             result = await self._convert_raw_to_wav(audio_data, wav_path)
 
-        # Cleanup source file
+        # 清理源文件
         try:
             os.unlink(src_path)
         except OSError:
@@ -2005,7 +1988,7 @@ class QQAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _guess_ext_from_data(data: bytes) -> str:
-        """Guess file extension from magic bytes."""
+        """根据 magic bytes 猜测文件扩展名。"""
         if data[:9] == b"#!SILK_V3" or data[:6] == b"#!SILK":
             return ".silk"
         if data[:2] == b"\x02!":
@@ -2020,19 +2003,19 @@ class QQAdapter(BasePlatformAdapter):
             return ".ogg"
         if data[:4] == b"\x00\x00\x00\x20" or data[:4] == b"\x00\x00\x00\x1c":
             return ".amr"
-        # Default to .amr for unknown (QQ's most common voice format)
+        # 未知格式默认为 .amr（QQ 最常见的语音格式）
         return ".amr"
 
     @staticmethod
     def _looks_like_silk(data: bytes) -> bool:
-        """Check if bytes look like a SILK audio file."""
+        """检查字节是否像 SILK 音频文件。"""
         return data[:6] == b"#!SILK" or data[:2] == b"\x02!" or data[:9] == b"#!SILK_V3"
 
     async def _convert_silk_to_wav(self, src_path: str, wav_path: str) -> Optional[str]:
-        """Convert audio file to WAV using the pilk library.
+        """使用 pilk 库将音频文件转换为 WAV。
 
-        Tries the file as-is first, then as .silk if the extension differs.
-        pilk can handle SILK files with various headers (or no header).
+        先按原样尝试转换，若扩展名不同则改用 .silk 再试。
+        pilk 能处理带有各种头（或无头）的 SILK 文件。
         """
         try:
             import pilk
@@ -2043,7 +2026,7 @@ class QQAdapter(BasePlatformAdapter):
             )
             return None
 
-        # Try converting the file as-is
+        # 按原样尝试转换
         try:
             pilk.silk_to_wav(src_path, wav_path, rate=16000)
             if Path(wav_path).exists() and Path(wav_path).stat().st_size > 44:
@@ -2057,7 +2040,7 @@ class QQAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.debug("[%s] pilk direct conversion failed: %s", self._log_tag, exc)
 
-        # Try renaming to .silk and converting (pilk checks the extension)
+        # 尝试重命名为 .silk 后转换（pilk 会检查扩展名）
         silk_path = src_path.rsplit(".", 1)[0] + ".silk"
         try:
             import shutil
@@ -2083,10 +2066,10 @@ class QQAdapter(BasePlatformAdapter):
         return None
 
     async def _convert_raw_to_wav(self, audio_data: bytes, wav_path: str) -> Optional[str]:
-        """Last resort: try writing audio data as raw PCM 16-bit mono 16kHz WAV.
+        """最后手段：尝试将音频数据写成 raw PCM 16-bit 单声道 16kHz WAV。
 
-        This will produce garbage if the data isn't raw PCM, but at least
-        the ASR engine won't crash — it'll just return empty.
+        若数据并非 raw PCM，结果将是无意义噪声，但至少 ASR 引擎不会崩溃
+        —— 只是返回空转写而已。
         """
         try:
             import wave
@@ -2102,7 +2085,7 @@ class QQAdapter(BasePlatformAdapter):
             return None
 
     async def _convert_ffmpeg_to_wav(self, src_path: str, wav_path: str) -> Optional[str]:
-        """Convert audio file to WAV using ffmpeg."""
+        """使用 ffmpeg 将音频文件转换为 WAV。"""
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg",
@@ -2147,16 +2130,16 @@ class QQAdapter(BasePlatformAdapter):
         return wav_path
 
     def _resolve_stt_config(self) -> Optional[Dict[str, str]]:
-        """Resolve STT backend configuration from config/environment.
+        """从配置/环境变量解析 STT 后端配置。
 
-        Priority:
-        1. Plugin-specific: ``channels.qqbot.stt`` in config.yaml → ``self.config.extra["stt"]``
-        2. QQ-specific env vars: ``QQ_STT_API_KEY`` / ``QQ_STT_BASE_URL`` / ``QQ_STT_MODEL``
-        3. Return None if nothing is configured (STT will be skipped, QQ built-in ASR still works).
+        优先级：
+        1. 插件级专用：config.yaml 中的 ``channels.qqbot.stt`` → ``self.config.extra["stt"]``
+        2. QQ 专用环境变量：``QQ_STT_API_KEY`` / ``QQ_STT_BASE_URL`` / ``QQ_STT_MODEL``
+        3. 若均未配置则返回 None（将跳过 STT，QQ 内置 ASR 仍可用）。
         """
         extra = self.config.extra or {}
 
-        # 1. Plugin-specific STT config (matches OpenClaw's channels.qqbot.stt)
+        # 1. 插件级专用 STT 配置（对应 OpenClaw 的 channels.qqbot.stt）
         stt_cfg = extra.get("stt")
         if isinstance(stt_cfg, dict) and stt_cfg.get("enabled") is not False:
             base_url = stt_cfg.get("baseUrl") or stt_cfg.get("base_url", "")
@@ -2168,10 +2151,10 @@ class QQAdapter(BasePlatformAdapter):
                     "api_key": api_key,
                     "model": model or "whisper-1",
                 }
-            # Provider-only config: just model name, use default provider
+            # 仅 provider 配置：只有 model 名称，使用默认 provider
             if api_key:
                 provider = stt_cfg.get("provider", "zai")
-                # Map provider to base URL
+                # 将 provider 映射到 base URL
                 _PROVIDER_BASE_URLS = {
                     "zai": "https://open.bigmodel.cn/api/coding/paas/v4",
                     "openai": "https://api.openai.com/v1",
@@ -2186,7 +2169,7 @@ class QQAdapter(BasePlatformAdapter):
                                  or ("glm-asr" if provider in {"zai", "glm"} else "whisper-1"),
                     }
 
-        # 2. QQ-specific env vars (set by `hermes setup gateway` / `hermes gateway`)
+        # 2. QQ 专用环境变量（由 `hermes setup gateway` / `hermes gateway` 设置）
         qq_stt_key = os.getenv("QQ_STT_API_KEY", "")
         if qq_stt_key:
             base_url = os.getenv(
@@ -2203,11 +2186,10 @@ class QQAdapter(BasePlatformAdapter):
         return None
 
     async def _call_stt(self, wav_path: str) -> Optional[str]:
-        """Call an OpenAI-compatible STT API to transcribe a wav file.
+        """调用 OpenAI 兼容的 STT API 以转写 wav 文件。
 
-        Uses the provider configured in ``channels.qqbot.stt`` config,
-        falling back to QQ's built-in ``asr_refer_text`` if not configured.
-        Returns None if STT is not configured or the call fails.
+        使用 ``channels.qqbot.stt`` 配置中的 provider；若未配置则回退到
+        QQ 内置的 ``asr_refer_text``。若 STT 未配置或调用失败则返回 None。
         """
         stt_cfg = self._resolve_stt_config()
         if not stt_cfg:
@@ -2232,13 +2214,13 @@ class QQAdapter(BasePlatformAdapter):
                 )
             resp.raise_for_status()
             result = resp.json()
-            # Zhipu/GLM format: {"choices": [{"message": {"content": "transcript text"}}]}
+            # Zhipu/GLM 格式：{"choices": [{"message": {"content": "transcript text"}}]}
             choices = result.get("choices", [])
             if choices:
                 content = choices[0].get("message", {}).get("content", "")
                 if content.strip():
                     return content.strip()
-            # OpenAI/Whisper format: {"text": "transcript text"}
+            # OpenAI/Whisper 格式：{"text": "transcript text"}
             text = result.get("text", "")
             if text.strip():
                 return text.strip()
@@ -2256,10 +2238,10 @@ class QQAdapter(BasePlatformAdapter):
     async def _convert_audio_to_wav(
             self, audio_data: bytes, source_url: str
     ) -> Optional[str]:
-        """Convert audio bytes to .wav using pilk (SILK) or ffmpeg, caching the result."""
+        """使用 pilk（SILK）或 ffmpeg 将音频字节转换为 .wav，并缓存结果。"""
         import tempfile
 
-        # Determine source format from magic bytes or URL
+        # 根据 magic bytes 或 URL 判定源格式
         ext = (
             Path(urlparse(source_url).path).suffix.lower()
             if urlparse(source_url).path
@@ -2305,7 +2287,7 @@ class QQAdapter(BasePlatformAdapter):
             except OSError:
                 pass
 
-        # Verify output and cache
+        # 校验输出并缓存
         try:
             wav_data = Path(wav_path).read_bytes()
             os.unlink(wav_path)
@@ -2315,7 +2297,7 @@ class QQAdapter(BasePlatformAdapter):
             return None
 
     # ------------------------------------------------------------------
-    # Outbound messaging — REST API
+    # 出站消息 —— REST API
     # ------------------------------------------------------------------
 
     async def _api_request(
@@ -2325,7 +2307,7 @@ class QQAdapter(BasePlatformAdapter):
             body: Optional[Dict[str, Any]] = None,
             timeout: float = DEFAULT_API_TIMEOUT,
     ) -> Dict[str, Any]:
-        """Make an authenticated REST API request to QQ Bot API."""
+        """向 QQ Bot API 发起已认证的 REST API 请求。"""
         if not self._http_client:
             raise RuntimeError("HTTP client not initialized — not connected?")
 
@@ -2364,7 +2346,7 @@ class QQAdapter(BasePlatformAdapter):
             srv_send_msg: bool = False,
             file_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Upload media and return file_info."""
+        """上传媒体并返回 file_info。"""
         path = (
             f"/v2/users/{target_id}/files"
             if target_type == "c2c"
@@ -2382,7 +2364,7 @@ class QQAdapter(BasePlatformAdapter):
         if file_type == MEDIA_TYPE_FILE and file_name:
             body["file_name"] = file_name
 
-        # Retry transient upload failures
+        # 重试瞬态上传失败
         for attempt in range(3):
             try:
                 return await self._api_request(
@@ -2400,20 +2382,19 @@ class QQAdapter(BasePlatformAdapter):
                 else:
                     raise
 
-    # Maximum time (seconds) to wait for reconnection before giving up on send.
+    # 放弃发送前等待重连的最长时间（秒）。
     _RECONNECT_WAIT_SECONDS = 15.0
-    # How often (seconds) to poll is_connected while waiting.
+    # 等待期间轮询 is_connected 的频率（秒）。
     _RECONNECT_POLL_INTERVAL = 0.5
 
     async def _wait_for_reconnection(self) -> bool:
-        """Wait for the WebSocket listener to reconnect.
+        """等待 WebSocket 监听器重连。
 
-        The listener loop (_listen_loop) auto-reconnects on disconnect, but
-        there is a race window where send() is called right after a disconnect
-        and before the reconnect completes.  This method polls is_connected
-        for up to _RECONNECT_WAIT_SECONDS.
+        监听循环（_listen_loop）在断开时会自动重连，但存在一个竞态窗口：
+        send() 可能在断开后、重连完成前被调用。本方法最多轮询
+        _RECONNECT_WAIT_SECONDS 秒的 is_connected。
 
-        Returns True if reconnected, False if still disconnected.
+        重连成功返回 True，仍处于断开状态返回 False。
         """
         logger.info("[%s] Not connected — waiting for reconnection (up to %.0fs)",
                     self._log_tag, self._RECONNECT_WAIT_SECONDS)
@@ -2434,10 +2415,10 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a text or markdown message to a QQ user or group.
+        """向 QQ 用户或群组发送文本或 markdown 消息。
 
-        Applies format_message(), splits long messages via truncate_message(),
-        and retries transient failures with exponential backoff.
+        应用 format_message()，通过 truncate_message() 拆分长消息，
+        并以指数退避重试瞬态失败。
         """
         del metadata
 
@@ -2456,7 +2437,7 @@ class QQAdapter(BasePlatformAdapter):
             last_result = await self._send_chunk(chat_id, chunk, reply_to)
             if not last_result.success:
                 return last_result
-            # Only reply_to the first chunk
+            # 仅对第一个分片 reply_to
             reply_to = None
         return last_result
 
@@ -2466,7 +2447,7 @@ class QQAdapter(BasePlatformAdapter):
             content: str,
             reply_to: Optional[str] = None,
     ) -> SendResult:
-        """Send a single chunk with retry + exponential backoff."""
+        """发送单个分片，带重试和指数退避。"""
         last_exc: Optional[Exception] = None
         chat_type = self._guess_chat_type(chat_id)
 
@@ -2485,13 +2466,13 @@ class QQAdapter(BasePlatformAdapter):
             except Exception as exc:
                 last_exc = exc
                 err = str(exc).lower()
-                # Permanent errors — don't retry
+                # 永久性错误 —— 不重试
                 if any(
                         k in err
                         for k in ("invalid", "forbidden", "not found", "bad request")
                 ):
                     break
-                # Transient — back off and retry
+                # 瞬态错误 —— 退避后重试
                 if attempt < 2:
                     delay = 1.0 * (2 ** attempt)
                     logger.warning(
@@ -2517,9 +2498,9 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             keyboard: Optional[InlineKeyboard] = None,
     ) -> SendResult:
-        """Send text to a C2C user via REST API.
+        """通过 REST API 向 C2C 用户发送文本。
 
-        :param keyboard: Optional inline keyboard attached to the message.
+        :param keyboard: 附带到消息上的可选内联键盘。
         """
         self._next_msg_seq(reply_to or openid)
         body = self._build_text_body(content, reply_to)
@@ -2539,9 +2520,9 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             keyboard: Optional[InlineKeyboard] = None,
     ) -> SendResult:
-        """Send text to a group via REST API.
+        """通过 REST API 向群组发送文本。
 
-        :param keyboard: Optional inline keyboard attached to the message.
+        :param keyboard: 附带到消息上的可选内联键盘。
         """
         self._next_msg_seq(reply_to or group_openid)
         body = self._build_text_body(content, reply_to)
@@ -2559,7 +2540,7 @@ class QQAdapter(BasePlatformAdapter):
     async def _send_guild_text(
             self, channel_id: str, content: str, reply_to: Optional[str] = None
     ) -> SendResult:
-        """Send text to a guild channel via REST API."""
+        """通过 REST API 向频道发送文本。"""
         body: Dict[str, Any] = {"content": content[: self.MAX_MESSAGE_LENGTH]}
         if reply_to:
             body["msg_id"] = reply_to
@@ -2569,7 +2550,7 @@ class QQAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=msg_id, raw_response=data)
 
     # ------------------------------------------------------------------
-    # Inline-keyboard outbound helpers (approval / update-prompt flows)
+    # 内联键盘出站辅助（审批 / 更新提示流程）
     # ------------------------------------------------------------------
 
     async def send_with_keyboard(
@@ -2579,15 +2560,13 @@ class QQAdapter(BasePlatformAdapter):
             keyboard: InlineKeyboard,
             reply_to: Optional[str] = None,
     ) -> SendResult:
-        """Send a single text message with an inline keyboard attached.
+        """发送附带内联键盘的单条文本消息。
 
-        Unlike :meth:`send`, this does NOT split long content into chunks —
-        a keyboard message has exactly one interactive surface, and splitting
-        would orphan the buttons from the first chunk. Callers should keep
-        approval/update-prompt bodies short.
+        与 :meth:`send` 不同，本方法**不会**将长内容拆分为多个分片 ——
+        键盘消息只有一个交互面，拆分会使按钮脱离第一个分片而孤立。
+        调用方应保持审批/更新提示正文简短。
 
-        Guild (channel) chats don't support inline keyboards; returns a
-        non-retryable failure for those.
+        频道（channel）聊天不支持内联键盘；对此类场景返回不可重试的失败。
         """
         if not self.is_connected:
             if not await self._wait_for_reconnection():
@@ -2627,14 +2606,14 @@ class QQAdapter(BasePlatformAdapter):
             req: ApprovalRequest,
             reply_to: Optional[str] = None,
     ) -> SendResult:
-        """Send a 3-button approval request (``allow-once / allow-always / deny``).
+        """发送三按钮审批请求（``allow-once / allow-always / deny``）。
 
-        The rendered text comes from :func:`build_approval_text`; callers can
-        override by passing a custom :class:`ApprovalRequest`.
+        渲染文本来自 :func:`build_approval_text`；调用方可通过传入自定义
+        的 :class:`ApprovalRequest` 来覆盖。
 
-        Users click the button → ``INTERACTION_CREATE`` fires → the adapter's
-        registered :meth:`set_interaction_callback` handler decodes
-        ``button_data`` via :func:`parse_approval_button_data`.
+        用户点击按钮 → 触发 ``INTERACTION_CREATE`` → 适配器已注册的
+        :meth:`set_interaction_callback` 处理器通过
+        :func:`parse_approval_button_data` 解码 ``button_data``。
         """
         from gateway.platforms.qqbot.keyboards import build_approval_text
         return await self.send_with_keyboard(
@@ -2645,13 +2624,13 @@ class QQAdapter(BasePlatformAdapter):
         )
 
     # ------------------------------------------------------------------
-    # Cross-adapter gateway contract — send_exec_approval + send_update_prompt
+    # 跨适配器 gateway 契约 —— send_exec_approval + send_update_prompt
     # ------------------------------------------------------------------
     #
-    # These mirror the signatures that gateway/run.py detects on the adapter
-    # class (e.g. type(adapter).send_exec_approval, type(adapter).send_update_prompt)
-    # for button-based approval / update-confirm UX. Discord, Telegram, Slack,
-    # Matrix, and Feishu already implement the same contract.
+    # 这些方法对应 gateway/run.py 在适配器类上探测的签名（如
+    # type(adapter).send_exec_approval、type(adapter).send_update_prompt），
+    # 用于基于按钮的审批/更新确认 UX。Discord、Telegram、Slack、Matrix
+    # 和飞书均已实现同一契约。
 
     async def send_exec_approval(
             self,
@@ -2661,18 +2640,18 @@ class QQAdapter(BasePlatformAdapter):
             description: str = "dangerous command",
             metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a button-based exec-approval prompt for a dangerous command.
+        """为危险命令发送基于按钮的执行审批提示。
 
-        Called by ``gateway/run.py``'s ``_approval_notify_sync`` when the
-        agent is blocked waiting for approval. Button clicks resolve via
-        :func:`tools.approval.resolve_gateway_approval` — dispatched by the
-        adapter's interaction callback (:meth:`_default_interaction_dispatch`).
+        当 agent 被阻塞等待审批时，由 ``gateway/run.py`` 的
+        ``_approval_notify_sync`` 调用。按钮点击通过
+        :func:`tools.approval.resolve_gateway_approval` 解析 —— 由适配器的
+        交互回调（:meth:`_default_interaction_dispatch`）派发。
         """
-        del metadata  # QQ doesn't have thread_id / DM targeting overrides.
+        del metadata  # QQ 没有 thread_id / DM 定向覆盖。
 
-        # Use the reply-to message for passive-message context when we have one.
-        # QQ requires a msg_id on outbound messages to a user we've never
-        # seen; the last inbound msg_id is the natural choice.
+        # 当有 reply-to 消息时，用它作为被动消息的上下文。
+        # QQ 要求向从未见过的用户发送出站消息时携带 msg_id；
+        # 最后一条入站 msg_id 是自然之选。
         msg_id = self._last_msg_id.get(chat_id)
 
         req = ApprovalRequest(
@@ -2686,7 +2665,7 @@ class QQAdapter(BasePlatformAdapter):
             chat_id, req, reply_to=msg_id,
         )
 
-    _APPROVAL_TIMEOUT_SECONDS = 300  # matches gateway's default gateway_timeout
+    _APPROVAL_TIMEOUT_SECONDS = 300  # 与 gateway 的默认 gateway_timeout 一致
 
     async def send_update_prompt(
             self,
@@ -2696,17 +2675,15 @@ class QQAdapter(BasePlatformAdapter):
             session_key: str = "",
             metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a Yes/No update-confirmation prompt with inline buttons.
+        """发送带内联按钮的是/否更新确认提示。
 
-        Matches the cross-adapter contract used by
-        ``gateway/run.py``'s ``hermes update --gateway`` watcher. Button
-        clicks surface as ``INTERACTION_CREATE`` with
-        ``button_data = 'update_prompt:y'`` or ``'update_prompt:n'``;
-        the adapter's interaction callback writes the answer to
-        ``~/.hermes/.update_response`` so the detached update process
-        can read it.
+        对应 ``gateway/run.py`` 的 ``hermes update --gateway`` 监视器所使用的
+        跨适配器契约。按钮点击以 ``INTERACTION_CREATE`` 形式出现，其中
+        ``button_data = 'update_prompt:y'`` 或 ``'update_prompt:n'``；
+        适配器的交互回调将答案写入 ``~/.hermes/.update_response``，
+        以便分离运行的更新进程读取。
         """
-        del session_key, metadata  # present for contract parity only.
+        del session_key, metadata  # 仅为契约对齐而保留。
 
         default_hint = f" (default: {default})" if default else ""
         content = f"⚕ **Update Needs Your Input**\n\n{prompt}{default_hint}"
@@ -2721,7 +2698,7 @@ class QQAdapter(BasePlatformAdapter):
     def _build_text_body(
             self, content: str, reply_to: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Build the message body for C2C/group text sending."""
+        """构建用于 C2C/群组文本发送的消息体。"""
         msg_seq = self._next_msg_seq(reply_to or "default")
 
         if self._markdown_support:
@@ -2738,14 +2715,14 @@ class QQAdapter(BasePlatformAdapter):
             }
 
         if reply_to:
-            # For non-markdown mode, add message_reference
+            # 非 markdown 模式下，添加 message_reference
             if not self._markdown_support:
                 body["message_reference"] = {"message_id": reply_to}
 
         return body
 
     # ------------------------------------------------------------------
-    # Native media sending
+    # 原生媒体发送
     # ------------------------------------------------------------------
 
     async def send_image(
@@ -2756,7 +2733,7 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send an image natively via QQ Bot API upload."""
+        """通过 QQ Bot API 上传原生发送图片。"""
         del metadata
 
         result = await self._send_media(
@@ -2765,7 +2742,7 @@ class QQAdapter(BasePlatformAdapter):
         if result.success or not self._is_url(image_url):
             return result
 
-        # Fallback to text URL
+        # 回退到文本 URL
         logger.warning(
             "[%s] Image send failed, falling back to text: %s",
             self._log_tag,
@@ -2782,7 +2759,7 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             **kwargs,
     ) -> SendResult:
-        """Send a local image file natively."""
+        """原生发送本地图片文件。"""
         del kwargs
         return await self._send_media(
             chat_id, image_path, MEDIA_TYPE_IMAGE, "image", caption, reply_to
@@ -2796,7 +2773,7 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             **kwargs,
     ) -> SendResult:
-        """Send a voice message natively."""
+        """原生发送语音消息。"""
         del kwargs
         return await self._send_media(
             chat_id, audio_path, MEDIA_TYPE_VOICE, "voice", caption, reply_to
@@ -2810,7 +2787,7 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             **kwargs,
     ) -> SendResult:
-        """Send a video natively."""
+        """原生发送视频。"""
         del kwargs
         return await self._send_media(
             chat_id, video_path, MEDIA_TYPE_VIDEO, "video", caption, reply_to
@@ -2825,7 +2802,7 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             **kwargs,
     ) -> SendResult:
-        """Send a file/document natively."""
+        """原生发送文件/文档。"""
         del kwargs
         return await self._send_media(
             chat_id,
@@ -2847,16 +2824,15 @@ class QQAdapter(BasePlatformAdapter):
             reply_to: Optional[str] = None,
             file_name: Optional[str] = None,
     ) -> SendResult:
-        """Upload media and send as a native message.
+        """上传媒体并作为原生消息发送。
 
-        Upload strategy:
+        上传策略：
 
-        - **HTTP(S) URLs** → single ``POST /v2/{users|groups}/{id}/files``
-          with ``url=...``. The QQ platform fetches the URL directly; fastest
-          path when the source is already hosted.
-        - **Local files** → three-step chunked upload (prepare / PUT parts /
-          complete). Handles files up to the platform's ~100 MB per-file
-          limit without the ~10 MB inline-base64 cap of the old adapter.
+        - **HTTP(S) URL** → 单次 ``POST /v2/{users|groups}/{id}/files``，
+          携带 ``url=...``。QQ 平台直接抓取该 URL；当源已托管时这是最快路径。
+        - **本地文件** → 三步分块上传（prepare / PUT parts / complete）。
+          可处理高达平台约 100 MB 单文件限制的文件，且不受旧适配器约 10 MB
+          内联 base64 上限的约束。
         """
         if not self.is_connected:
             if not await self._wait_for_reconnection():
@@ -2864,7 +2840,7 @@ class QQAdapter(BasePlatformAdapter):
 
         chat_type = self._guess_chat_type(chat_id)
         if chat_type == "guild":
-            # Guild channels don't support native media upload in the same way.
+            # 频道不支持同样方式的原生媒体上传。
             return SendResult(
                 success=False,
                 error="Guild media send not supported via this path",
@@ -2872,7 +2848,7 @@ class QQAdapter(BasePlatformAdapter):
 
         try:
             if self._is_url(media_source):
-                # URL upload — let the platform fetch it directly.
+                # URL 上传 —— 让平台直接抓取。
                 resolved_name = (
                     file_name
                     or Path(urlparse(media_source).path).name
@@ -2887,7 +2863,7 @@ class QQAdapter(BasePlatformAdapter):
                     file_name=resolved_name if file_type == MEDIA_TYPE_FILE else None,
                 )
             else:
-                # Local file — chunked upload (prepare / PUT parts / complete).
+                # 本地文件 —— 分块上传（prepare / PUT parts / complete）。
                 resolved_name, upload = await self._upload_local_file(
                     chat_type,
                     chat_id,
@@ -2905,7 +2881,7 @@ class QQAdapter(BasePlatformAdapter):
                     error=f"Upload returned no file_info: {upload}",
                 )
 
-            # Send media message
+            # 发送媒体消息
             msg_seq = self._next_msg_seq(chat_id)
             body: Dict[str, Any] = {
                 "msg_type": MSG_TYPE_MEDIA,
@@ -2932,8 +2908,8 @@ class QQAdapter(BasePlatformAdapter):
                 raw_response=send_data,
             )
         except UploadDailyLimitExceededError as exc:
-            # Non-retryable: daily quota hit. Give the caller actionable text
-            # so the model can compose a helpful reply.
+            # 不可重试：每日配额已用尽。给调用方可操作的文本，
+            # 以便模型组织友好的回复。
             logger.warning(
                 "[%s] Daily upload limit exceeded for %s (%s)",
                 self._log_tag, exc.file_name, exc.file_size_human,
@@ -2971,16 +2947,16 @@ class QQAdapter(BasePlatformAdapter):
             file_type: int,
             file_name: Optional[str],
     ) -> Tuple[str, Dict[str, Any]]:
-        """Chunked-upload a local file and return ``(resolved_name, complete_response)``.
+        """分块上传本地文件并返回 ``(resolved_name, complete_response)``。
 
-        The returned ``complete_response`` contains the ``file_info`` token
-        that goes into the subsequent RichMedia message body.
+        返回的 ``complete_response`` 包含将填入后续 RichMedia 消息体的
+        ``file_info`` token。
 
-        :raises UploadDailyLimitExceededError: On biz_code 40093002.
-        :raises UploadFileTooLargeError: When the file exceeds the platform limit.
-        :raises FileNotFoundError: If the path does not exist.
-        :raises ValueError: If the path looks like a placeholder (``<path>``).
-        :raises RuntimeError: If the HTTP client is not initialized.
+        :raises UploadDailyLimitExceededError: biz_code 为 40093002 时。
+        :raises UploadFileTooLargeError: 文件超出平台限制时。
+        :raises FileNotFoundError: 路径不存在时。
+        :raises ValueError: 路径看起来像占位符（``<path>``）时。
+        :raises RuntimeError: HTTP client 未初始化时。
         """
         if not self._http_client:
             raise RuntimeError("HTTP client not initialized — not connected?")
@@ -3014,27 +2990,27 @@ class QQAdapter(BasePlatformAdapter):
     async def _load_media(
             self, source: str, file_name: Optional[str] = None
     ) -> Tuple[str, str, str]:
-        """Load media from URL or local path. Returns (base64_or_url, content_type, filename)."""
+        """从 URL 或本地路径加载媒体。返回 (base64_or_url, content_type, filename)。"""
         source = str(source).strip()
         if not source:
             raise ValueError("Media source is required")
 
         parsed = urlparse(source)
         if parsed.scheme in {"http", "https"}:
-            # For URLs, pass through directly to the upload API
+            # 对于 URL，直接透传给上传 API
             content_type = mimetypes.guess_type(source)[0] or "application/octet-stream"
             resolved_name = file_name or Path(parsed.path).name or "media"
             return source, content_type, resolved_name
 
-        # Local file — encode as raw base64 for QQ Bot API file_data field.
-        # The QQ API expects plain base64, NOT a data URI.
+        # 本地文件 —— 编码为原始 base64 以填入 QQ Bot API 的 file_data 字段。
+        # QQ API 期望纯 base64，而非 data URI。
         local_path = Path(source).expanduser()
         if not local_path.is_absolute():
             local_path = (Path.cwd() / local_path).resolve()
 
         if not local_path.exists() or not local_path.is_file():
-            # Guard against placeholder paths like "<path>" that the LLM
-            # sometimes emits instead of real file paths.
+            # 防御 LLM 有时输出的占位符路径（如 "<path>"），
+            # 而非真实文件路径。
             if source.startswith("<") or len(source) < 3:
                 raise ValueError(
                     f"Invalid media source (looks like a placeholder): {source!r}"
@@ -3050,15 +3026,15 @@ class QQAdapter(BasePlatformAdapter):
         return b64, content_type, resolved_name
 
     # ------------------------------------------------------------------
-    # Typing indicator
+    # 输入指示器
     # ------------------------------------------------------------------
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
-        """Send an input notify to a C2C user (only supported for C2C).
+        """向 C2C 用户发送输入通知（仅 C2C 支持）。
 
-        Debounced to one request per ~50s (the API sets a 60s indicator).
-        The QQ API requires the originating message ID — retrieved from
-        ``_last_msg_id`` which is populated by ``_on_message``.
+        去抖为约每 50 秒一次请求（API 会设置 60 秒指示器）。
+        QQ API 要求提供原始消息 ID —— 从 ``_on_message`` 填充的
+        ``_last_msg_id`` 中获取。
         """
         if not self.is_connected:
             return
@@ -3071,7 +3047,7 @@ class QQAdapter(BasePlatformAdapter):
         if not msg_id:
             return
 
-        # Debounce — skip if we sent recently
+        # 去抖 —— 若最近已发送则跳过
         now = time.time()
         last_sent = self._typing_sent_at.get(chat_id, 0.0)
         if now - last_sent < self._TYPING_DEBOUNCE_SECONDS:
@@ -3094,25 +3070,25 @@ class QQAdapter(BasePlatformAdapter):
             logger.debug("[%s] send_typing failed: %s", self._log_tag, exc)
 
     # ------------------------------------------------------------------
-    # Format
+    # 格式化
     # ------------------------------------------------------------------
 
     def format_message(self, content: str) -> str:
-        """Format message for QQ.
+        """为 QQ 格式化消息。
 
-        When markdown_support is enabled, content is sent as-is (QQ renders it).
-        When disabled, strip markdown via shared helper (same as BlueBubbles/SMS).
+        当启用 markdown_support 时，内容原样发送（由 QQ 渲染）。
+        当禁用时，通过共享 helper 去除 markdown（与 BlueBubbles/SMS 相同）。
         """
         if self._markdown_support:
             return content
         return strip_markdown(content)
 
     # ------------------------------------------------------------------
-    # Chat info
+    # 聊天信息
     # ------------------------------------------------------------------
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Return chat info based on chat type heuristics."""
+        """基于聊天类型启发式返回聊天信息。"""
         chat_type = self._guess_chat_type(chat_id)
         return {
             "name": chat_id,
@@ -3120,7 +3096,7 @@ class QQAdapter(BasePlatformAdapter):
         }
 
     # ------------------------------------------------------------------
-    # Helpers
+    # 辅助函数
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -3128,15 +3104,15 @@ class QQAdapter(BasePlatformAdapter):
         return urlparse(str(source)).scheme in {"http", "https"}
 
     def _guess_chat_type(self, chat_id: str) -> str:
-        """Determine chat type from stored inbound metadata, fallback to 'c2c'."""
+        """根据已存储的入站元数据判定聊天类型，回退到 'c2c'。"""
         if chat_id in self._chat_type_map:
             return self._chat_type_map[chat_id]
         return "c2c"
 
     @staticmethod
     def _strip_at_mention(content: str) -> str:
-        """Strip the @bot mention prefix from group message content."""
-        # QQ group @-messages may have the bot's QQ/ID as prefix
+        """去除群消息内容中的 @bot 提及前缀。"""
+        # QQ 群 @ 消息可能以 bot 的 QQ 号/ID 作为前缀
         import re
 
         stripped = re.sub(r"^@\S+\s*", "", content.strip())
@@ -3166,10 +3142,10 @@ class QQAdapter(BasePlatformAdapter):
         return False
 
     def _parse_qq_timestamp(self, raw: str) -> datetime:
-        """Parse QQ API timestamp (ISO 8601 string or integer ms).
+        """解析 QQ API 时间戳（ISO 8601 字符串或整数毫秒）。
 
-        The QQ API changed from integer milliseconds to ISO 8601 strings.
-        This handles both formats gracefully.
+        QQ API 从整数毫秒改为了 ISO 8601 字符串。
+        本方法优雅地兼容两种格式。
         """
         if not raw:
             return datetime.now(tz=timezone.utc)

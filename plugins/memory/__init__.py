@@ -1,22 +1,21 @@
-"""Memory provider plugin discovery.
+"""Memory 提供者插件发现。
 
-Scans two directories for memory provider plugins:
+扫描两个目录以查找 memory 提供者插件：
 
-1. Bundled providers: ``plugins/memory/<name>/`` (shipped with hermes-agent)
-2. User-installed providers: ``$HERMES_HOME/plugins/<name>/``
+1. 内置提供者：``plugins/memory/<name>/``（随 hermes-agent 一起发布）
+2. 用户安装的提供者：``$HERMES_HOME/plugins/<name>/``
 
-Each subdirectory must contain ``__init__.py`` with a class implementing
-the MemoryProvider ABC.  On name collisions, bundled providers take
-precedence.
+每个子目录必须包含 ``__init__.py``，其中实现了一个继承
+MemoryProvider 抽象类的类。发生名称冲突时，内置提供者优先。
 
-Only ONE provider can be active at a time, selected via
-``memory.provider`` in config.yaml.
+同一时间只能有一个提供者处于激活状态，通过 config.yaml 中的
+``memory.provider`` 来选择。
 
-Usage:
+用法：
     from plugins.memory import discover_memory_providers, load_memory_provider
 
     available = discover_memory_providers()   # [(name, desc, available), ...]
-    provider = load_memory_provider("mnemosyne")  # MemoryProvider instance
+    provider = load_memory_provider("mnemosyne")  # MemoryProvider 实例
 """
 
 from __future__ import annotations
@@ -34,21 +33,20 @@ logger = logging.getLogger(__name__)
 
 _MEMORY_PLUGINS_DIR = Path(__file__).parent
 
-# Synthetic parent package for user-installed providers, so they don't
-# collide with bundled providers in sys.modules.
+# 用户安装提供者的合成父包，避免与 sys.modules 中的内置提供者冲突。
 _USER_NAMESPACE = "_hermes_user_memory"
 
 
 def _register_synthetic_package(name: str, search_locations: List[str]) -> None:
-    """Register an empty package shell in sys.modules.
+    """在 sys.modules 中注册一个空的包壳。
 
-    User-installed providers import as ``_hermes_user_memory.<name>``, a
-    dotted name whose parents exist nowhere on disk.  Unless those parents
-    are present in ``sys.modules``, any relative import inside the plugin
-    (``from . import config``) fails with
-    ``ModuleNotFoundError: No module named '_hermes_user_memory'`` — the
-    same reason the loader already registers ``plugins`` and
-    ``plugins.memory`` for bundled providers.
+    用户安装的提供者以 ``_hermes_user_memory.<name>`` 的形式导入，
+    这是一个点分名称，其父级在磁盘上并不存在。除非这些父级
+    存在于 ``sys.modules`` 中，否则插件内的任何相对导入
+    （``from . import config``）都会失败，报
+    ``ModuleNotFoundError: No module named '_hermes_user_memory'`` —
+    这与 loader 已经为内置提供者注册 ``plugins`` 和
+    ``plugins.memory`` 的原因相同。
     """
     if name in sys.modules:
         return
@@ -58,11 +56,11 @@ def _register_synthetic_package(name: str, search_locations: List[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Directory helpers
+# 目录辅助函数
 # ---------------------------------------------------------------------------
 
 def _get_user_plugins_dir() -> Optional[Path]:
-    """Return ``$HERMES_HOME/plugins/`` or None if unavailable."""
+    """返回 ``$HERMES_HOME/plugins/``，如果不可用则返回 None。"""
     try:
         from hermes_constants import get_hermes_home
         d = get_hermes_home() / "plugins"
@@ -72,10 +70,10 @@ def _get_user_plugins_dir() -> Optional[Path]:
 
 
 def _is_memory_provider_dir(path: Path) -> bool:
-    """Heuristic: does *path* look like a memory provider plugin?
+    """启发式检查：*path* 是否看起来像一个 memory 提供者插件？
 
-    Checks for ``register_memory_provider`` or ``MemoryProvider`` in the
-    ``__init__.py`` source.  Cheap text scan — no import needed.
+    检查 ``__init__.py`` 源码中是否包含 ``register_memory_provider``
+    或 ``MemoryProvider``。廉价的文本扫描 — 无需导入。
     """
     init_file = path / "__init__.py"
     if not init_file.exists():
@@ -88,15 +86,15 @@ def _is_memory_provider_dir(path: Path) -> bool:
 
 
 def _iter_provider_dirs() -> List[Tuple[str, Path]]:
-    """Yield ``(name, path)`` for all discovered provider directories.
+    """为所有发现的提供者目录生成 ``(name, path)``。
 
-    Scans bundled first, then user-installed.  Bundled takes precedence
-    on name collisions (first-seen wins via ``seen`` set).
+    先扫描内置提供者，再扫描用户安装的提供者。名称冲突时
+    内置提供者优先（通过 ``seen`` 集合，先见者优先）。
     """
     seen: set = set()
     dirs: List[Tuple[str, Path]] = []
 
-    # 1. Bundled providers (plugins/memory/<name>/)
+    # 1. 内置提供者 (plugins/memory/<name>/)
     if _MEMORY_PLUGINS_DIR.is_dir():
         for child in sorted(_MEMORY_PLUGINS_DIR.iterdir()):
             if not child.is_dir() or child.name.startswith(("_", ".")):
@@ -106,31 +104,31 @@ def _iter_provider_dirs() -> List[Tuple[str, Path]]:
             seen.add(child.name)
             dirs.append((child.name, child))
 
-    # 2. User-installed providers ($HERMES_HOME/plugins/<name>/)
+    # 2. 用户安装的提供者 ($HERMES_HOME/plugins/<name>/)
     user_dir = _get_user_plugins_dir()
     if user_dir:
         for child in sorted(user_dir.iterdir()):
             if not child.is_dir() or child.name.startswith(("_", ".")):
                 continue
             if child.name in seen:
-                continue  # bundled takes precedence
+                continue  # 内置提供者优先
             if not _is_memory_provider_dir(child):
-                continue  # skip non-memory plugins
+                continue  # 跳过非 memory 插件
             dirs.append((child.name, child))
 
     return dirs
 
 
 def find_provider_dir(name: str) -> Optional[Path]:
-    """Resolve a provider name to its directory.
+    """将提供者名称解析为其目录。
 
-    Checks bundled first, then user-installed.
+    先检查内置提供者，再检查用户安装的提供者。
     """
-    # Bundled
+    # 内置提供者
     bundled = _MEMORY_PLUGINS_DIR / name
     if bundled.is_dir() and (bundled / "__init__.py").exists():
         return bundled
-    # User-installed
+    # 用户安装的提供者
     user_dir = _get_user_plugins_dir()
     if user_dir:
         user = user_dir / name
@@ -140,19 +138,19 @@ def find_provider_dir(name: str) -> Optional[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# 公共 API
 # ---------------------------------------------------------------------------
 
 def discover_memory_providers() -> List[Tuple[str, str, bool]]:
-    """Scan bundled and user-installed directories for available providers.
+    """扫描内置和用户安装目录中的可用提供者。
 
-    Returns list of (name, description, is_available) tuples.
-    Bundled providers take precedence on name collisions.
+    返回 (name, description, is_available) 元组列表。
+    名称冲突时内置提供者优先。
     """
     results = []
 
     for name, child in _iter_provider_dirs():
-        # Read description from plugin.yaml if available
+        # 如果可用，从 plugin.yaml 中读取描述
         desc = ""
         yaml_file = child / "plugin.yaml"
         if yaml_file.exists():
@@ -164,7 +162,7 @@ def discover_memory_providers() -> List[Tuple[str, str, bool]]:
             except Exception:
                 pass
 
-        # Quick availability check — try loading and calling is_available()
+        # 快速可用性检查 — 尝试加载并调用 is_available()
         available = True
         try:
             provider = _load_provider_from_dir(child)
@@ -181,13 +179,13 @@ def discover_memory_providers() -> List[Tuple[str, str, bool]]:
 
 
 def load_memory_provider(name: str) -> Optional["MemoryProvider"]:
-    """Load and return a MemoryProvider instance by name.
+    """按名称加载并返回一个 MemoryProvider 实例。
 
-    Checks both bundled (``plugins/memory/<name>/``) and user-installed
-    (``$HERMES_HOME/plugins/<name>/``) directories.  Bundled takes
-    precedence on name collisions.
+    同时检查内置（``plugins/memory/<name>/``）和用户安装
+    （``$HERMES_HOME/plugins/<name>/``）目录。名称冲突时
+    内置提供者优先。
 
-    Returns None if the provider is not found or fails to load.
+    如果提供者未找到或加载失败，返回 None。
     """
     provider_dir = find_provider_dir(name)
     if not provider_dir:
@@ -206,11 +204,11 @@ def load_memory_provider(name: str) -> Optional["MemoryProvider"]:
 
 
 def _load_provider_from_dir(provider_dir: Path) -> Optional["MemoryProvider"]:
-    """Import a provider module and extract the MemoryProvider instance.
+    """导入提供者模块并提取 MemoryProvider 实例。
 
-    The module must have either:
-    - A register(ctx) function (plugin-style) — we simulate a ctx
-    - A top-level class that extends MemoryProvider — we instantiate it
+    模块必须具备以下之一：
+    - 一个 register(ctx) 函数（插件风格） — 我们会模拟一个 ctx
+    - 一个继承 MemoryProvider 的顶级类 — 我们会实例化它
     """
     name = provider_dir.name
     # Use a separate namespace for user-installed plugins so they don't

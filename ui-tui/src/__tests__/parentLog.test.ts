@@ -4,10 +4,10 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// parentLog gates itself off under VITEST so unit tests can't pollute a real
-// ~/.hermes. To exercise the real persistence path we clear that gate, point
-// HERMES_HOME at a temp dir, and re-import the module fresh (path + enabled
-// flag are captured at module load).
+// parentLog 在 VITEST 环境下会自动关闭，因此单元测试不会污染真实的
+// ~/.hermes。为了测试真实的持久化路径，我们清除该 gate，将
+// HERMES_HOME 指向临时目录，并重新导入模块（path + enabled
+// 标志在模块加载时被捕获）。
 const loadFresh = async (home: string) => {
   vi.resetModules()
   vi.stubEnv('VITEST', '')

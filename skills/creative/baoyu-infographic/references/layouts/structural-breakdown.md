@@ -1,48 +1,48 @@
 # structural-breakdown
 
-Internal structure visualization with labeled parts or layers.
+内部结构可视化，带标注的部件或分层。
 
-## Structure
+## 结构
 
-- Central subject (object, system, body)
-- Parts or layers clearly shown
-- Labels with callout lines
-- Exploded or cutaway view
-- Optional zoomed detail sections
+- 中心主体（物体、系统、躯体）
+- 部件或分层清晰展示
+- 标签配引出线
+- 分解图或剖视图
+- 可选的放大细节区
 
-## Variants
+## 变体
 
-| Variant | View Type | Visual Emphasis |
+| 变体 | 视图类型 | 视觉强调 |
 |---------|-----------|-----------------|
-| **Exploded** | Parts separated outward | Component relationships |
-| **Cross-section** | Sliced/cutaway view | Internal layers, composition |
+| **分解图** | 部件向外分离 | 组件关系 |
+| **剖面图** | 切片/剖视 | 内部层次、构成 |
 
-## Best For
+## 最适用于
 
-- Product part breakdowns
-- Anatomy explanations
-- System components
-- Device teardowns
-- Material composition
+- 产品部件拆解
+- 解剖讲解
+- 系统组件
+- 设备拆解
+- 材料构成
 
-## Visual Elements
+## 视觉元素
 
-- Main subject clearly rendered
-- Callout lines with dots/arrows
-- Label boxes at endpoints
-- Numbered parts optionally
-- Layer boundaries or separation
+- 主体清晰呈现
+- 引出线带圆点/箭头
+- 端点处配标签框
+- 可选的部件编号
+- 层边界或分离
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Part/layer labels at callouts
-- Brief descriptions in boxes
-- Legend for numbered systems
-- Depth/thickness if relevant
+- 标题置于顶部
+- 部件/层级标签置于引出线处
+- 框内配简短描述
+- 编号系统配图例
+- 如相关则标注深度/厚度
 
-## Recommended Pairings
+## 推荐搭配
 
-- `technical-schematic`: Technical schematics
-- `aged-academia`: Classic anatomical style
-- `craft-handmade`: Friendly breakdowns
+- `technical-schematic`：技术示意图
+- `aged-academia`：经典解剖风格
+- `craft-handmade`：友好型拆解

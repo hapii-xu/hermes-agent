@@ -1,6 +1,6 @@
 ---
 name: github-auth
-description: "GitHub auth setup: HTTPS tokens, SSH keys, gh CLI login."
+description: "GitHub 认证配置：HTTPS 令牌、SSH 密钥、gh CLI 登录。"
 version: 1.1.0
 author: Hermes Agent
 license: MIT
@@ -11,143 +11,143 @@ metadata:
     related_skills: [github-pr-workflow, github-code-review, github-issues, github-repo-management]
 ---
 
-# GitHub Authentication Setup
+# GitHub 认证配置
 
-This skill sets up authentication so the agent can work with GitHub repositories, PRs, issues, and CI. It covers two paths:
+本技能用于配置认证，使智能体能与 GitHub 仓库、PR、issue 和 CI 协作。它涵盖两条路径：
 
-- **`git` (always available)** — uses HTTPS personal access tokens or SSH keys
-- **`gh` CLI (if installed)** — richer GitHub API access with a simpler auth flow
+- **`git`（始终可用）** —— 使用 HTTPS 个人访问令牌或 SSH 密钥
+- **`gh` CLI（若已安装）** —— 提供更丰富的 GitHub API 访问，且认证流程更简单
 
-## Detection Flow
+## 检测流程
 
-When a user asks you to work with GitHub, run this check first:
+当用户要求你与 GitHub 协作时，先运行此检查：
 
 ```bash
-# Check what's available
+# 检查可用工具
 git --version
 gh --version 2>/dev/null || echo "gh not installed"
 
-# Check if already authenticated
+# 检查是否已认证
 gh auth status 2>/dev/null || echo "gh not authenticated"
 git config --global credential.helper 2>/dev/null || echo "no git credential helper"
 ```
 
-**Decision tree:**
-1. If `gh auth status` shows authenticated → you're good, use `gh` for everything
-2. If `gh` is installed but not authenticated → use "gh auth" method below
-3. If `gh` is not installed → use "git-only" method below (no sudo needed)
+**决策树：**
+1. 如果 `gh auth status` 显示已认证 → 一切就绪，所有操作都用 `gh`
+2. 如果已安装 `gh` 但未认证 → 使用下方的 "gh auth" 方法
+3. 如果未安装 `gh` → 使用下方的 "仅 git" 方法（无需 sudo）
 
 ---
 
-## Method 1: Git-Only Authentication (No gh, No sudo)
+## 方法 1：仅使用 git 认证（无 gh、无 sudo）
 
-This works on any machine with `git` installed. No root access needed.
+此方法在任何装有 `git` 的机器上都可用，无需 root 权限。
 
-### Option A: HTTPS with Personal Access Token (Recommended)
+### 选项 A：使用个人访问令牌的 HTTPS（推荐）
 
-This is the most portable method — works everywhere, no SSH config needed.
+这是最通用的方法 —— 处处可用，无需 SSH 配置。
 
-**Step 1: Create a personal access token**
+**第 1 步：创建个人访问令牌**
 
-Tell the user to go to: **https://github.com/settings/tokens**
+让用户前往：**https://github.com/settings/tokens**
 
-- Click "Generate new token (classic)"
-- Give it a name like "hermes-agent"
-- Select scopes:
-  - `repo` (full repository access — read, write, push, PRs)
-  - `workflow` (trigger and manage GitHub Actions)
-  - `read:org` (if working with organization repos)
-- Set expiration (90 days is a good default)
-- Copy the token — it won't be shown again
+- 点击 "Generate new token (classic)"
+- 给它起个名字，例如 "hermes-agent"
+- 选择权限范围（scopes）：
+  - `repo`（完整的仓库访问 —— 读、写、push、PR）
+  - `workflow`（触发并管理 GitHub Actions）
+  - `read:org`（如果涉及组织仓库）
+- 设置过期时间（90 天是一个不错的默认值）
+- 复制令牌 —— 它不会再显示第二次
 
-**Step 2: Configure git to store the token**
+**第 2 步：配置 git 存储令牌**
 
 ```bash
-# Set up the credential helper to cache credentials
-# "store" saves to ~/.git-credentials in plaintext (simple, persistent)
+# 配置 credential helper 以缓存凭据
+# "store" 会以明文保存到 ~/.git-credentials（简单且持久）
 git config --global credential.helper store
 
-# Now do a test operation that triggers auth — git will prompt for credentials
-# Username: <their-github-username>
-# Password: <paste the personal access token, NOT their GitHub password>
+# 现在执行一次会触发认证的测试操作 —— git 会提示输入凭据
+# 用户名：<their-github-username>
+# 密码：<粘贴个人访问令牌，而不是他们的 GitHub 登录密码>
 git ls-remote https://github.com/<their-username>/<any-repo>.git
 ```
 
-After entering credentials once, they're saved and reused for all future operations.
+输入一次凭据后，它们会被保存并在未来所有操作中复用。
 
-**Alternative: cache helper (credentials expire from memory)**
+**替代方案：cache helper（凭据在内存中过期）**
 
 ```bash
-# Cache in memory for 8 hours (28800 seconds) instead of saving to disk
+# 在内存中缓存 8 小时（28800 秒），而不写入磁盘
 git config --global credential.helper 'cache --timeout=28800'
 ```
 
-**Alternative: set the token directly in the remote URL (per-repo)**
+**替代方案：将令牌直接写入 remote URL（按仓库设置）**
 
 ```bash
-# Embed token in the remote URL (avoids credential prompts entirely)
+# 将令牌嵌入 remote URL（彻底避免凭据提示）
 git remote set-url origin https://<username>:<token>@github.com/<owner>/<repo>.git
 ```
 
-**Step 3: Configure git identity**
+**第 3 步：配置 git 身份**
 
 ```bash
-# Required for commits — set name and email
+# 提交所必需 —— 设置姓名和邮箱
 git config --global user.name "Their Name"
 git config --global user.email "their-email@example.com"
 ```
 
-**Step 4: Verify**
+**第 4 步：验证**
 
 ```bash
-# Test push access (this should work without any prompts now)
+# 测试 push 权限（现在应该无需任何提示即可成功）
 git ls-remote https://github.com/<their-username>/<any-repo>.git
 
-# Verify identity
+# 验证身份
 git config --global user.name
 git config --global user.email
 ```
 
-### Option B: SSH Key Authentication
+### 选项 B：SSH 密钥认证
 
-Good for users who prefer SSH or already have keys set up.
+适合偏好 SSH 或已有密钥的用户。
 
-**Step 1: Check for existing SSH keys**
+**第 1 步：检查现有 SSH 密钥**
 
 ```bash
 ls -la ~/.ssh/id_*.pub 2>/dev/null || echo "No SSH keys found"
 ```
 
-**Step 2: Generate a key if needed**
+**第 2 步：如有需要则生成密钥**
 
 ```bash
-# Generate an ed25519 key (modern, secure, fast)
+# 生成 ed25519 密钥（现代、安全、快速）
 ssh-keygen -t ed25519 -C "their-email@example.com" -f ~/.ssh/id_ed25519 -N ""
 
-# Display the public key for them to add to GitHub
+# 显示公钥，以便他们添加到 GitHub
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Tell the user to add the public key at: **https://github.com/settings/keys**
-- Click "New SSH key"
-- Paste the public key content
-- Give it a title like "hermes-agent-<machine-name>"
+让用户将公钥添加到：**https://github.com/settings/keys**
+- 点击 "New SSH key"
+- 粘贴公钥内容
+- 给它起个标题，例如 "hermes-agent-<machine-name>"
 
-**Step 3: Test the connection**
+**第 3 步：测试连接**
 
 ```bash
 ssh -T git@github.com
-# Expected: "Hi <username>! You've successfully authenticated..."
+# 预期输出："Hi <username>! You've successfully authenticated..."
 ```
 
-**Step 4: Configure git to use SSH for GitHub**
+**第 4 步：配置 git 对 GitHub 使用 SSH**
 
 ```bash
-# Rewrite HTTPS GitHub URLs to SSH automatically
+# 自动把 HTTPS 的 GitHub URL 改写为 SSH
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Step 5: Configure git identity**
+**第 5 步：配置 git 身份**
 
 ```bash
 git config --global user.name "Their Name"
@@ -156,29 +156,29 @@ git config --global user.email "their-email@example.com"
 
 ---
 
-## Method 2: gh CLI Authentication
+## 方法 2：gh CLI 认证
 
-If `gh` is installed, it handles both API access and git credentials in one step.
+如果已安装 `gh`，它能在一步之内同时处理 API 访问和 git 凭据。
 
-### Interactive Browser Login (Desktop)
+### 交互式浏览器登录（桌面环境）
 
 ```bash
 gh auth login
-# Select: GitHub.com
-# Select: HTTPS
-# Authenticate via browser
+# 选择：GitHub.com
+# 选择：HTTPS
+# 通过浏览器认证
 ```
 
-### Token-Based Login (Headless / SSH Servers)
+### 基于令牌的登录（无界面 / SSH 服务器）
 
 ```bash
 echo "<THEIR_TOKEN>" | gh auth login --with-token
 
-# Set up git credentials through gh
+# 通过 gh 配置 git 凭据
 gh auth setup-git
 ```
 
-### Verify
+### 验证
 
 ```bash
 gh auth status
@@ -186,36 +186,36 @@ gh auth status
 
 ---
 
-## Using the GitHub API Without gh
+## 在没有 gh 的情况下使用 GitHub API
 
-When `gh` is not available, you can still access the full GitHub API using `curl` with a personal access token. This is how the other GitHub skills implement their fallbacks.
+当 `gh` 不可用时，你仍可使用 `curl` 加个人访问令牌访问完整的 GitHub API。其他 GitHub 技能的兜底实现就是这样做的。
 
-### Setting the Token for API Calls
+### 为 API 调用设置令牌
 
 ```bash
-# Option 1: Export as env var (preferred — keeps it out of commands)
+# 选项 1：导出为环境变量（推荐 —— 避免出现在命令行中）
 export GITHUB_TOKEN="<token>"
 
-# Then use in curl calls:
+# 然后在 curl 调用中使用：
 curl -s -H "Authorization: token $GITHUB_TOKEN" \
   https://api.github.com/user
 ```
 
-### Extracting the Token from Git Credentials
+### 从 git 凭据中提取令牌
 
-If git credentials are already configured (via credential.helper store), the token can be extracted:
+如果已通过 credential.helper store 配置过 git 凭据，则可提取令牌：
 
 ```bash
-# Read from git credential store
+# 从 git credential store 中读取
 grep "github.com" ~/.git-credentials 2>/dev/null | head -1 | sed 's|https://[^:]*:\([^@]*\)@.*|\1|'
 ```
 
-### Helper: Detect Auth Method
+### 辅助函数：检测认证方式
 
-Use this pattern at the start of any GitHub workflow:
+在任何 GitHub 工作流的开头使用此模式：
 
 ```bash
-# Try gh first, fall back to git + curl
+# 先尝试 gh，再回退到 git + curl
 if command -v gh &>/dev/null && gh auth status &>/dev/null; then
   echo "AUTH_METHOD=gh"
 elif [ -n "$GITHUB_TOKEN" ]; then
@@ -234,14 +234,14 @@ fi
 
 ---
 
-## Troubleshooting
+## 故障排查
 
-| Problem | Solution |
+| 问题 | 解决方案 |
 |---------|----------|
-| `git push` asks for password | GitHub disabled password auth. Use a personal access token as the password, or switch to SSH |
-| `remote: Permission to X denied` | Token may lack `repo` scope — regenerate with correct scopes |
-| `fatal: Authentication failed` | Cached credentials may be stale — run `git credential reject` then re-authenticate |
-| `ssh: connect to host github.com port 22: Connection refused` | Try SSH over HTTPS port: add `Host github.com` with `Port 443` and `Hostname ssh.github.com` to `~/.ssh/config` |
-| Credentials not persisting | Check `git config --global credential.helper` — must be `store` or `cache` |
-| Multiple GitHub accounts | Use SSH with different keys per host alias in `~/.ssh/config`, or per-repo credential URLs |
-| `gh: command not found` + no sudo | Use git-only Method 1 above — no installation needed |
+| `git push` 要求输入密码 | GitHub 已禁用密码认证。请用个人访问令牌作为密码，或改用 SSH |
+| `remote: Permission to X denied` | 令牌可能缺少 `repo` 权限范围 —— 用正确的范围重新生成 |
+| `fatal: Authentication failed` | 缓存的凭据可能已失效 —— 运行 `git credential reject` 后重新认证 |
+| `ssh: connect to host github.com port 22: Connection refused` | 尝试通过 HTTPS 端口走 SSH：在 `~/.ssh/config` 中为 `Host github.com` 添加 `Port 443` 和 `Hostname ssh.github.com` |
+| 凭据不持久 | 检查 `git config --global credential.helper` —— 必须为 `store` 或 `cache` |
+| 多个 GitHub 账号 | 在 `~/.ssh/config` 中为不同的 host 别名使用不同的 SSH 密钥，或使用按仓库区分的凭据 URL |
+| `gh: command not found` 且无 sudo | 使用上方的仅 git 方法 1 —— 无需安装 |

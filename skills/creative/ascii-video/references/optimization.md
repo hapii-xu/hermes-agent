@@ -1,12 +1,12 @@
-# Optimization Reference
+# 优化参考
 
-> **See also:** architecture.md · composition.md · scenes.md · shaders.md · inputs.md · troubleshooting.md
+> **另请参阅：** architecture.md · composition.md · scenes.md · shaders.md · inputs.md · troubleshooting.md
 
-## Hardware Detection
+## 硬件检测
 
-Detect the user's hardware at script startup and adapt rendering parameters automatically. Never hardcode worker counts or resolution.
+在脚本启动时检测用户硬件并自动适配渲染参数。切勿硬编码 worker 数量或分辨率。
 
-### CPU and Memory Detection
+### CPU 和内存检测
 
 ```python
 import multiprocessing
@@ -15,10 +15,10 @@ import shutil
 import os
 
 def detect_hardware():
-    """Detect hardware capabilities and return render config."""
+    """检测硬件能力并返回渲染配置。"""
     cpu_count = multiprocessing.cpu_count()
-    
-    # Leave 1-2 cores free for OS + ffmpeg encoding
+
+    # 为 OS + ffmpeg 编码留出 1-2 个核心
     if cpu_count >= 16:
         workers = cpu_count - 2
     elif cpu_count >= 8:
@@ -27,8 +27,8 @@ def detect_hardware():
         workers = cpu_count - 1
     else:
         workers = max(1, cpu_count)
-    
-    # Memory detection (platform-specific)
+
+    # 内存检测（平台相关）
     try:
         if platform.system() == "Darwin":
             import subprocess
@@ -40,21 +40,21 @@ def detect_hardware():
                         mem_bytes = int(line.split()[1]) * 1024
                         break
         else:
-            mem_bytes = 8 * 1024**3  # assume 8GB on unknown
+            mem_bytes = 8 * 1024**3  # 未知平台假设 8GB
     except Exception:
         mem_bytes = 8 * 1024**3
 
     mem_gb = mem_bytes / (1024**3)
-    
-    # Each worker uses ~50-150MB depending on grid sizes
-    # Cap workers if memory is tight
+
+    # 每个 worker 视网格大小使用约 50-150MB
+    # 内存紧张时限制 worker 数
     mem_per_worker_mb = 150
-    max_workers_by_mem = int(mem_gb * 1024 * 0.6 / mem_per_worker_mb)  # use 60% of RAM
+    max_workers_by_mem = int(mem_gb * 1024 * 0.6 / mem_per_worker_mb)  # 使用 60% 的 RAM
     workers = min(workers, max_workers_by_mem)
-    
-    # ffmpeg availability and codec support
+
+    # ffmpeg 可用性和编解码器支持
     has_ffmpeg = shutil.which("ffmpeg") is not None
-    
+
     return {
         "cpu_count": cpu_count,
         "workers": workers,
@@ -65,71 +65,71 @@ def detect_hardware():
     }
 ```
 
-### Adaptive Quality Profiles
+### 自适应质量配置
 
-Scale resolution, FPS, CRF, and grid density based on hardware:
+基于硬件缩放分辨率、FPS、CRF 和网格密度：
 
 ```python
 def quality_profile(hw, target_duration_s, user_preference="auto"):
     """
-    Returns render settings adapted to hardware.
+    返回适配硬件的渲染设置。
     user_preference: "auto", "draft", "preview", "production", "max"
     """
     if user_preference == "draft":
         return {"vw": 960, "vh": 540, "fps": 12, "crf": 28, "workers": min(4, hw["workers"]),
                 "grid_scale": 0.5, "shaders": "minimal", "particles_max": 200}
-    
+
     if user_preference == "preview":
         return {"vw": 1280, "vh": 720, "fps": 15, "crf": 25, "workers": hw["workers"],
                 "grid_scale": 0.75, "shaders": "standard", "particles_max": 500}
-    
+
     if user_preference == "max":
         return {"vw": 3840, "vh": 2160, "fps": 30, "crf": 15, "workers": hw["workers"],
                 "grid_scale": 2.0, "shaders": "full", "particles_max": 3000}
-    
-    # "production" or "auto"
-    # Auto-detect: estimate render time, downgrade if it would take too long
+
+    # "production" 或 "auto"
+    # 自动检测：估算渲染时间，若太久则降级
     n_frames = int(target_duration_s * 24)
-    est_seconds_per_frame = 0.18  # ~180ms at 1080p
+    est_seconds_per_frame = 0.18  # 1080p 下约 180ms
     est_total_s = n_frames * est_seconds_per_frame / max(1, hw["workers"])
-    
+
     if hw["mem_gb"] < 4 or hw["cpu_count"] <= 2:
-        # Low-end: 720p, 15fps
+        # 低端：720p，15fps
         return {"vw": 1280, "vh": 720, "fps": 15, "crf": 23, "workers": hw["workers"],
                 "grid_scale": 0.75, "shaders": "standard", "particles_max": 500}
-    
-    if est_total_s > 3600:  # would take over an hour
-        # Downgrade to 720p to speed up
+
+    if est_total_s > 3600:  # 会超过一小时
+        # 降级到 720p 以加速
         return {"vw": 1280, "vh": 720, "fps": 24, "crf": 20, "workers": hw["workers"],
                 "grid_scale": 0.75, "shaders": "standard", "particles_max": 800}
-    
-    # Standard production: 1080p 24fps
+
+    # 标准生产：1080p 24fps
     return {"vw": 1920, "vh": 1080, "fps": 24, "crf": 20, "workers": hw["workers"],
             "grid_scale": 1.0, "shaders": "full", "particles_max": 1200}
 
 
 def apply_quality_profile(profile):
-    """Set globals from quality profile."""
+    """从质量配置设置全局变量。"""
     global VW, VH, FPS, N_WORKERS
     VW = profile["vw"]
     VH = profile["vh"]
     FPS = profile["fps"]
     N_WORKERS = profile["workers"]
-    # Grid sizes scale with resolution
-    # CRF passed to ffmpeg encoder
-    # Shader set determines which post-processing is active
+    # 网格尺寸随分辨率缩放
+    # CRF 传给 ffmpeg 编码器
+    # 着色器集决定哪些后期处理处于活动状态
 ```
 
-### CLI Integration
+### CLI 集成
 
 ```python
 parser = argparse.ArgumentParser()
 parser.add_argument("--quality", choices=["draft", "preview", "production", "max", "auto"],
-                    default="auto", help="Render quality preset")
+                    default="auto", help="渲染质量预设")
 parser.add_argument("--aspect", choices=["landscape", "portrait", "square"],
-                    default="landscape", help="Aspect ratio preset")
-parser.add_argument("--workers", type=int, default=0, help="Override worker count (0=auto)")
-parser.add_argument("--resolution", type=str, default="", help="Override resolution e.g. 1280x720")
+                    default="landscape", help="宽高比预设")
+parser.add_argument("--workers", type=int, default=0, help="覆盖 worker 数量 (0=自动)")
+parser.add_argument("--resolution", type=str, default="", help="覆盖分辨率，例如 1280x720")
 args = parser.parse_args()
 
 hw = detect_hardware()
@@ -137,7 +137,7 @@ if args.workers > 0:
     hw["workers"] = args.workers
 profile = quality_profile(hw, target_duration, args.quality)
 
-# Apply aspect ratio preset (before manual resolution override)
+# 应用宽高比预设（在手动分辨率覆盖之前）
 ASPECT_PRESETS = {
     "landscape": (1920, 1080),
     "portrait":  (1080, 1920),
@@ -151,39 +151,39 @@ if args.resolution:
     profile["vw"], profile["vh"] = int(w), int(h)
 apply_quality_profile(profile)
 
-log(f"Hardware: {hw['cpu_count']} cores, {hw['mem_gb']:.1f}GB RAM, {hw['platform']}")
-log(f"Render:   {profile['vw']}x{profile['vh']} @{profile['fps']}fps, "
-    f"CRF {profile['crf']}, {profile['workers']} workers")
+log(f"硬件：{hw['cpu_count']} 核心，{hw['mem_gb']:.1f}GB 内存，{hw['platform']}")
+log(f"渲染：  {profile['vw']}x{profile['vh']} @{profile['fps']}fps，"
+    f"CRF {profile['crf']}，{profile['workers']} 个 worker")
 ```
 
-### Portrait Mode Considerations
+### 竖屏模式注意事项
 
-Portrait (1080x1920) has the same pixel count as landscape 1080p, so performance is equivalent. But composition patterns differ:
+竖屏 (1080x1920) 与横屏 1080p 像素数相同，因此性能相当。但构图模式不同：
 
-| Concern | Landscape | Portrait |
+| 关注点 | 横屏 | 竖屏 |
 |---------|-----------|----------|
-| Grid cols at `lg` | 160 | 90 |
-| Grid rows at `lg` | 45 | 80 |
-| Max text line chars | ~50 centered | ~25-30 centered |
-| Vertical rain | Short travel | Long, dramatic travel |
-| Horizontal spectrum | Full width | Needs rotation or compression |
-| Radial effects | Natural circles | Tall ellipses (aspect correction handles this) |
-| Particle explosions | Wide spread | Tall spread |
-| Text stacking | 3-4 lines comfortable | 8-10 lines comfortable |
-| Quote layout | 2-3 wide lines | 5-6 short lines |
+| `lg` 时网格列数 | 160 | 90 |
+| `lg` 时网格行数 | 45 | 80 |
+| 文本行最大字符数 | 居中约 50 | 居中约 25-30 |
+| 垂直雨 | 短行程 | 长、戏剧化的行程 |
+| 水平频谱 | 全宽 | 需旋转或压缩 |
+| 径向效果 | 自然圆形 | 高椭圆（长宽比修正可处理） |
+| 粒子爆炸 | 宽散布 | 高散布 |
+| 文本堆叠 | 3-4 行舒适 | 8-10 行舒适 |
+| 引语布局 | 2-3 条宽行 | 5-6 条短行 |
 
-**Portrait-optimized patterns:**
-- Vertical rain/matrix effects are naturally enhanced — longer column travel
-- Fire columns rise through more screen space
-- Rising embers/particles have more vertical runway
-- Text can be stacked more aggressively with more lines
-- Radial effects work if aspect correction is applied (GridLayer handles this automatically)
-- Spectrum bars can be rotated 90 degrees (vertical bars from bottom)
+**竖屏优化模式：**
+- 垂直雨/矩阵效果天然增强 —— 更长的列行程
+- 火焰柱穿过更多屏幕空间上升
+- 上升余烬/粒子有更多垂直跑道
+- 文本可更激进地堆叠更多行
+- 径向效果若应用长宽比修正则有效（GridLayer 自动处理）
+- 频谱条可旋转 90 度（从底部向上的垂直条）
 
-**Portrait text layout:**
+**竖屏文本布局：**
 ```python
 def layout_text_portrait(text, max_chars_per_line=25, grid=None):
-    """Break text into short lines for portrait display."""
+    """将文本拆成短行以适应竖屏显示。"""
     words = text.split()
     lines = []; current = ""
     for w in words:
@@ -197,47 +197,47 @@ def layout_text_portrait(text, max_chars_per_line=25, grid=None):
     return lines
 ```
 
-## Performance Budget
+## 性能预算
 
-Target: 100-200ms per frame (5-10 fps single-threaded, 40-80 fps across 8 workers).
+目标：每画布帧 100-200ms（单线程 5-10 fps，8 个 worker 下 40-80 fps）。
 
-| Component | Time | Notes |
+| 组件 | 时间 | 说明 |
 |-----------|------|-------|
-| Feature extraction | 1-5ms | Pre-computed for all frames before render |
-| Effect function | 2-15ms | Vectorized numpy, avoid Python loops |
-| Character render | 80-150ms | **Bottleneck** -- per-cell Python loop |
-| Shader pipeline | 5-25ms | Depends on active shaders |
-| ffmpeg encode | ~5ms | Amortized by pipe buffering |
+| 特征提取 | 1-5ms | 渲染前为所有画布帧预计算 |
+| 效果函数 | 2-15ms | 向量化 numpy，避免 Python 循环 |
+| 字符渲染 | 80-150ms | **瓶颈** —— 逐单元 Python 循环 |
+| 着色器流水线 | 5-25ms | 取决于活动的着色器 |
+| ffmpeg 编码 | ~5ms | 由管道缓冲分摊 |
 
-## Bitmap Pre-Rasterization
+## 位图预栅格化
 
-Rasterize every character at init, not per-frame:
+在初始化时栅格化每个字符，而非每画布帧：
 
 ```python
-# At init time -- done once
+# 初始化时 —— 仅执行一次
 for c in all_characters:
     img = Image.new("L", (cell_w, cell_h), 0)
     ImageDraw.Draw(img).text((0, 0), c, fill=255, font=font)
-    bitmaps[c] = np.array(img, dtype=np.float32) / 255.0  # float32 for fast multiply
+    bitmaps[c] = np.array(img, dtype=np.float32) / 255.0  # float32 用于快速乘法
 
-# At render time -- fast lookup
+# 渲染时 —— 快速查找
 bitmap = bitmaps[char]
 canvas[y:y+ch, x:x+cw] = np.maximum(canvas[y:y+ch, x:x+cw],
                                       (bitmap[:,:,None] * color).astype(np.uint8))
 ```
 
-Collect all characters from all palettes + overlay text into the init set. Lazy-init for any missed characters.
+将所有调色板中的字符 + 叠加文本收集到初始化集中。对任何遗漏字符惰性初始化。
 
-## Pre-Rendered Background Textures
+## 预渲染背景纹理
 
-Alternative to `_render_vf()` for backgrounds where characters don't need to change every frame. Pre-bake a static ASCII texture once at init, then multiply by a per-cell color field each frame. One matrix multiply vs thousands of bitmap blits.
+`_render_vf()` 的替代方案，适用于字符无需每画布帧变化的背景。在初始化时预烘焙一个静态 ASCII 纹理，然后每画布帧乘以一个逐单元颜色场。一次矩阵乘法对比数千次位图块拷贝。
 
-Use when: background layer uses a fixed character palette and only color/brightness varies per frame. NOT suitable for layers where character selection depends on a changing value field.
+适用场景：背景层使用固定字符调色板，且每画布帧仅颜色/亮度变化。不适用于字符选择依赖于变化值场的图层。
 
-### Init: Bake the Texture
+### 初始化：烘焙纹理
 
 ```python
-# In GridLayer.__init__:
+# 在 GridLayer.__init__ 中：
 self._bg_row_idx = np.clip(
     (np.arange(VH) - self.oy) // self.ch, 0, self.rows - 1
 )
@@ -247,7 +247,7 @@ self._bg_col_idx = np.clip(
 self._bg_textures = {}
 
 def make_bg_texture(self, palette):
-    """Pre-render a static ASCII texture (grayscale float32) once."""
+    """一次性预渲染静态 ASCII 纹理（灰度 float32）。"""
     if palette not in self._bg_textures:
         texture = np.zeros((VH, VW), dtype=np.float32)
         rng = random.Random(12345)
@@ -268,72 +268,72 @@ def make_bg_texture(self, palette):
     return self._bg_textures[palette]
 ```
 
-### Render: Color Field x Cached Texture
+### 渲染：颜色场 x 缓存纹理
 
 ```python
 def render_bg(self, color_field, palette=PAL_CIRCUIT):
-    """Fast background: pre-rendered ASCII texture * per-cell color field.
-    color_field: (rows, cols, 3) uint8. Returns (VH, VW, 3) uint8."""
+    """快速背景：预渲染的 ASCII 纹理 * 逐单元颜色场。
+    color_field: (rows, cols, 3) uint8。返回 (VH, VW, 3) uint8。"""
     texture = self.make_bg_texture(palette)
-    # Expand cell colors to pixel coords via pre-computed index maps
+    # 通过预计算的索引映射将单元颜色扩展到像素坐标
     color_px = color_field[
         self._bg_row_idx[:, None], self._bg_col_idx[None, :]
     ].astype(np.float32)
     return (texture[:, :, None] * color_px).astype(np.uint8)
 ```
 
-### Usage in a Scene
+### 在场景中的使用
 
 ```python
-# Build per-cell color from effect fields (cheap — rows*cols, not VH*VW)
+# 从效果场构建逐单元颜色（廉价 —— rows*cols，而非 VH*VW）
 hue = ((t * 0.05 + val * 0.2) % 1.0).astype(np.float32)
 R, G, B = hsv2rgb(hue, np.full_like(val, 0.5), val)
 color_field = mkc(R, G, B, g.rows, g.cols)  # (rows, cols, 3) uint8
 
-# Render background — single matrix multiply, no per-cell loop
+# 渲染背景 —— 单次矩阵乘法，无逐单元循环
 canvas_bg = g.render_bg(color_field, PAL_DENSE)
 ```
 
-The texture init loop runs once and is cached per palette. Per-frame cost is one fancy-index lookup + one broadcast multiply — orders of magnitude faster than the per-cell bitmap blit loop in `render()` for dense backgrounds.
+纹理初始化循环运行一次并按调色板缓存。每画布帧开销为一次花式索引查找 + 一次广播乘法 —— 对于密集背景，比 `render()` 中的逐单元位图块拷贝循环快几个数量级。
 
-## Coordinate Array Caching
+## 坐标数组缓存
 
-Pre-compute all grid-relative coordinate arrays at init, not per-frame:
+在初始化时预计算所有网格相对坐标数组，而非每画布帧：
 
 ```python
-# These are O(rows*cols) and used in every effect
-self.rr = np.arange(rows)[:, None]    # row indices
-self.cc = np.arange(cols)[None, :]    # col indices
-self.dist = np.sqrt(dx**2 + dy**2)   # distance from center
-self.angle = np.arctan2(dy, dx)       # angle from center
-self.dist_n = ...                      # normalized distance
+# 这些是 O(rows*cols) 且在每个效果中使用
+self.rr = np.arange(rows)[:, None]    # 行索引
+self.cc = np.arange(cols)[None, :]    # 列索引
+self.dist = np.sqrt(dx**2 + dy**2)   # 距中心距离
+self.angle = np.arctan2(dy, dx)       # 距中心角度
+self.dist_n = ...                      # 归一化距离
 ```
 
-## Vectorized Effect Patterns
+## 向量化效果模式
 
-### Avoid Per-Cell Python Loops in Effects
+### 避免效果中的逐单元 Python 循环
 
-The render loop (compositing bitmaps) is unavoidably per-cell. But effect functions must be fully vectorized numpy -- never iterate over rows/cols in Python.
+渲染循环（合成位图）不可避免地是逐单元的。但效果函数必须是完全向量化的 numpy —— 永远不要在 Python 中遍历行/列。
 
-Bad (O(rows*cols) Python loop):
+差（O(rows*cols) Python 循环）：
 ```python
 for r in range(rows):
     for c in range(cols):
         val[r, c] = math.sin(c * 0.1 + t) * math.cos(r * 0.1 - t)
 ```
 
-Good (vectorized):
+好（向量化）：
 ```python
 val = np.sin(g.cc * 0.1 + t) * np.cos(g.rr * 0.1 - t)
 ```
 
-### Vectorized Matrix Rain
+### 向量化矩阵雨
 
-The naive per-column per-trail-pixel loop is the second biggest bottleneck after the render loop. Use numpy fancy indexing:
+朴素的逐列逐拖尾像素循环是仅次于渲染循环的第二大瓶颈。使用 numpy 花式索引：
 
 ```python
-# Instead of nested Python loops over columns and trail pixels:
-# Build row index arrays for all active trail pixels at once
+# 而非对列和拖尾像素的嵌套 Python 循环：
+# 一次性为所有活动拖尾像素构建行索引数组
 all_rows = []
 all_cols = []
 all_fades = []
@@ -347,18 +347,18 @@ for c in range(cols):
             all_cols.append(c)
             all_fades.append(1.0 - i / trail_len)
 
-# Vectorized assignment
+# 向量化赋值
 ar = np.array(all_rows)
 ac = np.array(all_cols)
 af = np.array(all_fades, dtype=np.float32)
-# Assign chars and colors in bulk using fancy indexing
-ch[ar, ac] = ...  # vectorized char assignment
-co[ar, ac, 1] = (af * bri * 255).astype(np.uint8)  # green channel
+# 使用花式索引批量赋值字符和颜色
+ch[ar, ac] = ...  # 向量化字符赋值
+co[ar, ac, 1] = (af * bri * 255).astype(np.uint8)  # 绿色通道
 ```
 
-### Vectorized Fire Columns
+### 向量化火焰柱
 
-Same pattern -- accumulate index arrays, assign in bulk:
+同样模式 —— 累积索引数组，批量赋值：
 
 ```python
 fire_val = np.zeros((rows, cols), dtype=np.float32)
@@ -368,36 +368,36 @@ for fi in range(n_cols):
     dy = np.arange(min(height, rows))
     fr = rows - 1 - dy
     frac = dy / max(height, 1)
-    # Width spread: base columns wider at bottom
-    for dx in range(-1, 2):  # 3-wide columns
+    # 宽度散布：底部的基础列更宽
+    for dx in range(-1, 2):  # 3 宽列
         c = fx_c + dx
         if 0 <= c < cols:
             fire_val[fr, c] = np.maximum(fire_val[fr, c],
                                           (1 - frac * 0.6) * (0.5 + rms * 0.5))
-# Now map fire_val to chars and colors in one vectorized pass
+# 现在在一次向量化遍历中将 fire_val 映射到字符和颜色
 ```
 
-## PIL String Rendering for Text-Heavy Scenes
+## PIL 字符串渲染（用于文本密集场景）
 
-Alternative to per-cell bitmap blitting when rendering many long text strings (scrolling tickers, typewriter sequences, idea floods). Uses PIL's native `ImageDraw.text()` which renders an entire string in one C call, vs one Python-loop bitmap blit per character.
+渲染许多长文本字符串（滚动行情、打字机序列、灵感涌现）时，逐单元位图块拷贝的替代方案。使用 PIL 原生的 `ImageDraw.text()`，它在一次 C 调用中渲染整个字符串，对比每个字符一次 Python 循环位图块拷贝。
 
-Typical win: a scene with 56 ticker rows renders 56 PIL `text()` calls instead of ~10K individual bitmap blits.
+典型收益：一个含 56 行行情的场景渲染 56 次 PIL `text()` 调用，而非约 1 万次单独位图块拷贝。
 
-Use when: scene renders many rows of readable text strings. NOT suitable for sparse or spatially-scattered single characters (use normal `render()` for those).
+适用场景：场景渲染许多可读文本字符串行。不适用于稀疏或空间分散的单个字符（那些用普通 `render()`）。
 
 ```python
 from PIL import Image, ImageDraw
 
 def render_text_layer(grid, rows_data, font):
-    """Render dense text rows via PIL instead of per-cell bitmap blitting.
+    """通过 PIL 渲染密集文本行，而非逐单元位图块拷贝。
 
     Args:
-        grid: GridLayer instance (for oy, ch, ox, font metrics)
-        rows_data: list of (row_index, text_string, rgb_tuple) — one per row
-        font: PIL ImageFont instance (grid.font)
+        grid: GridLayer 实例（用于 oy, ch, ox, 字体度量）
+        rows_data: (row_index, text_string, rgb_tuple) 列表 —— 每行一个
+        font: PIL ImageFont 实例 (grid.font)
 
     Returns:
-        uint8 array (VH, VW, 3) — canvas with rendered text
+        uint8 数组 (VH, VW, 3) —— 含渲染文本的画布
     """
     img = Image.new("RGB", (VW, VH), (0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -409,35 +409,35 @@ def render_text_layer(grid, rows_data, font):
     return np.array(img)
 ```
 
-### Usage in a Ticker Scene
+### 在行情场景中的使用
 
 ```python
-# Build ticker data (text + color per row)
+# 构建行情数据（每行的文本 + 颜色）
 rows_data = []
 for row in range(n_tickers):
-    text = build_ticker_text(row, t)       # scrolling substring
-    color = hsv2rgb_scalar(hue, 0.85, bri) # (R, G, B) tuple
+    text = build_ticker_text(row, t)       # 滚动子串
+    color = hsv2rgb_scalar(hue, 0.85, bri) # (R, G, B) 元组
     rows_data.append((row, text, color))
 
-# One PIL pass instead of thousands of bitmap blits
+# 一次 PIL 遍历而非数千次位图块拷贝
 canvas_tickers = render_text_layer(g_md, rows_data, g_md.font)
 
-# Blend with other layers normally
+# 正常与其他图层混合
 result = blend_canvas(canvas_bg, canvas_tickers, "screen", 0.9)
 ```
 
-This is purely a rendering optimization — same visual output, fewer draw calls. The grid's `render()` method is still needed for sparse character fields where characters are placed individually based on value fields.
+这纯粹是渲染优化 —— 相同视觉输出，更少绘制调用。网格的 `render()` 方法对于字符基于值场单独放置的稀疏字符场仍然需要。
 
-## Bloom Optimization
+## Bloom 优化
 
-**Do NOT use `scipy.ndimage.uniform_filter`** -- measured at 424ms/frame.
+**不要使用 `scipy.ndimage.uniform_filter`** —— 实测 424ms/画布帧。
 
-Use 4x downsample + manual box blur instead -- 84ms/frame (5x faster):
+改用 4 倍下采样 + 手动盒式模糊 —— 84ms/画布帧（快 5 倍）：
 
 ```python
-sm = canvas[::4, ::4].astype(np.float32)  # 4x downsample
+sm = canvas[::4, ::4].astype(np.float32)  # 4 倍下采样
 br = np.where(sm > threshold, sm, 0)
-for _ in range(3):                          # 3-pass manual box blur
+for _ in range(3):                          # 3 趟手动盒式模糊
     p = np.pad(br, ((1,1),(1,1),(0,0)), mode='edge')
     br = (p[:-2,:-2] + p[:-2,1:-1] + p[:-2,2:] +
           p[1:-1,:-2] + p[1:-1,1:-1] + p[1:-1,2:] +
@@ -445,9 +445,9 @@ for _ in range(3):                          # 3-pass manual box blur
 bl = np.repeat(np.repeat(br, 4, axis=0), 4, axis=1)[:H, :W]
 ```
 
-## Vignette Caching
+## 暗角缓存
 
-Distance field is resolution- and strength-dependent, never changes per frame:
+距离场依赖分辨率和强度，永不在每画布帧变化：
 
 ```python
 _vig_cache = {}
@@ -460,28 +460,28 @@ def sh_vignette(canvas, strength):
     return np.clip(canvas * _vig_cache[key][:,:,None], 0, 255).astype(np.uint8)
 ```
 
-Same pattern for CRT barrel distortion (cache remap coordinates).
+CRT 桶形畸变（缓存重映射坐标）使用相同模式。
 
-## Film Grain Optimization
+## 胶片颗粒优化
 
-Generate noise at half resolution, tile up:
+以半分辨率生成噪声，再平铺放大：
 
 ```python
 noise = np.random.randint(-amt, amt+1, (H//2, W//2, 1), dtype=np.int16)
 noise = np.repeat(np.repeat(noise, 2, axis=0), 2, axis=1)[:H, :W]
 ```
 
-2x blocky grain looks like film grain and costs 1/4 the random generation.
+2 倍块状颗粒看起来像胶片颗粒，且随机生成开销仅为 1/4。
 
-## Parallel Rendering
+## 并行渲染
 
-### Worker Architecture
+### Worker 架构
 
 ```python
 hw = detect_hardware()
 N_WORKERS = hw["workers"]
 
-# Batch splitting (for non-clip architectures)
+# 批次拆分（用于非分段架构）
 batch_size = (n_frames + N_WORKERS - 1) // N_WORKERS
 batches = [(i, i*batch_size, min((i+1)*batch_size, n_frames), features, seg_path) ...]
 
@@ -489,7 +489,7 @@ with multiprocessing.Pool(N_WORKERS) as pool:
     segments = pool.starmap(render_batch, batches)
 ```
 
-### Per-Clip Parallelism (Preferred for Segmented Videos)
+### 逐片段并行（分段视频首选）
 
 ```python
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -501,37 +501,37 @@ with ProcessPoolExecutor(max_workers=N_WORKERS) as pool:
         clip_id = futures[fut]
         try:
             fut.result()
-            log(f"  {clip_id} done")
+            log(f"  {clip_id} 完成")
         except Exception as e:
-            log(f"  {clip_id} FAILED: {e}")
+            log(f"  {clip_id} 失败：{e}")
 ```
 
-### Worker Isolation
+### Worker 隔离
 
-Each worker:
-- Creates its own `Renderer` instance (with full grid + bitmap init)
-- Opens its own ffmpeg subprocess
-- Has independent random seed (`random.seed(batch_id * 10000)`)
-- Writes to its own segment file and stderr log
+每个 worker：
+- 创建自己的 `Renderer` 实例（含完整网格 + 位图初始化）
+- 打开自己的 ffmpeg 子进程
+- 拥有独立随机种子（`random.seed(batch_id * 10000)`）
+- 写入自己的分段文件和 stderr 日志
 
-### ffmpeg Pipe Safety
+### ffmpeg 管道安全
 
-**CRITICAL**: Never `stderr=subprocess.PIPE` with long-running ffmpeg. The stderr buffer fills at ~64KB and deadlocks:
+**关键**：长时间运行的 ffmpeg 永远不要 `stderr=subprocess.PIPE`。stderr 缓冲区在约 64KB 时填满并死锁：
 
 ```python
-# WRONG -- will deadlock
+# 错误 —— 会死锁
 pipe = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
-# RIGHT -- stderr to file
+# 正确 —— stderr 输出到文件
 stderr_fh = open(err_path, "w")
 pipe = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=stderr_fh)
-# ... write all frames ...
+# ... 写入所有画布帧 ...
 pipe.stdin.close()
 pipe.wait()
 stderr_fh.close()
 ```
 
-### Concatenation
+### 拼接
 
 ```python
 with open(concat_file, "w") as cf:
@@ -547,39 +547,39 @@ cmd.append(output_path)
 subprocess.run(cmd, capture_output=True, check=True)
 ```
 
-## Particle System Performance
+## 粒子系统性能
 
-Cap particle counts based on quality profile:
+根据质量配置限制粒子数量：
 
-| System | Low | Standard | High |
+| 系统 | 低 | 标准 | 高 |
 |--------|-----|----------|------|
-| Explosion | 300 | 1000 | 2500 |
-| Embers | 500 | 1500 | 3000 |
-| Starfield | 300 | 800 | 1500 |
-| Dissolve | 200 | 600 | 1200 |
+| 爆炸 | 300 | 1000 | 2500 |
+| 余烬 | 500 | 1500 | 3000 |
+| 星空 | 300 | 800 | 1500 |
+| 溶解 | 200 | 600 | 1200 |
 
-Cull by truncating lists:
+通过截断列表来剔除：
 ```python
 MAX_PARTICLES = profile.get("particles_max", 1200)
 if len(S["px"]) > MAX_PARTICLES:
     for k in ("px", "py", "vx", "vy", "life", "char"):
-        S[k] = S[k][-MAX_PARTICLES:]  # keep newest
+        S[k] = S[k][-MAX_PARTICLES:]  # 保留最新的
 ```
 
-## Memory Management
+## 内存管理
 
-- Feature arrays: pre-computed for all frames, shared across workers via fork semantics (COW)
-- Canvas: allocated once per worker, reused (`np.zeros(...)`)
-- Character arrays: allocated per frame (cheap -- rows*cols U1 strings)
-- Bitmap cache: ~500KB per grid size, initialized once per worker
+- 特征数组：为所有画布帧预计算，通过 fork 语义（COW）在 worker 间共享
+- 画布：每个 worker 分配一次，复用（`np.zeros(...)`）
+- 字符数组：每画布帧分配（廉价 —— rows*cols U1 字符串）
+- 位图缓存：每个网格尺寸约 500KB，每个 worker 初始化一次
 
-Total memory per worker: ~50-150MB. Total: ~400-800MB for 8 workers.
+每个 worker 总内存：约 50-150MB。8 个 worker 总计：约 400-800MB。
 
-For low-memory systems (< 4GB), reduce worker count and use smaller grids.
+对于低内存系统（< 4GB），减少 worker 数量并使用更小网格。
 
-## Brightness Verification
+## 亮度验证
 
-After render, spot-check brightness at sample timestamps:
+渲染后，在采样时间戳处抽查亮度：
 
 ```python
 for t in [2, 30, 60, 120, 180]:
@@ -587,44 +587,44 @@ for t in [2, 30, 60, 120, 180]:
            "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     r = subprocess.run(cmd, capture_output=True)
     arr = np.frombuffer(r.stdout, dtype=np.uint8)
-    print(f"t={t}s  mean={arr.mean():.1f}  max={arr.max()}")
+    print(f"t={t}s  平均={arr.mean():.1f}  最大={arr.max()}")
 ```
 
-Target: mean > 5 for quiet sections, mean > 15 for active sections. If consistently below, increase brightness floor in effects and/or global boost multiplier.
+目标：安静段平均 > 5，活跃段平均 > 15。若持续低于此，提高效果中的亮度下限和/或全局提升乘数。
 
-## Render Time Estimates
+## 渲染时间估算
 
-Scale with hardware. Baseline: 1080p, 24fps, ~180ms/frame/worker.
+随硬件缩放。基线：1080p，24fps，约 180ms/画布帧/worker。
 
-| Duration | Frames | 4 workers | 8 workers | 16 workers |
+| 时长 | 画布帧数 | 4 个 worker | 8 个 worker | 16 个 worker |
 |----------|--------|-----------|-----------|------------|
-| 30s | 720 | ~3 min | ~2 min | ~1 min |
-| 2 min | 2,880 | ~13 min | ~7 min | ~4 min |
-| 3.5 min | 5,040 | ~23 min | ~12 min | ~6 min |
-| 5 min | 7,200 | ~33 min | ~17 min | ~9 min |
-| 10 min | 14,400 | ~65 min | ~33 min | ~17 min |
+| 30s | 720 | ~3 分钟 | ~2 分钟 | ~1 分钟 |
+| 2 分钟 | 2,880 | ~13 分钟 | ~7 分钟 | ~4 分钟 |
+| 3.5 分钟 | 5,040 | ~23 分钟 | ~12 分钟 | ~6 分钟 |
+| 5 分钟 | 7,200 | ~33 分钟 | ~17 分钟 | ~9 分钟 |
+| 10 分钟 | 14,400 | ~65 分钟 | ~33 分钟 | ~17 分钟 |
 
-At 720p: multiply times by ~0.5. At 4K: multiply by ~4.
+720p 下：时间乘以约 0.5。4K 下：乘以约 4。
 
-Heavier effects (many particles, dense grids, extra shader passes) add ~20-50%.
+更重的效果（多粒子、密集网格、额外着色器遍历）增加约 20-50%。
 
 ---
 
-## Temp File Cleanup
+## 临时文件清理
 
-Rendering generates intermediate files that accumulate across runs. Clean up after the final concat/mux step.
+渲染会产生跨次运行累积的中间文件。在最终拼接/混合步骤之后清理。
 
-### Files to Clean
+### 待清理文件
 
-| File type | Source | Location |
+| 文件类型 | 来源 | 位置 |
 |-----------|--------|----------|
-| WAV extracts | `ffmpeg -i input.mp3 ... tmp.wav` | `tempfile.mktemp()` or project dir |
-| Segment clips | `render_clip()` output | `segments/seg_00.mp4` etc. |
-| Concat list | ffmpeg concat demuxer input | `segments/concat.txt` |
-| ffmpeg stderr logs | piped to file for debugging | `*.log` in project dir |
-| Feature cache | pickled numpy arrays | `*.pkl` or `*.npz` |
+| WAV 提取 | `ffmpeg -i input.mp3 ... tmp.wav` | `tempfile.mktemp()` 或项目目录 |
+| 分段片段 | `render_clip()` 输出 | `segments/seg_00.mp4` 等 |
+| 拼接列表 | ffmpeg concat demuxer 输入 | `segments/concat.txt` |
+| ffmpeg stderr 日志 | 管道输出到文件用于调试 | 项目目录中的 `*.log` |
+| 特征缓存 | pickle 的 numpy 数组 | `*.pkl` 或 `*.npz` |
 
-### Cleanup Function
+### 清理函数
 
 ```python
 import glob
@@ -632,57 +632,57 @@ import tempfile
 import shutil
 
 def cleanup_render_artifacts(segments_dir="segments", keep_final=True):
-    """Remove intermediate files after successful render.
-    
-    Call this AFTER verifying the final output exists and plays correctly.
-    
+    """成功渲染后移除中间文件。
+
+    在验证最终输出存在且能正常播放后调用。
+
     Args:
-        segments_dir: directory containing segment clips and concat list
-        keep_final: if True, only delete intermediates (not the final output)
+        segments_dir: 包含分段片段和拼接列表的目录
+        keep_final: 若为 True，仅删除中间产物（不删最终输出）
     """
     removed = []
-    
-    # 1. Segment clips
+
+    # 1. 分段片段
     if os.path.isdir(segments_dir):
         shutil.rmtree(segments_dir)
-        removed.append(f"directory: {segments_dir}")
-    
-    # 2. Temporary WAV files
+        removed.append(f"目录: {segments_dir}")
+
+    # 2. 临时 WAV 文件
     for wav in glob.glob("*.wav"):
         if wav.startswith("tmp") or wav.startswith("extracted_"):
             os.remove(wav)
             removed.append(wav)
-    
-    # 3. ffmpeg stderr logs
+
+    # 3. ffmpeg stderr 日志
     for log in glob.glob("ffmpeg_*.log"):
         os.remove(log)
         removed.append(log)
-    
-    # 4. Feature cache (optional — useful to keep for re-renders)
+
+    # 4. 特征缓存（可选 —— 保留便于重渲染很有用）
     # for cache in glob.glob("features_*.npz"):
     #     os.remove(cache)
     #     removed.append(cache)
-    
-    print(f"Cleaned {len(removed)} artifacts: {removed}")
+
+    print(f"已清理 {len(removed)} 个产物: {removed}")
     return removed
 ```
 
-### Integration with Render Pipeline
+### 与渲染流水线集成
 
-Call cleanup at the end of the main render script, after the final output is verified:
+在主渲染脚本末尾、验证最终输出后调用清理：
 
 ```python
-# At end of main()
+# 在 main() 末尾
 if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
     cleanup_render_artifacts(segments_dir="segments")
-    print(f"Done. Output: {output_path}")
+    print(f"完成。输出：{output_path}")
 else:
-    print("WARNING: final output missing or empty — skipping cleanup")
+    print("警告：最终输出缺失或为空 —— 跳过清理")
 ```
 
-### Temp File Best Practices
+### 临时文件最佳实践
 
-- Use `tempfile.mkdtemp()` for segment directories — avoids polluting the project dir
-- Name WAV extracts with `tempfile.mktemp(suffix=".wav")` so they're in the OS temp dir
-- For debugging, set `KEEP_INTERMEDIATES=1` env var to skip cleanup
-- Feature caches (`.npz`) are cheap to store and expensive to recompute — default to keeping them
+- 分段目录使用 `tempfile.mkdtemp()` —— 避免污染项目目录
+- WAV 提取用 `tempfile.mktemp(suffix=".wav")` 命名，使其位于 OS 临时目录
+- 调试时设置 `KEEP_INTERMEDIATES=1` 环境变量以跳过清理
+- 特征缓存 (`.npz`) 存储廉价但重算昂贵 —— 默认保留

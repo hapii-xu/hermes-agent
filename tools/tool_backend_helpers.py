@@ -1,4 +1,4 @@
-"""Shared helpers for tool backend selection."""
+"""工具后端选择的共享辅助函数。"""
 
 from __future__ import annotations
 
@@ -15,17 +15,16 @@ _VALID_MODAL_MODES = {"auto", "direct", "managed"}
 
 
 def managed_nous_tools_enabled(*, force_fresh: bool = False) -> bool:
-    """Return True when the user is entitled to the Nous Tool Gateway.
+    """当用户有权使用 Nous 工具网关时返回 True。
 
-    Entitlement is paid Nous Portal service access OR a live free tool pool
-    (``tool_gateway_entitled``). Per-category coverage (the pool funds image but
-    not video, etc.) is narrowed by callers via ``tool_gateway_entitled_for``;
-    this coarse gate only answers "is any managed tool usable at all".
+    资格来自付费的 Nous Portal 服务访问，或一个有效的免费工具池
+    （``tool_gateway_entitled``）。各分类的覆盖范围（例如池子资助图片但
+    不资助视频等）由调用方通过 ``tool_gateway_entitled_for`` 进一步收窄；
+    本粗粒度门禁只回答「是否有任何托管工具可用」。
 
-    Tool Gateway availability fails closed on unknown/error entitlement.  We
-    intentionally catch all exceptions and return False — never block startup.
-    ``force_fresh=True`` is for interactive configuration flows that should
-    reflect a just-purchased subscription, credits, or pool grant immediately.
+    资格未知/出错时，工具网关可用性偏向关闭。我们有意捕获所有异常并返回
+    False——绝不阻塞启动。``force_fresh=True`` 用于交互式配置流程，应
+    立即反映刚购买的订阅、积分或池子授予。
     """
     try:
         from hermes_cli.nous_account import get_nous_portal_account_info
@@ -46,7 +45,7 @@ def nous_tool_gateway_unavailable_message(
     *,
     force_fresh: bool = False,
 ) -> str:
-    """Return account-aware guidance for an unavailable Nous Tool Gateway path."""
+    """针对不可用的 Nous 工具网关路径，返回感知账户状态的指引。"""
     try:
         from hermes_cli.nous_account import (
             format_nous_portal_entitlement_message,
@@ -69,13 +68,13 @@ def nous_tool_gateway_unavailable_message(
 
 
 def normalize_browser_cloud_provider(value: object | None) -> str:
-    """Return a normalized browser provider key."""
+    """返回规范化的浏览器 provider 键。"""
     provider = str(value or _DEFAULT_BROWSER_PROVIDER).strip().lower()
     return provider or _DEFAULT_BROWSER_PROVIDER
 
 
 def coerce_modal_mode(value: object | None) -> str:
-    """Return the requested modal mode when valid, else the default."""
+    """当 modal 模式合法时返回该模式，否则返回默认值。"""
     mode = str(value or _DEFAULT_MODAL_MODE).strip().lower()
     if mode in _VALID_MODAL_MODES:
         return mode
@@ -83,12 +82,12 @@ def coerce_modal_mode(value: object | None) -> str:
 
 
 def normalize_modal_mode(value: object | None) -> str:
-    """Return a normalized modal execution mode."""
+    """返回规范化的 modal 执行模式。"""
     return coerce_modal_mode(value)
 
 
 def has_direct_modal_credentials() -> bool:
-    """Return True when direct Modal credentials/config are available."""
+    """当存在直连 Modal 的凭据/配置时返回 True。"""
     try:
         modal_file_exists = (Path.home() / ".modal.toml").exists()
     except (PermissionError, OSError):
@@ -106,12 +105,12 @@ def resolve_modal_backend_state(
     managed_ready: bool,
     managed_enabled: bool | None = None,
 ) -> Dict[str, Any]:
-    """Resolve direct vs managed Modal backend selection.
+    """解析直连与托管 Modal 后端之间的选择。
 
-    Semantics:
-    - ``direct`` means direct-only
-    - ``managed`` means managed-only
-    - ``auto`` prefers managed when available, then falls back to direct
+    语义：
+    - ``direct`` 表示仅直连
+    - ``managed`` 表示仅托管
+    - ``auto`` 优先使用托管（当可用时），否则回退到直连
     """
     requested_mode = coerce_modal_mode(modal_mode)
     normalized_mode = normalize_modal_mode(modal_mode)
@@ -139,7 +138,7 @@ def resolve_modal_backend_state(
 
 
 def resolve_openai_audio_api_key() -> str:
-    """Prefer the voice-tools key, but fall back to the normal OpenAI key."""
+    """优先使用语音工具专用密钥，否则回退到普通的 OpenAI 密钥。"""
     return (
         os.getenv("VOICE_TOOLS_OPENAI_KEY", "")
         or os.getenv("OPENAI_API_KEY", "")
@@ -147,9 +146,9 @@ def resolve_openai_audio_api_key() -> str:
 
 
 def prefers_gateway(config_section: str) -> bool:
-    """Return True when the user opted into the Tool Gateway for this tool.
+    """当用户为该工具选择启用工具网关时返回 True。
 
-    Reads ``<section>.use_gateway`` from config.yaml.  Never raises.
+    从 config.yaml 读取 ``<section>.use_gateway``。永不抛出异常。
     """
     try:
         from hermes_cli.config import load_config
@@ -162,17 +161,16 @@ def prefers_gateway(config_section: str) -> bool:
 
 
 def fal_key_is_configured() -> bool:
-    """Return True when FAL_KEY is set to a non-whitespace value.
+    """当 FAL_KEY 被设为非空白值时返回 True。
 
-    Consults both ``os.environ`` and ``~/.hermes/.env`` (via
-    ``hermes_cli.config.get_env_value`` when available) so tool-side
-    checks and CLI setup-time checks agree.  A whitespace-only value
-    is treated as unset everywhere.
+    同时查询 ``os.environ`` 与 ``~/.hermes/.env``（在可用时通过
+    ``hermes_cli.config.get_env_value``），使工具侧检查与 CLI 安装时检查
+    保持一致。仅含空白的值在所有地方都视为未设置。
     """
     value = os.getenv("FAL_KEY")
     if value is None:
-        # Fall back to the .env file for CLI paths that may run before
-        # dotenv is loaded into os.environ.
+        # 回退到 .env 文件，以覆盖那些可能在 dotenv 加载进 os.environ
+        # 之前就运行的 CLI 路径。
         try:
             from hermes_cli.config import get_env_value
 

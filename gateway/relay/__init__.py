@@ -1,19 +1,17 @@
-"""Relay/connector support package for the Hermes gateway.
+"""Hermes gateway 的 relay/connector 支持包。
 
-EXPERIMENTAL. This package implements the gateway side of the "Gateway Gateway"
-relay design: a generic ``RelayAdapter`` plus the wire-serializable
-``CapabilityDescriptor`` the connector hands it at handshake time, and the
-production ``WebSocketRelayTransport`` that dials the connector. The public API
-(module names, descriptor field set, transport protocol) MAY CHANGE without a
-deprecation cycle until at least two real Class-1 platforms (Discord + Telegram)
-have shaken out the schema.
+EXPERIMENTAL。本包实现了 "Gateway Gateway" relay 设计的 gateway 侧：一个通用
+的 ``RelayAdapter``、connector 在握手时交给它的可序列化 ``CapabilityDescriptor``，
+以及拨号连接 connector 的生产级 ``WebSocketRelayTransport``。在至少两个真实的
+Class-1 平台（Discord + Telegram）把 schema 打磨稳定之前，公开 API（模块名、
+descriptor 字段集合、transport 协议）可能不经 deprecation 周期而变更。
 
-See ``docs/relay-connector-contract.md`` for the formal cross-repo interface.
+正式的跨仓库接口见 ``docs/relay-connector-contract.md``。
 
-Activation is driven by configuration, not a separate feature flag: the relay
-platform is registered when a connector relay URL is configured
-(``GATEWAY_RELAY_URL`` env or ``gateway.relay_url`` in config.yaml). Deployments
-that don't set it are unaffected — exactly the same shape as ``gateway.proxy_url``.
+激活由配置驱动，而不是单独的 feature flag：当配置了 connector relay URL
+（``GATEWAY_RELAY_URL`` 环境变量或 config.yaml 中的 ``gateway.relay_url``）时，
+relay 平台才会被注册。未设置此项的部署不受影响——与 ``gateway.proxy_url`` 的形态
+完全一致。
 """
 
 from __future__ import annotations
@@ -23,32 +21,32 @@ from typing import Optional
 
 
 def relay_url() -> Optional[str]:
-    """The connector relay endpoint URL, or None when relay is not configured.
+    """connector relay endpoint 的 URL，若未配置 relay 则返回 None。
 
-    Checks ``GATEWAY_RELAY_URL`` (convenient for Docker) first, then
-    ``gateway.relay_url`` in config.yaml. A non-empty value activates the relay
-    platform; absence means a normal direct/single-tenant gateway.
+    先检查 ``GATEWAY_RELAY_URL``（对 Docker 较为方便），再检查 config.yaml 中的
+    ``gateway.relay_url``。非空值会激活 relay 平台；缺省则表示这是一个普通的
+    直连/单租户 gateway。
     """
     url = os.environ.get("GATEWAY_RELAY_URL", "").strip()
     if url:
         return url.rstrip("/")
     try:
-        from gateway.run import _load_gateway_config  # late import to avoid cycle
+        from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
         cfg = _load_gateway_config()
         url = (cfg.get("gateway") or {}).get("relay_url", "").strip()
         if url:
             return url.rstrip("/")
-    except Exception:  # noqa: BLE001 - config absence/parse must never crash registration
+    except Exception:  # noqa: BLE001 - 配置缺失/解析失败绝不能导致注册崩溃
         pass
     return None
 
 
 def relay_platform_identity() -> tuple[str, str]:
-    """Platform + bot id this gateway fronts over the relay (for the handshake hello).
+    """本 gateway 经由 relay 对外代表的 platform + bot id（用于握手的 hello）。
 
-    Defaults to ``("relay", "")``; overridable via ``GATEWAY_RELAY_PLATFORM`` /
-    ``GATEWAY_RELAY_BOT_ID`` so one connector can front several platforms.
+    默认为 ``("relay", "")``；可通过 ``GATEWAY_RELAY_PLATFORM`` /
+    ``GATEWAY_RELAY_BOT_ID`` 覆盖，这样一个 connector 就能代理多个平台。
     """
     platform = os.environ.get("GATEWAY_RELAY_PLATFORM", "relay").strip() or "relay"
     bot_id = os.environ.get("GATEWAY_RELAY_BOT_ID", "").strip()
@@ -56,70 +54,69 @@ def relay_platform_identity() -> tuple[str, str]:
 
 
 def relay_connection_auth() -> tuple[Optional[str], Optional[str]]:
-    """The (gateway_id, upgrade_secret) this gateway authenticates the WS upgrade with.
+    """本 gateway 用于认证 WS upgrade 的 (gateway_id, upgrade_secret)。
 
-    Both come from enrollment (``hermes gateway enroll`` writes them to
-    ``~/.hermes/.env``): ``GATEWAY_RELAY_ID`` identifies the enrolled instance,
-    ``GATEWAY_RELAY_SECRET`` is the per-gateway signing secret. Either absent ->
-    ``(None, None)`` and the transport dials unauthenticated (dev/test, or a
-    connector that doesn't enforce auth). Checks env first (Docker), then
-    ``gateway.relay_id`` / ``gateway.relay_secret`` in config.yaml.
+    二者均来自 enrollment（``hermes gateway enroll`` 会把它们写入
+    ``~/.hermes/.env``）：``GATEWAY_RELAY_ID`` 标识已登记的实例，
+    ``GATEWAY_RELAY_SECRET`` 是该 gateway 专用的签名密钥。若任一缺失 ->
+    ``(None, None)``，则 transport 以未认证方式拨号（开发/测试，或一个不强制
+    鉴权的 connector）。先检查环境变量（Docker），再检查 config.yaml 中的
+    ``gateway.relay_id`` / ``gateway.relay_secret``。
     """
     gateway_id = os.environ.get("GATEWAY_RELAY_ID", "").strip()
     secret = os.environ.get("GATEWAY_RELAY_SECRET", "").strip()
     if not (gateway_id and secret):
         try:
-            from gateway.run import _load_gateway_config  # late import to avoid cycle
+            from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
             cfg = (_load_gateway_config().get("gateway") or {})
             gateway_id = gateway_id or str(cfg.get("relay_id", "") or "").strip()
             secret = secret or str(cfg.get("relay_secret", "") or "").strip()
-        except Exception:  # noqa: BLE001 - config absence/parse must never crash registration
+        except Exception:  # noqa: BLE001 - 配置缺失/解析失败绝不能导致注册崩溃
             pass
     return (gateway_id or None, secret or None)
 
 
 def relay_endpoint() -> Optional[str]:
-    """The gateway's own PUBLIC inbound URL, asserted to the connector at provision.
+    """gateway 自己的公开 inbound URL，在 provision 时上报给 connector。
 
-    The connector delivers signed inbound POSTs to this URL and stores it on the
-    tenant's route rows. It is gateway-asserted (the connector scopes it to the
-    verified tenant, so a dishonest gateway can only misdirect its OWN inbound).
-    The *source* of the value differs by deployment but the code path is uniform:
-    a self-hosted operator sets ``GATEWAY_RELAY_ENDPOINT`` (mirrors how they set
-    ``HERMES_DASHBOARD_PUBLIC_URL``); a hosted/NAS container has the same var
-    stamped in (NAS knows the public URL only in that case). Absent -> the
-    gateway provisions outbound-only (no inbound routes written).
+    connector 会把已签名的 inbound POST 投递到该 URL，并将其存储到该租户的
+    route 行上。该值由 gateway 上报（connector 会将其限定到已验证的租户范围内，
+    因此一个不诚实的 gateway 只能误导它自己的 inbound）。该值的*来源*因部署方式
+    而异，但代码路径是统一的：自托管运维者设置 ``GATEWAY_RELAY_ENDPOINT``
+    （与其设置 ``HERMES_DASHBOARD_PUBLIC_URL`` 的方式一致）；hosted/NAS 容器则由
+    NAS 注入相同的变量（只有在这种情况下 NAS 才知道公开 URL）。若缺省 ->
+    gateway 以 outbound-only 方式 provision（不写入任何 inbound route）。
 
-    Env first (Docker), then ``gateway.relay_endpoint`` in config.yaml.
+    先检查环境变量（Docker），再检查 config.yaml 中的 ``gateway.relay_endpoint``。
     """
     url = os.environ.get("GATEWAY_RELAY_ENDPOINT", "").strip()
     if not url:
         try:
-            from gateway.run import _load_gateway_config  # late import to avoid cycle
+            from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
             cfg = (_load_gateway_config().get("gateway") or {})
             url = str(cfg.get("relay_endpoint", "") or "").strip()
-        except Exception:  # noqa: BLE001 - config absence/parse must never crash boot
+        except Exception:  # noqa: BLE001 - 配置缺失/解析失败绝不能导致启动崩溃
             url = ""
     return url.rstrip("/") or None
 
 
 def relay_route_keys() -> list[str]:
-    """Discriminators (guild_ids / chat_ids / paths) this gateway's tenant owns.
+    """本 gateway 所属租户拥有的判别标识（guild_ids / chat_ids / paths）。
 
-    Gateway-provided config, paired with ``relay_endpoint()``: the connector
-    writes one route row per (routeKey -> tenant, endpoint), so route keys only
-    take effect alongside an endpoint. Empty -> outbound-only provisioning (the
-    connector accepts an empty set and writes no route rows).
+    由 gateway 提供的配置，与 ``relay_endpoint()`` 配对使用：connector 为每个
+    (routeKey -> tenant, endpoint) 写入一行 route，因此 route keys 只有在同时存在
+    endpoint 时才会生效。为空 -> outbound-only 的 provision（connector 接受空集合
+    并不写入任何 route 行）。
 
-    ``GATEWAY_RELAY_ROUTE_KEYS`` is comma-separated; config.yaml
-    ``gateway.relay_route_keys`` may be a list or a comma string.
+    ``GATEWAY_RELAY_ROUTE_KEYS`` 以逗号分隔；config.yaml 中的
+    ``gateway.relay_route_keys`` 可以是列表或逗号分隔字符串。
     """
     raw = os.environ.get("GATEWAY_RELAY_ROUTE_KEYS", "").strip()
     if not raw:
         try:
-            from gateway.run import _load_gateway_config  # late import to avoid cycle
+            from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
             cfg = (_load_gateway_config().get("gateway") or {})
             val = cfg.get("relay_route_keys", "")
@@ -132,65 +129,64 @@ def relay_route_keys() -> list[str]:
 
 
 def relay_instance_id() -> Optional[str]:
-    """Stable per-instance id this gateway forwards at provision (Phase 6 Unit α).
+    """本 gateway 在 provision 时上报的稳定 per-instance id（Phase 6 Unit α）。
 
-    Binds the connector's ``gatewayId -> instanceId`` so the connector can route
-    inbound per-instance (not tenant-broadcast) once Phase 6 delivery lands. The
-    value is the NAS ``AgentInstance.id`` for a managed agent (NAS stamps
-    ``GATEWAY_RELAY_INSTANCE_ID`` into the container env, beside
-    ``GATEWAY_RELAY_URL``); a self-hosted operator may set it explicitly. It is
-    gateway-asserted but safely scoped: the org/tenant stays token-verified, so a
-    dishonest gateway can only bind ITS OWN tenant's instance — the same posture
-    as ``relay_endpoint()``. Absent -> the connector stores null and per-instance
-    routing simply has no binding for this connection yet (back-compat).
+    绑定 connector 侧的 ``gatewayId -> instanceId``，以便 Phase 6 的投递落地后
+    connector 能够按实例（而非租户广播）路由 inbound。对于托管 agent，该值是 NAS
+    的 ``AgentInstance.id``（NAS 把 ``GATEWAY_RELAY_INSTANCE_ID`` 注入到容器环境
+    变量中，紧挨着 ``GATEWAY_RELAY_URL``）；自托管运维者也可以显式设置。该值由
+    gateway 上报，但被安全地限定范围：org/tenant 仍然经过 token 验证，因此一个
+    不诚实的 gateway 只能绑定它自己租户的实例——与 ``relay_endpoint()`` 的姿态
+    一致。若缺省 -> connector 存储 null，per-instance 路由暂时对本次连接没有绑定
+    （向后兼容）。
 
-    Env first (Docker/NAS), then ``gateway.relay_instance_id`` in config.yaml.
+    先检查环境变量（Docker/NAS），再检查 config.yaml 中的
+    ``gateway.relay_instance_id``。
     """
     value = os.environ.get("GATEWAY_RELAY_INSTANCE_ID", "").strip()
     if not value:
         try:
-            from gateway.run import _load_gateway_config  # late import to avoid cycle
+            from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
             cfg = (_load_gateway_config().get("gateway") or {})
             value = str(cfg.get("relay_instance_id", "") or "").strip()
-        except Exception:  # noqa: BLE001 - config absence/parse must never crash boot
+        except Exception:  # noqa: BLE001 - 配置缺失/解析失败绝不能导致启动崩溃
             value = ""
     return value or None
 
 
 def relay_wake_url() -> Optional[str]:
-    """The gateway's WAKE URL, forwarded at provision (Phase 5 §5.2 wake PRIMITIVE).
+    """gateway 的 WAKE URL，在 provision 时上报（Phase 5 §5.2 wake PRIMITIVE）。
 
-    A poke target the connector issues a payload-free GET to when a buffered-only
-    (going-idle) destination for this instance receives its first buffered event,
-    so a suspended gateway wakes, reconnects its relay WS, and drains its
-    delivery-leg backlog. The value's *source* differs by deployment but the code
-    path is uniform: a managed/NAS container has ``GATEWAY_RELAY_WAKE_URL`` stamped
-    in (NAS knows the Fly autostart / dashboard hostname); a self-hosted operator
-    sets it explicitly (or passes ``--wake-url`` to ``hermes gateway enroll``).
+    一个唤醒目标：当本实例的一个 buffered-only（going-idle）目的地收到其第一条
+    buffered 事件时，connector 会向该 URL 发起一个无负载的 GET，从而让一个已挂起
+    的 gateway 唤醒、重连它的 relay WS，并排空其 delivery-leg 的积压消息。该值的
+    *来源*因部署方式而异，但代码路径是统一的：托管/NAS 容器会被注入
+    ``GATEWAY_RELAY_WAKE_URL``（NAS 知道 Fly autostart / dashboard 主机名）；自托管
+    运维者可显式设置（或在 ``hermes gateway enroll`` 时传入 ``--wake-url``）。
 
-    Gateway-asserted but safely scoped: the org/tenant stays token-verified, so a
-    dishonest gateway can only register a wake target for ITS OWN instance — the
-    same posture as ``relay_instance_id()`` / the retired ``relay_endpoint()``.
-    Absent -> the connector stores null and simply can't wake this instance
-    (buffering still works; the gateway drains whenever it next reconnects).
+    由 gateway 上报，但被安全地限定范围：org/tenant 仍然经过 token 验证，因此一个
+    不诚实的 gateway 只能为其自己的实例注册唤醒目标——与
+    ``relay_instance_id()`` / 已废弃的 ``relay_endpoint()`` 的姿态一致。若缺省 ->
+    connector 存储 null，并简单地无法唤醒本实例（缓冲仍然有效；gateway 在下次
+    重连时再排空积压）。
 
-    Env first (Docker/NAS), then ``gateway.relay_wake_url`` in config.yaml.
+    先检查环境变量（Docker/NAS），再检查 config.yaml 中的 ``gateway.relay_wake_url``。
     """
     value = os.environ.get("GATEWAY_RELAY_WAKE_URL", "").strip()
     if not value:
         try:
-            from gateway.run import _load_gateway_config  # late import to avoid cycle
+            from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
             cfg = (_load_gateway_config().get("gateway") or {})
             value = str(cfg.get("relay_wake_url", "") or "").strip()
-        except Exception:  # noqa: BLE001 - config absence/parse must never crash boot
+        except Exception:  # noqa: BLE001 - 配置缺失/解析失败绝不能导致启动崩溃
             value = ""
     return value.rstrip("/") or None
 
 
 def _provision_url(relay_dial_url: str) -> str:
-    """Map the ``ws(s)://…/relay`` dial URL to the ``http(s)://…/relay/provision`` POST URL."""
+    """把 ``ws(s)://…/relay`` 拨号 URL 映射为 ``http(s)://…/relay/provision`` POST URL。"""
     raw = relay_dial_url.rstrip("/")
     if raw.startswith("ws://"):
         raw = "http://" + raw[len("ws://"):]
@@ -202,10 +198,10 @@ def _provision_url(relay_dial_url: str) -> str:
 
 
 def _policy_url(relay_dial_url: str) -> str:
-    """Map the ``ws(s)://…/relay`` dial URL to the ``http(s)://…/relay/policy`` POST URL.
+    """把 ``ws(s)://…/relay`` 拨号 URL 映射为 ``http(s)://…/relay/policy`` POST URL。
 
-    Same host derivation as ``_provision_url``; the connector mounts the
-    relevance-policy update channel at ``/relay/policy`` (Phase 6 Unit ζ).
+    主机部分的派生方式与 ``_provision_url`` 相同；connector 在 ``/relay/policy``
+    挂载 relevance-policy 更新通道（Phase 6 Unit ζ）。
     """
     raw = relay_dial_url.rstrip("/")
     if raw.startswith("ws://"):
@@ -218,39 +214,37 @@ def _policy_url(relay_dial_url: str) -> str:
 
 
 def relay_relevance_policy() -> Optional[dict]:
-    """Project this gateway's RELEVANCE config into the connector's generic vocabulary.
+    """把本 gateway 的 RELEVANCE 配置投影到 connector 的通用词汇中。
 
-    The connector's relevance gate (Phase 6 Unit ζ) reasons over a
-    platform-agnostic policy — ``requireAddress`` / ``freeResponseScopes`` /
-    ``allowOtherBots`` — NOT over Discord/Telegram words. This is the gateway
-    side of that contract: it reads the agent's existing relevance knobs and
-    emits the generic shape the connector stores per-instance.
+    connector 的 relevance gate（Phase 6 Unit ζ）基于一套平台无关的策略来推理——
+    ``requireAddress`` / ``freeResponseScopes`` / ``allowOtherBots``——而不是基于
+    Discord/Telegram 的措辞。本函数是该契约的 gateway 侧：它读取 agent 现有的
+    relevance 配置项，并输出 connector 按 instance 存储的通用结构。
 
-    Mapping (the connector vocabulary ← the gateway's existing config):
-      - ``requireAddress``     ← the platform's ``require_mention`` (the agent
-        only engages a non-owner message that @mentions it / replies to it).
-      - ``freeResponseScopes`` ← the platform's ``free_response_channels`` (the
-        channel/scope ids where ``require_mention`` is waived — same scope
-        vocabulary the connector's δ scope grants + ε floor use).
-      - ``allowOtherBots``     ← ``{PLATFORM}_ALLOW_BOTS`` in {"mentions","all"}
-        (whether bot-authored messages are admitted; default off).
+    映射关系（connector 词汇 ← gateway 现有配置）：
+      - ``requireAddress``     ← 平台的 ``require_mention``（agent 仅对 @提及它 /
+        回复它的非 owner 消息作出响应）。
+      - ``freeResponseScopes`` ← 平台的 ``free_response_channels``（免除
+        ``require_mention`` 的 channel/scope id 集合——与 connector 的 δ scope
+        授权 + ε 下限使用的是同一套 scope 词汇）。
+      - ``allowOtherBots``     ← ``{PLATFORM}_ALLOW_BOTS`` 取值 {"mentions","all"}
+        （是否放行 bot 发出的消息；默认关闭）。
 
-    Read from the relay platform's config block (the platform the connector
-    fronts, e.g. ``discord:``), falling back to the bridged top-level keys, then
-    the ``{PLATFORM}_*`` env. Returns the generic dict, or None when relay isn't
-    configured or the platform exposes no relevance knobs (⇒ the connector's
-    quiet default already matches, so there's nothing to declare).
+    从 relay 平台的配置块（connector 所代理的平台，例如 ``discord:``）读取，回退到
+    桥接的顶层 key，再到 ``{PLATFORM}_*`` 环境变量。返回通用 dict；当未配置 relay
+    或该平台不暴露任何 relevance 配置项时返回 None（⇒ connector 的静默默认值已经
+    匹配，因此没有需要声明的内容）。
     """
     platform, _bot_id = relay_platform_identity()
     if not platform or platform == "relay":
-        # No concrete fronted platform resolved ⇒ nothing platform-specific to project.
+        # 没有解析出具体的被代理平台 ⇒ 没有平台特定的内容需要投影。
         return None
 
-    # Resolve the platform's config block + the bridged top-level keys.
+    # 解析平台的配置块 + 桥接的顶层 key。
     require_mention = None
     free_response: list[str] = []
     try:
-        from gateway.run import _load_gateway_config  # late import to avoid cycle
+        from gateway.run import _load_gateway_config  # 延迟导入以避免循环依赖
 
         cfg = _load_gateway_config() or {}
         plat_cfg = cfg.get(platform)
@@ -272,18 +266,18 @@ def relay_relevance_policy() -> Optional[dict]:
             free_response = [str(c).strip() for c in frc if str(c).strip()]
         elif isinstance(frc, str) and frc.strip():
             free_response = [c.strip() for c in frc.split(",") if c.strip()]
-    except Exception:  # noqa: BLE001 - config absence/parse must never crash boot
+    except Exception:  # noqa: BLE001 - 配置缺失/解析失败绝不能导致启动崩溃
         pass
 
-    # allow_other_bots ← {PLATFORM}_ALLOW_BOTS in {"mentions","all"} (same gate as
-    # the gateway's own authz_mixin DISCORD_ALLOW_BOTS bypass).
+    # allow_other_bots ← {PLATFORM}_ALLOW_BOTS 取值 {"mentions","all"}（与 gateway
+    # 自身 authz_mixin 的 DISCORD_ALLOW_BOTS 旁路是同一个门控）。
     allow_bots_env = os.environ.get(f"{platform.upper()}_ALLOW_BOTS", "").lower().strip()
     allow_other_bots = allow_bots_env in {"mentions", "all"}
 
     require_address = bool(require_mention) if require_mention is not None else False
 
-    # Nothing non-default to declare ⇒ let the connector keep its quiet default
-    # (matches absence-of-row semantics on the connector side).
+    # 没有任何非默认值需要声明 ⇒ 让 connector 保留其静默默认值
+    #（与 connector 侧“无对应行”的语义一致）。
     if not require_address and not free_response and not allow_other_bots:
         return None
 
@@ -308,13 +302,12 @@ def _post_provision(
     wake_url: Optional[str] = None,
     timeout: float = 15.0,
 ) -> dict:
-    """POST to the connector's ``/relay/provision`` and return the JSON body.
+    """POST 到 connector 的 ``/relay/provision`` 并返回 JSON body。
 
-    The connector validates ``access_token`` against NAS, derives the
-    authoritative tenant, mints the per-gateway secret + per-tenant delivery key,
-    upserts the tenant's route rows, and returns
-    ``{secret, deliveryKey, tenant, gatewayId, routeKeys}``. Raises RuntimeError
-    with a user-facing message on any non-2xx / transport failure.
+    connector 会向 NAS 校验 ``access_token``，推导出权威的 tenant，签发 per-gateway
+    secret + per-tenant delivery key，upsert 该租户的 route 行，并返回
+    ``{secret, deliveryKey, tenant, gatewayId, routeKeys}``。任何非 2xx / transport
+    失败都会抛出带有面向用户消息的 RuntimeError。
     """
     import json
     import urllib.error
@@ -327,12 +320,12 @@ def _post_provision(
         "gatewayEndpoint": gateway_endpoint or "",
         "routeKeys": route_keys,
     }
-    # Only send instanceId when we actually have one — omitting it lets the
-    # connector store null (back-compat) rather than binding an empty string.
+    # 只有当我们确有 instanceId 时才发送——省略它可让 connector 存储 null
+    #（向后兼容），而不是绑定一个空字符串。
     if instance_id:
         body["instanceId"] = instance_id
-    # Same for the wake URL (Phase 5 §5.2): omit when absent so the connector
-    # stores null and simply can't wake this instance (buffering still works).
+    # wake URL 同理（Phase 5 §5.2）：缺省时省略，以便 connector 存储 null 并简单地
+    # 无法唤醒本实例（缓冲仍然有效）。
     if wake_url:
         body["wakeUrl"] = wake_url
     data = json.dumps(body).encode("utf-8")
@@ -367,41 +360,38 @@ def _post_provision(
 
 
 def self_provision_relay() -> bool:
-    """Boot-time relay self-provision: mint relay creds in-process, no human, no disk.
+    """启动时的 relay 自助 provision：在进程内签发 relay 凭证，无需人工、不落盘。
 
-    Fires when relay is configured (``relay_url()`` set) and NO per-gateway secret
-    is already present, AND the agent can resolve its own Nous access token. In
-    that case the runtime resolves the agent's own Nous access token (the same
-    ``resolve_nous_access_token()`` the enroll CLI / dashboard register use),
-    POSTs ``/relay/provision`` asserting its own endpoint + route keys, and sets
-    ``GATEWAY_RELAY_ID`` / ``GATEWAY_RELAY_SECRET`` / ``GATEWAY_RELAY_DELIVERY_KEY``
-    into ``os.environ`` so the subsequent ``register_relay_adapter()`` picks them
-    up. The creds live ONLY in process memory — never written to ``~/.hermes/.env``.
+    在以下条件同时满足时触发：已配置 relay（``relay_url()`` 已设置）且尚不存在
+    per-gateway secret，并且 agent 能解析出自己的 Nous access token。此时 runtime
+    会解析 agent 自己的 Nous access token（与 enroll CLI / dashboard 注册所用的
+    ``resolve_nous_access_token()`` 相同），POST 到 ``/relay/provision`` 上报自己的
+    endpoint + route keys，并将 ``GATEWAY_RELAY_ID`` / ``GATEWAY_RELAY_SECRET`` /
+    ``GATEWAY_RELAY_DELIVERY_KEY`` 写入 ``os.environ``，以便随后的
+    ``register_relay_adapter()`` 能读取到它们。这些凭证仅存在于进程内存中——绝不
+    写入 ``~/.hermes/.env``。
 
-    The trigger is deliberately NOT ``is_managed()``: that means
-    "package-manager/NixOS-managed" and is False on a NAS-hosted Fly agent (which
-    sets neither ``HERMES_MANAGED`` nor a ``.managed`` marker), so gating on it
-    blocked the exact hosted case this is for. The real signal is "you pointed me
-    at a connector and didn't pin a secret" — which is both NAS-independent and
-    self-guarding:
+    触发条件刻意不是 ``is_managed()``：它表示“由包管理器/NixOS 管理”，在 NAS 托管
+    的 Fly agent 上为 False（这类 agent 既不设置 ``HERMES_MANAGED`` 也不设置
+    ``.managed`` 标记），因此以它为门控会挡住本机制正是为之服务的那个托管场景。
+    真正的信号是“你把我指向了一个 connector 且没有固定 secret”——这既与 NAS 无关，
+    又能自我保护：
 
-      - A NAS-hosted agent: has ``GATEWAY_RELAY_URL``, no pinned secret, and a
-        bootstrapped NAS token -> self-provisions.
-      - A self-hosted operator who ran ``hermes gateway enroll``: has a PINNED
-        ``GATEWAY_RELAY_SECRET`` -> skipped (the secret-present guard below).
-      - A self-hosted box with a relay URL but no NAS identity:
-        ``resolve_nous_access_token()`` fails -> graceful no-op.
+      - NAS 托管的 agent：具备 ``GATEWAY_RELAY_URL``、无固定 secret、且有一个已
+        引导的 NAS token -> 自助 provision。
+      - 运行过 ``hermes gateway enroll`` 的自托管运维者：具备已固定的
+        ``GATEWAY_RELAY_SECRET`` -> 跳过（即下方的 secret 存在守卫）。
+      - 配置了 relay URL 但没有 NAS 身份的自托管机器：
+        ``resolve_nous_access_token()`` 失败 -> 优雅地无操作。
 
-    Stateless: process-env creds don't survive a restart, so a hosted container
-    re-provisions every boot; the connector's rotation window covers a still-
-    connected prior instance. An explicitly-pinned ``GATEWAY_RELAY_SECRET`` (env
-    or config) is RESPECTED — self-provision skips so an operator pin isn't
-    stomped.
+    无状态：进程环境变量中的凭证在重启后不复存在，因此托管容器每次启动都会重新
+    provision；connector 的轮转窗口会覆盖仍连接着的前一个实例。显式固定的
+    ``GATEWAY_RELAY_SECRET``（环境变量或 config）会被尊重——自助 provision 会跳过，
+    以免覆盖运维者固定的值。
 
-    Returns True if it provisioned, False otherwise. NEVER raises: a provision
-    failure logs and returns False so the gateway still boots (and
-    ``register_relay_adapter`` will simply dial unauthenticated / be rejected,
-    rather than the whole gateway crashing).
+    若完成 provision 则返回 True，否则返回 False。绝不抛异常：provision 失败只会
+    记录日志并返回 False，使 gateway 仍能启动（``register_relay_adapter`` 会简单
+    地以未认证方式拨号 / 被拒绝，而不是整个 gateway 崩溃）。
     """
     import logging
 
@@ -411,8 +401,8 @@ def self_provision_relay() -> bool:
     if not dial_url:
         return False
 
-    # Respect an already-present (pinned/stamped) secret — don't stomp it. This
-    # is also what makes a self-hosted, enrolled gateway skip self-provision.
+    # 尊重已存在（固定/已注入）的 secret——不要覆盖它。这也是让一个自托管、已登记
+    # 的 gateway 跳过自助 provision 的原因。
     existing_id, existing_secret = relay_connection_auth()
     if existing_id and existing_secret:
         logger.info("relay self-provision skipped: GATEWAY_RELAY_SECRET already set")
@@ -422,14 +412,14 @@ def self_provision_relay() -> bool:
         from hermes_cli.auth import resolve_nous_access_token
 
         access_token = resolve_nous_access_token()
-    except Exception as exc:  # noqa: BLE001 - boot must survive a token failure
-        # No resolvable NAS identity (e.g. a self-hosted box that hasn't enrolled)
-        # -> nothing to provision with; skip quietly and let the gateway boot.
+    except Exception as exc:  # noqa: BLE001 - 启动必须能扛住 token 失败
+        # 无法解析出 NAS 身份（例如一台尚未登记的自托管机器）-> 没有可用于 provision
+        # 的凭证；安静地跳过，让 gateway 继续启动。
         logger.warning("relay self-provision skipped: could not resolve Nous token (%s)", exc)
         return False
 
     platform, bot_id = relay_platform_identity()
-    # gatewayId default mirrors the enroll CLI's hostname-based slug.
+    # gatewayId 的默认值与 enroll CLI 基于主机名的 slug 保持一致。
     import socket
 
     try:
@@ -458,11 +448,10 @@ def self_provision_relay() -> bool:
         logger.warning("relay self-provision failed (%s); gateway will boot without relay auth", exc)
         return False
 
-    # Set creds in-process so register_relay_adapter() reads them from os.environ
-    # (the per-gateway secret authenticates the outbound WS upgrade). The delivery
-    # key is still issued by the connector and persisted for forward-compat, but
-    # inbound now rides the WS (no HTTP receiver), so it is not consumed here.
-    # Never logged.
+    # 把凭证设置进进程内，以便 register_relay_adapter() 从 os.environ 中读取它们
+    #（per-gateway secret 用于认证 outbound WS upgrade）。delivery key 仍由 connector
+    # 签发并出于前向兼容而持久化，但 inbound 现在经由 WS（没有 HTTP receiver），
+    # 因此这里并不消费它。绝不记录日志。
     os.environ["GATEWAY_RELAY_ID"] = str(result.get("gatewayId") or gateway_id)
     os.environ["GATEWAY_RELAY_SECRET"] = str(result.get("secret") or "")
     os.environ["GATEWAY_RELAY_DELIVERY_KEY"] = str(result.get("deliveryKey") or "")
@@ -480,13 +469,13 @@ def self_provision_relay() -> bool:
 
 
 def _post_policy(*, policy_url: str, token: str, policy: dict, timeout: float = 15.0) -> int:
-    """POST the relevance policy to the connector's ``/relay/policy``; return the HTTP status.
+    """把 relevance policy POST 到 connector 的 ``/relay/policy``；返回 HTTP 状态码。
 
-    Authenticated with the gateway's own per-gateway upgrade token (the SAME
-    bearer shape as the WS upgrade — ``make_upgrade_token``), so the connector
-    resolves ``{tenant, instanceId}`` from its stored secret record, never the
-    body. Raises RuntimeError on transport failure (the caller treats any
-    failure as non-fatal — relevance is an optimization, not a boot dependency).
+    使用 gateway 自己的 per-gateway upgrade token 认证（与 WS upgrade 的 bearer
+    形态相同——``make_upgrade_token``），因此 connector 从其存储的 secret 记录中解析
+    ``{tenant, instanceId}``，而不是从 body 中解析。transport 失败时抛出
+    RuntimeError（调用方把任何失败都视为非致命——relevance 是一项优化，而非启动
+    依赖）。
     """
     import json
     import urllib.error
@@ -513,23 +502,21 @@ def _post_policy(*, policy_url: str, token: str, policy: dict, timeout: float = 
 
 
 def send_relay_policy() -> bool:
-    """Declare this gateway's relevance policy to the connector (Phase 6 Unit ζ).
+    """向 connector 声明本 gateway 的 relevance policy（Phase 6 Unit ζ）。
 
-    Runs at boot AFTER the per-gateway secret is resolved (self-provisioned or
-    pinned), projecting the agent's relevance config into the generic vocabulary
-    (``relay_relevance_policy``) and POSTing it to ``/relay/policy`` with the
-    gateway's own upgrade token. The connector stores it per-instance and the
-    relevance gate enforces it on delivery — so the SAME mention-gating /
-    free-response / allow-bots behavior the agent applies directly also governs
-    relay delivery, and excluded traffic never wakes a scaled-to-zero agent.
+    在启动时、per-gateway secret 解析完毕（自助 provision 或已固定）之后运行，把
+    agent 的 relevance 配置投影到通用词汇（``relay_relevance_policy``），并用
+    gateway 自己的 upgrade token 把它 POST 到 ``/relay/policy``。connector 按
+    instance 存储它，relevance gate 在投递时据此执行——因此 agent 直接施加的那同一
+    套 mention-gating / free-response / allow-bots 行为也约束 relay 投递，被排除的
+    流量永远不会唤醒一个已 scale-to-zero 的 agent。
 
-    Self-healing: the agent is the source of truth and re-declares every boot
-    (mirrors the ``routeKeys`` upsert at provision). Idempotent — a full replace.
+    自愈：agent 是事实来源，并在每次启动时重新声明（镜像 provision 时对
+    ``routeKeys`` 的 upsert）。幂等——一次全量替换。
 
-    NEVER raises and NEVER blocks boot: relevance is an optimization layered on
-    the δ/ε authorization gate (which already protects isolation), so a failed
-    declaration just means the connector keeps the prior/quiet policy. Returns
-    True iff the connector accepted the policy (HTTP 200).
+    绝不抛异常，也绝不阻塞启动：relevance 是叠加在 δ/ε 授权门控（已经保护了隔离性）
+    之上的一项优化，因此声明失败仅意味着 connector 保留先前/静默的策略。当且仅当
+    connector 接受该策略（HTTP 200）时返回 True。
     """
     import logging
 
@@ -541,15 +528,15 @@ def send_relay_policy() -> bool:
 
     gateway_id, secret = relay_connection_auth()
     if not gateway_id or not secret:
-        # No resolved per-gateway secret (unenrolled / provision failed) ⇒ we
-        # can't authenticate the policy POST; skip quietly (the WS upgrade would
-        # be unauthenticated too, so there's no instance to attach a policy to).
+        # 没有解析出 per-gateway secret（未登记 / provision 失败）⇒ 无法为该 policy
+        # POST 鉴权；安静地跳过（WS upgrade 同样会是未认证的，因此也没有可附着
+        # policy 的实例）。
         return False
 
     policy = relay_relevance_policy()
     if policy is None:
-        # Nothing non-default to declare ⇒ the connector's quiet default already
-        # matches; don't write a redundant row.
+        # 没有任何非默认值需要声明 ⇒ connector 的静默默认值已经匹配；不要写一条
+        # 冗余的行。
         logger.info("relay policy: no non-default relevance config to declare; using connector default")
         return False
 
@@ -558,7 +545,7 @@ def send_relay_policy() -> bool:
 
         token = make_upgrade_token(gateway_id, secret)
         status = _post_policy(policy_url=_policy_url(dial_url), token=token, policy=policy)
-    except Exception as exc:  # noqa: BLE001 - boot must survive a policy-declare failure
+    except Exception as exc:  # noqa: BLE001 - 启动必须能扛住 policy 声明失败
         logger.warning("relay policy declaration failed (%s); connector keeps prior/default policy", exc)
         return False
 
@@ -576,16 +563,15 @@ def send_relay_policy() -> bool:
 
 
 def register_relay_adapter(force: bool = False, url: Optional[str] = None) -> bool:
-    """Register the generic ``relay`` platform via the platform registry.
+    """通过 platform registry 注册通用的 ``relay`` 平台。
 
-    Registers when a relay URL is configured (or ``force=True`` for tests, which
-    builds a transport-less adapter — the unit-test posture). Returns True if
-    registration happened. Additive: uses the same registry path as plugin
-    adapters, so no core dispatch changes are needed.
+    当配置了 relay URL 时（或测试用 ``force=True``，此时构建一个无 transport 的
+    adapter——即单元测试的姿态）进行注册。若完成了注册则返回 True。增量式：使用与
+    插件 adapter 相同的 registry 路径，因此无需修改核心派发逻辑。
 
-    When a URL is present the factory builds a live ``WebSocketRelayTransport``;
-    the ``RelayAdapter`` negotiates the real ``CapabilityDescriptor`` at
-    ``connect()`` time via ``transport.handshake()``.
+    当存在 URL 时，factory 会构建一个活跃的 ``WebSocketRelayTransport``；
+    ``RelayAdapter`` 在 ``connect()`` 时通过 ``transport.handshake()`` 协商出真正的
+    ``CapabilityDescriptor``。
     """
     resolved_url = url if url is not None else relay_url()
     if not (force or resolved_url):
@@ -598,9 +584,9 @@ def register_relay_adapter(force: bool = False, url: Optional[str] = None) -> bo
     platform, bot_id = relay_platform_identity()
 
     def _factory(config):
-        # Placeholder descriptor; replaced by the negotiated one at connect time
-        # when a transport is present. With no URL (force/test) the adapter is
-        # transport-less and keeps the placeholder.
+        # 占位 descriptor；当存在 transport 时，会在 connect 时被协商出的真实
+        # descriptor 替换。若无 URL（force/测试），则 adapter 没有 transport 并保留
+        # 该占位符。
         placeholder = CapabilityDescriptor(
             contract_version=CONTRACT_VERSION,
             platform=platform,
@@ -623,10 +609,10 @@ def register_relay_adapter(force: bool = False, url: Optional[str] = None) -> bo
                 bot_id,
                 gateway_id=gateway_id,
                 upgrade_secret=upgrade_secret,
-                # Phase 5 §5.3: re-dial + re-handshake after an unexpected socket
-                # close so a gateway that went idle/suspended re-establishes its
-                # relay socket — which triggers the connector's buffered-flip drain
-                # (the delivery-leg onResume) on the new handshake.
+                # Phase 5 §5.3：在意外 socket 关闭后重新拨号 + 重新握手，以便一个
+                # 进入 idle/suspended 的 gateway 重新建立其 relay socket——这会在
+                # 新的握手时触发 connector 的 buffered-flip 排空（即 delivery-leg 的
+                # onResume）。
                 reconnect=True,
             )
         return RelayAdapter(config, placeholder, transport=transport)

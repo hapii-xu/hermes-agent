@@ -1,335 +1,335 @@
-# Design System: Stripe
+# 设计系统：Stripe
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Source Sans 3` | **Mono:** `Source Code Pro`
-> - **Font stack (CSS):** `font-family: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'Source Code Pro', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主要字体：** `Source Sans 3` | **等宽字体：** `Source Code Pro`
+> - **字体栈（CSS）：** `font-family: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: 'Source Code Pro', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600&family=Source+Code+Pro:wght@400;500;700&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` 技能（cloudflared tunnel）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Stripe's website is the gold standard of fintech design -- a system that manages to feel simultaneously technical and luxurious, precise and warm. The page opens on a clean white canvas (`#ffffff`) with deep navy headings (`#061b31`) and a signature purple (`#533afd`) that functions as both brand anchor and interactive accent. This isn't the cold, clinical purple of enterprise software; it's a rich, saturated violet that reads as confident and premium. The overall impression is of a financial institution redesigned by a world-class type foundry.
+Stripe 的网站是金融科技设计的黄金标准 —— 一个同时感觉技术和奢华、精确和温暖的系统。页面在干净的白色画布（`#ffffff`）上展开，配以深海军蓝标题（`#061b31`）和标志性的紫色（`#533afd`），后者既作为品牌锚点又作为交互强调色。这不是企业软件那种冰冷、临床的紫色；它是一种丰富、饱和的紫罗兰，读起来自信而高端。整体印象是一个被世界级字体铸造厂重新设计过的金融机构。
 
-The custom `sohne-var` variable font is the defining element of Stripe's visual identity. Every text element enables the OpenType `"ss01"` stylistic set, which modifies character shapes for a distinctly geometric, modern feel. At display sizes (48px-56px), sohne-var runs at weight 300 -- an extraordinarily light weight for headlines that creates an ethereal, almost whispered authority. This is the opposite of the "bold hero headline" convention; Stripe's headlines feel like they don't need to shout. The negative letter-spacing (-1.4px at 56px, -0.96px at 48px) tightens the text into dense, engineered blocks. At smaller sizes, the system also uses weight 300 with proportionally reduced tracking, and tabular numerals via `"tnum"` for financial data display.
+定制的 `sohne-var` 可变字体是 Stripe 视觉身份的决定性元素。每个文字元素都启用 OpenType `"ss01"` 风格集，它修改字符形状以获得明显的几何、现代感。在展示尺寸（48px-56px），sohne-var 以字重 300 运行 —— 对标题来说是一个非凡的轻字重，创造出一种空灵的、几乎轻语般的权威。这与"粗体英雄标题"惯例恰恰相反；Stripe 的标题感觉不需要大声喧哗。负字间距（56px 时 -1.4px，48px 时 -0.96px）将文字收紧为密集的、工程化的块。在较小尺寸下，系统也使用字重 300 配按比例缩减的字距，并通过 `"tnum"` 为金融数据显示表格数字。
 
-What truly distinguishes Stripe is its shadow system. Rather than the flat or single-layer approach of most sites, Stripe uses multi-layer, blue-tinted shadows: the signature `rgba(50,50,93,0.25)` combined with `rgba(0,0,0,0.1)` creates shadows with a cool, almost atmospheric depth -- like elements are floating in a twilight sky. The blue-gray undertone of the primary shadow color (50,50,93) ties directly to the navy-purple brand palette, making even elevation feel on-brand.
+真正让 Stripe 与众不同的是其阴影系统。而非大多数网站的平面或单层方法，Stripe 使用多层、带蓝色调的阴影：标志性的 `rgba(50,50,93,0.25)` 结合 `rgba(0,0,0,0.1)` 创造出带有冷色、几乎大气深度的阴影 —— 就像元素漂浮在暮光天空中。主阴影色的蓝灰底色（50,50,93）直接联系到海军蓝-紫色的品牌调色板，使即使是凸起也感觉符合品牌。
 
-**Key Characteristics:**
-- sohne-var with OpenType `"ss01"` on all text -- a custom stylistic set that defines the brand's letterforms
-- Weight 300 as the signature headline weight -- light, confident, anti-convention
-- Negative letter-spacing at display sizes (-1.4px at 56px, progressive relaxation downward)
-- Blue-tinted multi-layer shadows using `rgba(50,50,93,0.25)` -- elevation that feels brand-colored
-- Deep navy (`#061b31`) headings instead of black -- warm, premium, financial-grade
-- Conservative border-radius (4px-8px) -- nothing pill-shaped, nothing harsh
-- Ruby (`#ea2261`) and magenta (`#f96bee`) accents for gradient and decorative elements
-- `SourceCodePro` as the monospace companion for code and technical labels
+**关键特征：**
+- sohne-var 配 OpenType `"ss01"` 用于所有文字 —— 一个定义品牌字形的定制风格集
+- 字重 300 作为标志性标题字重 —— 轻、自信、反惯例
+- 展示尺寸下的负字间距（56px 时 -1.4px，向下渐进放松）
+- 使用 `rgba(50,50,93,0.25)` 的带蓝色调多层阴影 —— 感觉品牌色的凸起
+- 深海军蓝（`#061b31`）标题而非黑色 —— 温暖、高端、金融级
+- 保守的边框圆角（4px-8px）—— 没有胶囊形，没有刺眼
+- Ruby（`#ea2261`）和 Magenta（`#f96bee`）强调色用于渐变和装饰元素
+- `SourceCodePro` 作为代码和技术标签的等宽伙伴
 
-## 2. Color Palette & Roles
+## 2. 色彩调色板与角色
 
-### Primary
-- **Stripe Purple** (`#533afd`): Primary brand color, CTA backgrounds, link text, interactive highlights. A saturated blue-violet that anchors the entire system.
-- **Deep Navy** (`#061b31`): `--hds-color-heading-solid`. Primary heading color. Not black, not gray -- a very dark blue that adds warmth and depth to text.
-- **Pure White** (`#ffffff`): Page background, card surfaces, button text on dark backgrounds.
+### 主色
+- **Stripe Purple**（`#533afd`）：主要品牌色，CTA 背景、链接文字、交互高亮。一种饱和的蓝紫罗兰，为整个系统定锚。
+- **Deep Navy**（深海军蓝）（`#061b31`）：`--hds-color-heading-solid`。主要标题色。不是黑色，不是灰色 —— 一种非常深的蓝色，为文字增添温暖和深度。
+- **Pure White**（纯白）（`#ffffff`）：页面背景、卡片表面、暗色背景上的按钮文字。
 
-### Brand & Dark
-- **Brand Dark** (`#1c1e54`): `--hds-color-util-brand-900`. Deep indigo for dark sections, footer backgrounds, and immersive brand moments.
-- **Dark Navy** (`#0d253d`): `--hds-color-core-neutral-975`. The darkest neutral -- almost-black with a blue undertone for maximum depth without harshness.
+### 品牌与暗色
+- **Brand Dark**（品牌暗）（`#1c1e54`）：`--hds-color-util-brand-900`。深靛蓝，用于暗色区块、页脚背景和沉浸式品牌时刻。
+- **Dark Navy**（暗海军蓝）（`#0d253d`）：`--hds-color-core-neutral-975`。最暗的中性色 —— 近乎黑色配蓝色底色，在没有刺眼感的情况下获得最大深度。
 
-### Accent Colors
-- **Ruby** (`#ea2261`): `--hds-color-accentColorMode-ruby-icon-solid`. Warm red-pink for icons, alerts, and accent elements.
-- **Magenta** (`#f96bee`): `--hds-color-accentColorMode-magenta-icon-gradientMiddle`. Vivid pink-purple for gradients and decorative highlights.
-- **Magenta Light** (`#ffd7ef`): `--hds-color-util-accent-magenta-100`. Tinted surface for magenta-themed cards and badges.
+### 强调色
+- **Ruby**（红宝石）（`#ea2261`）：`--hds-color-accentColorMode-ruby-icon-solid`。暖红粉色，用于图标、警告和强调元素。
+- **Magenta**（品红）（`#f96bee`）：`--hds-color-accentColorMode-magenta-icon-gradientMiddle`。鲜艳的粉紫色，用于渐变和装饰高亮。
+- **Magenta Light**（浅品红）（`#ffd7ef`）：`--hds-color-util-accent-magenta-100`。带色调的表面，用于品红主题的卡片和徽章。
 
-### Interactive
-- **Primary Purple** (`#533afd`): Primary link color, active states, selected elements.
-- **Purple Hover** (`#4434d4`): Darker purple for hover states on primary elements.
-- **Purple Deep** (`#2e2b8c`): `--hds-color-button-ui-iconHover`. Dark purple for icon hover states.
-- **Purple Light** (`#b9b9f9`): `--hds-color-action-bg-subduedHover`. Soft lavender for subdued hover backgrounds.
-- **Purple Mid** (`#665efd`): `--hds-color-input-selector-text-range`. Range selector and input highlight color.
+### 交互
+- **Primary Purple**（主要紫）（`#533afd`）：主要链接色、激活状态、选中元素。
+- **Purple Hover**（紫色悬停）（`#4434d4`）：主要元素悬停状态的更深紫色。
+- **Purple Deep**（深紫）（`#2e2b8c`）：`--hds-color-button-ui-iconHover`。深紫色，用于图标悬停状态。
+- **Purple Light**（浅紫）（`#b9b9f9`）：`--hds-color-action-bg-subduedHover`。柔和淡紫色，用于柔和的悬停背景。
+- **Purple Mid**（中紫）（`#665efd`）：`--hds-color-input-selector-text-range`。范围选择器和输入高亮色。
 
-### Neutral Scale
-- **Heading** (`#061b31`): Primary headings, nav text, strong labels.
-- **Label** (`#273951`): `--hds-color-input-text-label`. Form labels, secondary headings.
-- **Body** (`#64748d`): Secondary text, descriptions, captions.
-- **Success Green** (`#15be53`): Status badges, success indicators (with 0.2-0.4 alpha for backgrounds/borders).
-- **Success Text** (`#108c3d`): Success badge text color.
-- **Lemon** (`#9b6829`): `--hds-color-core-lemon-500`. Warning and highlight accent.
+### 中性刻度
+- **Heading**（标题）（`#061b31`）：主要标题、导航文字、强标签。
+- **Label**（标签）（`#273951`）：`--hds-color-input-text-label`。表单标签、次要标题。
+- **Body**（正文）（`#64748d`）：次要文字、描述、说明。
+- **Success Green**（成功绿）（`#15be53`）：状态徽章、成功指示器（背景/边框用 0.2-0.4 alpha）。
+- **Success Text**（成功文字）（`#108c3d`）：成功徽章文字色。
+- **Lemon**（柠檬）（`#9b6829`）：`--hds-color-core-lemon-500`。警告和高亮强调。
 
-### Surface & Borders
-- **Border Default** (`#e5edf5`): Standard border color for cards, dividers, and containers.
-- **Border Purple** (`#b9b9f9`): Active/selected state borders on buttons and inputs.
-- **Border Soft Purple** (`#d6d9fc`): Subtle purple-tinted borders for secondary elements.
-- **Border Magenta** (`#ffd7ef`): Pink-tinted borders for magenta-themed elements.
-- **Border Dashed** (`#362baa`): Dashed borders for drop zones and placeholder elements.
+### 表面与边框
+- **Border Default**（默认边框）（`#e5edf5`）：卡片、分隔符和容器的标准边框色。
+- **Border Purple**（紫色边框）（`#b9b9f9`）：按钮和输入框上的激活/选中状态边框。
+- **Border Soft Purple**（柔和紫边框）（`#d6d9fc`：细微的带紫色调边框，用于次要元素。
+- **Border Magenta**（品红边框）（`#ffd7ef`：粉色调边框，用于品红主题元素。
+- **Border Dashed**（虚线边框）（`#362baa`）：虚线边框，用于拖放区和占位符元素。
 
-### Shadow Colors
-- **Shadow Blue** (`rgba(50,50,93,0.25)`): The signature -- blue-tinted primary shadow color.
-- **Shadow Dark Blue** (`rgba(3,3,39,0.25)`): Deeper blue shadow for elevated elements.
-- **Shadow Black** (`rgba(0,0,0,0.1)`): Secondary shadow layer for depth reinforcement.
-- **Shadow Ambient** (`rgba(23,23,23,0.08)`): Soft ambient shadow for subtle elevation.
-- **Shadow Soft** (`rgba(23,23,23,0.06)`): Minimal ambient shadow for light lift.
+### 阴影色
+- **Shadow Blue**（阴影蓝）（`rgba(50,50,93,0.25)`）：标志性的 —— 带蓝色调的主要阴影色。
+- **Shadow Dark Blue**（暗蓝阴影）（`rgba(3,3,39,0.25)`）：更深的蓝色阴影，用于凸起元素。
+- **Shadow Black**（黑色阴影）（`rgba(0,0,0,0.1)`）：次要阴影层，用于深度强化。
+- **Shadow Ambient**（环境阴影）（`rgba(23,23,23,0.08)`）：柔和的环境阴影，用于细微凸起。
+- **Shadow Soft**（柔和阴影）（`rgba(23,23,23,0.06)`）：最小的环境阴影，用于轻微抬升。
 
-## 3. Typography Rules
+## 3. 字体排版规则
 
-### Font Family
-- **Primary**: `sohne-var`, with fallback: `SF Pro Display`
-- **Monospace**: `SourceCodePro`, with fallback: `SFMono-Regular`
-- **OpenType Features**: `"ss01"` enabled globally on all sohne-var text; `"tnum"` for tabular numbers on financial data and captions.
+### 字体族
+- **主要**：`sohne-var`，回退：`SF Pro Display`
+- **等宽**：`SourceCodePro`，回退：`SFMono-Regular`
+- **OpenType 特性**：在所有 sohne-var 文字上全局启用 `"ss01"`；在金融数据和说明上用 `"tnum"` 实现表格数字。
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Features | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 特性 | 说明 |
 |------|------|------|--------|-------------|----------------|----------|-------|
-| Display Hero | sohne-var | 56px (3.50rem) | 300 | 1.03 (tight) | -1.4px | ss01 | Maximum size, whisper-weight authority |
-| Display Large | sohne-var | 48px (3.00rem) | 300 | 1.15 (tight) | -0.96px | ss01 | Secondary hero headlines |
-| Section Heading | sohne-var | 32px (2.00rem) | 300 | 1.10 (tight) | -0.64px | ss01 | Feature section titles |
-| Sub-heading Large | sohne-var | 26px (1.63rem) | 300 | 1.12 (tight) | -0.26px | ss01 | Card headings, sub-sections |
-| Sub-heading | sohne-var | 22px (1.38rem) | 300 | 1.10 (tight) | -0.22px | ss01 | Smaller section heads |
-| Body Large | sohne-var | 18px (1.13rem) | 300 | 1.40 | normal | ss01 | Feature descriptions, intro text |
-| Body | sohne-var | 16px (1.00rem) | 300-400 | 1.40 | normal | ss01 | Standard reading text |
-| Button | sohne-var | 16px (1.00rem) | 400 | 1.00 (tight) | normal | ss01 | Primary button text |
-| Button Small | sohne-var | 14px (0.88rem) | 400 | 1.00 (tight) | normal | ss01 | Secondary/compact buttons |
-| Link | sohne-var | 14px (0.88rem) | 400 | 1.00 (tight) | normal | ss01 | Navigation links |
-| Caption | sohne-var | 13px (0.81rem) | 400 | normal | normal | ss01 | Small labels, metadata |
-| Caption Small | sohne-var | 12px (0.75rem) | 300-400 | 1.33-1.45 | normal | ss01 | Fine print, timestamps |
-| Caption Tabular | sohne-var | 12px (0.75rem) | 300-400 | 1.33 | -0.36px | tnum | Financial data, numbers |
-| Micro | sohne-var | 10px (0.63rem) | 300 | 1.15 (tight) | 0.1px | ss01 | Tiny labels, axis markers |
-| Micro Tabular | sohne-var | 10px (0.63rem) | 300 | 1.15 (tight) | -0.3px | tnum | Chart data, small numbers |
-| Nano | sohne-var | 8px (0.50rem) | 300 | 1.07 (tight) | normal | ss01 | Smallest labels |
-| Code Body | SourceCodePro | 12px (0.75rem) | 500 | 2.00 (relaxed) | normal | -- | Code blocks, syntax |
-| Code Bold | SourceCodePro | 12px (0.75rem) | 700 | 2.00 (relaxed) | normal | -- | Bold code, keywords |
-| Code Label | SourceCodePro | 12px (0.75rem) | 500 | 2.00 (relaxed) | normal | uppercase | Technical labels |
-| Code Micro | SourceCodePro | 9px (0.56rem) | 500 | 1.00 (tight) | normal | ss01 | Tiny code annotations |
+| 展示英雄 | sohne-var | 56px (3.50rem) | 300 | 1.03（紧凑） | -1.4px | ss01 | 最大尺寸，轻语级权威 |
+| 展示大 | sohne-var | 48px (3.00rem) | 300 | 1.15（紧凑） | -0.96px | ss01 | 次要英雄标题 |
+| 区块标题 | sohne-var | 32px (2.00rem) | 300 | 1.10（紧凑） | -0.64px | ss01 | 功能区块标题 |
+| 大副标题 | sohne-var | 26px (1.63rem) | 300 | 1.12（紧凑） | -0.26px | ss01 | 卡片标题、子区块 |
+| 副标题 | sohne-var | 22px (1.38rem) | 300 | 1.10（紧凑） | -0.22px | ss01 | 较小区块标题 |
+| 大正文 | sohne-var | 18px (1.13rem) | 300 | 1.40 | normal | ss01 | 功能描述、导语文字 |
+| 正文 | sohne-var | 16px (1.00rem) | 300-400 | 1.40 | normal | ss01 | 标准阅读文字 |
+| 按钮 | sohne-var | 16px (1.00rem) | 400 | 1.00（紧凑） | normal | ss01 | 主要按钮文字 |
+| 小按钮 | sohne-var | 14px (0.88rem) | 400 | 1.00（紧凑） | normal | ss01 | 次要/紧凑按钮 |
+| 链接 | sohne-var | 14px (0.88rem) | 400 | 1.00（紧凑） | normal | ss01 | 导航链接 |
+| 说明 | sohne-var | 13px (0.81rem) | 400 | normal | normal | ss01 | 小标签、元数据 |
+| 小说明 | sohne-var | 12px (0.75rem) | 300-400 | 1.33-1.45 | normal | ss01 | 细则、时间戳 |
+| 表格说明 | sohne-var | 12px (0.75rem) | 300-400 | 1.33 | -0.36px | tnum | 金融数据、数字 |
+| 微字 | sohne-var | 10px (0.63rem) | 300 | 1.15（紧凑） | 0.1px | ss01 | 微小标签、轴标记 |
+| 表格微字 | sohne-var | 10px (0.63rem) | 300 | 1.15（紧凑） | -0.3px | tnum | 图表数据、小数字 |
+| 纳米字 | sohne-var | 8px (0.50rem) | 300 | 1.07（紧凑） | normal | ss01 | 最小标签 |
+| 代码正文 | SourceCodePro | 12px (0.75rem) | 500 | 2.00（宽松） | normal | -- | 代码块、语法 |
+| 代码粗体 | SourceCodePro | 12px (0.75rem) | 700 | 2.00（宽松） | normal | -- | 粗体代码、关键字 |
+| 代码标签 | SourceCodePro | 12px (0.75rem) | 500 | 2.00（宽松） | normal | 大写 | 技术标签 |
+| 代码微字 | SourceCodePro | 9px (0.56rem) | 500 | 1.00（紧凑） | normal | ss01 | 微小代码注释 |
 
-### Principles
-- **Light weight as signature**: Weight 300 at display sizes is Stripe's most distinctive typographic choice. Where others use 600-700 to command attention, Stripe uses lightness as luxury -- the text is so confident it doesn't need weight to be authoritative.
-- **ss01 everywhere**: The `"ss01"` stylistic set is non-negotiable. It modifies specific glyphs (likely alternate `a`, `g`, `l` forms) to create a more geometric, contemporary feel across all sohne-var text.
-- **Two OpenType modes**: `"ss01"` for display/body text, `"tnum"` for tabular numerals in financial data. These never overlap -- a number in a paragraph uses ss01, a number in a data table uses tnum.
-- **Progressive tracking**: Letter-spacing tightens proportionally with size: -1.4px at 56px, -0.96px at 48px, -0.64px at 32px, -0.26px at 26px, normal at 16px and below.
-- **Two-weight simplicity**: Primarily 300 (body and headings) and 400 (UI/buttons). No bold (700) in the primary font -- SourceCodePro uses 500/700 for code contrast.
+### 原则
+- **轻字重作为标志**：展示尺寸下的字重 300 是 Stripe 最独特的排版选择。当其他人使用 600-700 来吸引注意时，Stripe 将轻盈作为奢华 —— 文字如此自信，不需要字重就能权威。
+- **到处 ss01**：`"ss01"` 风格集是不可妥协的。它修改特定字形（可能是替代的 `a`、`g`、`l` 形式），在所有 sohne-var 文字上创造更几何、更现代的感觉。
+- **两种 OpenType 模式**：`"ss01"` 用于展示/正文文字，`"tnum"` 用于金融数据的表格数字。它们绝不重叠 —— 段落中的数字用 ss01，数据表中的数字用 tnum。
+- **渐进字距**：字间距随字号成比例收紧：56px 时 -1.4px，48px 时 -0.96px，32px 时 -0.64px，26px 时 -0.26px，16px 及以下为 normal。
+- **双字重简洁**：主要是 300（正文和标题）和 400（UI/按钮）。主要字体中没有粗体（700）—— SourceCodePro 使用 500/700 实现代码对比。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Purple**
-- Background: `#533afd`
-- Text: `#ffffff`
-- Padding: 8px 16px
-- Radius: 4px
-- Font: 16px sohne-var weight 400, `"ss01"`
-- Hover: `#4434d4` background
-- Use: Primary CTA ("Start now", "Contact sales")
+**主要紫**
+- 背景：`#533afd`
+- 文字：`#ffffff`
+- 内边距：8px 16px
+- 圆角：4px
+- 字体：16px sohne-var 字重 400，`"ss01"`
+- 悬停：`#4434d4` 背景
+- 用途：主要 CTA（"立即开始"、"联系销售"）
 
-**Ghost / Outlined**
-- Background: transparent
-- Text: `#533afd`
-- Padding: 8px 16px
-- Radius: 4px
-- Border: `1px solid #b9b9f9`
-- Font: 16px sohne-var weight 400, `"ss01"`
-- Hover: background shifts to `rgba(83,58,253,0.05)`
-- Use: Secondary actions
+**幽灵 / 描边**
+- 背景：透明
+- 文字：`#533afd`
+- 内边距：8px 16px
+- 圆角：4px
+- 边框：`1px solid #b9b9f9`
+- 字体：16px sohne-var 字重 400，`"ss01"`
+- 悬停：背景偏移为 `rgba(83,58,253,0.05)`
+- 用途：次要操作
 
-**Transparent Info**
-- Background: transparent
-- Text: `#2874ad`
-- Padding: 8px 16px
-- Radius: 4px
-- Border: `1px solid rgba(43,145,223,0.2)`
-- Use: Tertiary/info-level actions
+**透明信息**
+- 背景：透明
+- 文字：`#2874ad`
+- 内边距：8px 16px
+- 圆角：4px
+- 边框：`1px solid rgba(43,145,223,0.2)`
+- 用途：三级/信息级操作
 
-**Neutral Ghost**
-- Background: transparent (`rgba(255,255,255,0)`)
-- Text: `rgba(16,16,16,0.3)`
-- Padding: 8px 16px
-- Radius: 4px
-- Outline: `1px solid rgb(212,222,233)`
-- Use: Disabled or muted actions
+**中性幽灵**
+- 背景：透明（`rgba(255,255,255,0)`）
+- 文字：`rgba(16,16,16,0.3)`
+- 内边距：8px 16px
+- 圆角：4px
+- 轮廓：`1px solid rgb(212,222,233)`
+- 用途：禁用或柔和操作
 
-### Cards & Containers
-- Background: `#ffffff`
-- Border: `1px solid #e5edf5` (standard) or `1px solid #061b31` (dark accent)
-- Radius: 4px (tight), 5px (standard), 6px (comfortable), 8px (featured)
-- Shadow (standard): `rgba(50,50,93,0.25) 0px 30px 45px -30px, rgba(0,0,0,0.1) 0px 18px 36px -18px`
-- Shadow (ambient): `rgba(23,23,23,0.08) 0px 15px 35px 0px`
-- Hover: shadow intensifies, often adding the blue-tinted layer
+### 卡片与容器
+- 背景：`#ffffff`
+- 边框：`1px solid #e5edf5`（标准）或 `1px solid #061b31`（暗色强调）
+- 圆角：4px（紧凑）、5px（标准）、6px（舒适）、8px（特色）
+- 阴影（标准）：`rgba(50,50,93,0.25) 0px 30px 45px -30px, rgba(0,0,0,0.1) 0px 18px 36px -18px`
+- 阴影（环境）：`rgba(23,23,23,0.08) 0px 15px 35px 0px`
+- 悬停：阴影加强，通常添加带蓝色调的层
 
-### Badges / Tags / Pills
-**Neutral Pill**
-- Background: `#ffffff`
-- Text: `#000000`
-- Padding: 0px 6px
-- Radius: 4px
-- Border: `1px solid #f6f9fc`
-- Font: 11px weight 400
+### 徽章 / 标签 / 胶囊
+**中性胶囊**
+- 背景：`#ffffff`
+- 文字：`#000000`
+- 内边距：0px 6px
+- 圆角：4px
+- 边框：`1px solid #f6f9fc`
+- 字体：11px 字重 400
 
-**Success Badge**
-- Background: `rgba(21,190,83,0.2)`
-- Text: `#108c3d`
-- Padding: 1px 6px
-- Radius: 4px
-- Border: `1px solid rgba(21,190,83,0.4)`
-- Font: 10px weight 300
+**成功徽章**
+- 背景：`rgba(21,190,83,0.2)`
+- 文字：`#108c3d`
+- 内边距：1px 6px
+- 圆角：4px
+- 边框：`1px solid rgba(21,190,83,0.4)`
+- 字体：10px 字重 300
 
-### Inputs & Forms
-- Border: `1px solid #e5edf5`
-- Radius: 4px
-- Focus: `1px solid #533afd` or purple ring
-- Label: `#273951`, 14px sohne-var
-- Text: `#061b31`
-- Placeholder: `#64748d`
+### 输入与表单
+- 边框：`1px solid #e5edf5`
+- 圆角：4px
+- 聚焦：`1px solid #533afd` 或紫色环
+- 标签：`#273951`，14px sohne-var
+- 文字：`#061b31`
+- 占位符：`#64748d`
 
-### Navigation
-- Clean horizontal nav on white, sticky with blur backdrop
-- Brand logotype left-aligned
-- Links: sohne-var 14px weight 400, `#061b31` text with `"ss01"`
-- Radius: 6px on nav container
-- CTA: purple button right-aligned ("Sign in", "Start now")
-- Mobile: hamburger toggle with 6px radius
+### 导航
+- 白色上的干净水平导航，固定配模糊背景
+- 品牌字体左对齐
+- 链接：sohne-var 14px 字重 400，`#061b31` 文字配 `"ss01"`
+- 圆角：导航容器 6px
+- CTA：紫色按钮右对齐（"登录"、"立即开始"）
+- 移动端：6px 圆角的汉堡切换
 
-### Decorative Elements
-**Dashed Borders**
-- `1px dashed #362baa` (purple) for placeholder/drop zones
-- `1px dashed #ffd7ef` (magenta) for magenta-themed decorative borders
+### 装饰元素
+**虚线边框**
+- `1px dashed #362baa`（紫）用于占位符/拖放区
+- `1px dashed #ffd7ef`（品红）用于品红主题装饰边框
 
-**Gradient Accents**
-- Ruby-to-magenta gradients (`#ea2261` to `#f96bee`) for hero decorations
-- Brand dark sections use `#1c1e54` backgrounds with white text
+**渐变强调**
+- Ruby 到品红渐变（`#ea2261` 到 `#f96bee`）用于英雄装饰
+- 品牌暗色区块使用 `#1c1e54` 背景配白色文字
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 1px, 2px, 4px, 6px, 8px, 10px, 11px, 12px, 14px, 16px, 18px, 20px
-- Notable: The scale is dense at the small end (every 2px from 4-12), reflecting Stripe's precision-oriented UI for financial data
+### 间距系统
+- 基本单位：8px
+- 刻度：1px、2px、4px、6px、8px、10px、11px、12px、14px、16px、18px、20px
+- 值得注意：刻度在小端密集（4-12 每 2px），反映 Stripe 为金融数据定制的精度导向 UI
 
-### Grid & Container
-- Max content width: approximately 1080px
-- Hero: centered single-column with generous padding, lightweight headlines
-- Feature sections: 2-3 column grids for feature cards
-- Full-width dark sections with `#1c1e54` background for brand immersion
-- Code/dashboard previews as contained cards with blue-tinted shadows
+### 网格与容器
+- 最大内容宽度：约 1080px
+- 英雄区：居中单列配慷慨内边距，轻量级标题
+- 功能区块：2-3 列网格用于功能卡片
+- 全宽暗色区块配 `#1c1e54` 背景用于品牌沉浸
+- 代码/仪表板预览作为带蓝色调阴影的容器化卡片
 
-### Whitespace Philosophy
-- **Precision spacing**: Unlike the vast emptiness of minimalist systems, Stripe uses measured, purposeful whitespace. Every gap is a deliberate typographic choice.
-- **Dense data, generous chrome**: Financial data displays (tables, charts) are tightly packed, but the UI chrome around them is generously spaced. This creates a sense of controlled density -- like a well-organized spreadsheet in a beautiful frame.
-- **Section rhythm**: White sections alternate with dark brand sections (`#1c1e54`), creating a dramatic light/dark cadence that prevents monotony without introducing arbitrary color.
+### 留白哲学
+- **精确间距**：与极简系统的广阔空旷不同，Stripe 使用经过测量的、有目的的留白。每个间隙都是刻意的排版选择。
+- **密集数据，慷慨外壳**：金融数据显示（表格、图表）紧密排列，但围绕它们的 UI 外壳间距慷慨。这创造出一种受控的密度感 —— 就像一个精美相框中组织良好的电子表格。
+- **区块节奏**：白色区块与暗色品牌区块（`#1c1e54`）交替，创造出戏剧性的明/暗节奏，避免单调而不引入任意颜色。
 
-### Border Radius Scale
-- Micro (1px): Fine-grained elements, subtle rounding
-- Standard (4px): Buttons, inputs, badges, cards -- the workhorse
-- Comfortable (5px): Standard card containers
-- Relaxed (6px): Navigation, larger interactive elements
-- Large (8px): Featured cards, hero elements
-- Compound: `0px 0px 6px 6px` for bottom-rounded containers (tab panels, dropdown footers)
+### 边框圆角刻度
+- 微（1px）：细粒度元素、细微圆角
+- 标准（4px）：按钮、输入框、徽章、卡片 —— 主力
+- 舒适（5px）：标准卡片容器
+- 放松（6px）：导航、较大的交互元素
+- 大（8px）：特色卡片、英雄元素
+- 复合：`0px 0px 6px 6px` 用于底部圆角容器（标签面板、下拉页脚）
 
-## 6. Depth & Elevation
+## 6. 深度与凸起
 
-| Level | Treatment | Use |
+| 层级 | 处理方式 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | Page background, inline text |
-| Ambient (Level 1) | `rgba(23,23,23,0.06) 0px 3px 6px` | Subtle card lift, hover hints |
-| Standard (Level 2) | `rgba(23,23,23,0.08) 0px 15px 35px` | Standard cards, content panels |
-| Elevated (Level 3) | `rgba(50,50,93,0.25) 0px 30px 45px -30px, rgba(0,0,0,0.1) 0px 18px 36px -18px` | Featured cards, dropdowns, popovers |
-| Deep (Level 4) | `rgba(3,3,39,0.25) 0px 14px 21px -14px, rgba(0,0,0,0.1) 0px 8px 17px -8px` | Modals, floating panels |
-| Ring (Accessibility) | `2px solid #533afd` outline | Keyboard focus ring |
+| 平面（Level 0） | 无阴影 | 页面背景、行内文字 |
+| 环境（Level 1） | `rgba(23,23,23,0.06) 0px 3px 6px` | 细微卡片抬升、悬停提示 |
+| 标准（Level 2） | `rgba(23,23,23,0.08) 0px 15px 35px` | 标准卡片、内容面板 |
+| 凸起（Level 3） | `rgba(50,50,93,0.25) 0px 30px 45px -30px, rgba(0,0,0,0.1) 0px 18px 36px -18px` | 特色卡片、下拉菜单、弹出框 |
+| 深（Level 4） | `rgba(3,3,39,0.25) 0px 14px 21px -14px, rgba(0,0,0,0.1) 0px 8px 17px -8px` | 模态框、浮动面板 |
+| 环（无障碍） | `2px solid #533afd` 轮廓 | 键盘聚焦环 |
 
-**Shadow Philosophy**: Stripe's shadow system is built on a principle of chromatic depth. Where most design systems use neutral gray or black shadows, Stripe's primary shadow color (`rgba(50,50,93,0.25)`) is a deep blue-gray that echoes the brand's navy palette. This creates shadows that don't just add depth -- they add brand atmosphere. The multi-layer approach pairs this blue-tinted shadow with a pure black secondary layer (`rgba(0,0,0,0.1)`) at a different offset, creating a parallax-like depth where the branded shadow sits farther from the element and the neutral shadow sits closer. The negative spread values (-30px, -18px) ensure shadows don't extend beyond the element's footprint horizontally, keeping elevation vertical and controlled.
+**阴影哲学**：Stripe 的阴影系统建立在色彩深度的原则之上。当大多数设计系统使用中性灰或黑阴影时，Stripe 的主要阴影色（`rgba(50,50,93,0.25)`）是一种深蓝灰，呼应品牌的海军蓝调色板。这创造出不仅增添深度 —— 还增添品牌氛围的阴影。多层方法将这种带蓝色调的阴影与不同偏移的纯黑次要层（`rgba(0,0,0,0.1)`）配对，创造出视差般的深度，品牌阴影离元素更远，中性阴影更近。负扩散值（-30px、-18px）确保阴影不会水平延伸超出元素的足迹，保持凸起垂直且受控。
 
-### Decorative Depth
-- Dark brand sections (`#1c1e54`) create immersive depth through background color contrast
-- Gradient overlays with ruby-to-magenta transitions for hero decorations
-- Shadow color `rgba(0,55,112,0.08)` (`--hds-color-shadow-sm-top`) for top-edge shadows on sticky elements
+### 装饰性深度
+- 暗色品牌区块（`#1c1e54`）通过背景色对比创造沉浸式深度
+- Ruby 到品红过渡的渐变覆盖层用于英雄装饰
+- 阴影色 `rgba(0,55,112,0.08)`（`--hds-color-shadow-sm-top`）用于固定元素的顶部边缘阴影
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use sohne-var with `"ss01"` on every text element -- the stylistic set IS the brand
-- Use weight 300 for all headlines and body text -- lightness is the signature
-- Apply blue-tinted shadows (`rgba(50,50,93,0.25)`) for all elevated elements
-- Use `#061b31` (deep navy) for headings instead of `#000000` -- the warmth matters
-- Keep border-radius between 4px-8px -- conservative rounding is intentional
-- Use `"tnum"` for any tabular/financial number display
-- Layer shadows: blue-tinted far + neutral close for depth parallax
-- Use `#533afd` purple as the primary interactive/CTA color
+### 宜
+- 在每个文字元素上使用 sohne-var 配 `"ss01"` —— 风格集就是品牌
+- 为所有标题和正文使用字重 300 —— 轻盈是标志
+- 为所有凸起元素应用带蓝色调的阴影（`rgba(50,50,93,0.25)`）
+- 使用 `#061b31`（深海军蓝）作为标题而非 `#000000` —— 温暖很重要
+- 保持边框圆角在 4px-8px 之间 —— 保守的圆角是有意为之
+- 为任何表格/金融数字显示使用 `"tnum"`
+- 分层阴影：带蓝色调的远 + 中性的近，用于深度视差
+- 使用 `#533afd` 紫色作为主要交互/CTA 色
 
-### Don't
-- Don't use weight 600-700 for sohne-var headlines -- weight 300 is the brand voice
-- Don't use large border-radius (12px+, pill shapes) on cards or buttons -- Stripe is conservative
-- Don't use neutral gray shadows -- always tint with blue (`rgba(50,50,93,...)`)
-- Don't skip `"ss01"` on any sohne-var text -- the alternate glyphs define the personality
-- Don't use pure black (`#000000`) for headings -- always `#061b31` deep navy
-- Don't use warm accent colors (orange, yellow) for interactive elements -- purple is primary
-- Don't apply positive letter-spacing at display sizes -- Stripe tracks tight
-- Don't use the magenta/ruby accents for buttons or links -- they're decorative/gradient only
+### 忌
+- 不要为 sohne-var 标题使用字重 600-700 —— 字重 300 是品牌嗓音
+- 不要在卡片或按钮上使用大边框圆角（12px+，胶囊形）—— Stripe 是保守的
+- 不要使用中性灰阴影 —— 总是用蓝色调（`rgba(50,50,93,...)`）
+- 不要在任何 sohne-var 文字上跳过 `"ss01"` —— 替代字形定义了个性
+- 不要为标题使用纯黑（`#000000`）—— 总是 `#061b31` 深海军蓝
+- 不要为交互元素使用暖强调色（橙、黄）—— 紫色是主要的
+- 不要在展示尺寸下应用正字间距 —— Stripe 字距紧凑
+- 不要为按钮或链接使用品红/Ruby 强调色 —— 它们仅用于装饰/渐变
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <640px | Single column, reduced heading sizes, stacked cards |
-| Tablet | 640-1024px | 2-column grids, moderate padding |
-| Desktop | 1024-1280px | Full layout, 3-column feature grids |
-| Large Desktop | >1280px | Centered content with generous margins |
+| 移动端 | <640px | 单列、缩减标题尺寸、堆叠卡片 |
+| 平板 | 640-1024px | 2 列网格、适中内边距 |
+| 桌面 | 1024-1280px | 完整布局、3 列功能网格 |
+| 大型桌面 | >1280px | 居中内容配慷慨边距 |
 
-### Touch Targets
-- Buttons use comfortable padding (8px-16px vertical)
-- Navigation links at 14px with adequate spacing
-- Badges have 6px horizontal padding minimum for tap targets
-- Mobile nav toggle with 6px radius button
+### 触摸目标
+- 按钮使用舒适的内边距（垂直 8px-16px）
+- 导航链接 14px 配充足间距
+- 徽章最小 6px 水平内边距用于点击目标
+- 移动端导航切换配 6px 圆角按钮
 
-### Collapsing Strategy
-- Hero: 56px display -> 32px on mobile, weight 300 maintained
-- Navigation: horizontal links + CTAs -> hamburger toggle
-- Feature cards: 3-column -> 2-column -> single column stacked
-- Dark brand sections: maintain full-width treatment, reduce internal padding
-- Financial data tables: horizontal scroll on mobile
-- Section spacing: 64px+ -> 40px on mobile
-- Typography scale compresses: 56px -> 48px -> 32px hero sizes across breakpoints
+### 折叠策略
+- 英雄区：56px 展示 -> 移动端 32px，字重 300 保持
+- 导航：水平链接 + CTA -> 汉堡切换
+- 功能卡片：3 列 -> 2 列 -> 单列堆叠
+- 暗色品牌区块：保持全宽处理，缩减内部内边距
+- 金融数据表：移动端水平滚动
+- 区块间距：64px+ -> 移动端 40px
+- 排版刻度压缩：跨断点英雄尺寸 56px -> 48px -> 32px
 
-### Image Behavior
-- Dashboard/product screenshots maintain blue-tinted shadow at all sizes
-- Hero gradient decorations simplify on mobile
-- Code blocks maintain `SourceCodePro` treatment, may horizontally scroll
-- Card images maintain consistent 4px-6px border-radius
+### 图片行为
+- 仪表板/产品截图在所有尺寸下保持带蓝色调的阴影
+- 英雄渐变装饰在移动端简化
+- 代码块保持 `SourceCodePro` 处理，可能水平滚动
+- 卡片图片保持一致的 4px-6px 边框圆角
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Primary CTA: Stripe Purple (`#533afd`)
-- CTA Hover: Purple Dark (`#4434d4`)
-- Background: Pure White (`#ffffff`)
-- Heading text: Deep Navy (`#061b31`)
-- Body text: Slate (`#64748d`)
-- Label text: Dark Slate (`#273951`)
-- Border: Soft Blue (`#e5edf5`)
-- Link: Stripe Purple (`#533afd`)
-- Dark section: Brand Dark (`#1c1e54`)
-- Success: Green (`#15be53`)
-- Accent decorative: Ruby (`#ea2261`), Magenta (`#f96bee`)
+### 快速颜色参考
+- 主要 CTA：Stripe Purple（`#533afd`）
+- CTA 悬停：Purple Dark（`#4434d4`）
+- 背景：Pure White（`#ffffff`）
+- 标题文字：Deep Navy（`#061b31`）
+- 正文文字：Slate（`#64748d`）
+- 标签文字：Dark Slate（`#273951`）
+- 边框：Soft Blue（`#e5edf5`）
+- 链接：Stripe Purple（`#533afd`）
+- 暗色区块：Brand Dark（`#1c1e54`）
+- 成功：Green（`#15be53`）
+- 强调装饰：Ruby（`#ea2261`）、Magenta（`#f96bee`）
 
-### Example Component Prompts
-- "Create a hero section on white background. Headline at 48px sohne-var weight 300, line-height 1.15, letter-spacing -0.96px, color #061b31, font-feature-settings 'ss01'. Subtitle at 18px weight 300, line-height 1.40, color #64748d. Purple CTA button (#533afd, 4px radius, 8px 16px padding, white text) and ghost button (transparent, 1px solid #b9b9f9, #533afd text, 4px radius)."
-- "Design a card: white background, 1px solid #e5edf5 border, 6px radius. Shadow: rgba(50,50,93,0.25) 0px 30px 45px -30px, rgba(0,0,0,0.1) 0px 18px 36px -18px. Title at 22px sohne-var weight 300, letter-spacing -0.22px, color #061b31, 'ss01'. Body at 16px weight 300, #64748d."
-- "Build a success badge: rgba(21,190,83,0.2) background, #108c3d text, 4px radius, 1px 6px padding, 10px sohne-var weight 300, border 1px solid rgba(21,190,83,0.4)."
-- "Create navigation: white sticky header with backdrop-filter blur(12px). sohne-var 14px weight 400 for links, #061b31 text, 'ss01'. Purple CTA 'Start now' right-aligned (#533afd bg, white text, 4px radius). Nav container 6px radius."
-- "Design a dark brand section: #1c1e54 background, white text. Headline 32px sohne-var weight 300, letter-spacing -0.64px, 'ss01'. Body 16px weight 300, rgba(255,255,255,0.7). Cards inside use rgba(255,255,255,0.1) border with 6px radius."
+### 组件提示示例
+- "在白色背景上创建一个英雄区块。标题为 48px sohne-var 字重 300，行高 1.15，字间距 -0.96px，颜色 #061b31，font-feature-settings 'ss01'。副标题为 18px 字重 300，行高 1.40，颜色 #64748d。紫色 CTA 按钮（#533afd，4px 圆角，8px 16px 内边距，白色文字）和幽灵按钮（透明，1px solid #b9b9f9，#533afd 文字，4px 圆角）。"
+- "设计一张卡片：白色背景，1px solid #e5edf5 边框，6px 圆角。阴影：rgba(50,50,93,0.25) 0px 30px 45px -30px, rgba(0,0,0,0.1) 0px 18px 36px -18px。标题为 22px sohne-var 字重 300，字间距 -0.22px，颜色 #061b31，'ss01'。正文为 16px 字重 300，#64748d。"
+- "构建一个成功徽章：rgba(21,190,83,0.2) 背景，#108c3d 文字，4px 圆角，1px 6px 内边距，10px sohne-var 字重 300，边框 1px solid rgba(21,190,83,0.4)。"
+- "创建导航：白色固定头部配 backdrop-filter blur(12px)。sohne-var 14px 字重 400 用于链接，#061b31 文字，'ss01'。紫色 CTA '立即开始' 右对齐（#533afd 背景，白色文字，4px 圆角）。导航容器 6px 圆角。"
+- "设计一个暗色品牌区块：#1c1e54 背景，白色文字。标题 32px sohne-var 字重 300，字间距 -0.64px，'ss01'。正文 16px 字重 300，rgba(255,255,255,0.7)。内部卡片使用 rgba(255,255,255,0.1) 边框配 6px 圆角。"
 
-### Iteration Guide
-1. Always enable `font-feature-settings: "ss01"` on sohne-var text -- this is the brand's typographic DNA
-2. Weight 300 is the default; use 400 only for buttons/links/navigation
-3. Shadow formula: `rgba(50,50,93,0.25) 0px Y1 B1 -S1, rgba(0,0,0,0.1) 0px Y2 B2 -S2` where Y1/B1 are larger (far shadow) and Y2/B2 are smaller (near shadow)
-4. Heading color is `#061b31` (deep navy), body is `#64748d` (slate), labels are `#273951` (dark slate)
-5. Border-radius stays in the 4px-8px range -- never use pill shapes or large rounding
-6. Use `"tnum"` for any numbers in tables, charts, or financial displays
-7. Dark sections use `#1c1e54` -- not black, not gray, but a deep branded indigo
-8. SourceCodePro for code at 12px/500 with 2.00 line-height (very generous for readability)
+### 迭代指南
+1. 总是在 sohne-var 文字上启用 `font-feature-settings: "ss01"` —— 这是品牌的排版 DNA
+2. 字重 300 是默认；400 仅用于按钮/链接/导航
+3. 阴影公式：`rgba(50,50,93,0.25) 0px Y1 B1 -S1, rgba(0,0,0,0.1) 0px Y2 B2 -S2`，其中 Y1/B1 较大（远阴影），Y2/B2 较小（近阴影）
+4. 标题色是 `#061b31`（深海军蓝），正文是 `#64748d`（石板色），标签是 `#273951`（深石板色）
+5. 边框圆角保持在 4px-8px 范围 —— 绝不使用胶囊形或大圆角
+6. 为表格、图表或金融显示中的任何数字使用 `"tnum"`
+7. 暗色区块使用 `#1c1e54` —— 不是黑色，不是灰色，而是深品牌靛蓝
+8. 代码用 SourceCodePro，12px/500，2.00 行高（非常慷慨，便于阅读）

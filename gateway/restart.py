@@ -1,15 +1,14 @@
-"""Shared gateway restart constants and parsing helpers."""
+"""gateway 重启相关的共享常量与解析辅助函数。"""
 
 from hermes_cli.config import DEFAULT_CONFIG
 
-# EX_TEMPFAIL from sysexits.h — used to ask the service manager to restart
-# the gateway after a graceful drain/reload path completes.
+# 来自 sysexits.h 的 EX_TEMPFAIL —— 用于在优雅 drain/reload 流程结束后，
+# 请求 service manager 重启 gateway。
 GATEWAY_SERVICE_RESTART_EXIT_CODE = 75
 
-# EX_CONFIG from sysexits.h — fatal configuration error (e.g. token
-# collision, no messaging platforms).  The s6 finish script translates
-# this into exit 125 (permanent failure) so the supervisor stops
-# restarting the gateway.  See #51228.
+# 来自 sysexits.h 的 EX_CONFIG —— 致命的配置错误（例如 token 冲突、
+# 没有配置任何消息平台）。s6 finish 脚本会把它转换成退出码 125
+# （永久失败），这样 supervisor 就会停止重启 gateway。参见 #51228。
 GATEWAY_FATAL_CONFIG_EXIT_CODE = 78
 
 DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT = float(
@@ -18,7 +17,7 @@ DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT = float(
 
 
 def parse_restart_drain_timeout(raw: object) -> float:
-    """Parse a configured drain timeout, falling back to the shared default."""
+    """解析配置的 drain 超时时间，解析失败时回退到共享默认值。"""
     try:
         value = float(raw) if str(raw or "").strip() else DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT
     except (TypeError, ValueError):

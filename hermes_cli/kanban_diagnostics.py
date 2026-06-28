@@ -1,30 +1,24 @@
-"""Kanban diagnostics — structured, actionable distress signals for tasks.
+"""Kanban 诊断 — 为任务提供结构化、可操作的故障信号。
 
-A ``Diagnostic`` is a machine-readable description of something that's wrong
-with a kanban task: a hallucinated card id, a spawn crash-loop, a task
-stuck blocked for too long, etc. Each one carries:
+``Diagnostic`` 是对 kanban 任务异常情况的机器可读描述：例如幻觉卡片 id、
+spawn 崩溃循环、任务长时间阻塞等。每个诊断包含：
 
-* A **kind** (canonical code; UI/tests match on this).
-* A **severity** (``warning`` / ``error`` / ``critical``).
-* A **title** (one-line human description) and **detail** (longer text).
-* A list of **suggested actions** — structured entries the dashboard
-  turns into buttons and the CLI turns into hints.
+* **kind**（规范代码；UI/测试据此匹配）。
+* **severity**（``warning`` / ``error`` / ``critical``）。
+* **title**（一行人类可读描述）和 **detail**（更详细的文本）。
+* **建议操作列表** — 结构化条目，dashboard 将其转为按钮，CLI 将其转为提示。
 
-Rules run over (task, recent events, recent runs) and emit diagnostics.
-They are stateless and read-only — no DB writes. Callers compute
-diagnostics on demand (on ``/board`` load, ``/tasks/:id`` fetch, or
-``hermes kanban diagnostics``).
+规则基于（task, recent events, recent runs）运行并输出诊断。
+它们是无状态且只读的 — 不写入数据库。调用方按需计算诊断
+（在 ``/board`` 加载、``/tasks/:id`` 获取或 ``hermes kanban diagnostics`` 时）。
 
-Design goals:
+设计目标：
 
-* Fixable-on-the-operator's-side signals only (missing config, phantom
-  ids, crash loop). Not "the provider returned 502 once" — that's a
-  transient runtime blip, not a diagnostic.
-* Recoverable: every diagnostic comes with at least one suggested
-  recovery action the operator can actually take from the UI.
-* Auto-clearing: when the underlying failure mode resolves (a clean
-  ``completed`` event arrives, a spawn succeeds, the task gets
-  unblocked), the diagnostic stops firing. The audit event trail stays.
+* 只包含运维侧可修复的信号（缺少配置、幻影 id、崩溃循环）。
+  不包含"provider 返回了一次 502"之类的瞬态运行时抖动 — 那不是诊断。
+* 可恢复：每个诊断都附带至少一个运维人员可以从 UI 实际执行的建议恢复操作。
+* 自动清除：当底层故障模式解决（收到干净的 ``completed`` 事件、spawn 成功、
+  任务被解除阻塞）时，诊断停止触发。审计事件轨迹保留。
 """
 
 from __future__ import annotations
@@ -35,14 +29,13 @@ import json
 import time
 
 
-# Severity rungs, ordered least → most urgent. The UI colors them
-# amber (warning), orange (error), red (critical). Sorted outputs put
-# critical first so operators see the worst fires at the top.
+# 严重性等级，从低到高排序。UI 使用琥珀色（warning）、橙色（error）、红色（critical）。
+# 排序输出时 critical 在前，让运维人员优先看到最严重的问题。
 SEVERITY_ORDER = ("warning", "error", "critical")
 
 
 def severity_at_or_above(severity: Optional[str], threshold: Optional[str]) -> bool:
-    """Return True when ``severity`` meets or exceeds ``threshold``."""
+    """当 ``severity`` 达到或超过 ``threshold`` 时返回 True。"""
     if threshold is None:
         return True
     if severity not in SEVERITY_ORDER or threshold not in SEVERITY_ORDER:
@@ -52,23 +45,20 @@ def severity_at_or_above(severity: Optional[str], threshold: Optional[str]) -> b
 
 @dataclass
 class DiagnosticAction:
-    """A single recovery action attached to a diagnostic.
+    """附加到诊断的单个恢复操作。
 
-    The ``kind`` determines how both the UI and CLI render it:
+    ``kind`` 决定 UI 和 CLI 如何渲染它：
 
-    * ``reclaim`` / ``reassign`` — POST to the matching /tasks/:id/*
-      endpoint; dashboard wires into the existing recovery popover.
-    * ``unblock`` — PATCH status back to ``ready`` (for stuck-blocked
-      diagnostics).
-    * ``cli_hint`` — print/copy a shell command (e.g.
-      ``hermes -p <profile> auth``). No HTTP side effect.
-    * ``open_docs`` — deep-link to the docs URL named in ``payload.url``.
-    * ``comment`` — nudge the operator to add a comment (for
-      stuck-blocked tasks that need human input).
+    * ``reclaim`` / ``reassign`` — POST 到对应的 /tasks/:id/* 端点；
+      dashboard 将其连接到现有的恢复弹出层。
+    * ``unblock`` — PATCH 状态回 ``ready``（用于卡住的 blocked 诊断）。
+    * ``cli_hint`` — 打印/复制一条 shell 命令（例如
+      ``hermes -p <profile> auth``）。无 HTTP 副作用。
+    * ``open_docs`` — 深链接到 ``payload.url`` 中指定的文档 URL。
+    * ``comment`` — 提示运维人员添加评论（用于需要人工输入的卡住 blocked 任务）。
 
-    ``suggested=True`` marks the action as the recommended first step;
-    the UI highlights it. Multiple actions can be suggested if they're
-    equally valid.
+    ``suggested=True`` 将该操作标记为推荐的首选步骤；UI 会高亮它。
+    如果多个操作同样有效，可以标记多个为 suggested。
     """
 
     kind: str
@@ -87,7 +77,7 @@ class DiagnosticAction:
 
 @dataclass
 class Diagnostic:
-    """One active distress signal on a task."""
+    """任务上的一个活跃故障信号。"""
 
     kind: str
     severity: str  # "warning" | "error" | "critical"
@@ -97,9 +87,9 @@ class Diagnostic:
     first_seen_at: int = 0
     last_seen_at: int = 0
     count: int = 1
-    # Optional: the run id this diagnostic is scoped to. None = task-wide.
+    # 可选：此诊断所关联的 run id。None = 整个任务级别。
     run_id: Optional[int] = None
-    # Optional structured payload for the UI (phantom ids, failure count).
+    # 可选的 UI 结构化数据负载（幻影 id、失败计数等）。
     data: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -118,24 +108,22 @@ class Diagnostic:
 
 
 # ---------------------------------------------------------------------------
-# Rule helpers
+# 规则辅助函数
 # ---------------------------------------------------------------------------
 
 def _task_field(task, name, default=None):
-    """Read a field from a task regardless of representation.
+    """从任务中读取一个字段，无论其表示形式。
 
-    Callers pass sqlite3.Row (dict-like with [] but no attribute
-    access), kanban_db.Task dataclasses (attribute access), or plain
-    dicts (both). This normalises them so rule functions don't have
-    to branch on type each time.
+    调用方可能传入 sqlite3.Row（支持 [] 字典式访问但不支持属性访问）、
+    kanban_db.Task 数据类（支持属性访问）或普通 dict（两者都支持）。
+    此函数统一处理它们，使规则函数无需每次都按类型分支。
     """
     if task is None:
         return default
-    # sqlite Row + plain dicts both support mapping access; Row also
-    # supports .keys().
+    # sqlite Row 和普通 dict 都支持映射访问；Row 还支持 .keys()。
     try:
-        # Row raises IndexError if the key isn't a column in the query;
-        # dicts return default via .get. Handle both.
+        # Row 在 key 不在查询列中时会抛出 IndexError；
+        # dict 通过 .get 返回默认值。需要同时处理两种情况。
         if hasattr(task, "keys") and name in task.keys():
             return task[name]
     except Exception:
@@ -146,7 +134,7 @@ def _task_field(task, name, default=None):
 
 
 def _parse_payload(ev) -> dict:
-    """Tolerate event.payload being either a dict or a JSON string."""
+    """兼容 event.payload 为 dict 或 JSON 字符串两种情况。"""
     p = _task_field(ev, "payload", None)
     if p is None:
         return {}

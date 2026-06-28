@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Skills Hub CLI — Unified interface for the Hermes Skills Hub.
+Skills Hub CLI — Hermes Skills Hub 的统一接口。
 
-Powers both:
-  - `hermes skills <subcommand>` (CLI argparse entry point)
-  - `/skills <subcommand>` (slash command in the interactive chat)
+同时支持：
+  - `hermes skills <subcommand>`（CLI argparse 入口）
+  - `/skills <subcommand>`（交互式聊天中的斜杠命令）
 
-All logic lives in shared do_* functions. The CLI entry point and slash command
-handler are thin wrappers that parse args and delegate.
+所有逻辑都在共享的 do_* 函数中。CLI 入口和斜杠命令处理函数
+是薄封装层，负责解析参数并委托给对应函数。
 """
 
 import json
@@ -20,8 +20,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-# Lazy imports to avoid circular dependencies and slow startup.
-# tools.skills_hub and tools.skills_guard are imported inside functions.
+# 延迟导入以避免循环依赖和启动缓慢。
+# tools.skills_hub 和 tools.skills_guard 在函数内部导入。
 from hermes_constants import display_hermes_home
 from agent.skill_utils import is_excluded_skill_path
 
@@ -29,15 +29,15 @@ _console = Console()
 
 
 # ---------------------------------------------------------------------------
-# Shared do_* functions
+# 共享 do_* 函数
 # ---------------------------------------------------------------------------
 
 def _resolve_short_name(name: str, sources, console: Console) -> str:
     """
-    Resolve a short skill name (e.g. 'pptx') to a full identifier by searching
-    all sources. If exactly one match is found, returns its identifier. If multiple
-    matches exist, shows them and asks the user to use the full identifier.
-    Returns empty string if nothing found or ambiguous.
+    将简短的 skill 名称（例如 'pptx'）解析为完整标识符，通过搜索所有来源。
+    如果恰好找到一个匹配项，则返回其标识符。如果存在多个匹配项，
+    则显示它们并要求用户使用完整标识符。
+    如果未找到或存在歧义，则返回空字符串。
     """
     from tools.skills_hub import unified_search
 
@@ -46,7 +46,7 @@ def _resolve_short_name(name: str, sources, console: Console) -> str:
 
     results = unified_search(name, sources, source_filter="all", limit=20)
 
-    # Filter to exact name matches (case-insensitive)
+    # 过滤出精确名称匹配（不区分大小写）
     exact = [r for r in results if r.name.lower() == name.lower()]
 
     if len(exact) == 1:
@@ -58,8 +58,8 @@ def _resolve_short_name(name: str, sources, console: Console) -> str:
         table = Table()
         table.add_column("Source", style="dim")
         table.add_column("Trust", style="dim")
-        # overflow="fold" keeps the full slug visible (wraps instead of ellipsis-truncating)
-        # so users can copy it for `hermes skills install`.
+        # overflow="fold" 保持完整的 slug 可见（换行而不是省略号截断）
+        # 这样用户可以复制它用于 `hermes skills install`。
         table.add_column("Identifier", style="bold cyan", overflow="fold", no_wrap=False)
         for r in exact:
             trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow"}.get(r.trust_level, "dim")
@@ -69,7 +69,7 @@ def _resolve_short_name(name: str, sources, console: Console) -> str:
         c.print("[bold]Use the full identifier to install a specific one.[/]\n")
         return ""
 
-    # No exact match — check if there are partial matches to suggest
+    # 没有精确匹配 — 检查是否有部分匹配可以建议
     if results:
         c.print(f"[yellow]No exact match for '{name}'. Did you mean one of these?[/]")
         for r in results[:5]:
@@ -110,7 +110,7 @@ def _format_extra_metadata_lines(extra: Dict[str, Any]) -> list[str]:
 
 
 def _resolve_source_meta_and_bundle(identifier: str, sources):
-    """Resolve metadata and bundle for a specific identifier."""
+    """解析特定标识符的元数据和 bundle。"""
     meta = None
     bundle = None
     matched_source = None
@@ -146,7 +146,7 @@ def _derive_category_from_install_path(install_path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Interactive name/category resolution for URL-installed skills
+# URL 安装的 skill 的交互式名称/类别解析
 # ---------------------------------------------------------------------------
 
 _VALID_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
@@ -154,7 +154,7 @@ _VALID_CATEGORY_RE = re.compile(r"^[a-z][a-z0-9_/-]*$")
 
 
 def _is_valid_installed_skill_name(name: str) -> bool:
-    """Accept identifier-shaped names, reject empty / sentinel-y values."""
+    """接受标识符格式的命名，拒绝空值/哨兵值。"""
     if not isinstance(name, str):
         return False
     candidate = name.strip().lower()
@@ -164,11 +164,11 @@ def _is_valid_installed_skill_name(name: str) -> bool:
 
 
 def _existing_categories() -> List[str]:
-    """Return sorted subdirectory names under ``~/.hermes/skills/`` that look
-    like category buckets (contain at least one ``SKILL.md`` somewhere below).
+    """返回 ``~/.hermes/skills/`` 下排序后的子目录名，这些子目录
+    看起来像类别桶（在下方某处至少包含一个 ``SKILL.md``）。
 
-    Used to suggest reusable categories when interactively installing from a
-    URL. Hidden dirs (``.hub``, ``.trash``) are skipped.
+    用于在从 URL 交互式安装时建议可复用的类别。
+    隐藏目录（``.hub``、``.trash``）会被跳过。
     """
     from tools.skills_hub import SKILLS_DIR
     out: List[str] = []
@@ -176,12 +176,12 @@ def _existing_categories() -> List[str]:
         for entry in SKILLS_DIR.iterdir():
             if not entry.is_dir() or entry.name.startswith("."):
                 continue
-            # Only count as a category if it contains skills, not if it IS a skill.
-            # Heuristic: if ``<entry>/SKILL.md`` exists, it's a skill at the
-            # top level (no category); otherwise treat as a category bucket.
+            # 只有当它包含 skill 时才计为类别，而不是当它本身就是一个 skill 时。
+            # 启发式方法：如果 ``<entry>/SKILL.md`` 存在，则它是一个顶级
+            # skill（无类别）；否则将其视为类别桶。
             if (entry / "SKILL.md").exists():
                 continue
-            # Has at least one nested SKILL.md (excluding dependency/cache dirs)?
+            # 至少有一个嵌套的 SKILL.md（排除依赖/缓存目录）？
             try:
                 if any(
                     not is_excluded_skill_path(p)
@@ -196,7 +196,7 @@ def _existing_categories() -> List[str]:
 
 
 def _prompt_for_skill_name(c: Console, url: str, default: str = "") -> Optional[str]:
-    """Prompt interactively for a skill name. Returns None on cancel/EOF."""
+    """交互式提示输入 skill 名称。取消/EOF 时返回 None。"""
     c.print()
     c.print(
         f"[yellow]The SKILL.md at {url} doesn't declare a `name:` in its "
@@ -221,7 +221,7 @@ def _prompt_for_skill_name(c: Console, url: str, default: str = "") -> Optional[
 
 
 def _prompt_for_category(c: Console, existing: List[str]) -> str:
-    """Prompt interactively for a category. Empty/None input means flat install."""
+    """交互式提示输入类别。空/None 输入表示平铺安装。"""
     c.print()
     if existing:
         c.print(
@@ -247,13 +247,13 @@ def _prompt_for_category(c: Console, existing: List[str]) -> str:
 
 def do_search(query: str, source: str = "all", limit: int = 10,
               console: Optional[Console] = None, as_json: bool = False) -> None:
-    """Search registries and display results as a Rich table.
+    """搜索注册表并以 Rich 表格显示结果。
 
-    When ``as_json=True`` writes a JSON array of result records to stdout
-    (one object per skill: ``name``, ``identifier``, ``source``,
-    ``trust_level``, ``description``) and skips the table render. This is
-    the scripting / copy-paste handle: the full identifier is always
-    intact, even for browse-sh slugs that the table would otherwise wrap.
+    当 ``as_json=True`` 时，将结果记录的 JSON 数组写入 stdout
+    （每个 skill 一个对象：``name``、``identifier``、``source``、
+    ``trust_level``、``description``），并跳过表格渲染。这是
+    脚本/复制粘贴的句柄：即使表格会换行，完整标识符始终保持不变，
+    包括 browse.sh 的 slug。
     """
     from tools.skills_hub import GitHubAuth, create_source_router, unified_search
 
@@ -262,8 +262,7 @@ def do_search(query: str, source: str = "all", limit: int = 10,
     auth = GitHubAuth()
     sources = create_source_router(auth)
     if as_json:
-        # Avoid Rich status spinner contaminating stdout — JSON consumers
-        # expect a clean parseable stream.
+        # 避免 Rich 状态转轮污染 stdout — JSON 消费者需要干净的可解析流。
         results = unified_search(query, sources, source_filter=source, limit=limit)
         payload = [
             {
@@ -291,10 +290,10 @@ def do_search(query: str, source: str = "all", limit: int = 10,
     table.add_column("Description", max_width=60)
     table.add_column("Source", style="dim")
     table.add_column("Trust", style="dim")
-    # overflow="fold" keeps the full slug visible (wraps instead of
-    # ellipsis-truncating). Browse.sh slugs end in a `-XXXXXX` hash that
-    # is part of the actual identifier — truncating it makes copy-paste
-    # into `hermes skills install` fail.
+    # overflow="fold" 保持完整的 slug 可见（换行而不是
+    # 省略号截断）。Browse.sh slug 以 `-XXXXXX` 哈希结尾，
+    # 这是实际标识符的一部分 — 截断它会导致复制粘贴到
+    # `hermes skills install` 失败。
     table.add_column("Identifier", style="dim", overflow="fold", no_wrap=False)
 
     for r in results:
@@ -316,15 +315,15 @@ def do_search(query: str, source: str = "all", limit: int = 10,
 
 def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
               console: Optional[Console] = None) -> None:
-    """Browse all available skills across registries, paginated.
+    """浏览所有注册表中可用的 skill，分页显示。
 
-    Official skills are always shown first, regardless of source filter.
+    官方 skill 始终优先显示，无论 source 过滤器如何设置。
     """
     from tools.skills_hub import (
         GitHubAuth, create_source_router, parallel_search_sources,
     )
 
-    # Clamp page_size to safe range
+    # 将 page_size 限制在安全范围内
     page_size = max(1, min(page_size, 100))
 
     c = console or _console
@@ -332,18 +331,17 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     auth = GitHubAuth()
     sources = create_source_router(auth)
 
-    # Collect results from all (or filtered) sources in parallel.
-    # Per-source limits are generous — parallelism + 30s timeout cap prevents hangs.
+    # 并行收集所有（或过滤后的）来源的结果。
+    # 每个来源的限制很宽松 — 并行性 + 30 秒超时上限可防止挂起。
     _TRUST_RANK = {"builtin": 3, "trusted": 2, "community": 1}
-    # NOTE: when the centralized index is available, parallel_search_sources
-    # skips the external API sources and serves everything from "hermes-index".
-    # That source MUST therefore carry a limit large enough to cover the whole
-    # catalog, or browse silently caps the hub — it shipped at 50 (surfaced
-    # ~136 of 88k skills), then 5000 (surfaced ~5.4k of 90k). The index is
-    # disk-cached and browse paginates client-side, so a ceiling above the
-    # current catalog size is the right call. The external-source limits below
-    # only apply when the index is unavailable (offline / first run before the
-    # cache populates).
+    # 注意：当集中索引可用时，parallel_search_sources
+    # 跳过外部 API 来源，从 "hermes-index" 提供所有内容。
+    # 因此，该来源必须携带足够大的限制以覆盖整个目录，
+    # 否则浏览会静默地限制 hub — 它在 50（约显示 88k 个 skill
+    # 中的 136 个），然后是 5000（约显示 90k 个中的 5.4k）。
+    # 索引在磁盘上缓存，浏览在客户端分页，因此高于当前目录大小
+    # 的上限是正确的做法。以下外部来源限制仅在索引不可用时
+    # （离线/缓存填充前的首次运行）适用。
     _PER_SOURCE_LIMIT = {
         "hermes-index": 1000000,
         "official": 200, "skills-sh": 200, "well-known": 50,
@@ -352,12 +350,11 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     }
 
     with c.status("[bold]Fetching skills from registries...") as status:
-        # Live progress: tick off each source as it resolves so the wait is
-        # visible instead of a frozen spinner. parallel_search_sources invokes
-        # this callback from the collecting thread as each source completes;
-        # the page itself is still rendered once, after the correctly-merged
-        # and trust-sorted result set is final (browse's ordering contract is
-        # computed over the whole set, so we never render a half-sorted page).
+        # 实时进度：每个来源解析完成时标记，使等待可见
+        # 而不是冻结的转轮。parallel_search_sources 在每个来源完成时
+        # 从收集线程调用此回调；页面本身仍然在正确合并和按信任度排序
+        # 的结果集最终确定后一次性渲染（浏览的排序约定是在整个集合上计算的，
+        # 因此我们从不渲染半排序的页面）。
         _done: List[str] = []
 
         def _on_source_done(sid: str, count: int) -> None:
@@ -380,9 +377,9 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
         c.print("[dim]No skills found in the Skills Hub.[/]\n")
         return
 
-    # Deduplicate by identifier, preferring higher trust.
-    # identifier is always unique per skill; name is not (browse-sh skills from different
-    # sites can share the same task name, e.g. "search-listings" on Airbnb and Booking.com).
+    # 按标识符去重，优先选择更高信任度。
+    # identifier 在每个 skill 中始终是唯一的；name 不是（来自不同网站的 browse-sh skill
+    # 可以共享相同的任务名称，例如 Airbnb 和 Booking.com 上的 "search-listings"）。
     seen: dict = {}
     for r in all_results:
         rank = _TRUST_RANK.get(r.trust_level, 0)
@@ -390,14 +387,14 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
             seen[r.identifier] = r
     deduped = list(seen.values())
 
-    # Sort: official first, then by trust level (desc), then alphabetically
+    # 排序：官方优先，然后按信任度降序，最后按字母顺序
     deduped.sort(key=lambda r: (
         -_TRUST_RANK.get(r.trust_level, 0),
         r.source != "official",
         r.name.lower(),
     ))
 
-    # Paginate
+    # 分页
     total = len(deduped)
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
@@ -405,10 +402,10 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     end = min(start + page_size, total)
     page_items = deduped[start:end]
 
-    # Count official vs other
+    # 统计官方与其他来源的数量
     official_count = sum(1 for r in deduped if r.source == "official")
 
-    # Build header
+    # 构建标题
     source_label = f"— {source}" if source != "all" else "— all sources"
     loaded_label = f"{total} skills loaded"
     if timed_out:
@@ -419,16 +416,16 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
         c.print(f"[bright_cyan]★ {official_count} official optional skill(s) from Nous Research[/]")
     c.print()
 
-    # Build table
+    # 构建表格
     table = Table(show_header=True, header_style="bold")
     table.add_column("#", style="dim", width=4, justify="right")
     table.add_column("Name", style="bold cyan", max_width=22)
     table.add_column("Description", max_width=44)
     table.add_column("Source", style="dim", width=12)
     table.add_column("Trust", width=10)
-    # The identifier is what you pass to `hermes skills install`. Browse used
-    # to omit it entirely, so users couldn't act on what they saw without a
-    # second `search`. overflow="fold" keeps long slugs copy-pasteable.
+    # 标识符是传递给 `hermes skills install` 的参数。浏览功能曾经
+    # 完全省略它，导致用户无法根据看到的内容进行操作，除非
+    # 再次执行 `search`。overflow="fold" 保持长 slug 可复制粘贴。
     table.add_column("Identifier", style="dim", overflow="fold", no_wrap=False)
 
     for i, r in enumerate(page_items, start=start + 1):
@@ -451,7 +448,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
 
     c.print(table)
 
-    # Navigation hints
+    # 导航提示
     nav_parts = []
     if page > 1:
         nav_parts.append(f"[cyan]--page {page - 1}[/] ← prev")
@@ -461,7 +458,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     if nav_parts:
         c.print(f"  {' | '.join(nav_parts)}")
 
-    # Source summary
+    # 来源汇总
     if source == "all" and source_counts:
         parts = [f"{sid}: {ct}" for sid, ct in sorted(source_counts.items())]
         c.print(f"  [dim]Sources: {', '.join(parts)}[/]")
@@ -479,14 +476,13 @@ def do_install(identifier: str, category: str = "", force: bool = False,
                console: Optional[Console] = None, skip_confirm: bool = False,
                invalidate_cache: bool = True,
                name_override: str = "") -> None:
-    """Fetch, quarantine, scan, confirm, and install a skill.
+    """获取、隔离、扫描、确认并安装一个 skill。
 
-    ``name_override`` lets non-interactive callers (slash commands, gateway,
-    scripts) supply a skill name when the upstream SKILL.md lacks a valid
-    ``name:`` frontmatter field. On interactive TTY surfaces, a missing name
-    triggers a prompt instead; ``skip_confirm=True`` means "non-interactive"
-    (so pair it with ``name_override`` when installing from a URL that has
-    no frontmatter).
+    ``name_override`` 允许非交互式调用者（斜杠命令、gateway、
+    脚本）在上游 SKILL.md 缺少有效的 ``name:`` frontmatter 字段时
+    提供 skill 名称。在交互式 TTY 界面上，缺少名称会触发提示；
+    ``skip_confirm=True`` 表示"非交互式"（因此当从没有 frontmatter
+    的 URL 安装时，需要配合 ``name_override`` 使用）。
     """
     from tools.skills_hub import (
         GitHubAuth, create_source_router, ensure_hub_dirs,

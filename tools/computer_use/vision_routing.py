@@ -1,48 +1,41 @@
-"""Vision-routing decisions for ``computer_use`` capture results.
+"""``computer_use`` 捕获结果的视觉路由决策。
 
-Background
-----------
-``computer_use(action='capture', mode='som'|'vision')`` returns a
-``_multimodal`` envelope containing the captured screenshot. That envelope
-is delivered back to the **active session model** as the tool result. When
-the active main model has no vision capability (e.g. text-only or
-text+code-only models), or when the active provider rejects multimodal
-content inside tool-result messages, the screenshot trips a 404 / 400 at
-the provider boundary and the agent loop reports a hard tool failure.
+背景
+----
+``computer_use(action='capture', mode='som'|'vision')`` 返回一个
+``_multimodal`` 封包，其中包含捕获的截图。该封包会作为工具结果回传给
+**当前活动的会话模型**。当活动主模型没有视觉能力（例如纯文本模型，或仅
+支持文本+代码的模型），或当活动的 provider 拒绝工具结果消息中的多模态
+内容时，截图会在 provider 边界触发 404 / 400，agent 循环随之上报一个
+硬性工具失败。
 
-Issue #24015 reports this regression for the ``cua-driver`` backend:
-configuring ``auxiliary.vision`` (a dedicated vision-capable model) in
-``config.yaml`` was silently ignored — the screenshot was still routed at
-the *main* model and failed with HTTP 404 ``No endpoints found that
-support image input`` even though a perfectly good vision backend was
-sitting in config waiting to be used.
+Issue #24015 报告了 ``cua-driver`` 后端的这一回归：在 ``config.yaml`` 中
+配置 ``auxiliary.vision``（一个专用的具备视觉能力的模型）会被静默忽略
+——截图仍然被路由到*主*模型，并以 HTTP 404 ``No endpoints found that
+support image input`` 失败，即便配置里正坐着一个完全可用的视觉后端等待
+被使用。
 
-This module centralises the small policy decision: should a captured
-screenshot be returned as multimodal content (main model handles vision
-natively) or pre-analysed via the auxiliary vision pipeline so the main
-model only ever sees text?
+本模块集中处理这一小型策略决策：捕获的截图应作为多模态内容返回（由主
+模型原生处理视觉），还是经由辅助视觉管线预先分析，使主模型只能看到
+文本？
 
-Behaviour (mirrors ``vision_analyze`` for consistency)
-------------------------------------------------------
-* If the user explicitly configured ``auxiliary.vision`` (any of
-  ``provider``, ``model``, or ``base_url`` non-empty / not ``"auto"``),
-  the screenshot is routed through the aux vision pipeline. Users who
-  pay for a dedicated vision model usually want it used.
-* Otherwise, if the user explicitly declared the active model vision-capable
-  via ``model.supports_vision`` / provider model config, return ``False``.
-  This is the escape hatch for custom/local OpenAI-compatible VLM routes that
-  are absent from models.dev and provider allowlists.
-* Otherwise, if the active main model+provider can carry an image inside
-  a tool-result message AND the model reports ``supports_vision=True``
-  in models.dev metadata, return ``False`` (use the multimodal path).
-* In every other case (non-vision main model, provider that does not
-  accept multimodal tool results, lookup failure), route through aux
-  vision so the main model receives a text description it can act on.
+行为（与 ``vision_analyze`` 保持一致）
+----------------------------------------
+* 若用户显式配置了 ``auxiliary.vision``（``provider``、``model`` 或
+  ``base_url`` 任意一个非空且不为 ``"auto"``），截图会经由辅助视觉管线
+  路由。用户为专用视觉模型付费，通常就是希望用到它。
+* 否则，若用户通过 ``model.supports_vision`` / provider 模型配置显式声明
+  活动模型具备视觉能力，返回 ``False``。这是给自定义/本地 OpenAI 兼容
+  VLM 路由的逃生口——这类路由在 models.dev 与 provider 白名单中查不到。
+* 否则，若活动主模型+provider 能在工具结果消息中携带图片，且模型在
+  models.dev 元数据中报告 ``supports_vision=True``，则返回 ``False``
+  （走多模态路径）。
+* 其余所有情况（非视觉主模型、不接受多模态工具结果的 provider、查找
+  失败），都路由到辅助视觉，使主模型收到一段可操作的文本描述。
 
-The decision intentionally fails *closed* (i.e. towards aux routing) when
-metadata is missing or ambiguous: returning a screenshot to a model that
-cannot read it is a hard tool failure, while routing it through aux costs
-one extra LLM call and yields a usable description.
+当元数据缺失或模糊时，该决策有意*偏向关闭*（即倾向于辅助路由）：把
+截图返回给一个读不懂它的模型属于硬性工具失败，而经由辅助路由仅多花
+一次 LLM 调用，且能产出可用的描述。
 """
 
 from __future__ import annotations
@@ -54,13 +47,11 @@ logger = logging.getLogger(__name__)
 
 
 def _explicit_aux_vision_override(cfg: Optional[Dict[str, Any]]) -> bool:
-    """True when ``auxiliary.vision`` carries a non-default user override.
+    """当 ``auxiliary.vision`` 携带非默认的用户覆盖时返回 True。
 
-    Mirrors ``agent.image_routing._explicit_aux_vision_override`` so the
-    capture path and the user-attached-image path agree on what counts as
-    an explicit user request for the aux vision pipeline. ``provider:
-    "auto"``, blank values, or a missing block all count as *not*
-    explicit.
+    与 ``agent.image_routing._explicit_aux_vision_override`` 保持一致，
+    使捕获路径与用户附加图片路径对"什么算作对辅助视觉管线的显式用户请求"
+    达成共识。``provider: "auto"``、空值或缺失的配置块都算作*非显式*。
     """
     if not isinstance(cfg, dict):
         return False
@@ -85,7 +76,7 @@ def _lookup_user_declared_supports_vision(
     model: str,
     cfg: Optional[Dict[str, Any]],
 ) -> Optional[bool]:
-    """Return config-declared ``supports_vision`` for the active route."""
+    """返回当前路由由配置声明的 ``supports_vision``。"""
     try:
         from agent.image_routing import _supports_vision_override
     except Exception as exc:  # pragma: no cover - defensive
@@ -109,7 +100,7 @@ def _lookup_supports_vision(
     model: str,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> Optional[bool]:
-    """Return config/models.dev ``supports_vision`` for *(provider, model)*."""
+    """返回 *(provider, model)* 由配置/models.dev 给出的 ``supports_vision``。"""
     if not provider or not model:
         return None
     try:
@@ -141,12 +132,11 @@ def _lookup_supports_vision(
 
 
 def _provider_accepts_multimodal_tool_result(provider: str, model: str) -> Optional[bool]:
-    """Return whether *provider*+*model* carries images inside tool-result messages.
+    """返回 *provider*+*model* 是否在工具结果消息中携带图片。
 
-    Reuses ``tools.vision_tools._supports_media_in_tool_results`` so the
-    capture-routing decision stays in lockstep with the
-    ``vision_analyze`` native fast path. Returns None on import failure
-    so callers fall back to aux routing rather than guessing.
+    复用 ``tools.vision_tools._supports_media_in_tool_results``，使捕获路由
+    决策与 ``vision_analyze`` 的原生快速路径保持步调一致。导入失败时返回
+    None，让调用方回退到辅助路由，而非猜测。
     """
     if not provider:
         return None
@@ -166,19 +156,18 @@ def should_route_capture_to_aux_vision(
     model: str,
     cfg: Optional[Dict[str, Any]],
 ) -> bool:
-    """Return True iff the captured screenshot should be pre-analysed via aux vision.
+    """当捕获的截图应经由辅助视觉预先分析时返回 True。
 
-    Args:
-      provider: active inference provider id (e.g. ``"openrouter"``,
-        ``"anthropic"``, ``"openai-codex"``). Lower-case canonical id.
-      model:    active main model slug as it would be sent to the provider.
-      cfg:      loaded ``config.yaml`` dict (or None).
+    参数：
+      provider: 当前推理 provider 的 id（例如 ``"openrouter"``、
+        ``"anthropic"``、``"openai-codex"``）。规范化的小写 id。
+      model:    当前主模型 slug，即发送给 provider 的形式。
+      cfg:      已加载的 ``config.yaml`` 字典（或 None）。
 
-    Returns:
-      ``True`` when the caller should hand the screenshot to the aux vision
-      pipeline (and surface a text-only tool result). ``False`` when the
-      caller should keep the existing multimodal envelope (main model
-      handles vision natively).
+    返回：
+      当调用方应把截图交给辅助视觉管线（并对外暴露一个纯文本的工具结果）
+      时为 ``True``。当调用方应保留既有的多模态封包（主模型原生处理视觉）
+      时为 ``False``。
     """
     if _explicit_aux_vision_override(cfg):
         return True

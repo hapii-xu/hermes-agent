@@ -1,109 +1,109 @@
-# Issue Taxonomy
+# 问题分类法
 
-Use this taxonomy to classify issues found during dogfood QA testing.
+使用此分类法对 dogfood QA 测试中发现的问题进行分类。
 
-## Severity Levels
+## 严重性级别
 
-### Critical
-The issue makes a core feature completely unusable or causes data loss.
+### 严重（Critical）
+该问题使某个核心功能完全无法使用，或导致数据丢失。
 
-**Examples:**
-- Application crashes or shows a blank white page
-- Form submission silently loses user data
-- Authentication is completely broken (can't log in at all)
-- Payment flow fails and charges the user without completing the order
-- Security vulnerability (e.g., XSS, exposed credentials in console)
+**示例：**
+- 应用崩溃或显示空白白页
+- 表单提交静默丢失用户数据
+- 身份验证完全损坏（根本无法登录）
+- 支付流程失败，向用户收费却未完成订单
+- 安全漏洞（例如 XSS、控制台中暴露的凭据）
 
-### High
-The issue significantly impairs functionality but a workaround may exist.
+### 高（High）
+该问题显著损害功能，但可能存在变通方法。
 
-**Examples:**
-- A key button does nothing when clicked (but refreshing fixes it)
-- Search returns no results for valid queries
-- Form validation rejects valid input
-- Page loads but critical content is missing or garbled
-- Navigation link leads to a 404 or wrong page
-- Uncaught JavaScript exceptions in the console on core pages
+**示例：**
+- 关键按钮点击后无反应（但刷新可修复）
+- 搜索对有效查询不返回结果
+- 表单验证拒绝有效输入
+- 页面加载但关键内容缺失或乱码
+- 导航链接指向 404 或错误页面
+- 核心页面上的控制台中出现未捕获的 JavaScript 异常
 
-### Medium
-The issue is noticeable and affects user experience but doesn't block core functionality.
+### 中（Medium）
+该问题明显且影响用户体验，但不阻碍核心功能。
 
-**Examples:**
-- Layout is misaligned or overlapping on certain screen sections
-- Images fail to load (broken image icons)
-- Slow performance (visible loading delays > 3 seconds)
-- Form field lacks proper validation feedback (no error message on bad input)
-- Console warnings that suggest deprecated or misconfigured features
-- Inconsistent styling between similar pages
+**示例：**
+- 某些屏幕区域上布局错位或重叠
+- 图片加载失败（损坏的图片图标）
+- 性能缓慢（可见的加载延迟 > 3 秒）
+- 表单字段缺乏适当的验证反馈（错误输入时无错误消息）
+- 控制台警告暗示已弃用或配置错误的功能
+- 相似页面之间的样式不一致
 
-### Low
-Minor polish issues that don't affect functionality.
+### 低（Low）
+不影响功能的次要打磨问题。
 
-**Examples:**
-- Typos or grammatical errors in text content
-- Minor spacing or alignment inconsistencies
-- Placeholder text left in production ("Lorem ipsum")
-- Favicon missing
-- Console info/debug messages that shouldn't be in production
-- Subtle color contrast issues that don't fail WCAG requirements
+**示例：**
+- 文字内容中的拼写或语法错误
+- 轻微的间距或对齐不一致
+- 生产环境中遗留的占位符文字（"Lorem ipsum"）
+- 网站图标（favicon）缺失
+- 不应出现在生产环境中的控制台 info/debug 消息
+- 不影响 WCAG 要求的细微颜色对比问题
 
-## Categories
+## 类别
 
-### Functional
-Issues where features don't work as expected.
+### 功能（Functional）
+功能未按预期工作的问题。
 
-- Buttons/links that don't respond
-- Forms that don't submit or submit incorrectly
-- Broken user flows (can't complete a multi-step process)
-- Incorrect data displayed
-- Features that work partially
+- 不响应的按钮/链接
+- 不提交或提交错误的表单
+- 损坏的用户流程（无法完成多步骤流程）
+- 显示错误的数据
+- 部分工作的功能
 
-### Visual
-Issues with the visual presentation of the page.
+### 视觉（Visual）
+页面视觉呈现的问题。
 
-- Layout problems (overlapping elements, broken grids)
-- Broken images or missing media
-- Styling inconsistencies
-- Responsive design failures
-- Z-index issues (elements hidden behind others)
-- Text overflow or truncation
+- 布局问题（重叠元素、损坏的网格）
+- 损坏的图片或缺失的媒体
+- 样式不一致
+- 响应式设计失败
+- Z-index 问题（元素被隐藏在其他元素之后）
+- 文字溢出或截断
 
-### Accessibility
-Issues that prevent or hinder access for users with disabilities.
+### 无障碍（Accessibility）
+阻碍或妨碍残障用户访问的问题。
 
-- Missing alt text on meaningful images
-- Poor color contrast (fails WCAG AA)
-- Elements not reachable via keyboard navigation
-- Missing form labels or ARIA attributes
-- Focus indicators missing or unclear
-- Screen reader incompatible content
+- 有意义的图片缺少 alt 文字
+- 颜色对比差（不符合 WCAG AA）
+- 无法通过键盘导航到达的元素
+- 缺少表单标签或 ARIA 属性
+- 聚焦指示器缺失或不清晰
+- 屏幕阅读器不兼容的内容
 
-### Console
-Issues detected through JavaScript console output.
+### 控制台（Console）
+通过 JavaScript 控制台输出检测到的问题。
 
-- Uncaught exceptions and unhandled promise rejections
-- Failed network requests (4xx, 5xx errors in console)
-- Deprecation warnings
-- CORS errors
-- Mixed content warnings (HTTP resources on HTTPS page)
-- Excessive console.log output left from development
+- 未捕获的异常和未处理的 Promise 拒绝
+- 失败的网络请求（控制台中的 4xx、5xx 错误）
+- 弃用警告
+- CORS 错误
+- 混合内容警告（HTTPS 页面上的 HTTP 资源）
+- 开发遗留的过多 console.log 输出
 
-### UX (User Experience)
-Issues where functionality works but the experience is poor.
+### UX（用户体验）
+功能可用但体验很差的问题。
 
-- Confusing navigation or information architecture
-- Missing loading indicators (user doesn't know something is happening)
-- No feedback after user actions (e.g., button click with no visible result)
-- Inconsistent interaction patterns
-- Missing confirmation dialogs for destructive actions
-- Poor error messages that don't help the user recover
+- 令人困惑的导航或信息架构
+- 缺少加载指示器（用户不知道正在发生什么）
+- 用户操作后无反馈（例如按钮点击后无可见结果）
+- 不一致的交互模式
+- 破坏性操作缺少确认对话框
+- 无助于用户恢复的糟糕错误消息
 
-### Content
-Issues with the text, media, or information on the page.
+### 内容（Content）
+页面上文字、媒体或信息的问题。
 
-- Typos and grammatical errors
-- Placeholder/dummy content in production
-- Outdated information
-- Missing content (empty sections)
-- Broken or dead links to external resources
-- Incorrect or misleading labels
+- 拼写和语法错误
+- 生产环境中的占位符/虚拟内容
+- 过时的信息
+- 缺失内容（空白区块）
+- 指向外部资源的损坏或死链
+- 不正确或误导性的标签

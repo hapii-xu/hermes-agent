@@ -14,7 +14,7 @@ describe('planGatewayRecovery', () => {
   })
 
   it('keeps retrying the recovery target through a startup crash-loop, bounded by the budget', () => {
-    // First exit: live sid present.
+    // 第一次退出：存在活跃 sid。
     let attempts: number[] = []
     let plan = planGatewayRecovery('sess-1', null, attempts, 0)
 
@@ -22,8 +22,8 @@ describe('planGatewayRecovery', () => {
     expect(plan.sid).toBe('sess-1')
     attempts = plan.attempts
 
-    // Respawn crash-loops before gateway.ready: live sid is now null, but the
-    // recovery target carries it forward so we keep trying up to the budget.
+    // 在 gateway.ready 之前 respawn 循环崩溃：活跃 sid 现在为 null，但
+    // 恢复目标会将其传递下去，因此我们持续尝试直到预算耗尽。
     for (let i = 1; i < GATEWAY_RECOVERY_LIMIT; i++) {
       plan = planGatewayRecovery(null, 'sess-1', attempts, i)
       expect(plan.recover).toBe(true)
@@ -31,7 +31,7 @@ describe('planGatewayRecovery', () => {
       attempts = plan.attempts
     }
 
-    // Budget exhausted: fall back to the inert state instead of spawn-storming.
+    // 预算耗尽：回退到非活跃状态，而非风暴式 spawn。
     plan = planGatewayRecovery(null, 'sess-1', attempts, GATEWAY_RECOVERY_LIMIT)
     expect(plan.recover).toBe(false)
     expect(plan.sid).toBe('sess-1')

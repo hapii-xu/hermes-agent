@@ -1,53 +1,53 @@
-# Scene Planning Reference
+# 场景规划参考
 
-## Narrative Arc Structures
+## 叙事弧线结构
 
-### Discovery Arc (most common)
-1. Hook -- pose a question or surprising result
-2. Intuition -- build visual understanding
-3. Formalize -- introduce the equation/algorithm
-4. Reveal -- the "aha moment"
-5. Extend -- implications or generalizations
+### 发现弧（最常见）
+1. 钩子 —— 抛出一个问题或令人惊讶的结果
+2. 直觉 —— 建立视觉理解
+3. 形式化 —— 引入公式/算法
+4. 揭示 —— "顿悟时刻"
+5. 拓展 —— 推论或推广
 
-### Problem-Solution Arc
-1. Problem -- what's broken
-2. Failed attempt -- obvious approach fails
-3. Key insight -- the idea that works
-4. Solution -- implement it
-5. Result -- show improvement
+### 问题—解决弧
+1. 问题 —— 哪里坏了
+2. 失败的尝试 —— 显而易见的做法行不通
+3. 关键洞见 —— 行得通的那个想法
+4. 解决方案 —— 实施它
+5. 结果 —— 展示改进
 
-### Comparison Arc
-1. Setup -- introduce two approaches
-2. Approach A -- how it works
-3. Approach B -- how it works
-4. Contrast -- differences
-5. Verdict -- which is better
+### 对比弧
+1. 设定 —— 引入两种方法
+2. 方法 A —— 它如何工作
+3. 方法 B —— 它如何工作
+4. 对比 —— 差异
+5. 结论 —— 哪个更好
 
-### Build-Up Arc (architecture/systems)
-1. Component A -- first piece
-2. Component B -- second piece
-3. Connection -- how they interact
-4. Scale -- add more pieces
-5. Full picture -- zoom out
+### 逐步搭建弧（架构/系统类）
+1. 组件 A —— 第一块
+2. 组件 B —— 第二块
+3. 连接 —— 它们如何互动
+4. 扩展 —— 加入更多块
+5. 全景 —— 缩小看全貌
 
-## Scene Transitions
+## 场景过渡
 
-### Clean Break (default)
+### 干净中断（默认）
 ```python
 self.play(FadeOut(Group(*self.mobjects)), run_time=0.5)
 self.wait(0.3)
 ```
 
-### Carry-Forward
-Keep one element, fade the rest. Next scene starts with it still on screen.
+### 承接延续
+保留一个元素，淡出其余。下一个场景从这个仍可见的元素开始。
 
-### Transform Bridge
-End scene with a shape, start next scene by transforming it.
+### 变换桥梁
+上一个场景以一个形状结束，下一个场景从这个形状变换开始。
 
-## Cross-Scene Consistency
+## 跨场景一致性
 
 ```python
-# Shared constants at file top
+# 文件顶部共享常量
 BG = "#1C1C1C"
 PRIMARY = "#58C4DD"
 SECONDARY = "#83C167"
@@ -58,61 +58,61 @@ LABEL_SIZE = 24
 FAST = 0.8; NORMAL = 1.5; SLOW = 2.5
 ```
 
-## Scene Checklist
+## 场景检查清单
 
-- [ ] Background color set
-- [ ] Subcaptions on every animation
-- [ ] `self.wait()` after every reveal
-- [ ] Text buff >= 0.5 for edge positioning
-- [ ] No text overlap
-- [ ] Color constants used (not hardcoded)
-- [ ] Opacity layering applied
-- [ ] Clean exit at scene end
-- [ ] No more than 5-6 elements visible at once
+- [ ] 已设置背景色
+- [ ] 每个动画都有 subcaption
+- [ ] 每次揭示之后都有 `self.wait()`
+- [ ] 边缘定位的文字 buff >= 0.5
+- [ ] 没有文字重叠
+- [ ] 使用了颜色常量（非硬编码）
+- [ ] 应用了透明度分层
+- [ ] 场景结尾有干净退出
+- [ ] 同时可见的元素不超过 5-6 个
 
-## Duration Estimation
+## 时长估算
 
-| Content | Duration |
+| 内容 | 时长 |
 |---------|----------|
-| Title card | 3-5s |
-| Concept introduction | 10-20s |
-| Equation reveal | 15-25s |
-| Algorithm step | 5-10s |
-| Data comparison | 10-15s |
-| "Aha moment" | 15-30s |
-| Conclusion | 5-10s |
+| 标题卡 | 3-5s |
+| 概念引入 | 10-20s |
+| 公式揭示 | 15-25s |
+| 算法步骤 | 5-10s |
+| 数据对比 | 10-15s |
+| "顿悟时刻" | 15-30s |
+| 结论 | 5-10s |
 
-## Planning Template
+## 规划模板
 
 ```markdown
-# [Video Title]
+# [视频标题]
 
-## Overview
-- **Topic**: [Core concept]
-- **Hook**: [Opening question]
-- **Aha moment**: [Key insight]
-- **Target audience**: [Prerequisites]
-- **Length**: [seconds/minutes]
-- **Resolution**: 480p (draft) / 1080p (final)
+## 概览
+- **主题**：[核心概念]
+- **钩子**：[开场问题]
+- **顿悟时刻**：[关键洞见]
+- **目标受众**：[前置知识]
+- **时长**：[秒/分钟]
+- **分辨率**：480p（草稿）/ 1080p（成品）
 
-## Color Palette
-- Background: #1C1C1C
-- Primary: #58C4DD -- [purpose]
-- Secondary: #83C167 -- [purpose]
-- Accent: #FFFF00 -- [purpose]
+## 配色方案
+- 背景：#1C1C1C
+- 主色：#58C4DD —— [用途]
+- 辅色：#83C167 —— [用途]
+- 强调色：#FFFF00 —— [用途]
 
-## Arc: [Discovery / Problem-Solution / Comparison / Build-Up]
+## 弧线：[发现 / 问题—解决 / 对比 / 逐步搭建]
 
-## Scene 1: [Name] (~Ns)
-**Purpose**: [one sentence]
-**Layout**: [FULL_CENTER / LEFT_RIGHT / GRID / PROGRESSIVE]
+## 场景 1：[名称]（约 Ns）
+**目的**：[一句话]
+**布局**：[FULL_CENTER / LEFT_RIGHT / GRID / PROGRESSIVE]
 
-### Visual elements
-- [Mobject: type, position, color]
+### 视觉元素
+- [mobject：类型、位置、颜色]
 
-### Animation sequence
-1. [Animation] -- [what it reveals] (~Ns)
+### 动画序列
+1. [动画] —— [它揭示了什么]（约 Ns）
 
-### Subtitle
-"[text]"
+### 字幕
+"[文字]"
 ```

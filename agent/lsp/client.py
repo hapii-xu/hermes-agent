@@ -1,43 +1,38 @@
-"""Async LSP client over stdin/stdout.
+"""基于 stdin/stdout 的异步 LSP 客户端。
 
-One :class:`LSPClient` corresponds to one ``(language_server, workspace_root)``
-pair — exactly what OpenCode keys clients on, and the same shape Claude
-Code uses.  The client owns a child process, drives the JSON-RPC
-exchange, and exposes:
+每个 :class:`LSPClient` 对应一个 ``(language_server, workspace_root)``
+配对——这恰好是 OpenCode 用于区分客户端的键，也是 Claude Code 使用的
+相同模式。客户端负责管理一个子进程、驱动 JSON-RPC 通信，并暴露以下接口：
 
-- :meth:`open_file` / :meth:`change_file` — text document sync
-- :meth:`wait_for_diagnostics` — block until the server emits fresh
-  diagnostics for a specific file (or a timeout fires)
-- :meth:`diagnostics_for` — read the current per-file diagnostic store
-- :meth:`shutdown` — graceful close + SIGTERM/SIGKILL fallback
+- :meth:`open_file` / :meth:`change_file` — 文本文档同步
+- :meth:`wait_for_diagnostics` — 阻塞等待服务端为指定文件发出新的
+  诊断信息（或超时触发）
+- :meth:`diagnostics_for` — 读取当前按文件存储的诊断信息
+- :meth:`shutdown` — 优雅关闭 + SIGTERM/SIGKILL 回退
 
-The class is designed for async use from a single asyncio event loop.
-The :class:`agent.lsp.manager.LSPService` runs an event loop in a
-background thread so the synchronous file_operations layer can call
-into it via :func:`agent.lsp.manager.LSPService.touch_file`.
+此类设计用于单个 asyncio 事件循环中的异步使用。
+:class:`agent.lsp.manager.LSPService` 在后台线程中运行事件循环，
+以便同步的 file_operations 层可以通过
+:func:`agent.lsp.manager.LSPService.touch_file` 调用它。
 
-Implementation notes:
+实现说明：
 
-- Push diagnostics are stored per-URI in :attr:`_push_diagnostics` from
-  ``textDocument/publishDiagnostics`` notifications.  Pull diagnostics
-  go in :attr:`_pull_diagnostics`.  The merged view dedupes by content.
+- Push 诊断信息按 URI 存储在 :attr:`_push_diagnostics` 中，来源于
+  ``textDocument/publishDiagnostics`` 通知。Pull 诊断信息存储在
+  :attr:`_pull_diagnostics` 中。合并视图按内容去重。
 
-- Whole-document sync.  Even when the server advertises incremental
-  sync, we send a single ``contentChanges`` entry replacing the
-  entire document.  Pretending to be incremental while sending a
-  full replacement is well-tolerated by every major server and saves
-  range bookkeeping.  See OpenCode's ``client.ts:584-659`` for the
-  same trick.
+- 全文档同步。即使服务端声明支持增量同步，我们也发送单个
+  ``contentChanges`` 条目来替换整个文档。假装增量但实际发送全量替换
+  已被所有主流服务端良好容忍，并且节省了范围记录开销。
+  参见 OpenCode 的 ``client.ts:584-659`` 了解相同的技巧。
 
-- The "touch-file dance": every ``open_file`` call also fires a
-  ``workspace/didChangeWatchedFiles`` notification (CREATED on the
-  first open, CHANGED thereafter).  Some servers (clangd, eslint)
-  only re-scan when this notification fires, even though the LSP spec
-  doesn't strictly require it.
+- "touch-file 操作"：每次 ``open_file`` 调用还会触发
+  ``workspace/didChangeWatchedFiles`` 通知（首次打开时发送 CREATED，
+  之后发送 CHANGED）。某些服务端（clangd、eslint）仅在此通知触发时
+  才重新扫描，尽管 LSP 规范并未严格要求这样做。
 
-- ``ContentModified`` (-32801) errors get retried with exponential
-  backoff up to 3 times.  This matches Claude Code's
-  ``LSPServerInstance.sendRequest``.
+- ``ContentModified`` (-32801) 错误会以指数退避方式重试最多 3 次。
+  这与 Claude Code 的 ``LSPServerInstance.sendRequest`` 行为一致。
 """
 from __future__ import annotations
 
@@ -65,29 +60,29 @@ from agent.lsp.protocol import (
 
 logger = logging.getLogger("agent.lsp.client")
 
-# Timeouts (seconds) — mirror OpenCode's constants, scaled to seconds.
+# 超时时间（秒）—— 对应 OpenCode 的常量，换算为秒。
 INITIALIZE_TIMEOUT = 45.0
 DIAGNOSTICS_DOCUMENT_WAIT = 5.0
 DIAGNOSTICS_FULL_WAIT = 10.0
 DIAGNOSTICS_REQUEST_TIMEOUT = 3.0
 PUSH_DEBOUNCE = 0.15
-SHUTDOWN_GRACE = 1.0  # seconds between SIGTERM and SIGKILL
+SHUTDOWN_GRACE = 1.0  # SIGTERM 和 SIGKILL 之间的等待秒数
 
-# Retry policy for transient ContentModified errors.
+# 针对临时性 ContentModified 错误的重试策略。
 MAX_CONTENT_MODIFIED_RETRIES = 3
-RETRY_BASE_DELAY = 0.5  # 0.5, 1.0, 2.0 — exponential
+RETRY_BASE_DELAY = 0.5  # 0.5, 1.0, 2.0 — 指数递增
 
 
 def file_uri(path: str) -> str:
-    """Return ``file://`` URI for an absolute filesystem path.
+    """返回绝对文件系统路径对应的 ``file://`` URI。
 
-    Mirrors Node's ``pathToFileURL`` — handles spaces, unicode, and
-    Windows drive letters (``C:\\foo`` → ``file:///C:/foo``).
+    对应 Node 的 ``pathToFileURL``——处理空格、Unicode 字符
+    以及 Windows 盘符（``C:\\foo`` → ``file:///C:/foo``）。
     """
     abs_path = os.path.abspath(path)
     if os.name == "nt":
-        # Windows: backslash → forward slash, prepend extra slash so
-        # the drive letter shows up as part of the path component.
+        # Windows：反斜杠转换为正斜杠，并在前面加一个斜杠，
+        # 使盘符作为路径组件的一部分出现。
         abs_path = abs_path.replace("\\", "/")
         if not abs_path.startswith("/"):
             abs_path = "/" + abs_path
@@ -95,42 +90,40 @@ def file_uri(path: str) -> str:
 
 
 def uri_to_path(uri: str) -> str:
-    """Inverse of :func:`file_uri`."""
+    """:func:`file_uri` 的逆操作。"""
     if not uri.startswith("file://"):
         return uri
     raw = uri[len("file://"):]
     if os.name == "nt" and raw.startswith("/") and len(raw) > 2 and raw[2] == ":":
-        raw = raw[1:]  # strip leading slash before drive letter
+        raw = raw[1:]  # 去掉盘符前的前导斜杠
     return os.path.normpath(unquote(raw))
 
 
 def _end_position(text: str) -> Dict[str, int]:
-    """Return the LSP Position at the end of ``text``.
+    """返回 ``text`` 末尾处的 LSP Position。
 
-    Used to construct a single-range "replace whole document" change
-    for ``textDocument/didChange`` regardless of the server's declared
-    sync mode.
+    用于构建 ``textDocument/didChange`` 的"替换整个文档"变更范围，
+    无论服务器声明支持哪种同步模式。
     """
     if not text:
         return {"line": 0, "character": 0}
     lines = text.splitlines(keepends=False)
     last_line = len(lines) - 1
     last_col = len(lines[-1]) if lines else 0
-    # If the text ends with a trailing newline, ``splitlines`` won't
-    # represent it.  The end position is then the start of the next
-    # (empty) line — line index is len(lines), column 0.
+    # 如果文本以换行符结尾，``splitlines`` 不会体现该换行符。
+    # 此时结束位置是下一行（空行）的起始——行号为 len(lines)，列号为 0。
     if text.endswith(("\n", "\r")):
         return {"line": last_line + 1, "character": 0}
     return {"line": last_line, "character": last_col}
 
 
 class LSPClient:
-    """Async LSP client tied to one server process and one workspace root.
+    """绑定到一个服务器进程和一个工作区根目录的异步 LSP 客户端。
 
-    Lifecycle:
+    生命周期：
 
         c = LSPClient(server_id, workspace_root, command, args, init_options)
-        await c.start()       # spawn + initialize
+        await c.start()       # 启动子进程 + 完成初始化握手
         ver = await c.open_file("/path/to/foo.py")
         await c.wait_for_diagnostics("/path/to/foo.py", ver)
         diags = c.diagnostics_for("/path/to/foo.py")
@@ -138,7 +131,7 @@ class LSPClient:
     """
 
     # ------------------------------------------------------------------
-    # construction + lifecycle
+    # 构造 + 生命周期
     # ------------------------------------------------------------------
 
     def __init__(
@@ -160,17 +153,17 @@ class LSPClient:
         self._init_options = initialization_options or {}
         self._seed_first_push = seed_diagnostics_on_first_push
 
-        # Process + streams
+        # 进程 + 流
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._stderr_task: Optional[asyncio.Task] = None
         self._reader_task: Optional[asyncio.Task] = None
 
-        # Request/response correlation
+        # 请求/响应关联
         self._next_id: int = 0
         self._pending: Dict[int, asyncio.Future] = {}
 
-        # Server-side request handlers (server → client requests).
-        # Kept small and explicit; everything else returns method-not-found.
+        # 服务端向客户端发起的请求处理器（server → client）。
+        # 保持精简且显式；其余全部返回 method-not-found。
         self._request_handlers: Dict[str, Callable[[Any], Awaitable[Any]]] = {
             "window/workDoneProgress/create": self._handle_work_done_create,
             "workspace/configuration": self._handle_workspace_configuration,
@@ -179,43 +172,39 @@ class LSPClient:
             "workspace/workspaceFolders": self._handle_workspace_folders,
             "workspace/diagnostic/refresh": self._handle_diagnostic_refresh,
         }
-        # Notifications (server → client) we care about.
+        # 我们关心的通知（server → client）。
         self._notification_handlers: Dict[str, Callable[[Any], None]] = {
             "textDocument/publishDiagnostics": self._handle_publish_diagnostics,
-            # Everything else (window/showMessage, $/progress, etc.)
-            # is silently dropped by default.
+            # 其余通知（window/showMessage、$/progress 等）默认静默丢弃。
         }
 
-        # Tracked file state — required for didChange version bumps.
+        # 已追踪的文件状态——用于 didChange 版本号递增。
         self._files: Dict[str, Dict[str, Any]] = {}
-        # Diagnostic stores, keyed by file path (NOT URI).
+        # 诊断信息存储，以文件路径（非 URI）为键。
         self._push_diagnostics: Dict[str, List[Dict[str, Any]]] = {}
         self._pull_diagnostics: Dict[str, List[Dict[str, Any]]] = {}
-        # Per-path "last published" time so wait-for-fresh logic works.
+        # 每个路径的"最后发布"时间，供等待最新诊断的逻辑使用。
         self._published: Dict[str, float] = {}
-        # Per-path version of the latest push (matches our didChange
-        # version when the server respects it).
+        # 每个路径最新推送的版本号（当服务器遵守时与 didChange 版本号一致）。
         self._published_version: Dict[str, int] = {}
-        # First-push seen flag, for typescript-style seed-on-first-push.
+        # 首次推送标志，用于 typescript 风格的"首次推送时种子化"。
         self._first_push_seen: Set[str] = set()
-        # Capability registrations — only diagnostic ones are tracked.
+        # 能力注册——只追踪诊断相关的注册。
         self._diagnostic_registrations: Dict[str, Dict[str, Any]] = {}
 
-        # State machine
+        # 状态机
         self._state: str = "stopped"
         self._initialize_result: Optional[Dict[str, Any]] = None
-        self._sync_kind: int = 1  # 1=Full, 2=Incremental
+        self._sync_kind: int = 1  # 1=Full（全量），2=Incremental（增量）
         self._stopping: bool = False
 
-        # Push event for waiters.
+        # 供等待者使用的推送事件。
         self._push_event = asyncio.Event()
-        # Monotonic counter incremented on every publishDiagnostics push.
-        # Waiters snapshot it on entry and treat any increase as
-        # "something happened, recheck the predicate".  Avoids the
-        # asyncio.Event sticky-state trap.
+        # 每次收到 publishDiagnostics 推送时递增的单调计数器。
+        # 等待者在进入时快照该值，任何增加都意味着"有新事件，重新检查条件"。
+        # 这避免了 asyncio.Event 的粘性状态陷阱。
         self._push_counter = 0
-        # Registration change event so wait_for_diagnostics can re-loop
-        # when the server announces a new dynamic provider.
+        # 注册变更事件，使 wait_for_diagnostics 在服务器宣告新动态提供者时能重新循环。
         self._registration_event = asyncio.Event()
 
     @property
@@ -227,11 +216,10 @@ class LSPClient:
         return self._state
 
     async def start(self) -> None:
-        """Spawn the server and complete the initialize handshake.
+        """启动服务器并完成初始化握手。
 
-        Raises any exception encountered during spawn/init.  On failure
-        the process is killed and the client is left in state
-        ``"error"`` — re-call ``start()`` to retry.
+        如果启动/初始化过程中发生任何异常，则抛出该异常。失败时进程被终止，
+        客户端处于 ``"error"`` 状态——重新调用 ``start()`` 可重试。
         """
         if self._state in {"running", "starting"}:
             return
@@ -247,7 +235,7 @@ class LSPClient:
 
     @staticmethod
     def _win_wrap_cmd(cmd: List[str]) -> List[str]:
-        """On Windows, wrap .cmd/.bat shims so CreateProcess can run them."""
+        """在 Windows 上，将 .cmd/.bat 包装器包裹一层，使 CreateProcess 能执行它们。"""
         exe = cmd[0]
         if exe.lower().endswith((".cmd", ".bat")):
             return ["cmd.exe", "/c", *cmd]
@@ -277,10 +265,9 @@ class LSPClient:
                 f"LSP server binary not found: {cmd[0]} ({e})"
             ) from e
 
-        # Drain stderr at debug level — if we don't, the pipe buffer
-        # fills and the server hangs.
+        # 以 debug 级别消耗 stderr——如果不这样做，管道缓冲区会填满导致服务器挂起。
         self._stderr_task = asyncio.create_task(self._drain_stderr())
-        # Start the reader loop.
+        # 启动读取循环。
         self._reader_task = asyncio.create_task(self._reader_loop())
 
     async def _drain_stderr(self) -> None:
@@ -304,7 +291,7 @@ class LSPClient:
             while True:
                 msg = await read_message(self._proc.stdout)
                 if msg is None:
-                    logger.debug("[%s] server closed stdout cleanly", self.server_id)
+                    logger.debug("[%s] 服务器已正常关闭 stdout", self.server_id)
                     break
                 kind, key = classify_message(msg)
                 if kind == "response":
@@ -320,7 +307,7 @@ class LSPClient:
         except (asyncio.CancelledError, OSError):
             pass
         finally:
-            # Wake up any pending requests so they can fail fast.
+            # 唤醒所有待处理请求，使其能够快速失败。
             for fut in list(self._pending.values()):
                 if not fut.done():
                     fut.set_exception(LSPProtocolError("server connection closed"))
@@ -381,9 +368,8 @@ class LSPClient:
 
         await self._send_notification("initialized", {})
         if self._init_options:
-            # Some servers (vtsls, eslint) want config pushed via
-            # didChangeConfiguration even if it was sent in
-            # initializationOptions.
+            # 某些服务器（vtsls、eslint）希望通过 didChangeConfiguration
+            # 推送配置，即使已经在 initializationOptions 中发送过了。
             await self._send_notification(
                 "workspace/didChangeConfiguration",
                 {"settings": self._init_options},
@@ -401,10 +387,10 @@ class LSPClient:
         return 1  # default to Full
 
     async def shutdown(self) -> None:
-        """Best-effort graceful shutdown.
+        """尽力而为的优雅关闭。
 
-        Sends ``shutdown`` + ``exit``, then SIGTERMs/SIGKILLs the
-        process if it doesn't exit cleanly.  Idempotent.
+        发送 ``shutdown`` + ``exit``，若进程未能干净退出则发送 SIGTERM/SIGKILL。
+        可重复调用（幂等）。
         """
         if self._stopping:
             return
@@ -455,7 +441,7 @@ class LSPClient:
                 pass
 
     # ------------------------------------------------------------------
-    # request / notification plumbing
+    # 请求 / 通知管道
     # ------------------------------------------------------------------
 
     async def _send_request(self, method: str, params: Any) -> Any:
@@ -478,11 +464,11 @@ class LSPClient:
             self._pending.pop(req_id, None)
 
     async def _send_request_with_retry(self, method: str, params: Any, *, timeout: float) -> Any:
-        """Send a request, retrying on ``ContentModified`` (-32801).
+        """发送请求，遇到 ``ContentModified`` (-32801) 时进行重试。
 
-        Other errors propagate.  The retry policy matches Claude Code's
-        ``LSPServerInstance.sendRequest`` — 3 attempts with delays
-        0.5s, 1.0s, 2.0s.
+        其他错误直接抛出。重试策略与 Claude Code 的
+        ``LSPServerInstance.sendRequest`` 一致——共 3 次尝试，
+        延迟分别为 0.5s、1.0s、2.0s。
         """
         for attempt in range(MAX_CONTENT_MODIFIED_RETRIES + 1):
             try:
@@ -561,16 +547,16 @@ class LSPClient:
             logger.debug("[%s] notification handler %s failed: %s", self.server_id, method, e)
 
     # ------------------------------------------------------------------
-    # built-in server-→-client request handlers
+    # 内置的服务端→客户端请求处理器
     # ------------------------------------------------------------------
 
     async def _handle_work_done_create(self, params: Any) -> Any:
-        # Acknowledge progress tokens — required by some servers.
+        # 确认进度令牌——某些服务器需要此响应。
         return None
 
     async def _handle_workspace_configuration(self, params: Any) -> Any:
-        # Walk dotted sections through initializationOptions.  Mirrors
-        # OpenCode's `client.ts:198-220` — return null when missing.
+        # 通过 initializationOptions 遍历带点分隔符的 section。
+        # 对应 OpenCode 的 `client.ts:198-220`——缺失时返回 null。
         if not isinstance(params, dict):
             return [None]
         items = params.get("items") or []
@@ -621,11 +607,11 @@ class LSPClient:
         return [{"name": "workspace", "uri": file_uri(self.workspace_root)}]
 
     async def _handle_diagnostic_refresh(self, params: Any) -> Any:
-        # We don't honour refresh — we re-pull on every touchFile.
+        # 我们不响应 refresh 请求——每次 touchFile 时都会重新拉取。
         return None
 
     # ------------------------------------------------------------------
-    # publishDiagnostics handler
+    # publishDiagnostics 处理器
     # ------------------------------------------------------------------
 
     def _handle_publish_diagnostics(self, params: Any) -> None:
@@ -642,10 +628,8 @@ class LSPClient:
         loop_time = asyncio.get_event_loop().time()
 
         if self._seed_first_push and path not in self._first_push_seen:
-            # First push: seed without firing the event so a waiter
-            # doesn't resolve on the very first push (which arrives
-            # before the user-triggered didChange could've produced
-            # fresh diagnostics).
+            # 首次推送：种子化但不触发事件，防止等待者在第一次推送时就解除等待
+            # （因为该推送是在用户触发的 didChange 产生新诊断之前到达的）。
             self._first_push_seen.add(path)
             self._push_diagnostics[path] = diagnostics
             self._published[path] = loop_time
@@ -658,23 +642,20 @@ class LSPClient:
         if isinstance(version, int):
             self._published_version[path] = version
         self._first_push_seen.add(path)
-        # Bump the monotonic push counter and wake every waiter.  We
-        # keep the Event sticky-set so any wait already in progress
-        # resolves; waiters re-check their predicate after waking and
-        # decide whether to keep waiting.  ``_push_counter`` is what
-        # they actually compare against to detect a fresh event.
+        # 递增单调推送计数器并唤醒所有等待者。我们保持 Event 的粘性状态，
+        # 使任何正在等待的操作都能解除；等待者唤醒后会重新检查条件，
+        # 决定是否继续等待。``_push_counter`` 才是它们实际用于检测新事件的依据。
         self._push_counter += 1
         self._push_event.set()
 
     # ------------------------------------------------------------------
-    # public file-sync API
+    # 公共文件同步 API
     # ------------------------------------------------------------------
 
     async def open_file(self, path: str, *, language_id: str = "plaintext") -> int:
-        """Send didOpen (first time) or didChange (subsequent) for ``path``.
+        """为 ``path`` 发送 didOpen（首次）或 didChange（后续）。
 
-        Returns the new document version number that the agent's
-        ``wait_for_diagnostics`` should match against.
+        返回新的文档版本号，供 agent 的 ``wait_for_diagnostics`` 进行匹配。
         """
         if not self.is_running:
             raise LSPProtocolError("client not running")
@@ -689,10 +670,10 @@ class LSPClient:
         existing = self._files.get(abs_path)
 
         if existing is not None:
-            # Re-open: bump version, fire didChangeWatchedFiles + didChange.
+            # 重新打开：递增版本号，触发 didChangeWatchedFiles + didChange。
             await self._send_notification(
                 "workspace/didChangeWatchedFiles",
-                {"changes": [{"uri": uri, "type": 2}]},  # 2 = CHANGED
+                {"changes": [{"uri": uri, "type": 2}]},  # 2 = CHANGED（已变更）
             )
             new_version = existing["version"] + 1
             old_text = existing["text"]
@@ -719,13 +700,12 @@ class LSPClient:
             self._files[abs_path] = {"version": new_version, "text": text}
             return new_version
 
-        # First open: didChangeWatchedFiles CREATED + didOpen.
+        # 首次打开：发送 didChangeWatchedFiles CREATED + didOpen。
         await self._send_notification(
             "workspace/didChangeWatchedFiles",
-            {"changes": [{"uri": uri, "type": 1}]},  # 1 = CREATED
+            {"changes": [{"uri": uri, "type": 1}]},  # 1 = CREATED（已创建）
         )
-        # Clear any stale push/pull entries — fresh open should start
-        # from scratch.
+        # 清除所有过期的推送/拉取条目——首次打开应从干净状态开始。
         self._push_diagnostics.pop(abs_path, None)
         self._pull_diagnostics.pop(abs_path, None)
         self._published.pop(abs_path, None)
@@ -745,7 +725,7 @@ class LSPClient:
         return 0
 
     async def save_file(self, path: str) -> None:
-        """Send didSave for ``path``.  Some linters re-scan only on save."""
+        """为 ``path`` 发送 didSave。某些 linter 只在保存时重新扫描。"""
         if not self.is_running:
             return
         abs_path = os.path.abspath(path)
@@ -755,14 +735,14 @@ class LSPClient:
         )
 
     # ------------------------------------------------------------------
-    # diagnostics: pull + wait
+    # 诊断：拉取 + 等待
     # ------------------------------------------------------------------
 
     async def _pull_document_diagnostics(self, path: str) -> None:
-        """Send ``textDocument/diagnostic`` for one file.
+        """为单个文件发送 ``textDocument/diagnostic`` 拉取请求。
 
-        Stores results into :attr:`_pull_diagnostics`.  Silently
-        no-ops on errors (server may not support the pull endpoint).
+        将结果存储到 :attr:`_pull_diagnostics`。出错时静默不处理
+        （服务器可能不支持拉取端点）。
         """
         try:
             params: Dict[str, Any] = {
@@ -797,12 +777,12 @@ class LSPClient:
         *,
         mode: str = "document",
     ) -> None:
-        """Wait for the server to publish diagnostics for ``path`` at ``version``.
+        """等待服务器为 ``path`` 在 ``version`` 版本发布诊断信息。
 
-        ``mode`` is ``"document"`` (5s budget, document pulls) or
-        ``"full"`` (10s budget, also workspace pulls).  Best-effort —
-        returns silently on timeout.  Does NOT throw if the server
-        doesn't support pull diagnostics; we still get the push side.
+        ``mode`` 为 ``"document"``（5 秒预算，文档拉取）或
+        ``"full"``（10 秒预算，同时进行工作区拉取）。尽力而为——
+        超时时静默返回。若服务器不支持拉取诊断，不会抛出异常；
+        我们仍然会收到推送侧的诊断。
         """
         budget = DIAGNOSTICS_FULL_WAIT if mode == "full" else DIAGNOSTICS_DOCUMENT_WAIT
         deadline = asyncio.get_event_loop().time() + budget
@@ -813,7 +793,7 @@ class LSPClient:
             if remaining <= 0:
                 return
 
-            # Concurrent: document pull + push wait.
+            # 并发：文档拉取 + 推送等待。
             pull_task = asyncio.create_task(self._pull_document_diagnostics(abs_path))
             push_task = asyncio.create_task(self._wait_for_fresh_push(abs_path, version, remaining))
             done, pending = await asyncio.wait(
@@ -829,31 +809,29 @@ class LSPClient:
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
 
-            # If we got a fresh push for our version, we're done.
+            # 如果收到了我们版本的最新推送，则完成等待。
             current_v = self._published_version.get(abs_path)
             if abs_path in self._published and (
                 current_v is None or current_v >= version
             ):
                 return
 
-            # Pull may have populated _pull_diagnostics — that's also
-            # success.
+            # 拉取可能已经填充了 _pull_diagnostics——这也算成功。
             if abs_path in self._pull_diagnostics:
                 return
 
-            # Loop until budget runs out.
+            # 循环直到预算耗尽。
 
     async def _wait_for_fresh_push(self, path: str, version: int, timeout: float) -> None:
-        """Wait until a publishDiagnostics arrives for ``path`` at ``version``+."""
+        """等待针对 ``path`` 在 ``version``+ 版本的 publishDiagnostics 到达。"""
         deadline = asyncio.get_event_loop().time() + timeout
         baseline = self._push_counter
         while True:
             current_v = self._published_version.get(path)
             if path in self._published and (current_v is None or current_v >= version):
-                # Debounce — wait a tick in case more diagnostics arrive
-                # immediately after.  TS often emits in pairs.  We
-                # snapshot the counter so we wake on a *new* push, not
-                # on the one that satisfied us a moment ago.
+                # 防抖——等待一小段时间以防更多诊断立即到达。
+                # TypeScript 通常成对发送诊断。我们快照计数器，
+                # 以便在收到*新*推送时唤醒，而非在刚才满足条件的那次推送上唤醒。
                 debounce_baseline = self._push_counter
                 debounce_deadline = asyncio.get_event_loop().time() + PUSH_DEBOUNCE
                 while self._push_counter == debounce_baseline:
@@ -870,8 +848,7 @@ class LSPClient:
             if remaining <= 0:
                 return
             if self._push_counter > baseline:
-                # New event arrived but predicate still false — re-check
-                # immediately without waiting again.
+                # 收到了新事件，但条件仍未满足——立即重新检查，不再等待。
                 baseline = self._push_counter
                 continue
             self._push_event.clear()
@@ -881,11 +858,11 @@ class LSPClient:
                 continue
 
     def diagnostics_for(self, path: str) -> List[Dict[str, Any]]:
-        """Return current merged + deduped diagnostics for one file.
+        """返回单个文件当前合并且去重后的诊断信息。
 
-        Diagnostics from push and pull stores are concatenated and
-        deduplicated by ``(severity, code, message, range)`` content
-        key.  Empty list if the server hasn't published anything.
+        推送存储和拉取存储中的诊断信息会被拼接，并按
+        ``(severity, code, message, range)`` 内容键去重。
+        若服务器尚未发布任何内容，则返回空列表。
         """
         abs_path = os.path.abspath(path)
         push = self._push_diagnostics.get(abs_path) or []
@@ -909,12 +886,11 @@ def _dedupe(*lists: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _diagnostic_key(d: Dict[str, Any]) -> str:
-    """Content-equality key for a diagnostic.
+    """诊断信息的内容相等性键。
 
-    Matches the structural-equality used in claude-code's
-    ``areDiagnosticsEqual`` — message + severity + source + code +
-    range coords.  The range is reduced to a tuple to keep the key
-    stable across dict orderings.
+    与 claude-code 的 ``areDiagnosticsEqual`` 使用的结构相等性一致——
+    包含 message + severity + source + code + range 坐标。
+    range 被简化为元组，以确保键在不同 dict 排序下保持稳定。
     """
     rng = d.get("range") or {}
     start = rng.get("start") or {}

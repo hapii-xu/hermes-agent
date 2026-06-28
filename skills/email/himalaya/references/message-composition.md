@@ -1,10 +1,10 @@
-# Message Composition with MML (MIME Meta Language)
+# 使用 MML（MIME 元语言）撰写邮件
 
-Himalaya uses MML for composing emails. MML is a simple XML-based syntax that compiles to MIME messages.
+Himalaya 使用 MML 来撰写邮件。MML 是一种简单的、基于 XML 的语法，可编译为 MIME 邮件。
 
-## Basic Message Structure
+## 基本邮件结构
 
-An email message is a list of **headers** followed by a **body**, separated by a blank line:
+一封邮件是一个**头部（headers）**列表，后跟一个**正文（body）**，中间以空行分隔：
 
 ```
 From: sender@example.com
@@ -14,19 +14,19 @@ Subject: Hello World
 This is the message body.
 ```
 
-## Headers
+## 头部
 
-Common headers:
+常用头部：
 
-- `From`: Sender address
-- `To`: Primary recipient(s)
-- `Cc`: Carbon copy recipients
-- `Bcc`: Blind carbon copy recipients
-- `Subject`: Message subject
-- `Reply-To`: Address for replies (if different from From)
-- `In-Reply-To`: Message ID being replied to
+- `From`：发件人地址
+- `To`：主要收件人
+- `Cc`：抄送收件人
+- `Bcc`：密送收件人
+- `Subject`：邮件主题
+- `Reply-To`：回复地址（与 From 不同时使用）
+- `In-Reply-To`：所回复邮件的 Message ID
 
-### Address Formats
+### 地址格式
 
 ```
 To: user@example.com
@@ -35,9 +35,9 @@ To: "John Doe" <john@example.com>
 To: user1@example.com, user2@example.com, "Jane" <jane@example.com>
 ```
 
-## Plain Text Body
+## 纯文本正文
 
-Simple plain text email:
+简单的纯文本邮件：
 
 ```
 From: alice@localhost
@@ -51,11 +51,11 @@ Best,
 Alice
 ```
 
-## MML for Rich Emails
+## 用 MML 撰写富文本邮件
 
-### Multipart Messages
+### 多部分邮件
 
-Alternative text/html parts:
+带可选的 text/html 部分：
 
 ```
 From: alice@localhost
@@ -69,9 +69,9 @@ This is the plain text version.
 <#/multipart>
 ```
 
-### Attachments
+### 附件
 
-Attach a file:
+附加一个文件：
 
 ```
 From: alice@localhost
@@ -83,22 +83,22 @@ Here is the document you requested.
 <#part filename=/path/to/document.pdf><#/part>
 ```
 
-Attachment with custom name:
+带自定义名称的附件：
 
 ```
 <#part filename=/path/to/file.pdf name=report.pdf><#/part>
 ```
 
-Multiple attachments:
+多个附件：
 
 ```
 <#part filename=/path/to/doc1.pdf><#/part>
 <#part filename=/path/to/doc2.pdf><#/part>
 ```
 
-### Inline Images
+### 内嵌图片
 
-Embed an image inline:
+将图片以内嵌方式嵌入：
 
 ```
 From: alice@localhost
@@ -115,7 +115,7 @@ Subject: Inline Image
 <#/multipart>
 ```
 
-### Mixed Content (Text + Attachments)
+### 混合内容（文本 + 附件）
 
 ```
 From: alice@localhost
@@ -133,56 +133,56 @@ Alice
 <#/multipart>
 ```
 
-## MML Tag Reference
+## MML 标签参考
 
 ### `<#multipart>`
 
-Groups multiple parts together.
+将多个部分组合在一起。
 
-- `type=alternative`: Different representations of same content
-- `type=mixed`: Independent parts (text + attachments)
-- `type=related`: Parts that reference each other (HTML + images)
+- `type=alternative`：同一内容的不同表示形式
+- `type=mixed`：相互独立的部分（文本 + 附件）
+- `type=related`：相互引用的部分（HTML + 图片）
 
 ### `<#part>`
 
-Defines a message part.
+定义一个邮件部分。
 
-- `type=<mime-type>`: Content type (e.g., `text/html`, `application/pdf`)
-- `filename=<path>`: File to attach
-- `name=<name>`: Display name for attachment
-- `disposition=inline`: Display inline instead of as attachment
-- `id=<cid>`: Content ID for referencing in HTML
+- `type=<mime-type>`：内容类型（例如 `text/html`、`application/pdf`）
+- `filename=<path>`：要附加的文件
+- `name=<name>`：附件的显示名称
+- `disposition=inline`：以内嵌方式显示而非作为附件
+- `id=<cid>`：用于在 HTML 中引用的内容 ID
 
-## Composing from CLI
+## 从 CLI 撰写
 
-### Interactive compose
+### 交互式撰写
 
-Opens your `$EDITOR`:
+打开你的 `$EDITOR`：
 
 ```bash
 himalaya message write
 ```
 
-### Reply (opens editor with quoted message)
+### 回复（打开编辑器并带上引用的邮件）
 
 ```bash
 himalaya message reply 42
-himalaya message reply 42 --all  # reply-all
+himalaya message reply 42 --all  # 回复全部
 ```
 
-### Forward
+### 转发
 
 ```bash
 himalaya message forward 42
 ```
 
-### Send from stdin
+### 从 stdin 发送
 
 ```bash
 cat message.txt | himalaya template send
 ```
 
-### Prefill headers from CLI
+### 从 CLI 预填头部
 
 ```bash
 himalaya message write \
@@ -191,9 +191,9 @@ himalaya message write \
   "Message body here"
 ```
 
-## Tips
+## 提示
 
-- The editor opens with a template; fill in headers and body.
-- Save and exit the editor to send; exit without saving to cancel.
-- MML parts are compiled to proper MIME when sending.
-- Use `himalaya message export --full` to inspect the raw MIME structure of received emails.
+- 编辑器会带着模板打开；填好头部和正文即可。
+- 保存并退出编辑器即发送；不保存退出即取消。
+- MML 部分在发送时会被编译为正确的 MIME。
+- 使用 `himalaya message export --full` 可查看收到邮件的原始 MIME 结构。

@@ -1,27 +1,27 @@
-# Camera and 3D Reference
+# 相机与 3D 参考
 
-## MovingCameraScene (2D Camera Control)
+## MovingCameraScene（2D 相机控制）
 
 ```python
 class ZoomExample(MovingCameraScene):
     def construct(self):
         circle = Circle(radius=2, color=BLUE)
         self.play(Create(circle))
-        # Zoom in
+        # 放大
         self.play(self.camera.frame.animate.set(width=4).move_to(circle.get_top()), run_time=2)
         self.wait(2)
-        # Zoom back out
+        # 缩小回去
         self.play(self.camera.frame.animate.set(width=14.222).move_to(ORIGIN), run_time=2)
 ```
 
-### Camera Operations
+### 相机操作
 
 ```python
-self.camera.frame.animate.set(width=6)     # zoom in
-self.camera.frame.animate.set(width=20)    # zoom out
-self.camera.frame.animate.move_to(target)  # pan
-self.camera.frame.save_state()             # save
-self.play(Restore(self.camera.frame))      # restore
+self.camera.frame.animate.set(width=6)     # 放大
+self.camera.frame.animate.set(width=20)    # 缩小
+self.camera.frame.animate.move_to(target)  # 平移
+self.camera.frame.save_state()             # 保存
+self.play(Restore(self.camera.frame))      # 恢复
 ```
 
 ## ThreeDScene
@@ -42,7 +42,7 @@ class ThreeDExample(ThreeDScene):
         self.stop_ambient_camera_rotation()
 ```
 
-### Camera Control in 3D
+### 3D 中的相机控制
 
 ```python
 self.set_camera_orientation(phi=70*DEGREES, theta=-45*DEGREES)
@@ -50,18 +50,18 @@ self.move_camera(phi=45*DEGREES, theta=30*DEGREES, run_time=2)
 self.begin_ambient_camera_rotation(rate=0.2)
 ```
 
-### 3D Mobjects
+### 3D mobject
 
 ```python
 sphere = Sphere(radius=1).set_color(BLUE).set_opacity(0.7)
 cube = Cube(side_length=2, fill_color=GREEN, fill_opacity=0.5)
 arrow = Arrow3D(start=ORIGIN, end=[2, 1, 1], color=RED)
-# 2D text facing camera:
+# 朝向相机的 2D 文字：
 label = Text("Label", font_size=30)
 self.add_fixed_in_frame_mobjects(label)
 ```
 
-### Parametric Curves
+### 参数曲线
 
 ```python
 helix = ParametricFunction(
@@ -70,21 +70,21 @@ helix = ParametricFunction(
 )
 ```
 
-## When to Use 3D
-- Surfaces, vector fields, spatial geometry, 3D transforms
-## When NOT to Use 3D
-- 2D concepts, text-heavy scenes, flat data (bar charts, time series)
+## 何时使用 3D
+- 曲面、向量场、空间几何、3D 变换
+## 何时不使用 3D
+- 2D 概念、文字密集的场景、扁平数据（柱状图、时间序列）
 
-## ZoomedScene — Inset Zoom
+## ZoomedScene —— 画中画放大
 
-Show a magnified inset of a detail while keeping the full view visible:
+在保持完整视图可见的同时，放大展示某个细节：
 
 ```python
 class ZoomExample(ZoomedScene):
     def __init__(self, **kwargs):
         super().__init__(
-            zoom_factor=0.3,           # how much of the scene the zoom box covers
-            zoomed_display_height=3,   # size of the inset
+            zoom_factor=0.3,           # 放大框覆盖场景的比例
+            zoomed_display_height=3,   # 画中画的尺寸
             zoomed_display_width=3,
             zoomed_camera_frame_starting_position=ORIGIN,
             **kwargs
@@ -92,24 +92,24 @@ class ZoomExample(ZoomedScene):
 
     def construct(self):
         self.camera.background_color = BG
-        # ... create your scene content ...
+        # ... 创建你的场景内容 ...
 
-        # Activate the zoom
+        # 激活放大
         self.activate_zooming()
 
-        # Move the zoom frame to a point of interest
+        # 把放大框移到感兴趣的点
         self.play(self.zoomed_camera.frame.animate.move_to(detail_point))
         self.wait(2)
 
-        # Deactivate
+        # 关闭
         self.play(self.get_zoomed_display_pop_out_animation(), rate_func=lambda t: smooth(1-t))
 ```
 
-Use cases: zooming into a specific term in an equation, showing fine detail in a diagram, magnifying a region of a plot.
+适用场景：放大公式中的某一项、展示图中的精细细节、放大绘图的某个区域。
 
-## LinearTransformationScene — Linear Algebra
+## LinearTransformationScene —— 线性代数
 
-Pre-built scene with basis vectors and grid for visualizing matrix transformations:
+预置了基向量和网格的场景，用于可视化矩阵变换：
 
 ```python
 class LinearTransformExample(LinearTransformationScene):
@@ -123,13 +123,13 @@ class LinearTransformExample(LinearTransformationScene):
     def construct(self):
         matrix = [[2, 1], [1, 1]]
 
-        # Add a vector before applying the transform
+        # 在应用变换前添加一个向量
         vector = self.get_vector([1, 2], color=YELLOW)
         self.add_vector(vector)
 
-        # Apply the transformation — grid, basis vectors, and your vector all transform
+        # 应用变换 —— 网格、基向量以及你的向量全部一起变换
         self.apply_matrix(matrix)
         self.wait(2)
 ```
 
-This produces the signature 3Blue1Brown "Essence of Linear Algebra" look — grid lines deforming, basis vectors stretching, determinant visualized through area change.
+这会产出标志性的 3Blue1Brown《线性代数的本质》效果 —— 网格线变形、基向量伸缩、行列式通过面积变化来可视化。

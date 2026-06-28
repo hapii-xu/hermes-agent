@@ -1,8 +1,8 @@
-"""Local JSON registry of approved remote meet nodes.
+"""已批准远程 meet 节点的本地 JSON 注册表。
 
-Lives at ``$HERMES_HOME/workspace/meetings/nodes.json``. The gateway
-consults it to resolve a ``chrome_node`` name to a ``(url, token)`` pair
-before opening a WebSocket to the remote bot host.
+位于 ``$HERMES_HOME/workspace/meetings/nodes.json``。网关
+在打开 WebSocket 到远程 bot 主机之前查询它，以将 ``chrome_node`` 名称
+解析为 ``(url, token)`` 对。
 
 Schema
 ------
@@ -32,13 +32,13 @@ def _default_path() -> Path:
 
 
 class NodeRegistry:
-    """Simple file-backed registry. Not concurrent-safe across processes
-    — single writer assumed (the gateway CLI)."""
+    """简单的文件支持注册表。跨进程非并发安全
+    — 假定单写入者（网关 CLI）。"""
 
     def __init__(self, path: Optional[Path] = None) -> None:
         self.path = Path(path) if path is not None else _default_path()
 
-    # ----- storage ------------------------------------------------------
+    # ----- 存储 ------------------------------------------------------
 
     def _load(self) -> Dict[str, Any]:
         if not self.path.is_file():
@@ -57,7 +57,7 @@ class NodeRegistry:
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         tmp.replace(self.path)
 
-    # ----- public API ---------------------------------------------------
+    # ----- 公共 API ---------------------------------------------------
 
     def get(self, name: str) -> Optional[Dict[str, Any]]:
         data = self._load()
@@ -97,12 +97,12 @@ class NodeRegistry:
         return out
 
     def resolve(self, chrome_node: Optional[str]) -> Optional[Dict[str, Any]]:
-        """Resolve a node name to its entry.
+        """将节点名称解析为其条目。
 
-        If ``chrome_node`` is provided, return that named node (or None).
-        If ``chrome_node`` is None, return the sole registered node when
-        exactly one is registered; otherwise return None (ambiguous or
-        empty).
+        如果提供了 ``chrome_node``，则返回该命名节点（或 None）。
+        如果 ``chrome_node`` 为 None，则在恰好注册了一个节点时
+        返回该唯一节点；否则返回 None（歧义或
+        空）。
         """
         if chrome_node:
             return self.get(chrome_node)

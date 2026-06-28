@@ -1,47 +1,46 @@
 """
-Video Generation Provider ABC
+视频生成 Provider ABC
 =============================
 
-Defines the pluggable-backend interface for video generation. Providers register
-instances via ``PluginContext.register_video_gen_provider()``; the active one
-(selected via ``video_gen.provider`` in ``config.yaml``) services every
-``video_generate`` tool call.
+定义视频生成的可插拔后端接口。Provider 通过
+``PluginContext.register_video_gen_provider()`` 注册实例；当前活跃的
+provider（通过 ``config.yaml`` 中的 ``video_gen.provider`` 选择）
+处理每次 ``video_generate`` 工具调用。
 
-Providers live in ``<repo>/plugins/video_gen/<name>/`` (built-in, auto-loaded
-as ``kind: backend``) or ``~/.hermes/plugins/video_gen/<name>/`` (user, opt-in
-via ``plugins.enabled``).
+Provider 位于 ``<repo>/plugins/video_gen/<name>/``（内置，作为
+``kind: backend`` 自动加载）或 ``~/.hermes/plugins/video_gen/<name>/``
+（用户安装，通过 ``plugins.enabled`` 选择性启用）。
 
-Mirrors the ``image_gen`` provider design (``agent/image_gen_provider.py``) so
-the two surfaces stay learnable together.
+镜像 ``image_gen`` provider 设计（``agent/image_gen_provider.py``），
+使两个接口可以一起学习。
 
-Unified surface
+统一接口
 ---------------
-One tool — ``video_generate`` — covers **text-to-video** and **image-to-video**.
-The router is the presence of ``image_url``: if it's set, the provider routes
-to its image-to-video endpoint; if it's omitted, the provider routes to
-text-to-video. Users pick one **model family** (e.g. Pixverse v6, Veo 3.1,
-Kling O3 Standard); the provider handles which underlying FAL/xAI endpoint
-to hit.
+一个工具 — ``video_generate`` — 涵盖 **text-to-video** 和 **image-to-video**。
+路由依据是 ``image_url`` 的存在：如果设置了，provider 路由到
+image-to-video 端点；如果省略，provider 路由到 text-to-video。
+用户选择一个 **模型族**（例如 Pixverse v6、Veo 3.1、
+Kling O3 Standard）；provider 负责处理要访问的底层 FAL/xAI 端点。
 
-Video edit and video extend are intentionally NOT exposed in this surface —
-the inconsistency across backends is too large for one unified tool. If
-those use cases warrant attention later they can ship as separate tools.
+视频编辑和视频延展有意不在此接口中暴露——
+各后端之间的差异太大，无法用一个统一的工具覆盖。如果
+这些用例日后需要关注，可以作为单独的工具发布。
 
-Response shape
+响应结构
 --------------
-All providers return a dict built by :func:`success_response` /
-:func:`error_response`. Keys:
+所有 provider 返回由 :func:`success_response` /
+:func:`error_response` 构建的字典。键值：
 
     success         bool
-    video           str | None      URL or absolute file path
-    model           str             provider-specific model identifier
-    prompt          str             echoed prompt
-    modality        str             "text" | "image" (which mode was used)
-    aspect_ratio    str             provider-native (e.g. "16:9") or ""
-    duration        int             seconds (0 if not applicable)
-    provider        str             provider name (for diagnostics)
-    error           str             only when success=False
-    error_type      str             only when success=False
+    video           str | None      URL 或绝对文件路径
+    model           str             provider 特定的模型标识符
+    prompt          str             回显的 prompt
+    modality        str             "text" | "image"（使用了哪种模式）
+    aspect_ratio    str             provider 原生格式（例如 "16:9"）或 ""
+    duration        int             秒数（不适用时为 0）
+    provider        str             provider 名称（用于诊断）
+    error           str             仅在 success=False 时
+    error_type      str             仅在 success=False 时
 """
 
 from __future__ import annotations
@@ -57,9 +56,9 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-# Common aspect ratios across providers (Veo / Kling / xAI / Pixverse). The
-# tool schema advertises this set as an enum hint, but providers may accept
-# a narrower or wider set — they are responsible for clamping.
+# 各 provider 通用的宽高比（Veo / Kling / xAI / Pixverse）。
+# 工具 schema 将此集合作为 enum 提示公开，但 provider 可能接受
+# 更窄或更宽的集合——它们负责做范围限制。
 COMMON_ASPECT_RATIOS: Tuple[str, ...] = ("16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3")
 DEFAULT_ASPECT_RATIO = "16:9"
 
@@ -73,54 +72,53 @@ DEFAULT_RESOLUTION = "720p"
 
 
 class VideoGenProvider(abc.ABC):
-    """Abstract base class for a video generation backend.
+    """视频生成后端的抽象基类。
 
-    Subclasses must implement :meth:`generate`. Everything else has sane
-    defaults — override only what your provider needs.
+    子类必须实现 :meth:`generate`。其他方法都有合理的
+    默认值——只需覆盖你的 provider 需要的方法。
     """
 
     @property
     @abc.abstractmethod
     def name(self) -> str:
-        """Stable short identifier used in ``video_gen.provider`` config.
+        """在 ``video_gen.provider`` 配置中使用的稳定短标识符。
 
-        Lowercase, no spaces. Examples: ``xai``, ``fal``, ``google``.
+        小写，无空格。示例：``xai``、``fal``、``google``。
         """
 
     @property
     def display_name(self) -> str:
-        """Human-readable label shown in ``hermes tools``. Defaults to ``name.title()``."""
+        """在 ``hermes tools`` 中显示的人类可读标签。默认为 ``name.title()``。"""
         return self.name.title()
 
     def is_available(self) -> bool:
-        """Return True when this provider can service calls.
+        """当此 provider 可以处理调用时返回 True。
 
-        Typically checks for a required API key and optional-dependency
-        import. Default: True.
+        通常检查必需的 API key 和可选依赖的导入。默认值：True。
         """
         return True
 
     def list_models(self) -> List[Dict[str, Any]]:
-        """Return catalog entries for ``hermes tools`` model picker.
+        """返回 ``hermes tools`` 模型选择器的目录条目。
 
-        Each entry represents a **model family** that supports text-to-video
-        and/or image-to-video routing internally::
+        每个条目代表一个支持内部 text-to-video 和/或 image-to-video
+        路由的 **模型族**::
 
             {
-                "id": "veo-3.1",                       # required
-                "display": "Veo 3.1",                  # optional; defaults to id
-                "speed": "~60s",                       # optional
-                "strengths": "...",                    # optional
-                "price": "$0.20/s",                    # optional
-                "modalities": ["text", "image"],       # optional, advisory
+                "id": "veo-3.1",                       # 必需
+                "display": "Veo 3.1",                  # 可选；默认为 id
+                "speed": "~60s",                       # 可选
+                "strengths": "...",                    # 可选
+                "price": "$0.20/s",                    # 可选
+                "modalities": ["text", "image"],       # 可选，仅供参考
             }
 
-        Default: empty list (provider has no user-selectable models).
+        默认值：空列表（provider 没有用户可选的模型）。
         """
         return []
 
     def get_setup_schema(self) -> Dict[str, Any]:
-        """Return provider metadata for the ``hermes tools`` picker."""
+        """返回 ``hermes tools`` 选择器的 provider 元数据。"""
         return {
             "name": self.display_name,
             "badge": "",
@@ -129,30 +127,30 @@ class VideoGenProvider(abc.ABC):
         }
 
     def default_model(self) -> Optional[str]:
-        """Return the default model id, or None if not applicable."""
+        """返回默认模型 id，不适用时返回 None。"""
         models = self.list_models()
         if models:
             return models[0].get("id")
         return None
 
     def capabilities(self) -> Dict[str, Any]:
-        """Return what this provider supports.
+        """返回此 provider 支持的功能。
 
-        Returned dict (all keys optional)::
+        返回的字典（所有键可选）::
 
             {
-                "modalities": ["text", "image"],      # which inputs the backend accepts
+                "modalities": ["text", "image"],      # 后端接受的输入类型
                 "aspect_ratios": ["16:9", "9:16", ...],
                 "resolutions": ["720p", "1080p"],
-                "max_duration": 15,                   # seconds
+                "max_duration": 15,                   # 秒数
                 "min_duration": 1,
                 "supports_audio": True,
                 "supports_negative_prompt": True,
                 "max_reference_images": 7,
             }
 
-        Used by the tool layer for soft validation and by ``hermes tools``
-        for the picker. Default: text-only.
+        由工具层用于软验证，由 ``hermes tools`` 用于选择器。
+        默认值：仅 text。
         """
         return {
             "modalities": ["text"],
@@ -181,28 +179,26 @@ class VideoGenProvider(abc.ABC):
         seed: Optional[int] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Generate a video from a prompt (text-to-video) or animate an image
-        (image-to-video).
+        """从 prompt 生成视频（text-to-video）或将图片动画化
+        （image-to-video）。
 
-        Routing: if ``image_url`` is provided, the provider should route to
-        its image-to-video endpoint; otherwise text-to-video. The plugin
-        is responsible for picking the right underlying endpoint within
-        the user's chosen model family.
+        路由规则：如果提供了 ``image_url``，provider 应路由到
+        image-to-video 端点；否则路由到 text-to-video。插件
+        负责在用户选择的模型族中选取正确的底层端点。
 
-        Implementations should return the dict from :func:`success_response`
-        or :func:`error_response`. ``kwargs`` may contain forward-compat
-        parameters future versions of the schema will expose —
-        implementations MUST ignore unknown keys (no TypeError).
+        实现应返回 :func:`success_response` 或 :func:`error_response`
+        的字典。``kwargs`` 可能包含 schema 未来版本将暴露的
+        前向兼容参数——实现必须忽略未知键（不抛出 TypeError）。
         """
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _videos_cache_dir() -> Path:
-    """Return ``$HERMES_HOME/cache/videos/``, creating parents as needed."""
+    """返回 ``$HERMES_HOME/cache/videos/``，根据需要创建父目录。"""
     from hermes_constants import get_hermes_home
 
     path = get_hermes_home() / "cache" / "videos"
@@ -216,11 +212,11 @@ def save_b64_video(
     prefix: str = "video",
     extension: str = "mp4",
 ) -> Path:
-    """Decode base64 video data and write under ``$HERMES_HOME/cache/videos/``.
+    """解码 base64 视频数据并写入 ``$HERMES_HOME/cache/videos/``。
 
-    Returns the absolute :class:`Path` to the saved file.
+    返回保存文件的绝对 :class:`Path`。
 
-    Filename format: ``<prefix>_<YYYYMMDD_HHMMSS>_<short-uuid>.<ext>``.
+    文件名格式：``<prefix>_<YYYYMMDD_HHMMSS>_<short-uuid>.<ext>``。
     """
     raw = base64.b64decode(b64_data)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -236,7 +232,7 @@ def save_bytes_video(
     prefix: str = "video",
     extension: str = "mp4",
 ) -> Path:
-    """Write raw video bytes (e.g. an HTTP download body) to the cache."""
+    """将原始视频字节（例如 HTTP 下载响应体）写入缓存。"""
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     short = uuid.uuid4().hex[:8]
     path = _videos_cache_dir() / f"{prefix}_{ts}_{short}.{extension}"
@@ -255,11 +251,11 @@ def success_response(
     provider: str,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build a uniform success response dict.
+    """构建统一的成功响应字典。
 
-    ``video`` may be an HTTP URL or an absolute filesystem path.
-    ``modality`` is ``"text"`` (text-to-video) or ``"image"`` (image-to-video) —
-    indicates which endpoint was actually hit, useful for diagnostics.
+    ``video`` 可以是 HTTP URL 或绝对文件系统路径。
+    ``modality`` 为 ``"text"``（text-to-video）或 ``"image"``（image-to-video）——
+    指示实际访问了哪个端点，对诊断有用。
     """
     payload: Dict[str, Any] = {
         "success": True,
@@ -286,7 +282,7 @@ def error_response(
     prompt: str = "",
     aspect_ratio: str = "",
 ) -> Dict[str, Any]:
-    """Build a uniform error response dict."""
+    """构建统一的错误响应字典。"""
     return {
         "success": False,
         "video": None,

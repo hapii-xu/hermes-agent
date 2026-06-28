@@ -1,322 +1,322 @@
-# Design System: Cursor
+# 设计系统：Cursor
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `JetBrains Mono`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主要字体：** `Inter` | **等宽字体：** `JetBrains Mono`
+> - **字体栈（CSS）：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` 技能（cloudflared tunnel）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Cursor's website is a study in warm minimalism meets code-editor elegance. The entire experience is built on a warm off-white canvas (`#f2f1ed`) with dark warm-brown text (`#26251e`) -- not pure black, not neutral gray, but a deeply warm near-black with a yellowish undertone that evokes old paper, ink, and craft. This warmth permeates every surface: backgrounds lean toward cream (`#e6e5e0`, `#ebeae5`), borders dissolve into transparent warm overlays using `oklab` color space, and even the error state (`#cf2d56`) carries warmth rather than clinical red. The result feels more like a premium print publication than a tech website.
+Cursor 的网站是温暖极简主义与代码编辑器优雅的结合体。整个体验建立在一个温暖的灰白色画布（`#f2f1ed`）上，配以深色的暖棕色文字（`#26251e`）—— 不是纯黑，不是中性灰，而是一种深度温暖的近黑色，带黄色底色，唤起旧纸张、墨水和工艺的感觉。这种温暖渗透到每个表面：背景倾向于奶油色（`#e6e5e0`、`#ebeae5`），边框使用 `oklab` 色彩空间的透明暖色叠加而消融，甚至错误状态（`#cf2d56`）也带着温暖而非临床的红色。结果感觉更像一份精美的印刷出版物而非科技网站。
 
-The custom CursorGothic font is the typographic signature -- a gothic sans-serif with aggressive negative letter-spacing at display sizes (-2.16px at 72px) that creates a compressed, engineered feel. As a secondary voice, the jjannon serif font (with OpenType `"cswh"` contextual swash alternates) provides literary counterpoint for body copy and editorial passages. The monospace voice comes from berkeleyMono, a refined coding font that connects the marketing site to Cursor's core identity as a code editor. This three-font system (gothic display, serif body, mono code) gives Cursor one of the most typographically rich palettes in developer tooling.
+定制的 CursorGothic 字体是字体排版的标志 —— 一种哥特式无衬线字体，在展示尺寸下采用激进的负字距（72px 时 -2.16px），创造出一种压缩的、工程化的感觉。作为次要嗓音，jjannon 衬线字体（带 OpenType `"cswh"` 上下文花体替代）为正文和编辑段落提供了文学性的对应。等宽嗓音来自 berkeleyMono，一种精致的编码字体，将营销站点与 Cursor 作为代码编辑器的核心身份连接起来。这三字体系统（哥特式展示、衬线正文、等宽代码）赋予了 Cursor 开发者工具中最丰富的字体排版调色板之一。
 
-The border system is particularly distinctive -- Cursor uses `oklab()` color space for border colors, applying warm brown at various alpha levels (0.1, 0.2, 0.55) to create borders that feel organic rather than mechanical. The signature border color `oklab(0.263084 -0.00230259 0.0124794 / 0.1)` is not a simple rgba value but a perceptually uniform color that maintains visual consistency across different backgrounds.
+边框系统尤其独特 —— Cursor 使用 `oklab()` 色彩空间来定义边框颜色，在不同 alpha 级别（0.1、0.2、0.55）上应用暖棕色，创造出有机而非机械的边框。标志性的边框颜色 `oklab(0.263084 -0.00230259 0.0124794 / 0.1)` 不是一个简单的 rgba 值，而是一个感知均匀的颜色，在不同背景上保持视觉一致性。
 
-**Key Characteristics:**
-- CursorGothic with aggressive negative letter-spacing (-2.16px at 72px, -0.72px at 36px) for compressed display headings
-- jjannon serif for body text with OpenType `"cswh"` (contextual swash alternates)
-- berkeleyMono for code and technical labels
-- Warm off-white background (`#f2f1ed`) instead of pure white -- the entire system is warm-shifted
-- Primary text color `#26251e` (warm near-black with yellow undertone)
-- Accent orange `#f54e00` for brand highlight and links
-- oklab-space borders at various alpha levels for perceptually uniform edge treatment
-- Pill-shaped elements with extreme radius (33.5M px, effectively full-pill)
-- 8px base spacing system with fine-grained sub-8px increments (1.5px, 2px, 2.5px, 3px, 4px, 5px, 6px)
+**关键特征：**
+- CursorGothic 配合激进的负字距（72px 时 -2.16px，36px 时 -0.72px），用于压缩的展示标题
+- jjannon 衬线用于正文，带 OpenType `"cswh"`（上下文花体替代）
+- berkeleyMono 用于代码和技术标签
+- 温暖的灰白色背景（`#f2f1ed`）而非纯白 —— 整个系统都偏暖
+- 主要文字色 `#26251e`（带黄色底色的温暖近黑色）
+- 强调橙色 `#f54e00`，用于品牌高亮和链接
+- oklab 色彩空间边框，不同 alpha 级别，实现感知均匀的边缘处理
+- 药丸形元素，极端圆角（33.5M px，实际上是完整药丸）
+- 8px 基础间距系统，带细粒度的亚 8px 增量（1.5px、2px、2.5px、3px、4px、5px、6px）
 
-## 2. Color Palette & Roles
+## 2. 色彩调色板与角色
 
-### Primary
-- **Cursor Dark** (`#26251e`): Primary text, headings, dark UI surfaces. A warm near-black with distinct yellow-brown undertone -- the defining color of the system.
-- **Cursor Cream** (`#f2f1ed`): Page background, primary surface. Not white but a warm cream that sets the entire warm tone.
-- **Cursor Light** (`#e6e5e0`): Secondary surface, button backgrounds, card fills. A slightly warmer, slightly darker cream.
-- **Pure White** (`#ffffff`): Used sparingly for maximum contrast elements and specific surface highlights.
-- **True Black** (`#000000`): Minimal use, specific code/console contexts.
+### 主色
+- **Cursor Dark（Cursor 深色）**（`#26251e`）：主要文字、标题、深色 UI 表面。一种温暖的近黑色，带明显的黄棕色底色 —— 系统的定义色。
+- **Cursor Cream（Cursor 奶油色）**（`#f2f1ed`）：页面背景、主要表面。不是白色，而是一种温暖的奶油色，设定了整个温暖基调。
+- **Cursor Light（Cursor 浅色）**（`#e6e5e0`）：次要表面、按钮背景、卡片填充。一种略微更暖、略深的奶油色。
+- **Pure White（纯白）**（`#ffffff`）：少量用于最大对比度的元素和特定表面高光。
+- **True Black（纯黑）**（`#000000`）：最少使用，特定代码/控制台上下文。
 
-### Accent
-- **Cursor Orange** (`#f54e00`): Brand accent, `--color-accent`. A vibrant red-orange used for primary CTAs, active links, and brand moments. Warm and urgent.
-- **Gold** (`#c08532`): Secondary accent, warm gold for premium or highlighted contexts.
+### 强调色
+- **Cursor Orange（Cursor 橙色）**（`#f54e00`）：品牌强调，`--color-accent`。一种鲜艳的红橙色，用于主要 CTA、激活链接和品牌时刻。温暖而紧迫。
+- **Gold（金色）**（`#c08532`）：次要强调，温暖的金色，用于高端或高亮的上下文。
 
-### Semantic
-- **Error** (`#cf2d56`): `--color-error`. A warm crimson-rose rather than cold red.
-- **Success** (`#1f8a65`): `--color-success`. A muted teal-green, warm-shifted.
+### 语义色
+- **Error（错误）**（`#cf2d56`）：`--color-error`。一种温暖的绯红玫瑰色，而非冰冷的红。
+- **Success（成功）**（`#1f8a65`）：`--color-success`。一种柔和的青绿色，偏暖。
 
-### Timeline / Feature Colors
-- **Thinking** (`#dfa88f`): Warm peach for "thinking" state in AI timeline.
-- **Grep** (`#9fc9a2`): Soft sage green for search/grep operations.
-- **Read** (`#9fbbe0`): Soft blue for file reading operations.
-- **Edit** (`#c0a8dd`): Soft lavender for editing operations.
+### 时间线 / 功能色
+- **Thinking（思考）**（`#dfa88f`）：暖桃色，用于 AI 时间线中的"思考"状态。
+- **Grep（搜索）**（`#9fc9a2`）：柔和的鼠尾草绿，用于搜索/grep 操作。
+- **Read（读取）**（`#9fbbe0`）：柔和的蓝色，用于文件读取操作。
+- **Edit（编辑）**（`#c0a8dd`）：柔和的薰衣草色，用于编辑操作。
 
-### Surface Scale
-- **Surface 100** (`#f7f7f4`): Lightest button/card surface, barely tinted.
-- **Surface 200** (`#f2f1ed`): Primary page background.
-- **Surface 300** (`#ebeae5`): Button default background, subtle emphasis.
-- **Surface 400** (`#e6e5e0`): Card backgrounds, secondary surfaces.
-- **Surface 500** (`#e1e0db`): Tertiary button background, deeper emphasis.
+### 表面刻度
+- **Surface 100**（`#f7f7f4`）：最浅的按钮/卡片表面，几乎无色调。
+- **Surface 200**（`#f2f1ed`）：主要页面背景。
+- **Surface 300**（`#ebeae5`）：按钮默认背景，细微强调。
+- **Surface 400**（`#e6e5e0`）：卡片背景、次要表面。
+- **Surface 500**（`#e1e0db`）：三级按钮背景，更深强调。
 
-### Border Colors
-- **Border Primary** (`oklab(0.263084 -0.00230259 0.0124794 / 0.1)`): Standard border, 10% warm brown in oklab space.
-- **Border Medium** (`oklab(0.263084 -0.00230259 0.0124794 / 0.2)`): Emphasized border, 20% warm brown.
-- **Border Strong** (`rgba(38, 37, 30, 0.55)`): Strong borders, table rules.
-- **Border Solid** (`#26251e`): Full-opacity dark border for maximum contrast.
-- **Border Light** (`#f2f1ed`): Light border matching page background.
+### 边框色
+- **Border Primary（主边框）**（`oklab(0.263084 -0.00230259 0.0124794 / 0.1)`）：标准边框，oklab 詹姆斯中 10% 暖棕。
+- **Border Medium（中等边框）**（`oklab(0.263084 -0.00230259 0.0124794 / 0.2)`）：强调边框，20% 暖棕。
+- **Border Strong（强边框）**（`rgba(38, 37, 30, 0.55)`）：强边框、表格线。
+- **Border Solid（实线边框）**（`#26251e`）：全不透明深色边框，用于最大对比度。
+- **Border Light（浅边框）**（`#f2f1ed`）：匹配页面背景的浅边框。
 
-### Shadows & Depth
-- **Card Shadow** (`rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px, oklab(0.263084 -0.00230259 0.0124794 / 0.1) 0px 0px 0px 1px`): Heavy elevated card with warm oklab border ring.
-- **Ambient Shadow** (`rgba(0,0,0,0.02) 0px 0px 16px, rgba(0,0,0,0.008) 0px 0px 8px`): Subtle ambient glow for floating elements.
+### 阴影与深度
+- **Card Shadow（卡片阴影）**（`rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px, oklab(0.263084 -0.00230259 0.0124794 / 0.1) 0px 0px 0px 1px`）：重型凸起卡片，带暖色 oklab 边框环。
+- **Ambient Shadow（环境阴影）**（`rgba(0,0,0,0.02) 0px 0px 16px, rgba(0,0,0,0.008) 0px 0px 8px`）：用于浮动元素的微妙环境光晕。
 
-## 3. Typography Rules
+## 3. 字体排版规则
 
-### Font Family
-- **Display/Headlines**: `CursorGothic`, with fallbacks: `CursorGothic Fallback, system-ui, Helvetica Neue, Helvetica, Arial`
-- **Body/Editorial**: `jjannon`, with fallbacks: `Iowan Old Style, Palatino Linotype, URW Palladio L, P052, ui-serif, Georgia, Cambria, Times New Roman, Times`
-- **Code/Technical**: `berkeleyMono`, with fallbacks: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New`
-- **UI/System**: `system-ui`, with fallbacks: `-apple-system, Segoe UI, Helvetica Neue, Arial`
-- **Icons**: `CursorIcons16` (icon font at 14px and 12px)
-- **OpenType Features**: `"cswh"` on jjannon body text, `"ss09"` on CursorGothic buttons/captions
+### 字体族
+- **展示/标题**：`CursorGothic`，回退字体：`CursorGothic Fallback, system-ui, Helvetica Neue, Helvetica, Arial`
+- **正文/编辑**：`jjannon`，回退字体：`Iowan Old Style, Palatino Linotype, URW Palladio L, P052, ui-serif, Georgia, Cambria, Times New Roman, Times`
+- **代码/技术**：`berkeleyMono`，回退字体：`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New`
+- **UI/系统**：`system-ui`，回退字体：`-apple-system, Segoe UI, Helvetica Neue, Arial`
+- **图标**：`CursorIcons16`（图标字体，14px 和 12px）
+- **OpenType 特性**：jjannon 正文用 `"cswh"`，CursorGothic 按钮/说明用 `"ss09"`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 说明 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display Hero | CursorGothic | 72px (4.50rem) | 400 | 1.10 (tight) | -2.16px | Maximum compression, hero statements |
-| Section Heading | CursorGothic | 36px (2.25rem) | 400 | 1.20 (tight) | -0.72px | Feature sections, CTA headlines |
-| Sub-heading | CursorGothic | 26px (1.63rem) | 400 | 1.25 (tight) | -0.325px | Card headings, sub-sections |
-| Title Small | CursorGothic | 22px (1.38rem) | 400 | 1.30 (tight) | -0.11px | Smaller titles, list headings |
-| Body Serif | jjannon | 19.2px (1.20rem) | 500 | 1.50 | normal | Editorial body with `"cswh"` |
-| Body Serif SM | jjannon | 17.28px (1.08rem) | 400 | 1.35 | normal | Standard body text, descriptions |
-| Body Sans | CursorGothic | 16px (1.00rem) | 400 | 1.50 | normal/0.08px | UI body text |
-| Button Label | CursorGothic | 14px (0.88rem) | 400 | 1.00 (tight) | normal | Primary button text |
-| Button Caption | CursorGothic | 14px (0.88rem) | 400 | 1.50 | 0.14px | Secondary button with `"ss09"` |
-| Caption | CursorGothic | 11px (0.69rem) | 400-500 | 1.50 | normal | Small captions, metadata |
-| System Heading | system-ui | 20px (1.25rem) | 700 | 1.55 | normal | System UI headings |
-| System Caption | system-ui | 13px (0.81rem) | 500-600 | 1.33 | normal | System UI labels |
-| System Micro | system-ui | 11px (0.69rem) | 500 | 1.27 (tight) | 0.048px | Uppercase micro labels |
-| Mono Body | berkeleyMono | 12px (0.75rem) | 400 | 1.67 (relaxed) | normal | Code blocks |
-| Mono Small | berkeleyMono | 11px (0.69rem) | 400 | 1.33 | -0.275px | Inline code, terminal |
-| Lato Heading | Lato | 16px (1.00rem) | 600 | 1.33 | normal | Lato section headings |
-| Lato Caption | Lato | 14px (0.88rem) | 400-600 | 1.33 | normal | Lato captions |
-| Lato Micro | Lato | 12px (0.75rem) | 400-600 | 1.27 (tight) | 0.053px | Lato small labels |
+| 展示英雄标题 | CursorGothic | 72px (4.50rem) | 400 | 1.10（紧凑） | -2.16px | 最大压缩，英雄陈述 |
+| 区块标题 | CursorGothic | 36px (2.25rem) | 400 | 1.20（紧凑） | -0.72px | 功能区块、CTA 标题 |
+| 副标题 | CursorGothic | 26px (1.63rem) | 400 | 1.25（紧凑） | -0.325px | 卡片标题、子区块 |
+| 小标题 | CursorGothic | 22px (1.38rem) | 400 | 1.30（紧凑） | -0.11px | 较小标题、列表标题 |
+| 衬线正文 | jjannon | 19.2px (1.20rem) | 500 | 1.50 | normal | 带 `"cswh"` 的编辑正文 |
+| 衬线小正文 | jjannon | 17.28px (1.08rem) | 400 | 1.35 | normal | 标准正文、描述 |
+| 无衬线正文 | CursorGothic | 16px (1.00rem) | 400 | 1.50 | normal/0.08px | UI 正文 |
+| 按钮标签 | CursorGothic | 14px (0.88rem) | 400 | 1.00（紧凑） | normal | 主要按钮文字 |
+| 按钮说明 | CursorGothic | 14px (0.88rem) | 400 | 1.50 | 0.14px | 带 `"ss09"` 的次要按钮 |
+| 说明 | CursorGothic | 11px (0.69rem) | 400-500 | 1.50 | normal | 小说明、元数据 |
+| 系统标题 | system-ui | 20px (1.25rem) | 700 | 1.55 | normal | 系统 UI 标题 |
+| 系统说明 | system-ui | 13px (0.81rem) | 500-600 | 1.33 | normal | 系统 UI 标签 |
+| 系统微文字 | system-ui | 11px (0.69rem) | 500 | 1.27（紧凑） | 0.048px | 大写微标签 |
+| 等宽正文 | berkeleyMono | 12px (0.75rem) | 400 | 1.67（宽松） | normal | 代码块 |
+| 等宽小字 | berkeleyMono | 11px (0.69rem) | 400 | 1.33 | -0.275px | 行内代码、终端 |
+| Lato 标题 | Lato | 16px (1.00rem) | 600 | 1.33 | normal | Lato 区块标题 |
+| Lato 说明 | Lato | 14px (0.88rem) | 400-600 | 1.33 | normal | Lato 说明 |
+| Lato 微文字 | Lato | 12px (0.75rem) | 400-600 | 1.27（紧凑） | 0.053px | Lato 小标签 |
 
-### Principles
-- **Gothic compression for impact**: CursorGothic at display sizes uses -2.16px letter-spacing at 72px, progressively relaxing: -0.72px at 36px, -0.325px at 26px, -0.11px at 22px, normal at 16px and below. The tracking creates a sense of precision engineering.
-- **Serif for soul**: jjannon provides literary warmth. The `"cswh"` feature adds contextual swash alternates that give body text a calligraphic quality.
-- **Three typographic voices**: Gothic (display/UI), serif (editorial/body), mono (code/technical). Each serves a distinct communication purpose.
-- **Weight restraint**: CursorGothic uses weight 400 almost exclusively, relying on size and tracking for hierarchy rather than weight. System-ui components use 500-700 for functional emphasis.
+### 原则
+- **哥特式压缩带来冲击力**：CursorGothic 在展示尺寸下使用 -2.16px 字距（72px 时），逐步放松：36px 时 -0.72px，26px 时 -0.325px，22px 时 -0.11px，16px 及以下时 normal。这种字距创造出精密工程的感觉。
+- **衬线赋予灵魂**：jjannon 提供文学性的温暖。`"cswh"` 特性添加了上下文花体替代，赋予正文一种书法的质感。
+- **三种字体嗓音**：哥特式（展示/UI）、衬线（编辑/正文）、等宽（代码/技术）。每种服务于不同的沟通目的。
+- **字重克制**：CursorGothic 几乎只使用字重 400，依靠字号和字距而非字重来建立层级。system-ui 组件使用 500-700 实现功能性强调。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary (Warm Surface)**
-- Background: `#ebeae5` (Surface 300)
-- Text: `#26251e` (Cursor Dark)
-- Padding: 10px 12px 10px 14px
-- Radius: 8px
-- Outline: none
-- Hover: text shifts to `var(--color-error)` (`#cf2d56`)
-- Focus shadow: `rgba(0,0,0,0.1) 0px 4px 12px`
-- Use: Primary actions, main CTAs
+**Primary（温暖表面）**
+- 背景：`#ebeae5`（Surface 300）
+- 文字：`#26251e`（Cursor Dark）
+- 内边距：10px 12px 10px 14px
+- 圆角：8px
+- 轮廓：none
+- 悬停：文字变为 `var(--color-error)`（`#cf2d56`）
+- 聚焦阴影：`rgba(0,0,0,0.1) 0px 4px 12px`
+- 用途：主要动作、主 CTA
 
-**Secondary Pill**
-- Background: `#e6e5e0` (Surface 400)
-- Text: `oklab(0.263 / 0.6)` (60% warm brown)
-- Padding: 3px 8px
-- Radius: full pill (33.5M px)
-- Hover: text shifts to `var(--color-error)`
-- Use: Tags, filters, secondary actions
+**Secondary Pill（次要药丸）**
+- 背景：`#e6e5e0`（Surface 400）
+- 文字：`oklab(0.263 / 0.6)`（60% 暖棕）
+- 内边距：3px 8px
+- 圆角：完整药丸（33.5M px）
+- 悬停：文字变为 `var(--color-error)`
+- 用途：标签、过滤、次要动作
 
-**Tertiary Pill**
-- Background: `#e1e0db` (Surface 500)
-- Text: `oklab(0.263 / 0.6)` (60% warm brown)
-- Radius: full pill
-- Use: Active filter state, selected tags
+**Tertiary Pill（三级药丸）**
+- 背景：`#e1e0db`（Surface 500）
+- 文字：`oklab(0.263 / 0.6)`（60% 暖棕）
+- 圆角：完整药丸
+- 用途：激活过滤状态、选中的标签
 
-**Ghost (Transparent)**
-- Background: `rgba(38, 37, 30, 0.06)` (6% warm brown)
-- Text: `rgba(38, 37, 30, 0.55)` (55% warm brown)
-- Padding: 6px 12px
-- Use: Tertiary actions, dismiss buttons
+**Ghost（幽灵，透明）**
+- 背景：`rgba(38, 37, 30, 0.06)`（6% 暖棕）
+- 文字：`rgba(38, 37, 30, 0.55)`（55% 暖棕）
+- 内边距：6px 12px
+- 用途：三级动作、关闭按钮
 
-**Light Surface**
-- Background: `#f7f7f4` (Surface 100) or `#f2f1ed` (Surface 200)
-- Text: `#26251e` or `oklab(0.263 / 0.9)` (90%)
-- Padding: 0px 8px 1px 12px
-- Use: Dropdown triggers, subtle interactive elements
+**Light Surface（浅表面）**
+- 背景：`#f7f7f4`（Surface 100）或 `#f2f1ed`（Surface 200）
+- 文字：`#26251e` 或 `oklab(0.263 / 0.9)`（90%）
+- 内边距：0px 8px 1px 12px
+- 用途：下拉触发器、细微交互元素
 
-### Cards & Containers
-- Background: `#e6e5e0` or `#f2f1ed`
-- Border: `1px solid oklab(0.263 / 0.1)` (warm brown at 10%)
-- Radius: 8px (standard), 4px (compact), 10px (featured)
-- Shadow: `rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px` for elevated cards
-- Hover: shadow intensification
+### 卡片与容器
+- 背景：`#e6e5e0` 或 `#f2f1ed`
+- 边框：`1px solid oklab(0.263 / 0.1)`（10% 暖棕）
+- 圆角：8px（标准）、4px（紧凑）、10px（特色）
+- 阴影：`rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px`，用于凸起卡片
+- 悬停：阴影加深
 
-### Inputs & Forms
-- Background: transparent or surface
-- Text: `#26251e`
-- Padding: 8px 8px 6px (textarea)
-- Border: `1px solid oklab(0.263 / 0.1)`
-- Focus: border shifts to `oklab(0.263 / 0.2)` or accent orange
+### 输入与表单
+- 背景：transparent 或表面色
+- 文字：`#26251e`
+- 内边距：8px 8px 6px（textarea）
+- 边框：`1px solid oklab(0.263 / 0.1)`
+- 聚焦：边框变为 `oklab(0.263 / 0.2)` 或强调橙色
 
-### Navigation
-- Clean horizontal nav on warm cream background
-- Cursor logotype left-aligned (~96x24px)
-- Links: 14px CursorGothic or system-ui, weight 500
-- CTA button: warm surface with Cursor Dark text
-- Tab navigation: bottom border `1px solid oklab(0.263 / 0.1)` with active tab differentiation
+### 导航
+- 暖奶油色背景上的干净水平导航
+- Cursor 字标左对齐（约 96x24px）
+- 链接：14px CursorGothic 或 system-ui，字重 500
+- CTA 按钮：温暖表面配 Cursor Dark 文字
+- 标签导航：底部边框 `1px solid oklab(0.263 / 0.1)`，激活标签有所区别
 
-### Image Treatment
-- Code editor screenshots with `1px solid oklab(0.263 / 0.1)` border
-- Rounded corners: 8px standard
-- AI chat/timeline screenshots dominate feature sections
-- Warm gradient or solid cream backgrounds behind hero images
+### 图片处理
+- 代码编辑器截图配 `1px solid oklab(0.263 / 0.1)` 边框
+- 圆角：8px 标准
+- AI 聊天/时间线截图主导功能区块
+- 英雄图片背后是暖色渐变或纯奶油色背景
 
-### Distinctive Components
+### 特色组件
 
-**AI Timeline**
-- Vertical timeline showing AI operations: thinking (peach), grep (sage), read (blue), edit (lavender)
-- Each step uses its semantic color with matching text
-- Connected with vertical lines
-- Core visual metaphor for Cursor's AI-first coding experience
+**AI 时间线**
+- 显示 AI 操作的垂直时间线：thinking（桃色）、grep（鼠尾草绿）、read（蓝色）、edit（薰衣草色）
+- 每个步骤使用其语义色配匹配文字
+- 用垂直线连接
+- Cursor 的 AI 优先编码体验的核心视觉隐喻
 
-**Code Editor Previews**
-- Dark code editor screenshots with warm cream border frame
-- berkeleyMono for code text
-- Syntax highlighting using timeline colors
+**代码编辑器预览**
+- 深色代码编辑器截图配暖奶油色边框框
+- berkeleyMono 用于代码文字
+- 使用时间线颜色进行语法高亮
 
-**Pricing Cards**
-- Warm surface backgrounds with bordered containers
-- Feature lists using jjannon serif for readability
-- CTA buttons with accent orange or primary dark styling
+**定价卡片**
+- 暖色表面背景配带边框的容器
+- 功能列表使用 jjannon 衬线以保证可读性
+- CTA 按钮配强调橙色或主要深色样式
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Fine scale: 1.5px, 2px, 2.5px, 3px, 4px, 5px, 6px (sub-8px for micro-adjustments)
-- Standard scale: 8px, 10px, 12px, 14px (derived from extraction)
-- Extended scale (inferred): 16px, 24px, 32px, 48px, 64px, 96px
-- Notable: fine-grained sub-8px increments for precise icon/text alignment
+### 间距系统
+- 基本单位：8px
+- 细刻度：1.5px、2px、2.5px、3px、4px、5px、6px（亚 8px，用于微调）
+- 标准刻度：8px、10px、12px、14px（从提取中得出）
+- 扩展刻度（推断）：16px、24px、32px、48px、64px、96px
+- 显著特征：细粒度的亚 8px 增量，用于精确的图标/文字对齐
 
-### Grid & Container
-- Max content width: approximately 1200px
-- Hero: centered single-column with generous top padding (80-120px)
-- Feature sections: 2-3 column grids for cards and features
-- Full-width sections with warm cream or slightly darker backgrounds
-- Sidebar layouts for documentation and settings pages
+### 网格与容器
+- 最大内容宽度：约 1200px
+- 英雄区：居中单列，配慷慨的顶部内边距（80-120px）
+- 功能区块：2-3 列网格，用于卡片和功能
+- 全宽区块配暖奶油色或略深的背景
+- 文档和设置页面的侧边栏布局
 
-### Whitespace Philosophy
-- **Warm negative space**: The cream background means whitespace has warmth and texture, unlike cold white minimalism. Large empty areas feel cozy rather than clinical.
-- **Compressed text, open layout**: Aggressive negative letter-spacing on CursorGothic headlines is balanced by generous surrounding margins. Text is dense; space around it breathes.
-- **Section variation**: Alternating surface tones (cream → lighter cream → cream) create subtle section differentiation without harsh boundaries.
+### 留白哲学
+- **温暖的负空间**：奶油色背景意味着留白带有温暖和质感，不同于冷冰冰的白色极简。大片空旷区域感觉舒适而非临床。
+- **压缩的文字，开阔的布局**：CursorGothic 标题上激进的负字距被周围慷慨的边距所平衡。文字是密集的；周围的空间是呼吸的。
+- **区块变化**：交替的表面色调（奶油 → 更浅的奶油 → 奶油）创造出细微的区块区分，而没有生硬的边界。
 
-### Border Radius Scale
-- Micro (1.5px): Fine detail elements
-- Small (2px): Inline elements, code spans
-- Medium (3px): Small containers, inline badges
-- Standard (4px): Cards, images, compact buttons
-- Comfortable (8px): Primary buttons, cards, menus
-- Featured (10px): Larger containers, featured cards
-- Full Pill (33.5M px / 9999px): Pill buttons, tags, badges
+### 圆角刻度
+- 微型（1.5px）：精细细节元素
+- 小型（2px）：行内元素、代码段
+- 中型（3px）：小容器、行内徽章
+- 标准（4px）：卡片、图片、紧凑按钮
+- 舒适（8px）：主要按钮、卡片、菜单
+- 特色（10px）：较大的容器、特色卡片
+- 完整药丸（33.5M px / 9999px）：药丸按钮、标签、徽章
 
-## 6. Depth & Elevation
+## 6. 深度与凸起
 
-| Level | Treatment | Use |
+| 层级 | 处理方式 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | Page background, text blocks |
-| Border Ring (Level 1) | `oklab(0.263 / 0.1) 0px 0px 0px 1px` | Standard card/container border (warm oklab) |
-| Border Medium (Level 1b) | `oklab(0.263 / 0.2) 0px 0px 0px 1px` | Emphasized borders, active states |
-| Ambient (Level 2) | `rgba(0,0,0,0.02) 0px 0px 16px, rgba(0,0,0,0.008) 0px 0px 8px` | Floating elements, subtle glow |
-| Elevated Card (Level 3) | `rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px, oklab ring` | Modals, popovers, elevated cards |
-| Focus | `rgba(0,0,0,0.1) 0px 4px 12px` on button focus | Interactive focus feedback |
+| 平面（Level 0） | 无阴影 | 页面背景、文本块 |
+| 边框环（Level 1） | `oklab(0.263 / 0.1) 0px 0px 0px 1px` | 标准卡片/容器边框（暖色 oklab） |
+| 中等边框（Level 1b） | `oklab(0.263 / 0.2) 0px 0px 0px 1px` | 强调边框、激活状态 |
+| 环境（Level 2） | `rgba(0,0,0,0.02) 0px 0px 16px, rgba(0,0,0,0.008) 0px 0px 8px` | 浮动元素、微妙光晕 |
+| 凸起卡片（Level 3） | `rgba(0,0,0,0.14) 0px 28px 70px, rgba(0,0,0,0.1) 0px 14px 32px, oklab ring` | 模态框、弹出框、凸起卡片 |
+| 聚焦 | 按钮聚焦时 `rgba(0,0,0,0.1) 0px 4px 12px` | 交互聚焦反馈 |
 
-**Shadow Philosophy**: Cursor's depth system is built around two ideas. First, borders use perceptually uniform oklab color space rather than rgba, ensuring warm brown borders look consistent across different background tones. Second, elevation shadows use dramatically large blur values (28px, 70px) with moderate opacity (0.14, 0.1), creating a diffused, atmospheric lift rather than hard-edged drop shadows. Cards don't feel like they float above the page -- they feel like the page has gently opened a space for them.
+**阴影哲学**：Cursor 的深度系统围绕两个理念构建。第一，边框使用感知均匀的 oklab 色彩空间而非 rgba，确保暖棕色边框在不同背景色调下看起来一致。第二，凸起阴影使用戏剧性的大模糊值（28px、70px）配合适中的透明度（0.14、0.1），创造出漫射的、氛围感的抬升，而非硬边的投影。卡片不会感觉像是悬浮在页面之上 —— 它们感觉像是页面为它们轻轻地打开了一个空间。
 
-### Decorative Depth
-- Warm cream surface variations create subtle tonal depth without shadows
-- oklab borders at 10% and 20% create a spectrum of edge definition
-- No harsh divider lines -- section separation through background tone shifts and spacing
+### 装饰性深度
+- 暖奶油色表面变化创造出细微的色调深度，无需阴影
+- 10% 和 20% 的 oklab 边框创造出边缘定义的光谱
+- 没有生硬的分隔线 —— 通过背景色调变化和间距实现区块分离
 
-## 7. Interaction & Motion
+## 7. 交互与动效
 
-### Hover States
-- Buttons: text color shifts to `--color-error` (`#cf2d56`) on hover -- a distinctive warm crimson that signals interactivity
-- Links: color shift to accent orange (`#f54e00`) or underline decoration with `rgba(38, 37, 30, 0.4)`
-- Cards: shadow intensification on hover (ambient → elevated)
+### 悬停状态
+- 按钮：悬停时文字色变为 `--color-error`（`#cf2d56`）—— 一种独特的温暖绯红，标志交互性
+- 链接：颜色变为强调橙色（`#f54e00`）或 `rgba(38, 37, 30, 0.4)` 下划线装饰
+- 卡片：悬停时阴影加深（环境 → 凸起）
 
-### Focus States
-- Shadow-based focus: `rgba(0,0,0,0.1) 0px 4px 12px` for depth-based focus indication
-- Border focus: `oklab(0.263 / 0.2)` (20% border) for input/form focus
-- Consistent warm tone in all focus states -- no cold blue focus rings
+### 聚焦状态
+- 基于阴影的聚焦：`rgba(0,0,0,0.1) 0px 4px 12px`，用于基于深度的聚焦指示
+- 边框聚焦：`oklab(0.263 / 0.2)`（20% 边框），用于输入/表单聚焦
+- 所有聚焦状态保持一致的暖色调 —— 没有冷蓝色聚焦环
 
-### Transitions
-- Color transitions: 150ms ease for text/background color changes
-- Shadow transitions: 200ms ease for elevation changes
-- Transform: subtle scale or translate for interactive feedback
+### 过渡
+- 颜色过渡：150ms ease，用于文字/背景颜色变化
+- 阴影过渡：200ms ease，用于凸起变化
+- 变换：细微的 scale 或 translate，用于交互反馈
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <600px | Single column, reduced padding, stacked navigation |
-| Tablet Small | 600-768px | 2-column grids begin |
-| Tablet | 768-900px | Expanded card grids, sidebar appears |
-| Desktop Small | 900-1279px | Full layout forming |
-| Desktop | >1279px | Full layout, maximum content width |
+| 移动端 | <600px | 单列，缩小内边距，堆叠导航 |
+| 小型平板 | 600-768px | 开始 2 列网格 |
+| 平板 | 768-900px | 展开的卡片网格，侧边栏出现 |
+| 小型桌面 | 900-1279px | 完整布局成形 |
+| 桌面 | >1279px | 完整布局，最大内容宽度 |
 
-### Touch Targets
-- Buttons use comfortable padding (6px-14px vertical, 8px-14px horizontal)
-- Pill buttons maintain tap-friendly sizing with 3px-10px padding
-- Navigation links at 14px with adequate spacing for touch
+### 触摸目标
+- 按钮使用舒适的内边距（垂直 6px-14px，水平 8px-14px）
+- 药丸按钮保持适合点击的尺寸，配 3px-10px 内边距
+- 导航链接 14px，配充足的触摸间距
 
-### Collapsing Strategy
-- Hero: 72px CursorGothic → 36px → 26px on smaller screens, maintaining proportional letter-spacing
-- Navigation: horizontal links → hamburger menu on mobile
-- Feature cards: 3-column → 2-column → single column stacked
-- Code editor screenshots: maintain aspect ratio, may shrink with border treatment preserved
-- Timeline visualization: horizontal → vertical stacking
-- Section spacing: 80px+ → 48px → 32px on mobile
+### 折叠策略
+- 英雄区：72px CursorGothic → 36px → 26px，在较小屏幕上保持比例字距
+- 导航：水平链接 → 移动端汉堡菜单
+- 功能卡片：3 列 → 2 列 → 单列堆叠
+- 代码编辑器截图：保持纵横比，可随边框处理缩小
+- 时间线可视化：水平 → 垂直堆叠
+- 区块间距：80px+ → 48px → 移动端 32px
 
-### Image Behavior
-- Editor screenshots maintain warm border treatment at all sizes
-- AI timeline adapts from horizontal to vertical layout
-- Product screenshots use responsive images with consistent border radius
-- Full-width hero images scale proportionally
+### 图片行为
+- 编辑器截图在所有尺寸下保持温暖的边框处理
+- AI 时间线从水平适应为垂直布局
+- 产品截图使用响应式图片，保持一致的圆角
+- 全宽英雄图片按比例缩放
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Primary CTA background: `#ebeae5` (warm cream button)
-- Page background: `#f2f1ed` (warm off-white)
-- Text color: `#26251e` (warm near-black)
-- Secondary text: `rgba(38, 37, 30, 0.55)` (55% warm brown)
-- Accent: `#f54e00` (orange)
-- Error/hover: `#cf2d56` (warm crimson)
-- Success: `#1f8a65` (muted teal)
-- Border: `oklab(0.263084 -0.00230259 0.0124794 / 0.1)` or `rgba(38, 37, 30, 0.1)` as fallback
+### 快速颜色参考
+- 主要 CTA 背景：`#ebeae5`（暖奶油色按钮）
+- 页面背景：`#f2f1ed`（暖灰白色）
+- 文字色：`#26251e`（暖近黑）
+- 次要文字：`rgba(38, 37, 30, 0.55)`（55% 暖棕）
+- 强调色：`#f54e00`（橙色）
+- 错误/悬停：`#cf2d56`（暖绯红）
+- 成功：`#1f8a65`（柔和青绿）
+- 边框：`oklab(0.263084 -0.00230259 0.0124794 / 0.1)` 或 `rgba(38, 37, 30, 0.1)` 作为回退
 
-### Example Component Prompts
-- "Create a hero section on `#f2f1ed` warm cream background. Headline at 72px CursorGothic weight 400, line-height 1.10, letter-spacing -2.16px, color `#26251e`. Subtitle at 17.28px jjannon weight 400, line-height 1.35, color `rgba(38,37,30,0.55)`. Primary CTA button (`#ebeae5` bg, 8px radius, 10px 14px padding) with hover text shift to `#cf2d56`."
-- "Design a card: `#e6e5e0` background, border `1px solid rgba(38,37,30,0.1)`. Radius 8px. Title at 22px CursorGothic weight 400, letter-spacing -0.11px. Body at 17.28px jjannon weight 400, color `rgba(38,37,30,0.55)`. Use `#f54e00` for link accents."
-- "Build a pill tag: `#e6e5e0` background, `rgba(38,37,30,0.6)` text, full-pill radius (9999px), 3px 8px padding, 14px CursorGothic weight 400."
-- "Create navigation: sticky `#f2f1ed` background with backdrop-filter blur. 14px system-ui weight 500 for links, `#26251e` text. CTA button right-aligned with `#ebeae5` bg and 8px radius. Bottom border `1px solid rgba(38,37,30,0.1)`."
-- "Design an AI timeline showing four steps: Thinking (`#dfa88f`), Grep (`#9fc9a2`), Read (`#9fbbe0`), Edit (`#c0a8dd`). Each step: 14px system-ui label + 16px CursorGothic description + vertical connecting line in `rgba(38,37,30,0.1)`."
+### 组件提示示例
+- "在 `#f2f1ed` 暖奶油色背景上创建一个英雄区块。标题为 72px CursorGothic 字重 400，行高 1.10，字间距 -2.16px，颜色 `#26251e`。副标题为 17.28px jjannon 字重 400，行高 1.35，颜色 `rgba(38,37,30,0.55)`。主要 CTA 按钮（`#ebeae5` 背景，8px 圆角，10px 14px 内边距），悬停时文字变为 `#cf2d56`。"
+- "设计一个卡片：`#e6e5e0` 背景，边框 `1px solid rgba(38,37,30,0.1)`。圆角 8px。标题为 22px CursorGothic 字重 400，字间距 -0.11px。正文为 17.28px jjannon 字重 400，颜色 `rgba(38,37,30,0.55)`。链接强调使用 `#f54e00`。"
+- "构建一个药丸标签：`#e6e5e0` 背景，`rgba(38,37,30,0.6)` 文字，完整药丸圆角（9999px），3px 8px 内边距，14px CursorGothic 字重 400。"
+- "创建导航：固定的 `#f2f1ed` 背景配 backdrop-filter blur。链接用 14px system-ui 字重 500，`#26251e` 文字。CTA 按钮右对齐，`#ebeae5` 背景，8px 圆角。底部边框 `1px solid rgba(38,37,30,0.1)`。"
+- "设计一个显示四个步骤的 AI 时间线：Thinking（`#dfa88f`）、Grep（`#9fc9a2`）、Read（`#9fbbe0`）、Edit（`#c0a8dd`）。每个步骤：14px system-ui 标签 + 16px CursorGothic 描述 + `rgba(38,37,30,0.1)` 垂直连接线。"
 
-### Iteration Guide
-1. Always use warm tones -- `#f2f1ed` background, `#26251e` text, never pure white/black for primary surfaces
-2. Letter-spacing scales with font size for CursorGothic: -2.16px at 72px, -0.72px at 36px, -0.325px at 26px, normal at 16px
-3. Use `rgba(38, 37, 30, alpha)` as a CSS-compatible fallback for oklab borders
-4. Three fonts, three voices: CursorGothic (display/UI), jjannon (editorial), berkeleyMono (code)
-5. Pill shapes (9999px radius) for tags and filters; 8px radius for primary buttons and cards
-6. Hover states use `#cf2d56` text color -- the warm crimson shift is a signature interaction
-7. Shadows use large blur values (28px, 70px) for diffused atmospheric depth
-8. The sub-8px spacing scale (1.5, 2, 2.5, 3, 4, 5, 6px) is critical for icon/text micro-alignment
+### 迭代指南
+1. 总是使用暖色调 —— `#f2f1ed` 背景，`#26251e` 文字，主要表面绝不用纯白/黑
+2. 字距随字号缩放，适用于 CursorGothic：72px 时 -2.16px，36px 时 -0.72px，26px 时 -0.325px，16px 时 normal
+3. 使用 `rgba(38, 37, 30, alpha)` 作为 oklab 边框的 CSS 兼容回退
+4. 三种字体，三种嗓音：CursorGothic（展示/UI）、jjannon（编辑）、berkeleyMono（代码）
+5. 标签和过滤使用药丸形状（9999px 圆角）；主要按钮和卡片使用 8px 圆角
+6. 悬停状态使用 `#cf2d56` 文字色 —— 暖绯红的变化是标志性的交互
+7. 阴影使用大模糊值（28px、70px），实现漫射的氛围深度
+8. 亚 8px 间距刻度（1.5、2、2.5、3、4、5、6px）对图标/文字微对齐至关重要

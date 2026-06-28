@@ -1,23 +1,23 @@
-"""OpenAI image generation backend.
+"""OpenAI 图像生成后端。
 
-Exposes OpenAI's ``gpt-image-2`` model at three quality tiers as an
-:class:`ImageGenProvider` implementation. The tiers are implemented as
-three virtual model IDs so the ``hermes tools`` model picker and the
-``image_gen.model`` config key behave like any other multi-model backend:
+将 OpenAI 的 ``gpt-image-2`` model 以三个质量层级暴露为
+:class:`ImageGenProvider` 实现。层级通过三个虚拟 model ID 实现，
+使得 ``hermes tools`` model 选择器和 ``image_gen.model`` 配置键
+与其他多 model 后端行为一致：
 
-    gpt-image-2-low     ~15s   fastest, good for iteration
-    gpt-image-2-medium  ~40s   default — balanced
-    gpt-image-2-high    ~2min  slowest, highest fidelity
+    gpt-image-2-low     ~15s   最快，适合迭代
+    gpt-image-2-medium  ~40s   默认 — 均衡
+    gpt-image-2-high    ~2min  最慢，最高保真度
 
-All three hit the same underlying API model (``gpt-image-2``) with a
-different ``quality`` parameter. Output is base64 JSON → saved under
-``$HERMES_HOME/cache/images/``.
+三者都调用相同的底层 API model（``gpt-image-2``），仅 ``quality``
+参数不同。输出为 base64 JSON → 保存到
+``$HERMES_HOME/cache/images/``。
 
-Selection precedence (first hit wins):
+选择优先级（首个命中生效）：
 
-1. ``OPENAI_IMAGE_MODEL`` env var (escape hatch for scripts / tests)
-2. ``image_gen.openai.model`` in ``config.yaml``
-3. ``image_gen.model`` in ``config.yaml`` (when it's one of our tier IDs)
+1. ``OPENAI_IMAGE_MODEL`` 环境变量（脚本/测试的覆盖入口）
+2. ``config.yaml`` 中的 ``image_gen.openai.model``
+3. ``config.yaml`` 中的 ``image_gen.model``（当其为本层级 ID 之一时）
 4. :data:`DEFAULT_MODEL` — ``gpt-image-2-medium``
 """
 

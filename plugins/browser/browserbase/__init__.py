@@ -1,8 +1,8 @@
-"""Browserbase cloud browser plugin — bundled, auto-loaded.
+"""Browserbase 云浏览器插件 — 内置，自动加载。
 
-Mirrors the ``plugins/web/<vendor>/`` and ``plugins/image_gen/openai/``
-layout: ``provider.py`` holds the provider class; ``__init__.py::register``
-instantiates and registers it via the plugin context.
+与 ``plugins/web/<vendor>/`` 和 ``plugins/image_gen/openai/`` 的
+布局一致：``provider.py`` 存放 provider 类；``__init__.py::register``
+通过插件上下文对其进行实例化和注册。
 """
 
 from __future__ import annotations
@@ -11,5 +11,5 @@ from plugins.browser.browserbase.provider import BrowserbaseBrowserProvider
 
 
 def register(ctx) -> None:
-    """Register the Browserbase provider with the plugin context."""
+    """将 Browserbase provider 注册到插件上下文中。"""
     ctx.register_browser_provider(BrowserbaseBrowserProvider())

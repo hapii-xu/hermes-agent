@@ -1,10 +1,10 @@
-"""Regex-based secret redaction for logs and tool output.
+"""基于正则表达式的敏感信息脱敏，用于日志和工具输出。
 
-Applies pattern matching to mask API keys, tokens, and credentials
-before they reach log files, verbose output, or gateway logs.
+通过模式匹配在 API 密钥、token 和凭据进入日志文件、
+详细输出或 gateway 日志之前进行掩码处理。
 
-Short tokens (< 18 chars) are fully masked. Longer tokens preserve
-the first 6 and last 4 characters for debuggability.
+短 token（< 18 字符）完全掩码。较长的 token 保留前 6 个
+和后 4 个字符，便于调试。
 """
 
 import logging
@@ -13,9 +13,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Sensitive query-string parameter names (case-insensitive exact match).
-# Ported from nearai/ironclaw#2529 — catches tokens whose values don't match
-# any known vendor prefix regex (e.g. opaque tokens, short OAuth codes).
+# 敏感的 URL 查询参数名（不区分大小写的精确匹配）。
+# 移植自 nearai/ironclaw#2529 —— 用于捕获值不匹配任何已知厂商
+# 前缀正则的 token（如不透明 token、短 OAuth 授权码）。
 _SENSITIVE_QUERY_PARAMS = frozenset({
     "access_token",
     "refresh_token",
@@ -30,14 +30,14 @@ _SENSITIVE_QUERY_PARAMS = frozenset({
     "session",
     "secret",
     "key",
-    "code",           # OAuth authorization codes
-    "signature",      # pre-signed URL signatures
+    "code",           # OAuth 授权码
+    "signature",      # 预签名 URL 签名
     "x-amz-signature",
 })
 
-# Sensitive form-urlencoded / JSON body key names (case-insensitive exact match).
-# Exact match, NOT substring — "token_count" and "session_id" must NOT match.
-# Ported from nearai/ironclaw#2529.
+# 敏感的表单 URL 编码 / JSON body 键名（不区分大小写的精确匹配）。
+# 精确匹配，非子串匹配 —— "token_count" 和 "session_id" 不应被匹配。
+# 移植自 nearai/ironclaw#2529。
 _SENSITIVE_BODY_KEYS = frozenset({
     "access_token",
     "refresh_token",
@@ -55,18 +55,18 @@ _SENSITIVE_BODY_KEYS = frozenset({
     "key",
 })
 
-# Snapshot at import time so runtime env mutations (e.g. LLM-generated
-# `export HERMES_REDACT_SECRETS=false`) cannot disable redaction
-# mid-session.  ON by default — secure default per issue #17691. Users who
-# need raw credential values in tool output (e.g. working on the redactor
-# itself) can opt out via `security.redact_secrets: false` in config.yaml
-# (bridged to this env var in hermes_cli/main.py, gateway/run.py, and
-# cli.py) or `HERMES_REDACT_SECRETS=false` in ~/.hermes/.env. An opt-out
-# warning is logged at gateway and CLI startup so operators see the
-# downgrade — see `_log_redaction_status()` in gateway/run.py and cli.py.
+# 在导入时快照，使运行时的环境变量修改（例如 LLM 生成的
+# `export HERMES_REDACT_SECRETS=false`）无法在会话中途禁用脱敏。
+# 默认开启 —— 符合 issue #17691 的安全默认值。需要在工具输出中
+# 查看原始凭据值的用户（例如正在开发脱敏器本身）可通过
+# config.yaml 中的 `security.redact_secrets: false`（在
+# hermes_cli/main.py、gateway/run.py 和 cli.py 中桥接到此环境变量）
+# 或 ~/.hermes/.env 中的 `HERMES_REDACT_SECRETS=false` 来关闭。
+# 关闭时会在 gateway 和 CLI 启动时记录警告，以便运维人员注意到安全降级
+# —— 参见 gateway/run.py 和 cli.py 中的 `_log_redaction_status()`。
 _REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
 
-# Known API key prefixes -- match the prefix + contiguous token chars
+# 已知的 API 密钥前缀 —— 匹配前缀 + 连续的 token 字符
 _PREFIX_PATTERNS = [
     r"sk-[A-Za-z0-9_-]{10,}",           # OpenAI / OpenRouter / Anthropic (sk-ant-*)
     r"ghp_[A-Za-z0-9]{10,}",            # GitHub PAT (classic)
@@ -107,33 +107,32 @@ _PREFIX_PATTERNS = [
     r"ntn_[A-Za-z0-9]{10,}",            # Notion internal integration token
 ]
 
-# ENV assignment patterns: KEY=value where KEY contains a secret-like name
+# ENV 赋值模式：KEY=value，其中 KEY 包含类似密钥的名称
 _SECRET_ENV_NAMES = r"(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)"
 _ENV_ASSIGN_RE = re.compile(
     rf"([A-Z0-9_]{{0,50}}{_SECRET_ENV_NAMES}[A-Z0-9_]{{0,50}})\s*=\s*(['\"]?)(\S+)\2",
 )
 
-# JSON field patterns: "apiKey": "value", "token": "value", etc.
+# JSON 字段模式："apiKey": "value"、"token": "value" 等
 _JSON_KEY_NAMES = r"(?:api_?[Kk]ey|token|secret|password|access_token|refresh_token|auth_token|bearer|secret_value|raw_secret|secret_input|key_material)"
 _JSON_FIELD_RE = re.compile(
     rf'("{_JSON_KEY_NAMES}")\s*:\s*"([^"]+)"',
     re.IGNORECASE,
 )
 
-# Authorization headers — any scheme (Bearer, Basic, Token, Digest, …) plus the
-# bare-credential form, and Proxy-Authorization. The credential token is masked
-# while the header name and scheme word are preserved for debuggability. The
-# previous rule only matched ``Bearer``, so ``Basic <base64 user:pass>`` and
-# ``token <pat>`` leaked verbatim into logs/transcripts.
+# Authorization 请求头 —— 匹配任意 scheme（Bearer、Basic、Token、Digest 等）
+# 以及无 scheme 的裸凭据形式，还有 Proxy-Authorization。凭据 token 被掩码，
+# 同时保留请求头名称和 scheme 词以便调试。之前的规则仅匹配 ``Bearer``，
+# 因此 ``Basic <base64 user:pass>`` 和 ``token <pat>`` 会原样泄露到日志/会话中。
 _AUTH_HEADER_RE = re.compile(
     r"((?:Proxy-)?Authorization:\s*)([A-Za-z][\w.+-]*\s+)?(\S+)",
     re.IGNORECASE,
 )
 
-# API-key style auth headers carrying a single opaque value (no scheme word).
-# Anthropic and many providers authenticate with ``x-api-key``; values without
-# a known vendor prefix (custom/local backends) would otherwise leak when a
-# request or curl command is logged or echoed into tool output / transcripts.
+# API 密钥风格的 auth 请求头，携带单个不透明值（无 scheme 词）。
+# Anthropic 和许多提供商通过 ``x-api-key`` 进行认证；没有已知厂商前缀的值
+# （自定义/本地后端）在请求或 curl 命令被记录或回显到工具输出/会话中时
+# 会原样泄露。
 _SECRET_HEADER_NAMES = (
     r"(?:x-api-key|x-goog-api-key|api-key|apikey|x-api-token|x-auth-token|x-access-token)"
 )
@@ -142,64 +141,64 @@ _SECRET_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Telegram bot tokens: bot<digits>:<token> or <digits>:<token>,
-# where token part is restricted to [-A-Za-z0-9_] and length >= 30
+# Telegram 机器人 token：bot<digits>:<token> 或 <digits>:<token>，
+# 其中 token 部分限制为 [-A-Za-z0-9_] 且长度 >= 30
 _TELEGRAM_RE = re.compile(
     r"(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})",
 )
 
-# Private key blocks: -----BEGIN RSA PRIVATE KEY----- ... -----END RSA PRIVATE KEY-----
+# 私钥块：-----BEGIN RSA PRIVATE KEY----- ... -----END RSA PRIVATE KEY-----
 _PRIVATE_KEY_RE = re.compile(
     r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----"
 )
 
-# Database connection strings: protocol://user:PASSWORD@host
-# Catches postgres, mysql, mongodb, redis, amqp URLs and redacts the password
+# 数据库连接字符串：protocol://user:PASSWORD@host
+# 捕获 postgres、mysql、mongodb、redis、amqp URL 并脱敏密码
 _DB_CONNSTR_RE = re.compile(
     r"((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^:]+:)([^@]+)(@)",
     re.IGNORECASE,
 )
 
-# JWT tokens: header.payload[.signature] — always start with "eyJ" (base64 for "{")
-# Matches 1-part (header only), 2-part (header.payload), and full 3-part JWTs.
+# JWT token：header.payload[.signature] —— 始终以 "eyJ" 开头（"{" 的 base64 编码）
+# 匹配 1 段（仅 header）、2 段（header.payload）和完整的 3 段 JWT。
 _JWT_RE = re.compile(
     r"eyJ[A-Za-z0-9_-]{10,}"           # Header (always starts with eyJ)
     r"(?:\.[A-Za-z0-9_=-]{4,}){0,2}"   # Optional payload and/or signature
 )
 
-# E.164 phone numbers: +<country><number>, 7-15 digits
-# Negative lookahead prevents matching hex strings or identifiers
+# E.164 电话号码：+<country><number>，7-15 位数字
+# 负向前瞻防止匹配十六进制字符串或标识符
 _SIGNAL_PHONE_RE = re.compile(r"(\+[1-9]\d{6,14})(?![A-Za-z0-9])")
 
-# URLs containing query strings — matches `scheme://...?...[# or end]`.
-# Used to scan text for URLs whose query params may contain secrets.
-# Ported from nearai/ironclaw#2529.
+# 包含查询字符串的 URL —— 匹配 `scheme://...?...[# 或结尾]`。
+# 用于扫描文本中查询参数可能包含敏感信息的 URL。
+# 移植自 nearai/ironclaw#2529。
 _URL_WITH_QUERY_RE = re.compile(
-    r"(https?|wss?|ftp)://"          # scheme
-    r"([^\s/?#]+)"                    # authority (may include userinfo)
-    r"([^\s?#]*)"                     # path
-    r"\?([^\s#]+)"                    # query (required)
-    r"(#\S*)?",                       # optional fragment
+    r"(https?|wss?|ftp)://"          # scheme 协议
+    r"([^\s/?#]+)"                    # authority（可能包含 userinfo）
+    r"([^\s?#]*)"                     # path 路径
+    r"\?([^\s#]+)"                    # query 查询（必需）
+    r"(#\S*)?",                       # 可选 fragment 片段
 )
 
-# URLs containing userinfo — `scheme://user:password@host` for ANY scheme
-# (not just DB protocols already covered by _DB_CONNSTR_RE above).
-# Catches things like `https://user:token@api.example.com/v1/foo`.
+# 包含 userinfo 的 URL —— `scheme://user:password@host`，适用于任意 scheme
+# （不仅限于上面 _DB_CONNSTR_RE 已覆盖的数据库协议）。
+# 捕获类似 `https://user:token@api.example.com/v1/foo` 的内容。
 _URL_USERINFO_RE = re.compile(
     r"(https?|wss?|ftp)://([^/\s:@]+):([^/\s@]+)@",
 )
 
-# HTTP access logs often use a relative request target rather than a full URL:
-# `"POST /webhook?password=... HTTP/1.1"`. The full-URL redactor above only
-# sees strings containing `://`, so handle request-target query strings too.
+# HTTP 访问日志通常使用相对请求目标而非完整 URL：
+# `"POST /webhook?password=... HTTP/1.1"`。上面的完整 URL 脱敏器
+# 只看到包含 `://` 的字符串，因此也需要处理请求目标中的查询字符串。
 _HTTP_REQUEST_TARGET_QUERY_RE = re.compile(
     r"\b((?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT)\s+[^ \t\r\n\"']*?)"
     r"\?([^ \t\r\n\"']+)",
     re.IGNORECASE,
 )
 
-# Form-urlencoded body detection: conservative — only applies when the entire
-# text looks like a query string (k=v&k=v pattern with no newlines).
+# 表单 URL 编码 body 检测：保守策略 —— 仅当整个文本看起来像
+# 查询字符串时（k=v&k=v 模式，无换行）才应用。
 _FORM_BODY_RE = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_.-]*=[^&\s]*(?:&[A-Za-z_][A-Za-z0-9_.-]*=[^&\s]*)+$"
 )

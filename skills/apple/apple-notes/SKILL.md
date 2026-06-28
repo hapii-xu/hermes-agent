@@ -1,6 +1,6 @@
 ---
 name: apple-notes
-description: "Manage Apple Notes via memo CLI: create, search, edit."
+description: "通过 memo CLI 管理 Apple Notes：创建、搜索、编辑。"
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -15,76 +15,76 @@ prerequisites:
 
 # Apple Notes
 
-Use `memo` to manage Apple Notes directly from the terminal. Notes sync across all Apple devices via iCloud.
+使用 `memo` 直接在终端中管理 Apple Notes。笔记会通过 iCloud 在所有 Apple 设备间同步。
 
-## Prerequisites
+## 前置条件
 
-- **macOS** with Notes.app
-- Install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`
-- Grant Automation access to Notes.app when prompted (System Settings → Privacy → Automation)
+- 安装了 Notes.app 的 **macOS**
+- 安装：`brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`
+- 出现提示时授予对 Notes.app 的自动化访问权限（系统设置 → 隐私 → 自动化）
 
-## When to Use
+## 适用场景
 
-- User asks to create, view, or search Apple Notes
-- Saving information to Notes.app for cross-device access
-- Organizing notes into folders
-- Exporting notes to Markdown/HTML
+- 用户要求创建、查看或搜索 Apple Notes
+- 将信息保存到 Notes.app 以便跨设备访问
+- 将笔记整理到文件夹中
+- 将笔记导出为 Markdown/HTML
 
-## When NOT to Use
+## 不适用场景
 
-- Obsidian vault management → use the `obsidian` skill
-- Bear Notes → separate app (not supported here)
-- Quick agent-only notes → use the `memory` tool instead
+- Obsidian 知识库管理 → 使用 `obsidian` skill
+- Bear Notes → 独立应用（此处不支持）
+- 仅用于 agent 内部的快速笔记 → 改用 `memory` 工具
 
-## Quick Reference
+## 快速参考
 
-### View Notes
-
-```bash
-memo notes                        # List all notes
-memo notes -f "Folder Name"       # Filter by folder
-memo notes -s "query"             # Search notes (fuzzy)
-```
-
-### Create Notes
+### 查看笔记
 
 ```bash
-memo notes -a                     # Interactive editor
-memo notes -a "Note Title"        # Quick add with title
+memo notes                        # 列出所有笔记
+memo notes -f "Folder Name"       # 按文件夹筛选
+memo notes -s "query"             # 搜索笔记（模糊匹配）
 ```
 
-### Edit Notes
+### 创建笔记
 
 ```bash
-memo notes -e                     # Interactive selection to edit
+memo notes -a                     # 交互式编辑器
+memo notes -a "Note Title"        # 以标题快速添加
 ```
 
-### Delete Notes
+### 编辑笔记
 
 ```bash
-memo notes -d                     # Interactive selection to delete
+memo notes -e                     # 交互式选择要编辑的笔记
 ```
 
-### Move Notes
+### 删除笔记
 
 ```bash
-memo notes -m                     # Move note to folder (interactive)
+memo notes -d                     # 交互式选择要删除的笔记
 ```
 
-### Export Notes
+### 移动笔记
 
 ```bash
-memo notes -ex                    # Export to HTML/Markdown
+memo notes -m                     # 将笔记移动到文件夹（交互式）
 ```
 
-## Limitations
+### 导出笔记
 
-- Cannot edit notes containing images or attachments
-- Interactive prompts require terminal access (use pty=true if needed)
-- macOS only — requires Apple Notes.app
+```bash
+memo notes -ex                    # 导出为 HTML/Markdown
+```
 
-## Rules
+## 限制
 
-1. Prefer Apple Notes when user wants cross-device sync (iPhone/iPad/Mac)
-2. Use the `memory` tool for agent-internal notes that don't need to sync
-3. Use the `obsidian` skill for Markdown-native knowledge management
+- 无法编辑包含图片或附件的笔记
+- 交互式提示需要终端访问权限（如有需要可设置 pty=true）
+- 仅支持 macOS — 需要 Apple Notes.app
+
+## 规则
+
+1. 当用户希望跨设备同步（iPhone/iPad/Mac）时，优先使用 Apple Notes
+2. 对于不需要同步的 agent 内部笔记，使用 `memory` 工具
+3. 对于 Markdown 原生的知识管理，使用 `obsidian` skill

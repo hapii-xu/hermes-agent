@@ -1,6 +1,6 @@
-# Output Format Examples
+# 输出格式示例
 
-## Chapters
+## 章节
 
 ```
 00:00 Introduction
@@ -11,11 +11,11 @@
 21:00 Q&A
 ```
 
-## Summary
+## 摘要
 
-A 5-10 sentence overview covering the video's main points, key arguments, and conclusions. Written in third person, present tense.
+一段 5-10 句的概述，涵盖视频的要点、关键论点和结论。以第三人称、现在时撰写。
 
-## Chapter Summaries
+## 章节摘要
 
 ```
 ## 00:00 Introduction (2 min)
@@ -25,7 +25,7 @@ The speaker introduces the topic of X and explains why it matters for Y.
 A review of prior work in the field, covering approaches A, B, and C.
 ```
 
-## Thread (Twitter/X)
+## 推文串（Twitter/X）
 
 ```
 1/ Just watched an incredible talk on [topic]. Here are the key takeaways: 🧵
@@ -39,16 +39,16 @@ A review of prior work in the field, covering approaches A, B, and C.
 5/ Full video: [URL]
 ```
 
-## Blog Post
+## 博客文章
 
-Full article with:
-- Title
-- Introduction paragraph
-- H2 sections for each major topic
-- Key quotes (with timestamps)
-- Conclusion / takeaways
+完整文章，包含：
+- 标题
+- 引言段落
+- 每个主要话题的 H2 小节
+- 关键引言（带时间戳）
+- 结论 / 要点
 
-## Quotes
+## 金句
 
 ```
 "The most important thing is not the model size, but the data quality." — 05:32

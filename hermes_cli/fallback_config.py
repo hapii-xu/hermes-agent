@@ -1,4 +1,4 @@
-"""Helpers for reading the effective fallback provider chain from config."""
+"""从 config 中读取有效 fallback provider 链的辅助函数。"""
 
 from __future__ import annotations
 
@@ -49,12 +49,12 @@ def _entry_identity(entry: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def get_fallback_chain(config: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Return the effective fallback chain merged across old and new config keys.
+    """返回跨新旧 config 键合并后的有效 fallback 链。
 
-    ``fallback_providers`` remains the primary source of truth and keeps its
-    order. Legacy ``fallback_model`` entries are appended afterwards unless
-    they target the same provider/model/base_url route as an earlier entry.
-    The returned list always contains fresh dict copies.
+    ``fallback_providers`` 仍然是主要数据源并保持其顺序。
+    旧版 ``fallback_model`` 条目会追加在后面，除非它们与
+    较早条目的 provider/model/base_url 路由相同。
+    返回的列表始终包含全新的字典副本。
     """
 
     config = config or {}

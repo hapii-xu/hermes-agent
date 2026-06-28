@@ -1,27 +1,24 @@
-"""CLI subcommand: ``hermes send`` — pipe text from shell scripts to any
-configured messaging platform (Telegram, Discord, Slack, Signal, SMS, etc.).
+"""CLI 子命令：``hermes send`` — 将文本从 shell 脚本传输到任何已配置的消息平台
+（Telegram、Discord、Slack、Signal、SMS 等）。
 
-This is a thin wrapper around ``tools.send_message_tool.send_message_tool``
-that exposes its functionality as a standalone CLI entry point so ops
-scripts, cron jobs, CI hooks, and monitoring daemons can reuse the gateway's
-already-configured credentials without having to reimplement each platform's
-REST API client.
+这是 ``tools.send_message_tool.send_message_tool`` 的轻量封装，
+将其功能暴露为独立的 CLI 入口点，以便运维脚本、cron 任务、CI 钩子和
+监控守护进程可以复用 gateway 已配置的凭据，而无需为每个平台重新实现
+REST API 客户端。
 
-Design notes:
+设计说明：
 
-* No LLM, no agent loop — the subcommand just resolves arguments, reads the
-  message body, calls the shared tool function, and prints/returns the
-  result. It is intentionally fast, cheap, and side-effect-only.
-* For platforms that send via bot token (Telegram, Discord, Slack, Signal,
-  SMS, WhatsApp-CloudAPI, …) no running gateway is required. The tool
-  talks directly to each platform's REST endpoint. For platforms that rely
-  on a persistent adapter connection (plugin platforms, Matrix in some
-  modes, …) a live gateway is needed; the underlying tool surfaces that
-  error to the caller.
-* Exit codes follow the classic Unix convention:
-    0 — delivery (or list) succeeded
-    1 — delivery failed at the platform level
-    2 — usage / argument / config error (argparse already uses 2)
+* 无 LLM，无 agent 循环 — 该子命令仅解析参数、读取消息正文、调用共享
+  tool 函数，然后打印/返回结果。它刻意做到快速、低成本且仅产生副作用。
+* 对于通过 bot token 发送的平台（Telegram、Discord、Slack、Signal、
+  SMS、WhatsApp-CloudAPI 等），无需运行中的 gateway。该工具直接与各平台
+  的 REST 端点通信。对于依赖持久 adapter 连接的平台（plugin 平台、某些
+  模式下的 Matrix 等），则需要运行中的 gateway；底层工具会将该错误
+  传递给调用方。
+* 退出码遵循经典的 Unix 约定：
+    0 — 发送（或列表）成功
+    1 — 平台层面的发送失败
+    2 — 用法 / 参数 / 配置错误（argparse 已使用 2）
 """
 
 from __future__ import annotations
@@ -42,14 +39,13 @@ def _read_message_body(
     positional: Optional[str],
     file_path: Optional[str],
 ) -> Optional[str]:
-    """Resolve the message body from (in order):
+    """按以下优先级解析消息正文：
 
-    1. An explicit positional message argument.
-    2. ``--file PATH`` or ``--file -`` (where ``-`` means stdin).
-    3. Piped stdin when it is not attached to a TTY.
+    1. 显式的位置参数 message。
+    2. ``--file PATH`` 或 ``--file -``（其中 ``-`` 表示 stdin）。
+    3. 当 stdin 未连接到 TTY 时，读取管道输入。
 
-    Returns ``None`` when nothing is available — callers must treat that as
-    a usage error.
+    当没有任何可用输入时返回 ``None`` — 调用方须将其视为用法错误。
     """
     if positional:
         return positional

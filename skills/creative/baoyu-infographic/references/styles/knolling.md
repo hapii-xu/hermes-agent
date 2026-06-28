@@ -1,29 +1,29 @@
 # knolling
 
-Organized flat-lay with top-down arrangement
+整齐排列的平铺俯视图
 
-## Color Palette
+## 配色
 
-- Primary: Object's natural colors
-- Background: Solid color - black, white, or colored surface
-- Accents: Shadows, subtle highlights
+- 主色：物体原本的颜色
+- 背景：纯色——黑、白或彩色表面
+- 点缀：阴影、微妙高光
 
-## Visual Elements
+## 视觉元素
 
-- Top-down camera angle
-- Objects arranged at 90° angles
-- Equal spacing between items
-- Clean organization
-- Symmetry and order
-- No overlapping items
+- 俯拍视角
+- 物体以 90° 角排列
+- 物品间距均匀
+- 干净有序的组织
+- 对称与秩序
+- 物品互不重叠
 
-## Typography
+## 字体排印
 
-- Clean labels
-- Positioned outside objects
-- Connecting lines to items
-- Minimal, catalog-style
+- 干净的标签
+- 置于物体外侧
+- 用连线指向物品
+- 极简、目录式
 
-## Best For
+## 最适用于
 
-Product collections, tool inventories, gear layouts, organized overviews
+产品合集、工具清单、装备布局、有序概览

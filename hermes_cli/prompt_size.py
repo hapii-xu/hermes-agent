@@ -1,14 +1,13 @@
-"""Prompt-size diagnostic: ``hermes prompt-size``.
+"""Prompt 大小诊断工具：``hermes prompt-size``。
 
-Reports a byte/char breakdown of the system prompt the agent would build for
-a fresh session — system prompt total, the ``<available_skills>`` index,
-memory + user profile, and tool-schema JSON. Lets users see where their fixed
-prompt budget goes (issue #34667) without parsing a saved session JSON by hand.
+报告代理为新会话构建的系统提示的字节/字符明细——系统提示总量、
+``<available_skills>`` 索引、memory + 用户画像，以及 tool schema JSON。
+让用户了解固定 prompt 预算的分配情况 (issue #34667)，无需手动解析
+已保存的会话 JSON。
 
-The diagnostic builds a real inspection agent (so the numbers match what
-actually ships on the wire) but never makes a network call: it passes dummy
-credentials so ``AIAgent.__init__`` takes the direct-construction path, then
-calls ``build_system_prompt_parts`` / inspects ``agent.tools`` offline.
+该诊断工具构建一个真实的检查代理（使数字与实际发送的数据一致），
+但不会发起网络调用：它传入虚拟凭证使 ``AIAgent.__init__`` 走直接构造路径，
+然后离线调用 ``build_system_prompt_parts`` / 检查 ``agent.tools``。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ import json
 import re
 from typing import Any, Dict, List, Tuple
 
-# The skills index is wrapped in this tag pair inside the stable tier.
+# skills 索引在 stable 层中被包裹在此标签对里。
 _SKILLS_BLOCK_RE = re.compile(r"<available_skills>.*?</available_skills>", re.DOTALL)
 
 
@@ -26,11 +25,11 @@ def _bytes(s: str) -> int:
 
 
 def _build_inspection_agent(platform: str) -> Any:
-    """Construct an offline AIAgent for prompt inspection.
+    """构建一个离线的 AIAgent 用于 prompt 检查。
 
-    Dummy ``api_key`` + ``base_url`` force the direct-construction path in
-    ``run_agent.py`` (no provider auto-detection, no network). Toolsets and
-    platform come from the caller so the breakdown matches a real session.
+    虚拟的 ``api_key`` + ``base_url`` 强制 ``run_agent.py`` 走直接构造路径
+    （不进行 provider 自动检测，不发起网络请求）。toolset 和 platform
+    来自调用方，使明细与实际会话一致。
     """
     from run_agent import AIAgent
     from hermes_cli.config import load_config
@@ -50,11 +49,11 @@ def _build_inspection_agent(platform: str) -> Any:
 
 
 def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
-    """Return a dict of prompt-size measurements for a fresh session.
+    """返回一个新会话的 prompt 大小测量字典。
 
-    Keys: ``system_prompt`` (chars/bytes), ``skills_index``, ``memory``,
-    ``user_profile``, ``tools`` (count + json bytes), and ``sections`` (a list
-    of (label, chars, bytes) for the three prompt tiers).
+    键：``system_prompt``（字符/字节）、``skills_index``、``memory``、
+    ``user_profile``、``tools``（数量 + JSON 字节数），以及 ``sections``
+    （三个 prompt 层级的 (标签, 字符数, 字节数) 列表）。
     """
     from agent.system_prompt import build_system_prompt, build_system_prompt_parts
 
@@ -67,14 +66,13 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
     context = parts.get("context", "")
     volatile = parts.get("volatile", "")
 
-    # Skills index — the <available_skills> block (the largest single block
-    # when many skills are installed). Measured inside the stable tier.
+    # Skills 索引——<available_skills> 块（安装大量 skill 时是最大的单块）。
+    # 在 stable 层内测量。
     skills_match = _SKILLS_BLOCK_RE.search(stable)
     skills_index = skills_match.group(0) if skills_match else ""
 
-    # Memory + user profile live in the volatile tier. We re-derive their
-    # blocks directly from the memory store so the numbers are attributable
-    # even though they're joined into ``volatile``.
+    # Memory + 用户画像位于 volatile 层。我们直接从 memory store
+    # 重新提取它们的内容块，使数字可追溯，即使它们被合并到 ``volatile`` 中。
     memory_block = ""
     user_block = ""
     store = getattr(agent, "_memory_store", None)
@@ -87,7 +85,7 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
         except Exception:
             pass
 
-    # Tool-schema JSON — the other half of the fixed per-call payload.
+    # Tool schema JSON——固定每次调用载荷的另一半。
     tools = getattr(agent, "tools", None) or []
     tools_json = json.dumps(tools, ensure_ascii=False)
 
@@ -114,7 +112,7 @@ def _fmt_kb(n: int) -> str:
 
 
 def render_breakdown(data: Dict[str, Any]) -> str:
-    """Render the breakdown as plain text suitable for a terminal."""
+    """将明细渲染为适合终端显示的纯文本。"""
     lines: List[str] = []
     sp = data["system_prompt"]
     lines.append(f"Prompt-size breakdown (platform={data['platform']}, model={data['model'] or 'unset'})")
@@ -139,7 +137,7 @@ def render_breakdown(data: Dict[str, Any]) -> str:
 
 
 def cmd_prompt_size(args: Any) -> None:
-    """Entry point for ``hermes prompt-size``."""
+    """``hermes prompt-size`` 的入口点。"""
     platform = getattr(args, "platform", "cli") or "cli"
     as_json = getattr(args, "json", False)
     try:

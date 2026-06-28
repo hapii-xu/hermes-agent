@@ -1,27 +1,26 @@
-"""Chronos — NAS-mediated managed cron provider (scale-to-zero).
+"""Chronos — NAS 托管的 cron provider（弹性缩容至零）。
 
-Chronos (the Greek god of time, alongside Hermes) is the first non-default
-``CronScheduler``. It lets a hosted gateway scale to zero while idle and still
-fire cron jobs: instead of a 60s in-process ticker, it asks NAS to arm exactly
-one external one-shot per job at that job's real next-fire time. NAS calls the
-agent back at fire time over an authenticated webhook (``/api/cron/fire``); the
-agent runs the job via the shared ``run_one_job`` body and re-arms the next
-one-shot.
+Chronos（希腊时间之神，与 Hermes 并列）是第一个非默认
+``CronScheduler``。它允许托管网关在空闲时缩容至零，同时仍能
+触发 cron 任务：它不使用 60 秒的进程内定时器，而是请求 NAS 在每个任务
+真正的下次触发时间精确设置一个外部单次触发器。NAS 通过经过身份验证的
+webhook（``/api/cron/fire``）在触发时回调 agent；agent 通过
+共享的 ``run_one_job`` 体执行任务并重新设置下一个单次触发器。
 
-The external scheduler NAS uses is an internal NAS implementation detail —
-Chronos names no vendor, holds no scheduler credentials, and speaks only to
-NAS's ``agent-cron`` endpoints with the agent's existing Nous token.
+NAS 使用的外部调度器是 NAS 的内部实现细节 —
+Chronos 不命名任何供应商，不持有调度器凭据，只使用 agent
+现有的 Nous token 与 NAS 的 ``agent-cron`` 端点通信。
 
-Design constraints (see the plan's DQ-1):
-  - start() arms all enabled jobs and RETURNS; it never blocks and never spawns
-    a periodic wake. Between fires the machine is truly at zero.
-  - reconcile runs only on a warm process (start / on_jobs_changed / piggybacked
-    on a fire), never as a periodic wake of a sleeping machine.
+设计约束（参见计划的 DQ-1）：
+  - start() 设置所有已启用的任务并立即返回；它永不阻塞，也不启动
+    周期性唤醒。触发之间机器真正处于零状态。
+  - reconcile 仅在热进程上运行（start / on_jobs_changed / 搭载于
+    触发事件），永不作为休眠机器的周期性唤醒。
 
-Inert unless ``cron.provider: chronos``. ``resolve_cron_scheduler`` falls back
-to the built-in if Chronos is unavailable, so cron never loses its trigger.
+除非 ``cron.provider: chronos``，否则处于非活跃状态。``resolve_cron_scheduler``
+在 Chronos 不可用时回退到内置，因此 cron 永不丢失其触发器。
 
-Wire contract: ``docs/chronos-managed-cron-contract.md``.
+通信契约：``docs/chronos-managed-cron-contract.md``。
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ logger = logging.getLogger("cron.chronos")
 
 
 def _cfg(*keys: str, default: Any = "") -> Any:
-    """Read a cron.chronos.* config value (no network)."""
+    """读取 cron.chronos.* 配置值（不访问网络）。"""
     try:
         from hermes_cli.config import cfg_get, load_config
         return cfg_get(load_config(), *keys, default=default)
@@ -45,40 +44,40 @@ def _cfg(*keys: str, default: Any = "") -> Any:
 
 
 class ChronosCronScheduler(CronScheduler):
-    """NAS-mediated external cron provider."""
+    """NAS 托管的外部 cron provider。"""
 
     def __init__(self) -> None:
-        # In-memory map of job_id → fire_at we've asked NAS to arm. Best-effort
-        # cache; reconcile rebuilds desired state from jobs.json, so a cold
-        # process simply re-arms (idempotent via dedup_key).
+        # job_id → fire_at 的内存映射，记录我们已请求 NAS 设置的触发器。
+        # 尽力维护的缓存；reconcile 从 jobs.json 重建期望状态，因此冷启动
+        # 进程只需重新设置（通过 dedup_key 保证幂等性）。
         self._armed: Dict[str, str] = {}
         self._lock = threading.Lock()
-        self._client = None  # lazily constructed (no network in is_available)
+        self._client = None  # 延迟构造（is_available 中不访问网络）
 
-    # -- identity / availability -----------------------------------------
+    # -- 身份 / 可用性 -----------------------------------------
 
     @property
     def name(self) -> str:
         return "chronos"
 
     def is_available(self) -> bool:
-        """Config presence only — NO network.
+        """仅检查配置 — 不访问网络。
 
-        Chronos needs a portal base URL, the agent's own publicly-reachable
-        callback URL (for NAS→agent fires), and a usable Nous token (the agent
-        is logged into the portal). If any is missing, resolve_cron_scheduler
-        falls back to the built-in ticker.
+        Chronos 需要一个 portal 基础 URL、agent 自身公开可达的
+        回调 URL（用于 NAS→agent 触发），以及可用的 Nous token（agent
+        已登录 portal）。如果任何一项缺失，resolve_cron_scheduler
+        将回退到内置定时器。
         """
         if not (_cfg("cron", "chronos", "portal_url") and _cfg("cron", "chronos", "callback_url")):
             return False
         return self._have_nous_token()
 
     def _have_nous_token(self) -> bool:
-        """True if the agent has a Nous Portal login (no network call).
+        """如果 agent 已登录 Nous Portal 则返回 True（不访问网络）。
 
-        Checks the stored auth state for a Nous access token — does NOT refresh
-        or hit the network (is_available must stay offline). The actual
-        refresh-aware token is resolved lazily at provision time.
+        检查存储的认证状态中是否有 Nous access token — 不会刷新
+        或访问网络（is_available 必须保持离线）。实际的
+        支持刷新的 token 在 provision 时延迟解析。
         """
         try:
             from hermes_cli.auth import get_provider_auth_state
@@ -87,7 +86,7 @@ class ChronosCronScheduler(CronScheduler):
         except Exception:
             return False
 
-    # -- client -----------------------------------------------------------
+    # -- 客户端 -----------------------------------------------------------
 
     def _get_client(self):
         if self._client is None:
@@ -98,39 +97,39 @@ class ChronosCronScheduler(CronScheduler):
     def _callback_url(self) -> str:
         return str(_cfg("cron", "chronos", "callback_url") or "")
 
-    # -- lifecycle --------------------------------------------------------
+    # -- 生命周期 --------------------------------------------------------
 
     def start(self, stop_event, *, adapters=None, loop=None, interval=60):
-        """Arm all enabled jobs via NAS, then RETURN immediately.
+        """通过 NAS 设置所有已启用的任务，然后立即返回。
 
-        Does NOT block and does NOT spawn a 60s wake (DQ-1) — that is the whole
-        point of scale-to-zero. The machine wakes only on a NAS→agent fire.
+        不阻塞，也不启动 60 秒唤醒（DQ-1）— 这正是弹性缩容至零的核心。
+        机器仅在 NAS→agent 触发时唤醒。
         """
         try:
             self.reconcile()
         except Exception as e:
             logger.warning("Chronos start() reconcile failed: %s", e)
-        # Intentionally return — no loop, no periodic wake.
+        # 刻意返回 — 无循环，无周期性唤醒。
 
     def stop(self) -> None:
         return None
 
     def on_jobs_changed(self) -> None:
-        """A job was created/updated/removed/paused/resumed — reconcile the NAS
-        registry so the affected one-shot is (re-)armed or cancelled."""
+        """任务被创建/更新/移除/暂停/恢复 — 协调 NAS 注册表
+        使受影响的单次触发器被（重新）设置或取消。"""
         try:
             self.reconcile()
         except Exception as e:
             logger.debug("Chronos on_jobs_changed reconcile failed: %s", e)
 
-    # -- arming -----------------------------------------------------------
+    # -- 设置触发器 -----------------------------------------------------------
 
     def _arm_one_shot(self, job: Dict[str, Any]) -> None:
-        """Ask NAS to arm exactly one one-shot at the job's next_run_at.
+        """请求 NAS 在任务的 next_run_at 时精确设置一个单次触发器。
 
-        The agent computes the time; NAS+its scheduler are the dumb executor.
-        Idempotent per (job_id, fire_at) via dedup_key, so re-arming the same
-        fire is a no-op NAS-side.
+        agent 计算时间；NAS 及其调度器是被动执行方。
+        通过 dedup_key 对 (job_id, fire_at) 保证幂等性，因此重复设置
+        同一触发时间在 NAS 侧为空操作。
         """
         job_id = job["id"]
         fire_at = job.get("next_run_at")
@@ -154,11 +153,11 @@ class ChronosCronScheduler(CronScheduler):
                 self._armed.pop(job_id, None)
 
     def _list_armed(self) -> Dict[str, str]:
-        """Observed armed one-shots: job_id → fire_at.
+        """已观察到的已设置单次触发器：job_id → fire_at。
 
-        Prefer the in-memory map (warm process); on a cold/empty map, ask NAS
-        (best-effort). If NAS list fails, return what we have — reconcile then
-        re-arms desired jobs idempotently.
+        优先使用内存映射（热进程）；若映射为冷/空，则询问 NAS
+        （尽力而为）。如果 NAS 列表失败，返回现有数据 — reconcile 随后
+        会幂等地重新设置期望的任务。
         """
         with self._lock:
             if self._armed:
@@ -176,11 +175,11 @@ class ChronosCronScheduler(CronScheduler):
             logger.debug("Chronos _list_armed failed (will re-arm idempotently): %s", e)
             return {}
 
-    # -- reconcile --------------------------------------------------------
+    # -- 协调 --------------------------------------------------------
 
     def reconcile(self) -> None:
-        """Converge the NAS-armed one-shots toward jobs.json (desired state):
-        arm missing / re-arm changed-time, cancel orphaned."""
+        """将 NAS 已设置的单次触发器与 jobs.json（期望状态）收敛：
+        设置缺失的 / 重新设置时间变更的，取消孤立的。"""
         from cron.jobs import load_jobs
 
         desired: Dict[str, str] = {
@@ -190,7 +189,7 @@ class ChronosCronScheduler(CronScheduler):
         }
         observed = self._list_armed()
 
-        # Arm missing or changed-time.
+        # 设置缺失或时间变更的触发器。
         for job_id, fire_at in desired.items():
             if observed.get(job_id) != fire_at:
                 # Re-fetch the full job dict to arm (need the whole record).
@@ -202,7 +201,7 @@ class ChronosCronScheduler(CronScheduler):
                     except Exception as e:
                         logger.warning("Chronos failed to arm job %s: %s", job_id, e)
 
-        # Cancel orphans (armed but no longer desired).
+        # 取消孤立的触发器（已设置但不再需要）。
         for job_id in list(observed.keys()):
             if job_id not in desired:
                 try:
@@ -210,15 +209,15 @@ class ChronosCronScheduler(CronScheduler):
                 except Exception as e:
                     logger.warning("Chronos failed to cancel orphan %s: %s", job_id, e)
 
-    # -- fire -------------------------------------------------------------
+    # -- 触发 -------------------------------------------------------------
 
     def fire_due(self, job_id: str, *, adapters: Any = None, loop: Any = None) -> bool:
-        """Run the due job (claim + run_one_job via the ABC default), then
-        re-arm the NEXT one-shot through NAS.
+        """运行到期任务（通过 ABC 默认值 claim + run_one_job），然后
+        通过 NAS 重新设置下一个单次触发器。
 
-        Re-arm happens AFTER the run so next_run_at reflects the completed fire.
-        If the job is gone (one-shot completed / repeat-N exhausted), get_job
-        returns None → nothing to re-arm (the schedule naturally stops).
+        重新设置在运行后进行，使 next_run_at 反映已完成的触发。
+        如果任务已消失（单次任务完成 / repeat-N 耗尽），get_job
+        返回 None → 无需重新设置（调度自然停止）。
         """
         ran = super().fire_due(job_id, adapters=adapters, loop=loop)
         if ran:
@@ -233,9 +232,9 @@ class ChronosCronScheduler(CronScheduler):
 
 
 def register(ctx) -> None:
-    """Plugin entrypoint — register the Chronos provider with the loader.
+    """插件入口点 — 将 Chronos provider 注册到加载器中。
 
-    Mirrors the memory-plugin shape; plugins/cron_providers discovery calls this and
-    collects the provider via register_cron_scheduler.
+    与 memory 插件形式一致；plugins/cron_providers 发现机制调用此函数并
+    通过 register_cron_scheduler 收集 provider。
     """
     ctx.register_cron_scheduler(ChronosCronScheduler())

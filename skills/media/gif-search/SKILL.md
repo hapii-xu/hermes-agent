@@ -1,6 +1,6 @@
 ---
 name: gif-search
-description: "Search/download GIFs from Tenor via curl + jq."
+description: "通过 curl + jq 从 Tenor 搜索/下载 GIF。"
 version: 1.1.0
 author: Hermes Agent
 license: MIT
@@ -13,79 +13,79 @@ metadata:
     tags: [GIF, Media, Search, Tenor, API]
 ---
 
-# GIF Search (Tenor API)
+# GIF 搜索（Tenor API）
 
-Search and download GIFs directly via the Tenor API using curl. No extra tools needed.
+使用 curl 直接通过 Tenor API 搜索和下载 GIF。无需额外工具。
 
-## When to use
+## 适用场景
 
-Useful for finding reaction GIFs, creating visual content, and sending GIFs in chat.
+适用于查找反应类 GIF、制作视觉内容以及在聊天中发送 GIF。
 
-## Setup
+## 设置
 
-Set your Tenor API key in your environment (add to `${HERMES_HOME:-~/.hermes}/.env`):
+将你的 Tenor API key 设置到环境中（添加到 `${HERMES_HOME:-~/.hermes}/.env`）：
 
 ```bash
 TENOR_API_KEY=your_key_here
 ```
 
-Get a free API key at https://developers.google.com/tenor/guides/quickstart — the Google Cloud Console Tenor API key is free and has generous rate limits.
+可在 https://developers.google.com/tenor/guides/quickstart 免费获取 API key — Google Cloud Console 提供的 Tenor API key 是免费的，且速率限制相当宽裕。
 
-## Prerequisites
+## 前置条件
 
-- `curl` and `jq` (both standard on macOS/Linux)
-- `TENOR_API_KEY` environment variable
+- `curl` 和 `jq`（macOS/Linux 上均为标准工具）
+- `TENOR_API_KEY` 环境变量
 
-## Search for GIFs
+## 搜索 GIF
 
 ```bash
-# Search and get GIF URLs
+# 搜索并获取 GIF URL
 curl -s "https://tenor.googleapis.com/v2/search?q=thumbs+up&limit=5&key=${TENOR_API_KEY}" | jq -r '.results[].media_formats.gif.url'
 
-# Get smaller/preview versions
+# 获取更小/预览版本
 curl -s "https://tenor.googleapis.com/v2/search?q=nice+work&limit=3&key=${TENOR_API_KEY}" | jq -r '.results[].media_formats.tinygif.url'
 ```
 
-## Download a GIF
+## 下载 GIF
 
 ```bash
-# Search and download the top result
+# 搜索并下载第一个结果
 URL=$(curl -s "https://tenor.googleapis.com/v2/search?q=celebration&limit=1&key=${TENOR_API_KEY}" | jq -r '.results[0].media_formats.gif.url')
 curl -sL "$URL" -o celebration.gif
 ```
 
-## Get Full Metadata
+## 获取完整元数据
 
 ```bash
 curl -s "https://tenor.googleapis.com/v2/search?q=cat&limit=3&key=${TENOR_API_KEY}" | jq '.results[] | {title: .title, url: .media_formats.gif.url, preview: .media_formats.tinygif.url, dimensions: .media_formats.gif.dims}'
 ```
 
-## API Parameters
+## API 参数
 
-| Parameter | Description |
+| 参数 | 说明 |
 |-----------|-------------|
-| `q` | Search query (URL-encode spaces as `+`) |
-| `limit` | Max results (1-50, default 20) |
-| `key` | API key (from `$TENOR_API_KEY` env var) |
-| `media_filter` | Filter formats: `gif`, `tinygif`, `mp4`, `tinymp4`, `webm` |
-| `contentfilter` | Safety: `off`, `low`, `medium`, `high` |
-| `locale` | Language: `en_US`, `es`, `fr`, etc. |
+| `q` | 搜索查询（URL 编码时空格用 `+`） |
+| `limit` | 最大结果数（1-50，默认 20） |
+| `key` | API key（来自 `$TENOR_API_KEY` 环境变量） |
+| `media_filter` | 筛选格式：`gif`、`tinygif`、`mp4`、`tinymp4`、`webm` |
+| `contentfilter` | 安全级别：`off`、`low`、`medium`、`high` |
+| `locale` | 语言：`en_US`、`es`、`fr` 等 |
 
-## Available Media Formats
+## 可用的媒体格式
 
-Each result has multiple formats under `.media_formats`:
+每个结果在 `.media_formats` 下都包含多种格式：
 
-| Format | Use case |
+| 格式 | 用途 |
 |--------|----------|
-| `gif` | Full quality GIF |
-| `tinygif` | Small preview GIF |
-| `mp4` | Video version (smaller file size) |
-| `tinymp4` | Small preview video |
-| `webm` | WebM video |
-| `nanogif` | Tiny thumbnail |
+| `gif` | 全质量 GIF |
+| `tinygif` | 小尺寸预览 GIF |
+| `mp4` | 视频版本（文件更小） |
+| `tinymp4` | 小尺寸预览视频 |
+| `webm` | WebM 视频 |
+| `nanogif` | 极小缩略图 |
 
-## Notes
+## 注意事项
 
-- URL-encode the query: spaces as `+`, special chars as `%XX`
-- For sending in chat, `tinygif` URLs are lighter weight
-- GIF URLs can be used directly in markdown: `![alt](url)`
+- 对查询进行 URL 编码：空格用 `+`，特殊字符用 `%XX`
+- 在聊天中发送时，`tinygif` 的 URL 体积更小、更轻量
+- GIF URL 可直接在 markdown 中使用：`![alt](url)`

@@ -1,22 +1,21 @@
 """
-Hermes MCP Server — expose messaging conversations as MCP tools.
+Hermes MCP 服务器 — 将消息对话作为 MCP 工具暴露。
 
-Starts a stdio MCP server that lets any MCP client (Claude Code, Cursor, Codex,
-etc.) list conversations, read message history, send messages, poll for live
-events, and manage approval requests across all connected platforms.
+启动一个 stdio MCP 服务器，使任何 MCP 客户端（Claude Code、Cursor、Codex 等）
+可以列出对话、读取消息历史、发送消息、轮询实时事件，并跨所有已连接平台管理审批请求。
 
-Matches OpenClaw's 9-tool MCP channel bridge surface:
+对应 OpenClaw 的 9 工具 MCP 频道桥接接口：
   conversations_list, conversation_get, messages_read, attachments_fetch,
   events_poll, events_wait, messages_send, permissions_list_open,
   permissions_respond
 
-Plus: channels_list (Hermes-specific extra)
+附加：channels_list（Hermes 特有扩展）
 
-Usage:
+用法：
     hermes mcp serve
     hermes mcp serve --verbose
 
-MCP client config (e.g. claude_desktop_config.json):
+MCP 客户端配置（如 claude_desktop_config.json）：
     {
         "mcpServers": {
             "hermes": {
@@ -43,7 +42,7 @@ from typing import Dict, List, Optional
 logger = logging.getLogger("hermes.mcp_serve")
 
 # ---------------------------------------------------------------------------
-# Lazy MCP SDK import
+# 延迟导入 MCP SDK
 # ---------------------------------------------------------------------------
 
 _MCP_SERVER_AVAILABLE = False

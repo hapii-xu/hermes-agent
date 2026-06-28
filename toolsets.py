@@ -1,33 +1,32 @@
 #!/usr/bin/env python3
 """
-Toolsets Module
+工具集模块
 
-This module provides a flexible system for defining and managing tool aliases/toolsets.
-Toolsets allow you to group tools together for specific scenarios and can be composed
-from individual tools or other toolsets.
+本模块提供了一个灵活的系统，用于定义和管理工具别名/工具集。
+工具集允许你将工具按场景分组，并可由单个工具或其他工具集组合而成。
 
-Features:
-- Define custom toolsets with specific tools
-- Compose toolsets from other toolsets
-- Built-in common toolsets for typical use cases
-- Easy extension for new toolsets
-- Support for dynamic toolset resolution
+功能特性：
+- 定义包含特定工具的自定义工具集
+- 从其他工具集组合新工具集
+- 内置适用于常见场景的工具集
+- 方便扩展以支持新工具集
+- 支持动态工具集解析
 
-Usage:
+用法：
     from toolsets import get_toolset, resolve_toolset, get_all_toolsets
-    
-    # Get tools for a specific toolset
+
+    # 获取特定工具集的工具列表
     tools = get_toolset("research")
-    
-    # Resolve a toolset to get all tool names (including from composed toolsets)
+
+    # 解析工具集以获取所有工具名称（包括组合工具集中的工具）
     all_tools = resolve_toolset("full_stack")
 """
 
 from typing import List, Dict, Any, Set, Optional
 
 
-# Shared tool list for CLI and all messaging platform toolsets.
-# Edit this once to update all platforms simultaneously.
+# CLI 与所有消息平台工具集共享的工具列表。
+# 只需编辑此处，即可同步更新所有平台。
 _HERMES_CORE_TOOLS = [
     # Web
     "web_search", "web_extract",

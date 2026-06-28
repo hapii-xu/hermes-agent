@@ -1,12 +1,12 @@
-"""Gateway-side RPC client for a remote meet node.
+"""远程 meet 节点的网关侧 RPC 客户端。
 
-Each call opens a short-lived synchronous WebSocket to the node, sends
-exactly one request, reads exactly one response, and closes. This keeps
-the client trivial to use from non-async tool handlers and avoids
-maintaining persistent connection state across agent turns.
+每次调用都会打开一个短生命周期的同步 WebSocket 到节点，发送
+恰好一个请求，读取恰好一个响应，然后关闭。这使
+客户端在非异步工具处理器中易于使用，并避免了
+跨 agent turn 维护持久连接状态。
 
-The ``websockets`` package is an optional dep — we import it lazily so
-plugin load doesn't require it.
+``websockets`` 包是一个可选依赖 — 我们延迟导入它，以便
+插件加载不需要它。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from plugins.google_meet.node import protocol as _proto
 
 
 class NodeClient:
-    """Thin synchronous WS client matching the server's request surface."""
+    """与服务端请求接口匹配的轻量同步 WS 客户端。"""
 
     def __init__(self, url: str, token: str, timeout: float = 10.0) -> None:
         if not isinstance(url, str) or not url:
@@ -28,13 +28,13 @@ class NodeClient:
         self.token = token
         self.timeout = float(timeout)
 
-    # ----- core RPC -----------------------------------------------------
+    # ----- 核心 RPC -----------------------------------------------------
 
     def _rpc(self, type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Send one request, return the response payload dict.
+        """发送一个请求，返回响应 payload 字典。
 
-        Raises RuntimeError when the server sends an ``error`` envelope
-        or the response id doesn't match.
+        当服务端发送 ``error`` 信封
+        或响应 id 不匹配时抛出 RuntimeError。
         """
         try:
             from websockets.sync.client import connect  # type: ignore
@@ -64,11 +64,11 @@ class NodeClient:
             )
         payload_out = resp.get("payload")
         if not isinstance(payload_out, dict):
-            # Ping returns {"type": "pong", "payload": {...}} — still a dict.
+            # Ping 返回 {"type": "pong", "payload": {...}} — 仍是字典。
             raise RuntimeError("response missing payload dict")
         return payload_out
 
-    # ----- convenience methods -----------------------------------------
+    # ----- 便捷方法 ---------------------------------------------------------
 
     def start_bot(
         self,

@@ -1,6 +1,6 @@
 ---
 name: heartmula
-description: "HeartMuLa: Suno-like song generation from lyrics + tags."
+description: "HeartMuLa：基于歌词 + 标签的类 Suno 作曲生成。"
 version: 1.0.0
 platforms: [linux, macos, windows]
 metadata:
@@ -9,63 +9,63 @@ metadata:
     related_skills: [audiocraft]
 ---
 
-# HeartMuLa - Open-Source Music Generation
+# HeartMuLa —— 开源音乐生成
 
-## Overview
-HeartMuLa is a family of open-source music foundation models (Apache-2.0) that generates music conditioned on lyrics and tags, with multilingual support. Generates full songs from lyrics + tags. Comparable to Suno for open-source. Includes:
-- **HeartMuLa** - Music language model (3B/7B) for generation from lyrics + tags
-- **HeartCodec** - 12.5Hz music codec for high-fidelity audio reconstruction
-- **HeartTranscriptor** - Whisper-based lyrics transcription
-- **HeartCLAP** - Audio-text alignment model
+## 概览
+HeartMuLa 是一系列开源音乐基础模型（Apache-2.0），能根据歌词和标签生成音乐，并支持多语言。可从歌词 + 标签生成完整的歌曲，可作为开源版的 Suno 替代品。包含：
+- **HeartMuLa** —— 音乐语言模型（3B/7B），根据歌词 + 标签生成
+- **HeartCodec** —— 12.5Hz 音乐编解码器，用于高保真音频重建
+- **HeartTranscriptor** —— 基于 Whisper 的歌词转录
+- **HeartCLAP** —— 音频-文本对齐模型
 
-## When to Use
-- User wants to generate music/songs from text descriptions
-- User wants an open-source Suno alternative
-- User wants local/offline music generation
-- User asks about HeartMuLa, heartlib, or AI music generation
+## 何时使用
+- 用户想从文本描述生成音乐/歌曲
+- 用户想要开源的 Suno 替代品
+- 用户想要本地/离线音乐生成
+- 用户询问 HeartMuLa、heartlib 或 AI 音乐生成
 
-## Hardware Requirements
-- **Minimum**: 8GB VRAM with `--lazy_load true` (loads/unloads models sequentially)
-- **Recommended**: 16GB+ VRAM for comfortable single-GPU usage
-- **Multi-GPU**: Use `--mula_device cuda:0 --codec_device cuda:1` to split across GPUs
-- 3B model with lazy_load peaks at ~6.2GB VRAM
+## 硬件要求
+- **最低**：8GB VRAM，配合 `--lazy_load true`（按顺序加载/卸载模型）
+- **推荐**：16GB+ VRAM，可在单 GPU 上舒适运行
+- **多 GPU**：使用 `--mula_device cuda:0 --codec_device cuda:1` 在多块 GPU 间分担
+- 3B 模型启用 lazy_load 时峰值约 6.2GB VRAM
 
-## Installation Steps
+## 安装步骤
 
-### 1. Clone Repository
+### 1. 克隆仓库
 ```bash
-cd ~/  # or desired directory
+cd ~/  # 或你想要的目录
 git clone https://github.com/HeartMuLa/heartlib.git
 cd heartlib
 ```
 
-### 2. Create Virtual Environment (Python 3.10 required)
+### 2. 创建虚拟环境（需要 Python 3.10）
 ```bash
 uv venv --python 3.10 .venv
 . .venv/bin/activate
 uv pip install -e .
 ```
 
-### 3. Fix Dependency Compatibility Issues
+### 3. 修复依赖兼容性问题
 
-**IMPORTANT**: As of Feb 2026, the pinned dependencies have conflicts with newer packages. Apply these fixes:
+**重要**：截至 2026 年 2 月，锁定的依赖与较新的包存在冲突。请应用以下修复：
 
 ```bash
-# Upgrade datasets (old version incompatible with current pyarrow)
+# 升级 datasets（旧版本与当前 pyarrow 不兼容）
 uv pip install --upgrade datasets
 
-# Upgrade transformers (needed for huggingface-hub 1.x compatibility)
+# 升级 transformers（huggingface-hub 1.x 兼容性所需）
 uv pip install --upgrade transformers
 ```
 
-### 4. Patch Source Code (Required for transformers 5.x)
+### 4. 修改源码（transformers 5.x 必需）
 
-**Patch 1 - RoPE cache fix** in `src/heartlib/heartmula/modeling_heartmula.py`:
+**补丁 1 —— RoPE 缓存修复**，位于 `src/heartlib/heartmula/modeling_heartmula.py`：
 
-In the `setup_caches` method of the `HeartMuLa` class, add RoPE reinitialization after the `reset_caches` try/except block and before the `with device:` block:
+在 `HeartMuLa` 类的 `setup_caches` 方法中，于 `reset_caches` 的 try/except 块之后、`with device:` 块之前，添加 RoPE 重新初始化：
 
 ```python
-# Re-initialize RoPE caches that were skipped during meta-device loading
+# 重新初始化在 meta-device 加载时被跳过的 RoPE 缓存
 from torchtune.models.llama3_1._position_embeddings import Llama3ScaledRoPE
 for module in self.modules():
     if isinstance(module, Llama3ScaledRoPE) and not module.is_cache_built:
@@ -73,36 +73,36 @@ for module in self.modules():
         module.to(device)
 ```
 
-**Why**: `from_pretrained` creates model on meta device first; `Llama3ScaledRoPE.rope_init()` skips cache building on meta tensors, then never rebuilds after weights are loaded to real device.
+**原因**：`from_pretrained` 会先在 meta device 上创建模型；`Llama3ScaledRoPE.rope_init()` 在 meta 张量上会跳过缓存构建，且在权重加载到真实设备后也不会重建。
 
-**Patch 2 - HeartCodec loading fix** in `src/heartlib/pipelines/music_generation.py`:
+**补丁 2 —— HeartCodec 加载修复**，位于 `src/heartlib/pipelines/music_generation.py`：
 
-Add `ignore_mismatched_sizes=True` to ALL `HeartCodec.from_pretrained()` calls (there are 2: the eager load in `__init__` and the lazy load in the `codec` property).
+为所有 `HeartCodec.from_pretrained()` 调用添加 `ignore_mismatched_sizes=True`（共有 2 处：`__init__` 中的即时加载，以及 `codec` 属性中的懒加载）。
 
-**Why**: VQ codebook `initted` buffers have shape `[1]` in checkpoint vs `[]` in model. Same data, just scalar vs 0-d tensor. Safe to ignore.
+**原因**：VQ codebook 的 `initted` 缓冲区在检查点中形状为 `[1]`，而模型中为 `[]`。数据相同，只是标量与 0 维张量之别。可安全忽略。
 
-### 5. Download Model Checkpoints
+### 5. 下载模型检查点
 ```bash
-cd heartlib  # project root
+cd heartlib  # 项目根目录
 hf download --local-dir './ckpt' 'HeartMuLa/HeartMuLaGen'
 hf download --local-dir './ckpt/HeartMuLa-oss-3B' 'HeartMuLa/HeartMuLa-oss-3B-happy-new-year'
 hf download --local-dir './ckpt/HeartCodec-oss' 'HeartMuLa/HeartCodec-oss-20260123'
 ```
 
-All 3 can be downloaded in parallel. Total size is several GB.
+这 3 个可并行下载。总大小为数 GB。
 
 ## GPU / CUDA
 
-HeartMuLa uses CUDA by default (`--mula_device cuda --codec_device cuda`). No extra setup needed if the user has an NVIDIA GPU with PyTorch CUDA support installed.
+HeartMuLa 默认使用 CUDA（`--mula_device cuda --codec_device cuda`）。如果用户有安装了 PyTorch CUDA 支持的 NVIDIA GPU，则无需额外配置。
 
-- The installed `torch==2.4.1` includes CUDA 12.1 support out of the box
-- `torchtune` may report version `0.4.0+cpu` — this is just package metadata, it still uses CUDA via PyTorch
-- To verify GPU is being used, look for "CUDA memory" lines in the output (e.g. "CUDA memory before unloading: 6.20 GB")
-- **No GPU?** You can run on CPU with `--mula_device cpu --codec_device cpu`, but expect generation to be **extremely slow** (potentially 30-60+ minutes for a single song vs ~4 minutes on GPU). CPU mode also requires significant RAM (~12GB+ free). If the user has no NVIDIA GPU, recommend using a cloud GPU service (Google Colab free tier with T4, Lambda Labs, etc.) or the online demo at https://heartmula.github.io/ instead.
+- 已安装的 `torch==2.4.1` 自带 CUDA 12.1 支持
+- `torchtune` 可能报告版本 `0.4.0+cpu` —— 这只是包元数据，它仍会通过 PyTorch 使用 CUDA
+- 要验证是否在使用 GPU，可在输出中查找 "CUDA memory" 相关行（例如 "CUDA memory before unloading: 6.20 GB"）
+- **没有 GPU？** 可用 `--mula_device cpu --codec_device cpu` 在 CPU 上运行，但生成会**极其缓慢**（单首歌可能需要 30-60+ 分钟，而 GPU 上约 4 分钟）。CPU 模式还需要可观的内存（空闲约 12GB+）。如果用户没有 NVIDIA GPU，建议使用云 GPU 服务（Google Colab 免费档的 T4、Lambda Labs 等），或改用 https://heartmula.github.io/ 上的在线演示。
 
-## Usage
+## 用法
 
-### Basic Generation
+### 基础生成
 ```bash
 cd heartlib
 . .venv/bin/activate
@@ -115,18 +115,18 @@ python ./examples/run_music_generation.py \
   --lazy_load true
 ```
 
-### Input Formatting
+### 输入格式
 
-**Tags** (comma-separated, no spaces):
+**标签（Tags）**（逗号分隔，无空格）：
 ```
 piano,happy,wedding,synthesizer,romantic
 ```
-or
+或
 ```
 rock,energetic,guitar,drums,male-vocal
 ```
 
-**Lyrics** (use bracketed structural tags):
+**歌词（Lyrics）**（使用方括号包裹的结构标签）：
 ```
 [Intro]
 
@@ -142,30 +142,30 @@ Bridge lyrics...
 [Outro]
 ```
 
-### Key Parameters
-| Parameter | Default | Description |
+### 关键参数
+| 参数 | 默认值 | 说明 |
 |-----------|---------|-------------|
-| `--max_audio_length_ms` | 240000 | Max length in ms (240s = 4 min) |
-| `--topk` | 50 | Top-k sampling |
-| `--temperature` | 1.0 | Sampling temperature |
-| `--cfg_scale` | 1.5 | Classifier-free guidance scale |
-| `--lazy_load` | false | Load/unload models on demand (saves VRAM) |
-| `--mula_dtype` | bfloat16 | Dtype for HeartMuLa (bf16 recommended) |
-| `--codec_dtype` | float32 | Dtype for HeartCodec (fp32 recommended for quality) |
+| `--max_audio_length_ms` | 240000 | 最大时长（毫秒，240s = 4 分钟） |
+| `--topk` | 50 | Top-k 采样 |
+| `--temperature` | 1.0 | 采样温度 |
+| `--cfg_scale` | 1.5 | 无分类器引导（classifier-free guidance）强度 |
+| `--lazy_load` | false | 按需加载/卸载模型（节省 VRAM） |
+| `--mula_dtype` | bfloat16 | HeartMuLa 的数据类型（推荐 bf16） |
+| `--codec_dtype` | float32 | HeartCodec 的数据类型（为质量推荐 fp32） |
 
-### Performance
-- RTF (Real-Time Factor) ≈ 1.0 — a 4-minute song takes ~4 minutes to generate
-- Output: MP3, 48kHz stereo, 128kbps
+### 性能
+- RTF（实时系数，Real-Time Factor）≈ 1.0 —— 一首 4 分钟的歌大约需要 4 分钟生成
+- 输出：MP3，48kHz 立体声，128kbps
 
-## Pitfalls
-1. **Do NOT use bf16 for HeartCodec** — degrades audio quality. Use fp32 (default).
-2. **Tags may be ignored** — known issue (#90). Lyrics tend to dominate; experiment with tag ordering.
-3. **Triton not available on macOS** — Linux/CUDA only for GPU acceleration.
-4. **RTX 5080 incompatibility** reported in upstream issues.
-5. The dependency pin conflicts require the manual upgrades and patches described above.
+## 常见陷阱
+1. **不要对 HeartCodec 使用 bf16** —— 会降低音频质量。请使用 fp32（默认）。
+2. **标签可能被忽略** —— 已知问题（#90）。歌词倾向于占主导；可尝试调整标签顺序。
+3. **Triton 在 macOS 上不可用** —— 仅 Linux/CUDA 支持 GPU 加速。
+4. 上游 issue 中报告过 **RTX 5080 不兼容**。
+5. 依赖锁定的冲突需要按上文所述手动升级和打补丁。
 
-## Links
-- Repo: https://github.com/HeartMuLa/heartlib
-- Models: https://huggingface.co/HeartMuLa
-- Paper: https://arxiv.org/abs/2601.10547
-- License: Apache-2.0
+## 链接
+- 仓库：https://github.com/HeartMuLa/heartlib
+- 模型：https://huggingface.co/HeartMuLa
+- 论文：https://arxiv.org/abs/2601.10547
+- 许可证：Apache-2.0

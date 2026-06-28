@@ -1,274 +1,274 @@
-# Design System: Mistral AI
+# 设计系统：Mistral AI
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent —— 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `Inter` | **Mono:** `JetBrains Mono`
-> - **Font stack (CSS):** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主字体：** `Inter` | **等宽字体：** `JetBrains Mono`
+> - **字体栈（CSS）：** `font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，并通过 `generative-widgets` skill（cloudflared 隧道）提供服务。
+> 生成后用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Mistral AI's interface is a sun-drenched landscape rendered in code — a warm, bold, unapologetically European design that trades the typical blue-screen AI aesthetic for golden amber, burnt orange, and the feeling of late-afternoon light in southern France. Every surface glows with warmth: backgrounds fade from pale cream to deep amber, shadows carry golden undertones (`rgba(127, 99, 21, ...)`), and the brand's signature orange (`#fa520f`) burns through the page like a signal fire.
+Mistral AI 的界面是一幅用代码渲染的阳光普照的风景——一种温暖、大胆、毫不掩饰的欧洲风格设计，它用金色琥珀、焦橙色以及法国南部午后的光线感，取代了典型的蓝色屏幕 AI 美学。每一个表面都散发着温暖：背景从淡奶油色渐变到深琥珀色，阴影带有金色底色（`rgba(127, 99, 21, ...)`），品牌的标志性橙色（`#fa520f`）像信号火一样燃烧穿透整个页面。
 
-The design language is maximalist in its warmth but minimalist in its structure. Huge display headlines (82px) crash into the viewport with aggressive negative tracking (-2.05px), creating text blocks that feel like billboards or protest posters — declarations rather than descriptions. The typography uses Arial (likely a custom font with Arial as fallback) at extreme sizes, creating a raw, unadorned voice that says "we build frontier AI" with no decoration needed.
+这种设计语言在温暖感上极其大胆，但在结构上却极为简约。巨大的展示级标题（82px）以激进的负字距（-2.05px）冲入视口，形成仿佛广告牌或抗议海报般的文字块——是宣告，而非描述。字体使用 Arial（很可能是以 Arial 为回退的定制字体）并采用极端字号，营造出一种原始、不加修饰的声音，无需任何装饰就能说出「我们构建前沿 AI」。
 
-What makes Mistral distinctive is the complete commitment to a warm color temperature. The signature "block" identity — a gradient system flowing from bright yellow (`#ffd900`) through amber (`#ffa110`) to burnt orange (`#fa520f`) — creates a visual identity that's immediately recognizable. Even the shadows are warm, using amber-tinted blacks instead of cool grays. Combined with dramatic landscape photography in golden tones, the design feels less like a tech company and more like a European luxury brand that happens to build language models.
+让 Mistral 与众不同的是对暖色温度的完全投入。标志性的「色块」身份——一套从亮黄色（`#ffd900`）经琥珀色（`#ffa110`）流向焦橙色（#fa520f`）的渐变系统——创造了一种立即可识别的视觉身份。即使是阴影也是暖色的，使用琥珀色调的黑而非冷灰。再结合金色调的戏剧性风景摄影，这套设计感觉不像一家科技公司，更像一个恰好开发语言模型的欧洲奢侈品牌。
 
-**Key Characteristics:**
-- Golden-amber color universe: every tone from pale cream (#fffaeb) to burnt orange (#fa520f)
-- Massive display typography (82px) with aggressive negative letter-spacing (-2.05px)
-- Warm golden shadow system using amber-tinted rgba values
-- The Mistral "M" block identity — a gradient from yellow to orange
-- Dramatic landscape photography in warm golden tones
-- Uppercase typography used strategically for section labels and CTAs
-- Near-zero border-radius — sharp, architectural geometry
-- French-European confidence: bold, warm, declarative
+**关键特征：**
+- 金色琥珀色宇宙：从淡奶油色（#fffaeb）到焦橙色（#fa520f）的每一种色调
+- 巨大的展示级字体（82px），配以激进的负字间距（-2.05px）
+- 温暖的金色阴影系统，使用琥珀色调 rgba 值
+- Mistral「M」色块身份——从黄色到橙色的渐变
+- 金色调的戏剧性风景摄影
+- 大写字体被策略性地用于区块标签和 CTA
+- 几乎为零的圆角——尖锐、建筑般的几何感
+- 法式欧洲的自信：大胆、温暖、宣言式
 
-## 2. Color Palette & Roles
+## 2. 调色板与角色
 
-### Primary
-- **Mistral Orange** (`#fa520f`): The core brand color — a vivid, saturated orange-red that anchors the entire identity. Used for primary emphasis, the brand block, and the highest-signal moments.
-- **Mistral Flame** (`#fb6424`): A slightly warmer, lighter variant of the brand orange used for secondary brand moments and hover states.
-- **Block Orange** (`#ff8105`): A pure orange used in the gradient block system — warmer and less red than Mistral Orange.
+### 主色
+- **Mistral 橙**（`#fa520f`）：核心品牌色——一种鲜艳、高饱和度的橙红色，锚定整个品牌身份。用于主要强调、品牌色块以及最高信号的时刻。
+- **Mistral 火焰**（`#fb6424`）：品牌橙的稍暖、更浅变体，用于次要品牌时刻和悬停状态。
+- **色块橙**（`#ff8105`）：渐变色块系统中使用的纯橙色——比 Mistral 橙更暖、红色更少。
 
-### Secondary & Accent
-- **Sunshine 900** (`#ff8a00`): Deep golden amber — the darkest sunshine tone, used for strong accent moments.
-- **Sunshine 700** (`#ffa110`): Warm amber-gold — the core sunshine accent for backgrounds and interactive elements.
-- **Sunshine 500** (`#ffb83e`): Medium golden — balanced warmth for mid-level emphasis.
-- **Sunshine 300** (`#ffd06a`): Light golden — for subtle warm tints and secondary backgrounds.
-- **Block Gold** (`#ffe295`): Pale gold — soft background accents and gentle warmth.
-- **Bright Yellow** (`#ffd900`): The brightest tone in the gradient — used at the "top" of the block identity.
+### 次要与强调色
+- **Sunshine 900**（`#ff8a00`）：深金色琥珀——最深的 sunshine 色调，用于强烈的强调时刻。
+- **Sunshine 700**（`#ffa110`）：温暖的琥珀金色——核心 sunshine 强调色，用于背景和交互元素。
+- **Sunshine 500**（`#ffb83e`）：中等金色——为中等强调提供平衡的温暖感。
+- **Sunshine 300**（`#ffd06a`）：浅金色——用于细微的暖色调和次要背景。
+- **色块金**（`#ffe295`）：淡金色——柔和的背景强调和温和的暖意。
+- **亮黄**（`#ffd900`）：渐变中最亮的色调——位于色块身份的「顶端」。
 
-### Surface & Background
-- **Warm Ivory** (`#fffaeb`): The lightest page background — barely tinted with warmth, the foundation canvas.
-- **Cream** (`#fff0c2`): The primary warm surface and secondary button background — noticeably golden.
-- **Pure White** (`#ffffff`): Used for maximum contrast elements and popover surfaces.
-- **Mistral Black** (`#1f1f1f`): The primary dark surface for buttons, text, and dark sections.
-- **Accent Orange** (defined as `hsl(17, 96%, 52%)`): The functional accent color for interactive states.
+### 表面与背景
+- **暖象牙白**（`#fffaeb`）：最浅的页面背景——几乎未被染色的暖意，基础画布。
+- **奶油色**（`#fff0c2`）：主要的温暖表面和次要按钮背景——明显是金色的。
+- **纯白**（`#ffffff`）：用于最大对比度的元素和弹出层表面。
+- **Mistral 黑**（`#1f1f1f`）：按钮、文字和深色区块的主要深色表面。
+- **强调橙**（定义为 `hsl(17, 96%, 52%)`）：交互状态的功能性强调色。
 
-### Neutrals & Text
-- **Mistral Black** (`#1f1f1f`): Primary text color and dark button backgrounds — a near-black that's warmer than pure #000.
-- **Black Tint** (defined as `hsl(0, 0%, 24%)`): A medium dark gray for secondary text on light backgrounds.
-- **Pure White** (`#ffffff`): Text on dark surfaces and CTA labels.
+### 中性色与文字
+- **Mistral 黑**（`#1f1f1f`）：主要文字色和深色按钮背景——一种接近黑色但比纯 #000 更暖的色调。
+- **黑色色调**（定义为 `hsl(0, 0%, 24%)`）：浅色背景上的中等深灰色次要文字。
+- **纯白**（`#ffffff`）：深色表面上的文字和 CTA 标签。
 
-### Semantic & Accent
-- **Input Border** (defined as `hsl(240, 5.9%, 90%)`): A cool-tinted light gray for form borders — one of the few cool tones in the system.
-- **White Overlay** (`oklab(1, 0, 0 / 0.088–0.1)`): Semi-transparent white for frosted glass effects and button overlays.
+### 语义与强调色
+- **输入框边框**（定义为 `hsl(240, 5.9%, 90%)`）：带冷色调的浅灰色，用于表单边框——系统中少数的冷色之一。
+- **白色覆盖层**（`oklab(1, 0, 0 / 0.088–0.1)`）：半透明白色，用于磨砂玻璃效果和按钮覆盖。
 
-### Gradient System
-- **Mistral Block Gradient**: The signature identity — a multi-step gradient flowing through Yellow (`#ffd900`) → Gold (`#ffe295`) → Amber (`#ffa110`) → Orange (`#ff8105`) → Flame (`#fb6424`) → Mistral Orange (`#fa520f`). This gradient appears in the logo blocks, section backgrounds, and decorative elements.
-- **Golden Landscape Wash**: Photography and backgrounds use warm amber overlays creating a consistent golden temperature across the page.
-- **Warm Shadow Cascade**: Multi-layered golden shadows that build depth with amber-tinted transparency rather than gray.
+### 渐变系统
+- **Mistral 色块渐变**：标志性的身份——一套多步渐变，流经黄色（`#ffd900`）→ 金色（`#ffe295`）→ 琥珀色（`#ffa110`）→ 橙色（`#ff8105`）→ 火焰色（`#fb6424`）→ Mistral 橙（`#fa520f`）。此渐变出现在徽标色块、区块背景和装饰元素中。
+- **金色风景渲染**：摄影和背景使用温暖的琥珀色覆盖层，在整个页面创造一致的暖色温度。
+- **暖色阴影级联**：多层金色阴影，用琥珀色调的透明度而非灰色来构建深度。
 
-## 3. Typography Rules
+## 3. 排版规则
 
-### Font Family
-- **Primary**: Likely a custom font (Font Source detected) with `Arial` as fallback, and extended stack: `ui-sans-serif, system-ui, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji`
+### 字体族
+- **主字体**：很可能是定制字体（检测到 Font Source），以 `Arial` 作为回退，扩展字体栈为：`ui-sans-serif, system-ui, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji`
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 字间距 | 备注 |
 |------|------|------|--------|-------------|----------------|-------|
-| Display / Hero | Arial (custom) | 82px (5.13rem) | 400 | 1.00 (tight) | -2.05px | Maximum impact, billboard scale |
-| Section Heading | Arial (custom) | 56px (3.5rem) | 400 | 0.95 (ultra-tight) | normal | Feature section anchors |
-| Sub-heading Large | Arial (custom) | 48px (3rem) | 400 | 0.95 (ultra-tight) | normal | Secondary section titles |
-| Sub-heading | Arial (custom) | 32px (2rem) | 400 | 1.15 (tight) | normal | Card headings, feature names |
-| Card Title | Arial (custom) | 30px (1.88rem) | 400 | 1.20 (tight) | normal | Mid-level headings |
-| Feature Title | Arial (custom) | 24px (1.5rem) | 400 | 1.33 | normal | Small headings |
-| Body / Button | Arial (custom) | 16px (1rem) | 400 | 1.50 | normal | Standard body, button text |
-| Button Uppercase | Arial (custom) | 16px (1rem) | 400 | 1.50 | normal | Uppercase CTA labels |
-| Caption / Link | Arial (custom) | 14px (0.88rem) | 400 | 1.43 | normal | Metadata, secondary links |
+| 展示级 / 英雄标题 | Arial（定制） | 82px (5.13rem) | 400 | 1.00（紧凑） | -2.05px | 最大冲击力、广告牌尺度 |
+| 区块标题 | Arial（定制） | 56px (3.5rem) | 400 | 0.95（极紧凑） | normal | 功能区块锚点 |
+| 大号副标题 | Arial（定制） | 48px (3rem) | 400 | 0.95（极紧凑） | normal | 次要区块标题 |
+| 副标题 | Arial（定制） | 32px (2rem) | 400 | 1.15（紧凑） | normal | 卡片标题、功能名称 |
+| 卡片标题 | Arial（定制） | 30px (1.88rem) | 400 | 1.20（紧凑） | normal | 中等标题 |
+| 功能标题 | Arial（定制） | 24px (1.5rem) | 400 | 1.33 | normal | 小标题 |
+| 正文 / 按钮 | Arial（定制） | 16px (1rem) | 400 | 1.50 | normal | 标准正文、按钮文字 |
+| 大写按钮 | Arial（定制） | 16px (1rem) | 400 | 1.50 | normal | 大写 CTA 标签 |
+| 说明 / 链接 | Arial（定制） | 14px (0.88rem) | 400 | 1.43 | normal | 元数据、次要链接 |
 
-### Principles
-- **Single weight, maximum impact**: The entire system uses weight 400 (regular) — even at 82px. This creates a surprisingly elegant effect where the size alone carries authority without needing bold weight.
-- **Ultra-tight at scale**: Line-heights of 0.95–1.00 at display sizes create text blocks where ascenders nearly touch descenders from the line above — creating dense, poster-like composition.
-- **Aggressive tracking on display**: -2.05px letter-spacing at 82px compresses the hero text into a monolithic block.
-- **Uppercase as emphasis**: Strategic `text-transform: uppercase` on button labels and section markers creates a formal, European signage quality.
-- **No weight variation**: Unlike most systems that use 300–700 weight range, Mistral uses 400 everywhere. Hierarchy comes from size and color, never weight.
+### 原则
+- **单一字重，最大冲击力**：整个系统使用字重 400（常规）——即使在 82px 时也是如此。这创造了一种令人惊讶的优雅效果：仅凭字号就能承载权威，无需加粗。
+- **大尺度下的极致紧凑**：展示尺寸下 0.95–1.00 的行高形成了一种文字块，其中字母的上伸部几乎触碰到上一行的下伸部——营造出密集、海报般的构图。
+- **展示级文字的激进字距**：82px 时 -2.05px 的字间距将英雄文字压缩成一块整体的方块。
+- **大写作为强调**：在按钮标签和区块标记上策略性地使用 `text-transform: uppercase`，营造出正式的欧洲标牌质感。
+- **无字重变化**：与大多数使用 300–700 字重范围的系统不同，Mistral 处处使用 400。层次感来自字号和颜色，而非字重。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Cream Surface**
-- Background: Cream (`#fff0c2`)
-- Text: Mistral Black (`#1f1f1f`)
-- No visible border
-- The warm, inviting secondary CTA
+**奶油色表面**
+- 背景：奶油色（`#fff0c2`）
+- 文字：Mistral 黑（`#1f1f1f`）
+- 无可见边框
+- 温暖、诱人的次要 CTA
 
-**Dark Solid**
-- Background: Mistral Black (`#1f1f1f`)
-- Text: Pure White (`#ffffff`)
-- Padding: 12px (all sides)
-- No visible border
-- The primary action button — dark on warm
+**深色实心**
+- 背景：Mistral 黑（`#1f1f1f`）
+- 文字：纯白（`#ffffff`）
+- 内边距：12px（四周）
+- 无可见边框
+- 主要操作按钮——深色配暖色背景
 
-**Ghost / Transparent**
-- Background: transparent with slight dark overlay (`oklab(0, 0, 0 / 0.1)`)
-- Text: Mistral Black (`#1f1f1f`)
-- Opacity: 0.4
-- For secondary/de-emphasized actions
+**幽灵 / 透明**
+- 背景：透明，带轻微深色覆盖（`oklab(0, 0, 0 / 0.1)`）
+- 文字：Mistral 黑（`#1f1f1f`）
+- 不透明度：0.4
+- 用于次要/弱化的操作
 
-**Text / Underline**
-- Background: transparent
-- Text: Mistral Black (`#1f1f1f`)
-- Padding: 8px 0px 0px (top-only)
-- Minimal styling — text link as button
-- For tertiary navigation actions
+**文本 / 下划线**
+- 背景：透明
+- 文字：Mistral 黑（`#1f1f1f`）
+- 内边距：8px 0px 0px（仅顶部）
+- 极简样式——文字链接作为按钮
+- 用于三级导航操作
 
-### Cards & Containers
-- Background: Warm Ivory (`#fffaeb`), Cream (`#fff0c2`), or Pure White
-- Border: minimal to none — containers defined by background color
-- Radius: near-zero — sharp, architectural corners
-- Shadow: warm golden multi-layer (`rgba(127, 99, 21, 0.12) -8px 16px 39px, rgba(127, 99, 21, 0.1) -33px 64px 72px, rgba(127, 99, 21, 0.06) -73px 144px 97px, ...`) — a dramatic, cascading warm shadow
-- Distinctive: the golden shadow creates a "golden hour" lighting effect
+### 卡片与容器
+- 背景：暖象牙白（`#fffaeb`）、奶油色（`#fff0c2`）或纯白
+- 边框：极少到没有——容器由背景色定义
+- 圆角：接近零——尖锐、建筑般的转角
+- 阴影：温暖的金色多层（`rgba(127, 99, 21, 0.12) -8px 16px 39px, rgba(127, 99, 21, 0.1) -33px 64px 72px, rgba(127, 99, 21, 0.06) -73px 144px 97px, ...`）——戏剧性、级联的暖色阴影
+- 独特之处：金色阴影营造出「黄金时刻」的光照效果
 
-### Inputs & Forms
-- Border: `hsl(240, 5.9%, 90%)` — the sole cool-toned element
-- Focus: accent color ring
-- Minimal styling consistent with sparse aesthetic
+### 输入框与表单
+- 边框：`hsl(240, 5.9%, 90%)`——唯一的冷色调元素
+- 聚焦：强调色环
+- 极简样式，与稀疏的美学一致
 
-### Navigation
-- Transparent nav overlaying the warm hero
-- Logo: Mistral "M" wordmark
-- Links: Dark text (white on dark sections)
-- CTA: Dark solid button or cream surface button
-- Minimal, wide-spaced layout
+### 导航
+- 透明导航叠加在暖色英雄区上
+- 徽标：Mistral「M」字标
+- 链接：深色文字（深色区块上为白色）
+- CTA：深色实心按钮或奶油色表面按钮
+- 极简、宽间距的布局
 
-### Image Treatment
-- Dramatic landscape photography in warm golden tones
-- The winding road through golden hills — a recurring visual motif
-- The Mistral "M" rendered at large scale on golden backgrounds
-- Warm color grading on all photography
-- Full-bleed sections with photography
+### 图片处理
+- 金色调的戏剧性风景摄影
+- 穿过金色山丘的蜿蜒道路——一个反复出现的视觉主题
+- 大尺度渲染的 Mistral「M」叠加在金色背景上
+- 所有摄影都使用暖色调分级
+- 摄影全出血区块
 
-### Distinctive Components
+### 独特组件
 
-**Mistral Block Identity**
-- A row of colored blocks forming the gradient: yellow → amber → orange → burnt orange
-- Each block gets progressively more orange/red
-- The visual DNA of the brand — recognizable at any size
+**Mistral 色块身份**
+- 一排彩色色块组成渐变：黄色 → 琥珀色 → 橙色 → 焦橙色
+- 每个色块逐渐变得更橙/红
+- 品牌的视觉 DNA——任何尺度下都可识别
 
-**Golden Shadow Cards**
-- Cards elevated with warm amber multi-layered shadows
-- 5 layers of shadow from 16px to 400px offset
-- Creates a "floating in golden light" effect unique to Mistral
+**金色阴影卡片**
+- 用温暖琥珀色多层阴影提升的卡片
+- 5 层阴影，从 16px 到 400px 偏移
+- 创造出 Mistral 独有的「漂浮在金色光线中」效果
 
-**Dark Footer Gradient**
-- Footer transitions from warm amber to dark through a dramatic gradient
-- Creates a "sunset" effect as the page ends
+**深色页脚渐变**
+- 页脚通过戏剧性的渐变从温暖琥珀色过渡到深色
+- 在页面结束时营造出「日落」效果
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 2px, 4px, 8px, 10px, 12px, 16px, 20px, 24px, 32px, 40px, 48px, 64px, 80px, 98px, 100px
-- Button padding: 12px or 8px 0px (compact)
-- Section vertical spacing: very generous (80px–100px)
+### 间距系统
+- 基础单位：8px
+- 阶梯：2px, 4px, 8px, 10px, 12px, 16px, 20px, 24px, 32px, 40px, 48px, 64px, 80px, 98px, 100px
+- 按钮内边距：12px 或 8px 0px（紧凑）
+- 区块垂直间距：非常宽裕（80px–100px）
 
-### Grid & Container
-- Max container width: approximately 1280px, centered
-- Hero: full-width with massive typography overlaying warm backgrounds
-- Feature sections: wide-format layouts with dramatic imagery
-- Card grids: 2–3 column layouts
+### 网格与容器
+- 最大容器宽度：约 1280px，居中
+- 英雄区：全宽，巨大字体叠加在暖色背景上
+- 功能区块：宽幅布局配戏剧性图片
+- 卡片网格：2–3 列布局
 
-### Whitespace Philosophy
-- **Bold declarations**: Huge headlines surrounded by generous whitespace create billboard-like impact — each statement gets its own breathing space.
-- **Warm void**: Empty space itself feels warm because the backgrounds are tinted ivory/cream rather than pure white.
-- **Photography as space-filler**: Large landscape images serve double duty as content and decorative whitespace.
+### 留白哲学
+- **大胆的宣告**：巨大标题被宽裕留白环绕，营造出广告牌般的冲击力——每个宣告都拥有自己的呼吸空间。
+- **温暖的虚空**：空白本身也感觉温暖，因为背景是象牙/奶油色调而非纯白。
+- **摄影作为空间填充**：大型风景图片身兼内容和装饰性留白两职。
 
-### Border Radius Scale
-- Near-zero: The dominant radius — sharp, architectural corners on most elements
-- This extreme sharpness contrasts with the warmth of the colors, creating a tension between soft color and hard geometry.
+### 圆角阶梯
+- 接近零：主导性圆角——大多数元素使用尖锐、建筑般的转角
+- 这种极致的尖锐与颜色的温暖形成对比，在柔和的色彩与硬朗的几何之间制造张力。
 
-## 6. Depth & Elevation
+## 6. 深度与高度
 
-| Level | Treatment | Use |
+| 层级 | 处理方式 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow | Page backgrounds, text blocks |
-| Golden Float (Level 1) | Multi-layer warm shadow (5 layers, 12%→0% opacity, amber-tinted) | Feature cards, product showcases, elevated content |
+| 平坦（层级 0） | 无阴影 | 页面背景、文字块 |
+| 金色漂浮（层级 1） | 多层暖色阴影（5 层，12%→0% 不透明度，琥珀色调） | 功能卡片、产品展示、提升的内容 |
 
-**Shadow Philosophy**: Mistral uses a single but extraordinarily complex shadow — **five cascading layers** of amber-tinted shadow (`rgba(127, 99, 21, ...)`) that build from a close 16px offset to a distant 400px offset. The result is a rich, warm, "golden hour" lighting effect that makes elevated elements look like they're bathed in afternoon sunlight. This is the most distinctive shadow system in any major AI brand.
+**阴影哲学**：Mistral 使用单一但极其复杂的阴影——**五层级联**的琥珀色调阴影（`rgba(127, 99, 21, ...)`），从近处 16px 偏移延伸到远处 400px 偏移。其效果是一种浓郁、温暖的「黄金时刻」光照，让被提升的元素看起来像沐浴在午后阳光中。这是任何主要 AI 品牌中最独特的阴影系统。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use the warm color spectrum exclusively: ivory, cream, amber, gold, orange
-- Keep display typography at 82px+ with -2.05px letter-spacing for hero sections
-- Use the Mistral block gradient (yellow → amber → orange) for brand moments
-- Apply warm golden shadows (amber-tinted rgba) for elevated elements
-- Use Mistral Black (#1f1f1f) for text — never pure #000000
-- Keep font weight at 400 throughout — let size and color carry hierarchy
-- Use sharp, architectural corners — near-zero border-radius
-- Apply uppercase on button labels and section markers for European formality
-- Use warm landscape photography with golden color grading
+### 宜
+- 专门使用暖色谱：象牙白、奶油色、琥珀色、金色、橙色
+- 英雄区块的展示字体保持 82px+ 配 -2.05px 字间距
+- 品牌时刻使用 Mistral 色块渐变（黄色 → 琥珀色 → 橙色）
+- 为提升的元素应用温暖金色阴影（琥珀色调 rgba）
+- 文字使用 Mistral 黑（#1f1f1f）——绝不使用纯 #000000
+- 字重始终保持 400——让字号和颜色承载层次
+- 使用尖锐、建筑般的转角——接近零的圆角
+- 在按钮标签和区块标记上使用大写，以体现欧洲式的正式
+- 使用金色色调分级的温暖风景摄影
 
-### Don't
-- Don't introduce cool colors (blue, green, purple) — the palette is exclusively warm
-- Don't use bold (700+) weight — 400 is the only weight
-- Don't round corners — the sharp geometry is intentional
-- Don't use cool-toned shadows — shadows must carry amber warmth
-- Don't use pure white as a page background — always warm-tinted (#fffaeb minimum)
-- Don't reduce hero text below 48px on desktop — the billboard scale is core
-- Don't use more than 2 font weights — size variation replaces weight variation
-- Don't add gradients outside the warm spectrum — no blue-to-purple, no cool transitions
-- Don't use generic gray for text — even neutrals should be warm-tinted
+### 忌
+- 不要引入冷色（蓝色、绿色、紫色）——调色板完全由暖色组成
+- 不要使用粗体（700+）字重——400 是唯一的字重
+- 不要把转角变圆——尖锐的几何是有意为之
+- 不要使用冷色调阴影——阴影必须带有琥珀色暖意
+- 不要使用纯白作为页面背景——始终要有暖色调（最低 #fffaeb）
+- 不要在桌面端将英雄文字降至 48px 以下——广告牌尺度是核心
+- 不要使用超过 2 种字重——用字号变化替代字重变化
+- 不要在暖色谱之外添加渐变——不要蓝到紫、不要冷色过渡
+- 不要使用通用灰色作为文字——即使是中性色也应带暖色调
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile | <640px | Single column, stacked everything, hero text reduces to ~32px |
-| Tablet | 640–768px | Minor layout adjustments |
-| Small Desktop | 768–1024px | 2-column layouts begin |
-| Desktop | 1024–1280px | Full layout with maximum typography scale |
+| 移动设备 | <640px | 单列、全部堆叠、英雄文字降至约 32px |
+| 平板 | 640–768px | 轻微布局调整 |
+| 小型桌面 | 768–1024px | 开始出现 2 列布局 |
+| 桌面 | 1024–1280px | 完整布局，最大字号尺度 |
 
-### Touch Targets
-- Buttons use generous padding (12px minimum)
-- Navigation elements adequately spaced
-- Cards serve as large touch targets
+### 触摸目标
+- 按钮使用宽裕内边距（最少 12px）
+- 导航元素间距充足
+- 卡片充当大型触摸目标
 
-### Collapsing Strategy
-- **Navigation**: Collapses to hamburger on mobile
-- **Hero text**: 82px → 56px → 48px → 32px progressive scaling
-- **Feature sections**: Multi-column → stacked
-- **Photography**: Scales proportionally, may crop on mobile
-- **Block identity**: Scales down proportionally
+### 折叠策略
+- **导航**：移动端折叠为汉堡菜单
+- **英雄文字**：82px → 56px → 48px → 32px 渐进缩放
+- **功能区块**：多列 → 堆叠
+- **摄影**：按比例缩放，移动端可能裁剪
+- **色块身份**：按比例缩小
 
-### Image Behavior
-- Landscape photography scales proportionally
-- Warm color grading maintained at all sizes
-- Block gradient elements resize fluidly
-- No art direction changes — same warm composition at all sizes
+### 图片行为
+- 风景摄影按比例缩放
+- 所有尺寸下都保持暖色调分级
+- 色块渐变元素流畅缩放
+- 无艺术指导变化——所有尺寸下保持相同的温暖构图
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Brand Orange: "Mistral Orange (#fa520f)"
-- Page Background: "Warm Ivory (#fffaeb)"
-- Warm Surface: "Cream (#fff0c2)"
-- Primary Text: "Mistral Black (#1f1f1f)"
-- Sunshine Amber: "Sunshine 700 (#ffa110)"
-- Bright Gold: "Bright Yellow (#ffd900)"
-- Text on Dark: "Pure White (#ffffff)"
+### 快速颜色参考
+- 品牌橙：「Mistral 橙（#fa520f）」
+- 页面背景：「暖象牙白（#fffaeb）」
+- 暖色表面：「奶油色（#fff0c2）」
+- 主要文字：「Mistral 黑（#1f1f1f）」
+- Sunshine 琥珀：「Sunshine 700（#ffa110）」
+- 亮金色：「亮黄（#ffd900）」
+- 深色背景上的文字：「纯白（#ffffff）」
 
-### Example Component Prompts
-- "Create a hero section on Warm Ivory (#fffaeb) with a massive headline at 82px Arial weight 400, line-height 1.0, letter-spacing -2.05px. Mistral Black (#1f1f1f) text. Add a dark solid CTA button (#1f1f1f bg, white text, 12px padding, sharp corners) and a cream secondary button (#fff0c2 bg)."
-- "Design a feature card on Cream (#fff0c2) with sharp corners (no border-radius). Apply the golden shadow system: rgba(127, 99, 21, 0.12) -8px 16px 39px as the primary layer. Title at 32px weight 400, body at 16px."
-- "Build the Mistral block identity: a row of colored blocks from Bright Yellow (#ffd900) through Sunshine 700 (#ffa110) to Mistral Orange (#fa520f). Sharp corners, no gaps."
-- "Create a dark footer section on Mistral Black (#1f1f1f) with Pure White (#ffffff) text. Footer links at 14px. Add a warm gradient from Sunshine 700 (#ffa110) at the top fading to Mistral Black."
+### 示例组件提示
+- 「在暖象牙白（#fffaeb）上创建英雄区块，巨大标题为 82px Arial 字重 400、行高 1.0、字间距 -2.05px。Mistral 黑（#1f1f1f）文字。添加深色实心 CTA 按钮（#1f1f1f 背景、白色文字、12px 内边距、尖锐转角）和奶油色次要按钮（#fff0c2 背景）。」
+- 「在奶油色（#fff0c2）上设计功能卡片，尖锐转角（无圆角）。应用金色阴影系统：rgba(127, 99, 21, 0.12) -8px 16px 39px 作为主层。标题为 32px 字重 400，正文为 16px。」
+- 「构建 Mistral 色块身份：一排彩色色块，从亮黄（#ffd900）经 Sunshine 700（#ffa110）到 Mistral 橙（#fa520f）。尖锐转角、无间隙。」
+- 「在 Mistral 黑（#1f1f1f）上创建深色页脚区块，配纯白（#ffffff）文字。页脚链接为 14px。添加从顶部 Sunshine 700（#ffa110）渐变到 Mistral 黑的暖色渐变。」
 
-### Iteration Guide
-1. Keep the warm temperature — "shift toward amber" not "shift toward gray"
-2. Use size for hierarchy — 82px → 56px → 48px → 32px → 24px → 16px
-3. Never add border-radius — sharp corners only
-4. Shadows are always warm: "golden shadow with amber tones"
-5. Font weight is always 400 — describe emphasis through size and color
+### 迭代指南
+1. 保持暖色温度——「偏向琥珀色」而非「偏向灰色」
+2. 用字号建立层次——82px → 56px → 48px → 32px → 24px → 16px
+3. 绝不添加圆角——只用尖锐转角
+4. 阴影始终是暖色的：「带琥珀色调的金色阴影」
+5. 字重始终为 400——通过字号和颜色来描述强调

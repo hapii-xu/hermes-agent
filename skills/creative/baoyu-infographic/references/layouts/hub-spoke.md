@@ -1,41 +1,41 @@
 # hub-spoke
 
-Central concept with radiating connections to related items.
+中心概念向外辐射连接到相关条目。
 
-## Structure
+## 结构
 
-- Central hub (main concept)
-- Spokes radiating outward
-- Nodes at spoke ends (related concepts)
-- Even or weighted distribution
-- Optional secondary connections
+- 中心枢纽（主要概念）
+- 辐条向外发散
+- 辐条末端为节点（相关概念）
+- 均匀或加权分布
+- 可选的次级连接
 
-## Best For
+## 最适用于
 
-- Central theme with components
-- Product features around core
-- Team roles around project
-- Ecosystem mapping
-- Mind maps
+- 中心主题与各组件
+- 围绕核心的产品特性
+- 围绕项目的团队角色
+- 生态映射
+- 思维导图
 
-## Visual Elements
+## 视觉元素
 
-- Prominent central hub
-- Clear spoke lines
-- Consistent node styling
-- Icons representing each spoke item
-- Optional grouping colors
+- 醒目的中心枢纽
+- 清晰的辐条线
+- 一致的节点样式
+- 每个辐条项配图标
+- 可选的分组颜色
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Core concept in center hub
-- Spoke item labels at nodes
-- Brief descriptions near nodes
-- Connection labels on spokes if needed
+- 标题置于顶部
+- 核心概念置于中心枢纽
+- 辐条项标签置于节点处
+- 节点附近配简短描述
+- 需要时在辐条上加连接标签
 
-## Recommended Pairings
+## 推荐搭配
 
-- `cartoon-hand-drawn`: Friendly concept maps
-- `corporate-memphis`: Business ecosystems
-- `subway-map`: Network-style connections
+- `cartoon-hand-drawn`：友好型概念图
+- `corporate-memphis`：商业生态
+- `subway-map`：网络风格连接

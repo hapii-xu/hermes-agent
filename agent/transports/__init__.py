@@ -1,6 +1,6 @@
-"""Transport layer types and registry for provider response normalization.
+"""传输层类型与注册表，用于提供商响应的规范化处理。
 
-Usage:
+用法：
     from agent.transports import get_transport
     transport = get_transport("anthropic_messages")
     result = transport.normalize_response(raw_response)
@@ -19,26 +19,25 @@ _discovered: bool = False
 
 
 def register_transport(api_mode: str, transport_cls: type) -> None:
-    """Register a transport class for an api_mode string."""
+    """为指定的 api_mode 字符串注册一个传输类。"""
     _REGISTRY[api_mode] = transport_cls
 
 
 def get_transport(api_mode: str):
-    """Get a transport instance for the given api_mode.
+    """获取指定 api_mode 对应的传输实例。
 
-    Returns None if no transport is registered for this api_mode.
-    This allows gradual migration — call sites can check for None
-    and fall back to the legacy code path.
+    如果该 api_mode 没有注册传输，则返回 None。
+    这支持渐进式迁移——调用方可以判断返回值是否为 None，
+    并回退到旧代码路径。
     """
     global _discovered
     if not _discovered:
         _discover_transports()
     cls = _REGISTRY.get(api_mode)
     if cls is None:
-        # The registry can be partially populated when a specific transport
-        # module was imported directly (for example chat_completions before
-        # codex).  Discover on misses, not only when the registry is empty, so
-        # test/order-dependent imports do not make valid api_modes unavailable.
+        # 当某个具体传输模块被直接导入时（例如在 codex 之前导入了 chat_completions），
+        # 注册表可能只被部分填充。在未命中时重新发现，而不仅在注册表为空时，
+        # 这样测试/顺序依赖的导入就不会让有效的 api_mode 变得不可用。
         _discover_transports()
         cls = _REGISTRY.get(api_mode)
     if cls is None:
@@ -47,7 +46,7 @@ def get_transport(api_mode: str):
 
 
 def _discover_transports() -> None:
-    """Import all transport modules to trigger auto-registration."""
+    """导入所有传输模块以触发自动注册。"""
     global _discovered
     _discovered = True
     try:

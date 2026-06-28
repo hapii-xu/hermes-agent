@@ -1,14 +1,14 @@
 """
-Hermes CLI - Unified command-line interface for Hermes Agent.
+Hermes CLI - Hermes Agent 的统一命令行界面。
 
-Provides subcommands for:
-- hermes chat          - Interactive chat (same as ./hermes)
-- hermes gateway       - Run gateway in foreground
-- hermes gateway start - Start gateway service
-- hermes gateway stop  - Stop gateway service
-- hermes setup         - Interactive setup wizard
-- hermes status        - Show status of all components
-- hermes cron          - Manage cron jobs
+提供以下子命令：
+- hermes chat          - 交互式聊天（与 ./hermes 相同）
+- hermes gateway       - 在前台运行 gateway
+- hermes gateway start - 启动 gateway 服务
+- hermes gateway stop  - 停止 gateway 服务
+- hermes setup         - 交互式设置向导
+- hermes status        - 显示所有组件状态
+- hermes cron          - 管理定时任务
 """
 
 import os
@@ -19,35 +19,29 @@ __release_date__ = "2026.6.19"
 
 
 def _ensure_utf8():
-    """Force UTF-8 stdout/stderr to prevent UnicodeEncodeError crashes.
+    """强制 stdout/stderr 使用 UTF-8，以防止 UnicodeEncodeError 崩溃。
 
-    Several environments select a legacy, non-UTF-8 encoding for the standard
-    streams:
+    某些环境会为标准流选择旧版非 UTF-8 编码：
 
-    - Windows services and terminals default to cp1252.
-    - Linux hosts with a latin-1 / C / POSIX locale (common on minimal Debian
-      installs and Raspberry Pi) select latin-1 or ASCII.
+    - Windows 服务和终端默认使用 cp1252。
+    - 使用 latin-1 / C / POSIX locale 的 Linux 主机（常见于精简版 Debian
+      和树莓派）会选择 latin-1 或 ASCII。
 
-    The CLI prints box-drawing characters (┌│├└─) and the ⚕ glyph in the setup
-    wizard, doctor, and status banners. Encoding those under a non-UTF-8 codec
-    raises an unhandled UnicodeEncodeError that crashes the command before it
-    can even start — e.g. `hermes setup` on a fresh Pi.
+    CLI 在设置向导、doctor 和状态横幅中会输出制表符字符（┌│├└─）和 ⚕ 符号。
+    在非 UTF-8 编码下输出这些字符会引发未处理的 UnicodeEncodeError，导致
+    命令在启动前就崩溃——例如在全新树莓派上运行 `hermes setup`。
 
-    This runs at import time so it protects every CLI subcommand, on any
-    platform. It re-wraps stdout/stderr as UTF-8 when their encoding is not
-    already UTF-8, preferring TextIOWrapper.reconfigure() so the existing
-    stream object is fixed in place (cached `sys.stdout` references keep
-    working) and falling back to reopening the file descriptor with
-    closefd=False (the CPython-recommended safe variant).
+    此函数在导入时运行，可保护所有 CLI 子命令在任意平台上的运行。
+    当 stdout/stderr 编码不是 UTF-8 时，优先使用 TextIOWrapper.reconfigure()
+    原地修复现有流对象（缓存的 `sys.stdout` 引用仍然有效），若不支持则
+    回退到以 closefd=False 重新打开文件描述符（CPython 推荐的安全方式）。
 
-    No-op when the streams are already UTF-8: a healthy UTF-8 system sees no
-    stream change and no environment mutation.
+    若流已是 UTF-8 则为空操作：健康的 UTF-8 系统不会修改流也不会改变环境变量。
 
-    Note: this is intentionally the earliest, platform-agnostic guard.
-    hermes_cli/stdio.py::configure_windows_stdio() runs later from the entry
-    points and layers on the Windows-only extras (console code-page flip,
-    EDITOR default, PATH augmentation); its stream reconfiguration is a
-    harmless idempotent no-op once we have already repaired the streams here.
+    注意：此函数是最早运行的、与平台无关的守卫。
+    hermes_cli/stdio.py::configure_windows_stdio() 稍后从入口点运行，
+    附加 Windows 专属功能（控制台代码页切换、EDITOR 默认值、PATH 扩展）；
+    由于此处已修复流，其流重配置是无害的幂等空操作。
     """
     repaired = False
 
@@ -60,18 +54,17 @@ def _ensure_utf8():
             if encoding == "utf8":
                 continue
 
-            # Preferred: reconfigure the existing TextIOWrapper in place. This
-            # preserves object identity so any code already holding a reference
-            # to the old sys.stdout benefits from the repair too.
+            # 优先方式：原地重新配置现有的 TextIOWrapper。
+            # 这样可以保持对象标识，使已持有旧 sys.stdout 引用的代码也能受益。
             reconfigure = getattr(stream, "reconfigure", None)
             if callable(reconfigure):
                 reconfigure(encoding="utf-8", errors="replace")
                 repaired = True
                 continue
 
-            # Fallback: reopen the underlying file descriptor as UTF-8. Used
-            # for streams that don't expose reconfigure() (e.g. some wrapped
-            # or replaced streams). closefd=False keeps the original fd open.
+            # 回退方式：以 UTF-8 重新打开底层文件描述符。用于不支持
+            # reconfigure() 的流（如某些被包装或替换的流）。
+            # closefd=False 保持原始 fd 不关闭。
             new_stream = open(
                 stream.fileno(), "w", encoding="utf-8",
                 errors="replace", buffering=1, closefd=False,
@@ -81,9 +74,9 @@ def _ensure_utf8():
         except (AttributeError, OSError, ValueError):
             pass
 
-    # Only nudge child processes toward UTF-8 when we actually detected a
-    # non-UTF-8 locale. On a healthy UTF-8 host children inherit UTF-8 from the
-    # locale already, so leave the environment untouched (minimal footprint).
+    # 仅在确实检测到非 UTF-8 locale 时才引导子进程使用 UTF-8。
+    # 在健康的 UTF-8 主机上，子进程已从 locale 继承 UTF-8，
+    # 因此保持环境不变（最小化影响）。
     if repaired:
         os.environ.setdefault("PYTHONUTF8", "1")
         os.environ.setdefault("PYTHONIOENCODING", "utf-8")

@@ -2110,7 +2110,7 @@ class MatrixAdapter(BasePlatformAdapter):
         else:
             msg_content["url"] = str(mxc_url)
 
-        # Add MSC3245 voice flag for native voice messages.
+        # 为本机语音消息添加 MSC3245 语音标记。
         if is_voice:
             msg_content["org.matrix.msc3245.voice"] = {}
 
@@ -2137,7 +2137,7 @@ class MatrixAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
         is_voice: bool = False,
     ) -> SendResult:
-        """Read a local file and upload it."""
+        """读取本地文件并上传。"""
         p = Path(file_path).expanduser()
         if not p.exists():
             return await self.send(
@@ -2162,19 +2162,19 @@ class MatrixAdapter(BasePlatformAdapter):
         )
 
     # ------------------------------------------------------------------
-    # Sync loop
+    # 同步循环
     # ------------------------------------------------------------------
 
     async def _sync_loop(self) -> None:
-        """Continuously sync with the homeserver."""
+        """与 homeserver 持续同步。"""
         client = self._client
-        # Resume from the token stored during the initial sync.
+        # 从初始同步时存储的 token 处恢复。
         next_batch = await client.sync_store.get_next_batch()
         while not self._closing:
             try:
-                # Wrap in asyncio.wait_for to guard against TCP-level hangs
-                # that the Matrix long-poll timeout cannot catch. Long-poll
-                # is 30s, so 45s gives 15s slack for network drain.
+                # 使用 asyncio.wait_for 包装，防止 TCP 层面的挂起——
+                # Matrix 的长轮询超时无法捕获这种情况。长轮询为 30 秒，
+                # 因此 45 秒为网络排空预留了 15 秒的缓冲时间。
                 sync_data = await asyncio.wait_for(
                     client.sync(
                         since=next_batch,
@@ -2183,8 +2183,8 @@ class MatrixAdapter(BasePlatformAdapter):
                     timeout=45.0,
                 )
 
-                # nio returns SyncError objects (not exceptions) for auth
-                # failures like M_UNKNOWN_TOKEN.  Detect and stop immediately.
+                # nio 对于 M_UNKNOWN_TOKEN 等认证失败会返回 SyncError 对象
+                # （而非异常）。检测到后立即停止。
                 _sync_msg = getattr(sync_data, "message", None)
                 if _sync_msg and isinstance(_sync_msg, str):
                     _lower = _sync_msg.lower()
@@ -2197,22 +2197,22 @@ class MatrixAdapter(BasePlatformAdapter):
 
                 if isinstance(sync_data, dict):
                     self._last_sync_ts = time.time()
-                    # Update joined rooms from sync response.
+                    # 从同步响应中更新已加入的房间。
                     rooms_join = sync_data.get("rooms", {}).get("join", {})
                     if rooms_join:
                         self._joined_rooms.update(rooms_join.keys())
                         self._room_identities.clear()
                         self._room_identity_cached_at.clear()
 
-                    # Advance the sync token so the next request is
-                    # incremental instead of a full initial sync.
+                    # 推进同步 token，使下次请求为增量同步
+                    # 而非完整初始同步。
                     nb = sync_data.get("next_batch")
                     if nb:
                         next_batch = nb
                         await client.sync_store.put_next_batch(nb)
 
-                    # Dispatch events to registered handlers so that
-                    # _on_room_message / _on_reaction / _on_invite fire.
+                    # 将事件分派给已注册的处理器，使
+                    # _on_room_message / _on_reaction / _on_invite 被触发。
                     try:
                         await self._dispatch_sync(sync_data)
                     except Exception as exc:
@@ -2224,7 +2224,7 @@ class MatrixAdapter(BasePlatformAdapter):
             except Exception as exc:
                 if self._closing:
                     return
-                # Detect permanent auth/permission failures.
+                # 检测永久性的认证/权限失败。
                 err_str = str(exc).lower()
                 if (
                     "401" in err_str
@@ -2240,11 +2240,11 @@ class MatrixAdapter(BasePlatformAdapter):
                 await asyncio.sleep(5)
 
     # ------------------------------------------------------------------
-    # Event callbacks
+    # 事件回调
     # ------------------------------------------------------------------
 
     async def _dispatch_sync(self, sync_data: Dict[str, Any]) -> None:
-        """Dispatch a sync response through the mautrix event machinery."""
+        """通过 mautrix 事件机制分派同步响应。"""
         client = self._client
         if not client or not hasattr(client, "handle_sync"):
             return
@@ -2255,18 +2255,16 @@ class MatrixAdapter(BasePlatformAdapter):
             await asyncio.gather(*tasks)
 
     def _is_self_sender(self, sender: str) -> bool:
-        """Return True if the sender refers to the bot's own account.
+        """判断 sender 是否为机器人自身的账号。
 
-        Matrix user IDs are byte-compared after trimming whitespace and
-        lowercasing — some homeservers normalize the localpart case
-        differently at different API surfaces, and the reply-loop tail
-        of the "hall of mirrors" bug (#15763) has been observed with the
-        bot's own account bypassing a case-sensitive equality check.
+        Matrix user ID 在去除空白并转为小写后进行逐字节比较——
+        不同 homeserver 在不同 API 表面对 localpart 大小写的归一化
+        方式可能不一致，而 #15763「镜厅」bug 的回复循环末端正是
+        由于机器人自身账号绕过了大小写敏感的比较。
 
-        When ``self._user_id`` is empty (whoami hasn't resolved yet, or
-        login failed), we cannot prove a sender is NOT us, so we return
-        True defensively — an unidentified bot dropping its own events
-        is always preferable to falling into an echo loop.
+        当 ``self._user_id`` 为空时（whoami 尚未解析，或登录失败），
+        我们无法证明某个 sender 不是我们自己，因此防御性地返回
+        True——无法识别身份的机器人丢弃自身事件，总比陷入回声循环好。
         """
         own = (self._user_id or "").strip().lower()
         if not own:
@@ -2275,31 +2273,29 @@ class MatrixAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _is_system_or_bridge_sender(sender: str) -> bool:
-        """Return True if the sender looks like a system / bridge / appservice
-        identity rather than a real user.
+        """判断 sender 是否看起来像系统 / 桥接 / appservice 身份，
+        而非真实用户。
 
-        Appservice namespaces on Matrix conventionally prefix bot / puppet
-        user IDs with an underscore (e.g. ``@_telegram_12345:server``,
-        ``@_discord_999:server``, ``@_slack_...:server``).  Server-notices
-        bots and bridge-controller bots on many homeservers use the same
-        pattern.
+        Matrix 上的 appservice 命名空间通常以下划线前缀标识
+        机器人/傀儡用户 ID（例如 ``@_telegram_12345:server``、
+        ``@_discord_999:server``、``@_slack_...:server``）。许多
+        homeserver 上的 server-notices 机器人和桥接控制器机器人
+        也使用相同模式。
 
-        We treat these as system identities for pairing purposes: they
-        should never be offered a pairing code, because an operator
-        approving the code would hand the bridge itself permanent
-        authorization — and every outbound message relayed by the bridge
-        would then loop back into the agent as an "authorized user
-        message", which is the root of issue #15763.
+        我们将这些身份视为系统身份用于配对目的：它们不应被提供
+        配对码，因为操作员批准配对码后，桥接本身将获得永久授权
+        ——而桥接转发的每条出站消息都会作为「已授权用户消息」
+        回传到 agent，这正是 #15763 的根本原因。
 
-        Matches:
-            ``@_something:server``   — appservice namespace convention
-            ``@:server``             — malformed / empty localpart
-            ``:server``              — malformed, no leading ``@``
+        匹配模式：
+            ``@_something:server``   — appservice 命名空间惯例
+            ``@:server``             — 畸形/空 localpart
+            ``:server``              — 畸形，缺少前导 ``@``
         """
         s = (sender or "").strip()
         if not s:
             return True
-        # Localpart is everything between leading '@' and ':'
+        # localpart 是前导 '@' 和 ':' 之间的部分
         if s.startswith("@"):
             s = s[1:]
         if ":" in s:
@@ -2311,19 +2307,18 @@ class MatrixAdapter(BasePlatformAdapter):
         return localpart.startswith("_")
 
     def _matches_ignored_user_pattern(self, sender: str) -> bool:
-        """Return True when sender matches configured Matrix ignore patterns."""
+        """当 sender 匹配已配置的 Matrix 忽略模式时返回 True。"""
         return any(pattern.search(sender or "") for pattern in self._ignored_user_patterns)
 
     def _is_allowed_matrix_room(self, room_id: str) -> bool:
-        """Return True when MATRIX_ALLOWED_ROOMS permits the room."""
+        """当 MATRIX_ALLOWED_ROOMS 允许该房间时返回 True。"""
         return not self._allowed_room_ids or room_id in self._allowed_room_ids
 
     async def _is_allowed_matrix_room_event(self, room_id: str) -> bool:
-        """Return True when a room event may proceed past intake filters.
+        """当房间事件可以通过接入过滤器时返回 True。
 
-        MATRIX_ALLOWED_ROOMS constrains shared rooms. Matrix DMs are exempt so
-        personal chats still work when operators use a room allowlist for
-        project rooms.
+        MATRIX_ALLOWED_ROOMS 限制共享房间。Matrix DM 不受此限制，
+        这样当操作员对 project 房间使用房间白名单时，个人聊天仍然可以正常工作。
         """
         if self._is_allowed_matrix_room(room_id):
             return True
@@ -2338,12 +2333,12 @@ class MatrixAdapter(BasePlatformAdapter):
             return False
 
     async def _on_room_message(self, event: Any) -> None:
-        """Handle incoming room message events (text, media)."""
+        """处理接收到的房间消息事件（文本、媒体）。"""
         room_id = str(getattr(event, "room_id", ""))
         sender = str(getattr(event, "sender", ""))
 
-        # Diagnostic: confirm the callback is firing at all when DEBUG is on.
-        # Helps users troubleshoot silent inbound issues like #5819, #7914, #12614.
+        # 诊断：在 DEBUG 开启时确认回调是否被触发。
+        # 帮助用户排查 #5819、#7914、#12614 等静默接收问题。
         logger.debug(
             "Matrix: callback fired — event %s from %s in %s",
             getattr(event, "event_id", "?"),
@@ -2351,16 +2346,14 @@ class MatrixAdapter(BasePlatformAdapter):
             room_id,
         )
 
-        # Ignore own messages (case-insensitive; also drops when our own
-        # user_id hasn't been resolved yet — see _is_self_sender docstring
-        # and issue #15763).
+        # 忽略自己的消息（大小写不敏感；当我们的 user_id
+        # 尚未解析时也会丢弃——参见 _is_self_sender 文档及 #15763）。
         if self._is_self_sender(sender):
             return
 
-        # Ignore appservice / bridge / system identities so they never
-        # trigger the pairing flow.  Once a bridge user is paired, every
-        # outbound message it relays would loop back as an authorized
-        # user message (the "hall of mirrors" in #15763).
+        # 忽略 appservice / 桥接 / 系统身份，防止它们触发配对流程。
+        # 一旦桥接用户被配对，其转发的每条出站消息都会作为
+        # 已授权用户消息回传（即 #15763 中的「镜厅」问题）。
         if self._is_system_or_bridge_sender(sender):
             logger.debug(
                 "Matrix: ignoring system/bridge sender %s in %s",
@@ -2382,42 +2375,40 @@ class MatrixAdapter(BasePlatformAdapter):
             )
             return
 
-        # Deduplicate by event ID.
+        # 按 event ID 去重。
         event_id = str(getattr(event, "event_id", ""))
         if self._is_duplicate_event(event_id):
             return
 
-        # Startup grace: ignore old messages from initial sync.
+        # 启动宽限期：忽略初始同步中的旧消息。
         event_ts = _matrix_event_timestamp_seconds(event)
         if event_ts and event_ts < self._startup_ts - _STARTUP_GRACE_SECONDS:
-            # If we are well past startup but events are still being dropped
-            # by the grace check, the host clock is probably set ahead of
-            # real time — every live event then looks "older than startup".
-            # Warn once so users can fix NTP instead of chasing a ghost.
-            # See #12614 (Schnurzel700, April 2026).
+            # 如果已过了启动阶段但事件仍被宽限期检查丢弃，
+            # 则主机时钟可能被设置超前于实际时间——每条实时事件
+            # 都会看起来「比启动时间更早」。发出一次警告，让用户
+            # 修正 NTP 而非排查幽灵问题。参见 #12614
+            # （Schnurzel700，2026 年 4 月）。
             #
-            # Filter out backfill (events legitimately old) by requiring:
-            #  - we are >30s past startup (initial-sync replay window closed)
-            #  - the skew is *consistent* across consecutive drops, which is
-            #    the signature of a constant clock offset rather than a
-            #    variable-age room history.  Backfill from a freshly invited
-            #    room can deliver events spanning hours/days — those skews
-            #    will be all over the place and reset the counter.
+            # 通过以下条件过滤回填事件（确实较旧的事件）：
+            #  - 启动已超过 30 秒（初始同步重放窗口已关闭）
+            #  - 偏移量在连续丢弃中*保持一致*，这是固定时钟偏移
+            #    的特征，而非可变房龄的房间历史。从新邀请的房间
+            #    回填可能带来跨越数小时/数天的事件——这些偏移量
+            #    会变化很大并重置计数器。
             if not self._clock_skew_warned and (
                 time.time() - self._startup_ts > 30
             ):
                 skew = self._startup_ts - event_ts
-                # Sanity bound: malformed events with negative or absurd
-                # timestamps shouldn't count.
+                # 健全性边界：畸形事件的负值或荒谬时间戳不应计入。
                 if 5 < skew < 86400:
                     if self._late_grace_drops == 0:
                         self._late_grace_skew = skew
                         self._late_grace_drops = 1
                     elif abs(skew - self._late_grace_skew) < 60:
-                        # Consistent offset → likely real clock skew.
+                        # 一致的偏移量 → 很可能是真实的时钟偏移。
                         self._late_grace_drops += 1
                     else:
-                        # Varied skew → likely backfill, restart sampling.
+                        # 偏移量不一致 → 可能是回填事件，重新采样。
                         self._late_grace_skew = skew
                         self._late_grace_drops = 1
                     if self._late_grace_drops >= 3:
@@ -2435,12 +2426,12 @@ class MatrixAdapter(BasePlatformAdapter):
                         self._clock_skew_warned = True
             return
 
-        # Extract content from the event.
+        # 从事件中提取内容。
         content = getattr(event, "content", None)
         if content is None:
             return
 
-        # Get msgtype — either from content object or raw dict.
+        # 获取 msgtype——从 content 对象或原始 dict 中获取。
         if hasattr(content, "msgtype"):
             msgtype = str(content.msgtype)
         elif isinstance(content, dict):
@@ -2448,7 +2439,7 @@ class MatrixAdapter(BasePlatformAdapter):
         else:
             msgtype = ""
 
-        # Determine source content dict for relation/thread extraction.
+        # 确定源 content dict 用于 relation/thread 提取。
         if isinstance(content, dict):
             source_content = content
         elif hasattr(content, "serialize"):
@@ -2458,16 +2449,16 @@ class MatrixAdapter(BasePlatformAdapter):
 
         relates_to = source_content.get("m.relates_to", {})
 
-        # Skip edits (m.replace relation).
+        # 跳过编辑事件（m.replace 关系）。
         if relates_to.get("rel_type") == "m.replace":
             return
 
-        # Ignore m.notice to prevent bot-to-bot loops (m.notice is the
-        # conventional msgtype for bot responses in the Matrix ecosystem).
+        # 忽略 m.notice 以防止 bot 间循环（m.notice 是 Matrix 生态中
+        # 机器人响应的惯例 msgtype）。
         if msgtype == "m.notice" and not self._process_notices:
             return
 
-        # Dispatch by msgtype.
+        # 按 msgtype 分派。
         media_msgtypes = ("m.image", "m.audio", "m.video", "m.file")
         if msgtype in media_msgtypes:
             await self._handle_media_message(
@@ -2487,10 +2478,10 @@ class MatrixAdapter(BasePlatformAdapter):
         source_content: dict,
         relates_to: dict,
     ) -> Optional[tuple]:
-        """Shared mention/thread/DM gating for text and media handlers.
+        """文本和媒体处理器共享的 mention/thread/DM 门控。
 
-        Returns (body, is_dm, chat_type, thread_id, display_name, source)
-        or None if the message should be dropped (mention gating).
+        返回 (body, is_dm, chat_type, thread_id, display_name, source)，
+        如果消息应被丢弃（mention 门控）则返回 None。
         """
         identity = await self._resolve_room_identity(room_id)
         is_dm = await self._is_dm_room(room_id)
@@ -2501,18 +2492,18 @@ class MatrixAdapter(BasePlatformAdapter):
             thread_id = relates_to.get("event_id")
 
         formatted_body = source_content.get("formatted_body")
-        # m.mentions.user_ids (MSC3952 / Matrix v1.7) — authoritative mention signal.
+        # m.mentions.user_ids（MSC3952 / Matrix v1.7）——权威的 mention 信号。
         mentions_block = source_content.get("m.mentions") or {}
         mention_user_ids = (
             mentions_block.get("user_ids") if isinstance(mentions_block, dict) else None
         )
         is_mentioned = self._is_bot_mentioned(body, formatted_body, mention_user_ids)
 
-        # Require-mention gating.
+        # 要求 mention 的门控。
         if not is_dm:
-            # allowed_rooms check (whitelist — must pass before other gating).
-            # When set, messages from rooms NOT in this whitelist are silently
-            # ignored, even if @mentioned.  DMs are already excluded above.
+            # allowed_rooms 检查（白名单——必须在其他门控之前通过）。
+            # 设置后，不在此白名单中的房间消息会被静默忽略，
+            # 即使被 @提及。DM 已在上方排除。
             if self._allowed_rooms and room_id not in self._allowed_rooms:
                 logger.debug(
                     "Matrix: ignoring message %s in %s — room not in "
@@ -2535,10 +2526,10 @@ class MatrixAdapter(BasePlatformAdapter):
                     )
                     return None
 
-            # Thread-level @mention gating: even in a bot-participated thread,
-            # require @mention when thread_require_mention is enabled.
-            # Prevents infinite reply loops in multi-agent shared rooms
-            # where multiple bots all participate in the same thread.
+            # Thread 级别的 @mention 门控：即使在机器人参与的 thread 中，
+            # 当 thread_require_mention 启用时也要求 @mention。
+            # 防止多 agent 共享房间中多个机器人参与同一 thread
+            # 时出现无限回复循环。
             elif (self._thread_require_mention and in_bot_thread
                   and not is_free_room):
                 if not is_mentioned:
@@ -2550,17 +2541,17 @@ class MatrixAdapter(BasePlatformAdapter):
                     )
                     return None
 
-        # DM mention-thread.
+        # DM mention-thread。
         if is_dm and not thread_id and self._dm_mention_threads and is_mentioned:
             thread_id = event_id
             self._threads.mark(thread_id)
 
-        # Strip mention from body (only when mention-gating is active).
+        # 从 body 中去除 mention（仅当 mention 门控激活时）。
         if is_mentioned and self._require_mention:
             body = self._strip_mention(body)
 
-        # Auto-thread/session-scope policy. Real Matrix thread roots are
-        # preserved above; synthetic thread roots are policy-driven.
+        # 自动 thread / session 作用域策略。真实的 Matrix thread 根节点
+        # 在上方保留；合成 thread 根节点由策略驱动。
         if not thread_id:
             if is_dm:
                 if self._dm_auto_thread:
@@ -2605,7 +2596,7 @@ class MatrixAdapter(BasePlatformAdapter):
         source_content: dict,
         relates_to: dict,
     ) -> None:
-        """Process a text message event."""
+        """处理文本消息事件。"""
         body = source_content.get("body", "") or ""
         if not body:
             return
@@ -2623,13 +2614,13 @@ class MatrixAdapter(BasePlatformAdapter):
             return
         body, is_dm, chat_type, thread_id, display_name, source = ctx
 
-        # Reply-to detection.
+        # 回复检测。
         reply_to = None
         in_reply_to = relates_to.get("m.in_reply_to", {})
         if in_reply_to:
             reply_to = in_reply_to.get("event_id")
 
-        # Strip reply fallback from body.
+        # 从 body 中去除回复回退文本。
         if reply_to and body.startswith("> "):
             lines = body.split("\n")
             stripped = []
@@ -2645,9 +2636,9 @@ class MatrixAdapter(BasePlatformAdapter):
                 stripped.append(line)
             body = "\n".join(stripped) if stripped else body
 
-        # Re-run bang normalization after reply-fallback stripping so a quoted
-        # reply whose actual content is a bang command (e.g. ``> quoted\n\n!model``)
-        # is treated as a command, matching how ``/command`` is recognized below.
+        # 在去除回复回退后重新运行 bang 规范化，使引用回复的实际内容
+        # 如果是 bang 命令（例如 ``> quoted\n\n!model``）也会被识别为命令，
+        # 与下方 ``/command`` 的识别方式一致。
         body = _normalize_matrix_bang_command(body)
 
         msg_type = MessageType.TEXT
@@ -2678,7 +2669,7 @@ class MatrixAdapter(BasePlatformAdapter):
         relates_to: dict,
         msgtype: str,
     ) -> None:
-        """Process a media message event (image, audio, video, file)."""
+        """处理媒体消息事件（图片、音频、视频、文件）。"""
         body = source_content.get("body", "") or ""
         url = source_content.get("url", "")
         if url and not str(url).startswith("mxc://"):
@@ -2688,7 +2679,7 @@ class MatrixAdapter(BasePlatformAdapter):
             )
             return
 
-        # Convert mxc:// to HTTP URL for downstream processing.
+        # 将 mxc:// 转换为 HTTP URL 以供下游处理。
         http_url = ""
         if url and url.startswith("mxc://"):
             http_url = self._mxc_to_http(url)

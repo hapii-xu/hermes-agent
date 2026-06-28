@@ -1,13 +1,12 @@
-"""WeCom callback-mode adapter for self-built enterprise applications.
+"""WeCom 自建企业应用的回调模式适配器。
 
-Unlike the bot/websocket adapter in ``wecom.py``, this handles the standard
-WeCom callback flow: WeCom POSTs encrypted XML to an HTTP endpoint, the
-adapter decrypts it, queues the message for the agent, and immediately
-acknowledges.  The agent's reply is delivered later via the proactive
-``message/send`` API using an access-token.
+与 ``wecom.py`` 中的 bot/websocket 适配器不同，此模块处理标准的
+WeCom 回调流程：WeCom 将加密的 XML POST 到 HTTP 端点，
+适配器解密后，将消息排队给 agent，并立即确认。
+agent 的回复稍后通过主动 ``message/send`` API 使用 access-token 投递。
 
-Supports multiple self-built apps under one gateway instance, scoped by
-``corp_id:user_id`` to avoid cross-corp collisions.
+支持在一个网关实例下运行多个自建应用，通过
+``corp_id:user_id`` 作用域避免跨企业冲突。
 """
 
 from __future__ import annotations
@@ -17,10 +16,10 @@ import logging
 import socket as _socket
 import time
 from typing import Any, Dict, List, Optional
-# Security: parse untrusted, pre-auth request bodies (WeCom callbacks) with
-# defusedxml to block billion-laughs / entity-expansion (and XXE) DoS. The
-# parsing API (fromstring) is a drop-in for the stdlib calls used below;
-# response-building XML lives in wecom_crypto.py and is not parsed here.
+# 安全性：使用 defusedxml 解析不受信任的预认证请求体（WeCom 回调），
+# 以防止十亿笑脸/实体扩展（和 XXE）DoS 攻击。
+# 解析 API（fromstring）可直接替代下面使用的标准库调用；
+# 响应构建的 XML 位于 wecom_crypto.py 中，不在此处解析。
 try:
     import defusedxml.ElementTree as ET
 
@@ -81,7 +80,7 @@ class WecomCallbackAdapter(BasePlatformAdapter):
         self._access_tokens: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
-    # App normalisation
+    # 应用规范化
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -107,7 +106,7 @@ class WecomCallbackAdapter(BasePlatformAdapter):
         return []
 
     # ------------------------------------------------------------------
-    # Lifecycle
+    # 生命周期
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
@@ -118,7 +117,7 @@ class WecomCallbackAdapter(BasePlatformAdapter):
             logger.warning("[WecomCallback] aiohttp/httpx not installed")
             return False
 
-        # Quick port-in-use check.
+        # 快速检查端口是否被占用。
         try:
             with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as sock:
                 sock.settimeout(1)
@@ -129,7 +128,7 @@ class WecomCallbackAdapter(BasePlatformAdapter):
             pass
 
         try:
-            # Tighter keepalive so idle CLOSE_WAIT drains promptly (#18451).
+            # 更严格的 keepalive 以便空闲的 CLOSE_WAIT 能够快速排空（#18451）。
             from gateway.platforms._http_client_limits import platform_httpx_limits
             self._http_client = httpx.AsyncClient(timeout=20.0, limits=platform_httpx_limits())
             self._app = web.Application()
@@ -184,7 +183,7 @@ class WecomCallbackAdapter(BasePlatformAdapter):
             self._http_client = None
 
     # ------------------------------------------------------------------
-    # Outbound: proactive send via access-token API
+    # 出站：通过 access-token API 主动发送
     # ------------------------------------------------------------------
 
     async def send(
@@ -213,8 +212,8 @@ class WecomCallbackAdapter(BasePlatformAdapter):
                 data = resp.json()
                 errcode = data.get("errcode")
                 if errcode in {40001, 42001} and _attempt == 0:
-                    # WeCom rejected the token — evict the cached entry so
-                    # the next _get_access_token call forces a fresh fetch.
+                    # WeCom 拒绝了 token——驱逐缓存的条目，以便
+                    # 下次 _get_access_token 调用强制重新获取。
                     logger.warning(
                         "[WecomCallback] Token rejected for app '%s' (errcode=%s), refreshing",
                         app.get("name", "default"), errcode,
@@ -233,7 +232,7 @@ class WecomCallbackAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(exc))
 
     def _resolve_app_for_chat(self, chat_id: str) -> Dict[str, Any]:
-        """Pick the app associated with *chat_id*, falling back sensibly."""
+        """选择与 *chat_id* 关联的应用，并合理回退。"""
         app_name = self._user_app_map.get(chat_id)
         if not app_name and ":" not in chat_id:
             # Legacy bare user_id — try to find a unique match.

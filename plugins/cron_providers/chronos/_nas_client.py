@@ -1,13 +1,12 @@
-"""Thin HTTP client for the agent → NAS ``agent-cron`` endpoints (Chronos).
+"""agent → NAS ``agent-cron`` 端点的轻量 HTTP 客户端（Chronos）。
 
-The Chronos provider speaks ONLY to NAS — it names no scheduler vendor and
-holds no scheduler credentials. NAS owns the external scheduler (an internal
-implementation detail) and that scheduler's account; the agent just asks NAS to
-"arm a one-shot at time T" / "cancel" / "list", authenticated with the agent's
-existing Nous Portal access token (the same token it already uses to call the
-portal — no new secret).
+Chronos provider 只与 NAS 通信 — 不命名任何调度器供应商，也
+不持有调度器凭据。NAS 拥有外部调度器（内部实现细节）及其账户；
+agent 只是请求 NAS "在时间 T 设置单次触发器" / "取消" / "列出"，
+使用 agent 现有的 Nous Portal access token 进行身份验证
+（与调用 portal 使用的相同 token — 无需新密钥）。
 
-Wire contract: ``docs/chronos-managed-cron-contract.md``.
+通信契约：``docs/chronos-managed-cron-contract.md``。
 """
 
 from __future__ import annotations
@@ -17,31 +16,31 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("cron.chronos")
 
-# Endpoint paths under the portal base URL.
+# portal 基础 URL 下的端点路径。
 _PROVISION_PATH = "/api/agent-cron/provision"
 _CANCEL_PATH = "/api/agent-cron/cancel"
 _LIST_PATH = "/api/agent-cron/list"
 
 
 class NasCronClientError(RuntimeError):
-    """Raised when a NAS agent-cron call fails (non-2xx or transport error)."""
+    """NAS agent-cron 调用失败时抛出（非 2xx 或传输错误）。"""
 
 
 class NasCronClient:
-    """Minimal client for the agent→NAS provision/cancel/list endpoints.
+    """agent→NAS provision/cancel/list 端点的最小客户端。
 
-    Uses the agent's refresh-aware Nous access token for auth. No scheduler
-    vendor, no scheduler creds — NAS hides all of that behind these three calls.
+    使用 agent 的支持刷新的 Nous access token 进行认证。无调度器
+    供应商，无调度器凭据 — NAS 在这三个调用后面隐藏了所有这些细节。
     """
 
     def __init__(self, portal_url: str, *, timeout_seconds: float = 15.0) -> None:
         self.portal_url = portal_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
-    # -- auth -------------------------------------------------------------
+    # -- 认证 -------------------------------------------------------------
 
     def _access_token(self) -> str:
-        """The agent's existing Nous Portal access token (refresh-aware)."""
+        """agent 现有的 Nous Portal access token（支持刷新）。"""
         from hermes_cli.auth import resolve_nous_access_token
         return resolve_nous_access_token()
 
@@ -54,7 +53,7 @@ class NasCronClient:
     # -- HTTP -------------------------------------------------------------
 
     def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
-        import requests  # lazy: agent already depends on requests
+        import requests  # 延迟导入：agent 已依赖 requests
 
         url = f"{self.portal_url}{path}"
         try:
@@ -91,14 +90,14 @@ class NasCronClient:
         except Exception:
             return {}
 
-    # -- endpoints --------------------------------------------------------
+    # -- 端点 --------------------------------------------------------
 
     def provision(self, *, job_id: str, fire_at: str, agent_callback_url: str,
                   dedup_key: str) -> Dict[str, Any]:
-        """Ask NAS to arm a one-shot for ``job_id`` at ``fire_at`` (ISO 8601).
+        """请求 NAS 在 ``fire_at``（ISO 8601）为 ``job_id`` 设置单次触发器。
 
-        ``dedup_key`` (``{job_id}:{fire_at}``) makes re-arming the same fire
-        idempotent NAS-side. Returns the NAS response (e.g. ``{schedule_id}``).
+        ``dedup_key``（``{job_id}:{fire_at}``）使对同一触发时间的重复设置
+        在 NAS 侧幂等。返回 NAS 响应（例如 ``{schedule_id}``）。
         """
         return self._post(_PROVISION_PATH, {
             "job_id": job_id,
@@ -108,15 +107,15 @@ class NasCronClient:
         })
 
     def cancel(self, *, job_id: str) -> Dict[str, Any]:
-        """Ask NAS to cancel any armed one-shot for ``job_id``."""
+        """请求 NAS 取消为 ``job_id`` 设置的任何单次触发器。"""
         return self._post(_CANCEL_PATH, {"job_id": job_id})
 
     def list_armed(self) -> List[Dict[str, Any]]:
-        """List the one-shots NAS currently has armed for this agent.
+        """列出 NAS 当前为此 agent 设置的单次触发器。
 
-        Returns a list of ``{job_id, fire_at, schedule_id}``. Best-effort: used
-        by reconcile to find orphaned arms on a cold process; on error the
-        caller falls back to idempotent re-arm of all desired jobs.
+        返回 ``{job_id, fire_at, schedule_id}`` 列表。尽力而为：用于
+        reconcile 在冷进程上查找孤立触发器；出错时
+        调用者回退到对所有期望任务的幂等重新设置。
         """
         data = self._get(_LIST_PATH, {})
         items = data.get("armed") if isinstance(data, dict) else None

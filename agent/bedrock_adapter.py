@@ -1,30 +1,30 @@
-"""AWS Bedrock Converse API adapter for Hermes Agent.
+"""AWS Bedrock Converse API 适配器（Hermes Agent 专用）。
 
-Provides native integration with Amazon Bedrock using the Converse API,
-bypassing the OpenAI-compatible endpoint in favor of direct AWS SDK calls.
-This enables full access to the Bedrock ecosystem:
+通过 Converse API 与 Amazon Bedrock 进行原生集成，
+绕过 OpenAI 兼容端点，直接调用 AWS SDK。
+这样可以完整使用 Bedrock 生态系统的全部能力：
 
-  - **Native Converse API**: Unified interface for all Bedrock models
-    (Claude, Nova, Llama, Mistral, etc.) with streaming support.
-  - **AWS credential chain**: IAM roles, SSO profiles, environment variables,
-    instance metadata — zero API key management for AWS-native environments.
-  - **Dynamic model discovery**: Auto-discovers available foundation models
-    and cross-region inference profiles via the Bedrock control plane.
-  - **Guardrails support**: Optional Bedrock Guardrails configuration for
-    content filtering and safety policies.
-  - **Inference profiles**: Supports cross-region inference profiles
-    (us.anthropic.claude-*, global.anthropic.claude-*) for better capacity
-    and automatic failover.
+  - **原生 Converse API**：统一的 Bedrock 模型接口
+    （Claude、Nova、Llama、Mistral 等），支持流式输出。
+  - **AWS 凭证链**：IAM 角色、SSO 配置文件、环境变量、
+    实例元数据——AWS 原生环境无需管理 API 密钥。
+  - **动态模型发现**：通过 Bedrock 控制平面自动发现可用的基础模型
+    和跨区域推理配置文件。
+  - **Guardrails 支持**：可选的 Bedrock Guardrails 配置，
+    用于内容过滤和安全策略。
+  - **推理配置文件**：支持跨区域推理配置文件
+    （us.anthropic.claude-*、global.anthropic.claude-*），
+    提供更好的容量和自动故障转移。
 
-Architecture follows the same pattern as ``anthropic_adapter.py``:
-  - All Bedrock-specific logic is isolated in this module.
-  - Messages/tools are converted between OpenAI format and Converse format.
-  - Responses are normalized back to OpenAI-compatible objects for the agent loop.
+架构遵循与 ``anthropic_adapter.py`` 相同的模式：
+  - 所有 Bedrock 特有逻辑隔离在本模块中。
+  - 消息/工具在 OpenAI 格式与 Converse 格式之间进行转换。
+  - 响应被规范化为 OpenAI 兼容对象，供 agent 循环使用。
 
-Reference: OpenClaw's ``extensions/amazon-bedrock/`` plugin, which implements
-the same Converse API integration in TypeScript via ``@aws-sdk/client-bedrock``.
+参考：OpenClaw 的 ``extensions/amazon-bedrock/`` 插件，该插件通过
+``@aws-sdk/client-bedrock`` 在 TypeScript 中实现了相同的 Converse API 集成。
 
-Requires: ``boto3`` (optional dependency — only needed when using the Bedrock provider).
+依赖：``boto3``（可选依赖——仅在使用 Bedrock 提供者时需要）。
 """
 
 import json
@@ -37,21 +37,21 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Ensure boto3/botocore are installed before any code in this module runs.
-# Upstream removed boto3 from [all] extras (PRs #24220, #24515); lazy_deps
-# handles on-demand installation so the Bedrock provider still works in the
-# EKS deployment without baking boto3 into the base image.
+# 确保在本模块的任何代码运行之前，boto3/botocore 已经安装。
+# 上游已将 boto3 从 [all] extras 中移除（PR #24220、#24515）；lazy_deps
+# 按需处理安装，因此 Bedrock 提供者在 EKS 部署中仍然可以工作，
+# 而无需将 boto3 烘焙到基础镜像中。
 # ---------------------------------------------------------------------------
 try:
     from tools.lazy_deps import ensure
     ensure("provider.bedrock", prompt=False)
 except Exception:
-    pass  # lazy_deps unavailable or install failed — let downstream imports surface the real error
+    pass  # lazy_deps 不可用或安装失败——让下游导入暴露真正的错误
 
 
 # ---------------------------------------------------------------------------
-# Lazy boto3 import — only loaded when the Bedrock provider is actually used.
-# This keeps startup fast for users who don't use Bedrock.
+# boto3 延迟导入——仅在实际使用 Bedrock 提供者时加载。
+# 这使不使用 Bedrock 的用户保持快速启动。
 # ---------------------------------------------------------------------------
 
 _bedrock_runtime_client_cache: Dict[str, Any] = {}
@@ -62,7 +62,7 @@ _MIN_BOTO3_VERSION = (1, 34, 59)
 
 
 def _require_boto3():
-    """Import boto3, raising a clear error if not installed or too old."""
+    """导入 boto3，如果未安装或版本过旧则抛出清晰的错误。"""
     try:
         import boto3
     except ImportError:
@@ -71,14 +71,13 @@ def _require_boto3():
             "Install it with: pip install boto3\n"
             "Or install Hermes with Bedrock support: pip install -e '.[bedrock]'"
         )
-    # converse() / converse_stream() were added in boto3 1.34.59.
-    # When Hermes is installed editable into system Python, the system boto3
-    # (e.g. Ubuntu 24.04 ships 1.34.46) may take precedence over the venv
-    # version pinned in pyproject.toml.
+    # converse() / converse_stream() 在 boto3 1.34.59 中被加入。
+    # 当 Hermes 以 editable 模式安装到系统 Python 时，系统 boto3
+    # （例如 Ubuntu 24.04 自带 1.34.46）可能优先于 pyproject.toml 中锁定的 venv 版本。
     try:
         version = tuple(int(x) for x in boto3.__version__.split(".")[:3])
     except (AttributeError, ValueError):
-        return boto3  # can't parse — don't block on version check
+        return boto3  # 无法解析——跳过版本检查，不阻塞
     if version < _MIN_BOTO3_VERSION:
         raise RuntimeError(
             f"boto3 {boto3.__version__} does not support converse_stream "
@@ -89,9 +88,9 @@ def _require_boto3():
 
 
 def _get_bedrock_runtime_client(region: str):
-    """Get or create a cached ``bedrock-runtime`` client for the given region.
+    """获取或创建指定区域的缓存 ``bedrock-runtime`` 客户端。
 
-    Uses the default AWS credential chain (env vars → profile → instance role).
+    使用默认 AWS 凭证链（环境变量 → 配置文件 → 实例角色）。
     """
     if region not in _bedrock_runtime_client_cache:
         boto3 = _require_boto3()
@@ -102,7 +101,7 @@ def _get_bedrock_runtime_client(region: str):
 
 
 def _get_bedrock_control_client(region: str):
-    """Get or create a cached ``bedrock`` control-plane client for model discovery."""
+    """获取或创建用于模型发现的缓存 ``bedrock`` 控制平面客户端。"""
     if region not in _bedrock_control_client_cache:
         boto3 = _require_boto3()
         _bedrock_control_client_cache[region] = boto3.client(
@@ -112,21 +111,19 @@ def _get_bedrock_control_client(region: str):
 
 
 def reset_client_cache():
-    """Clear cached boto3 clients. Used in tests and profile switches."""
+    """清空已缓存的 boto3 客户端。用于测试和配置文件切换。"""
     _bedrock_runtime_client_cache.clear()
     _bedrock_control_client_cache.clear()
 
 
 def invalidate_runtime_client(region: str) -> bool:
-    """Evict the cached ``bedrock-runtime`` client for a single region.
+    """驱逐单个区域的缓存 ``bedrock-runtime`` 客户端。
 
-    Per-region counterpart to :func:`reset_client_cache`. Used by the converse
-    call wrappers to discard clients whose underlying HTTP connection has
-    gone stale, so the next call allocates a fresh client (with a fresh
-    connection pool) instead of reusing a dead socket.
+    对应 :func:`reset_client_cache` 的按区域版本。converse 调用封装使用它来
+    丢弃底层 HTTP 连接已过期的客户端，使下一次调用分配一个新的客户端
+    （带有新的连接池），而不是复用已死的套接字。
 
-    Returns True if a cached entry was evicted, False if the region was not
-    cached.
+    如果驱逐了缓存条目返回 True；若该区域未被缓存则返回 False。
     """
     existed = region in _bedrock_runtime_client_cache
     _bedrock_runtime_client_cache.pop(region, None)
@@ -134,23 +131,20 @@ def invalidate_runtime_client(region: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Stale-connection detection
+# 过期连接检测
 # ---------------------------------------------------------------------------
 #
-# boto3 caches its HTTPS connection pool inside the client object. When a
-# pooled connection is killed out from under us (NAT timeout, VPN flap,
-# server-side TCP RST, proxy idle cull, etc.), the next use surfaces as
-# one of a handful of low-level exceptions — most commonly
-# ``botocore.exceptions.ConnectionClosedError`` or
-# ``urllib3.exceptions.ProtocolError``. urllib3 also trips an internal
-# ``assert`` in a couple of paths (connection pool state checks, chunked
-# response readers) which bubbles up as a bare ``AssertionError`` with an
-# empty ``str(exc)``.
+# boto3 将其 HTTPS 连接池缓存在客户端对象中。当池化连接被意外关闭时
+# （NAT 超时、VPN 抖动、服务端 TCP RST、代理空闲清理等），下一次使用会
+# 表现为以下几种底层异常之一——最常见的是
+# ``botocore.exceptions.ConnectionClosedError`` 或
+# ``urllib3.exceptions.ProtocolError``。urllib3 在某些路径中还会触发内部的
+# ``assert``（连接池状态检查、分块响应读取器），这会冒泡为一个
+# ``AssertionError``，其 ``str(exc)`` 为空。
 #
-# In all of these cases the client is the problem, not the request: retrying
-# with the same cached client reproduces the failure until the process
-# restarts. The fix is to evict the region's cached client so the next
-# attempt builds a new one.
+# 在所有这些情况下，问题出在客户端，而不是请求：用同一个缓存客户端重试
+# 会一直复现失败，直到进程重启。修复办法是驱逐该区域的缓存客户端，
+# 让下一次尝试重建一个新的。
 
 _STALE_LIB_MODULE_PREFIXES = (
     "urllib3.",
@@ -160,7 +154,7 @@ _STALE_LIB_MODULE_PREFIXES = (
 
 
 def _traceback_frames_modules(exc: BaseException):
-    """Yield ``__name__``-style module strings for each frame in exc's traceback."""
+    """为 exc 回溯中的每一帧产出 ``__name__`` 形式的模块字符串。"""
     tb = getattr(exc, "__traceback__", None)
     while tb is not None:
         frame = tb.tb_frame
@@ -198,12 +192,12 @@ def is_stale_connection_error(exc: BaseException) -> bool:
             HTTPClientError,
         )
         botocore_errors: tuple = (BotoConnectionError, HTTPClientError)
-    except ImportError:  # pragma: no cover — botocore always present with boto3
+    except ImportError:  # pragma: no cover — boto3 存在时 botocore 必然存在
         botocore_errors = ()
     if botocore_errors and isinstance(exc, botocore_errors):
         return True
 
-    # urllib3: low-level transport failures
+    # urllib3：底层传输失败
     try:
         from urllib3.exceptions import (
             ProtocolError,
@@ -216,7 +210,7 @@ def is_stale_connection_error(exc: BaseException) -> bool:
     if urllib3_errors and isinstance(exc, urllib3_errors):
         return True
 
-    # Library-internal AssertionError (urllib3 / botocore / boto3)
+    # 库内部的 AssertionError（urllib3 / botocore / boto3）
     if isinstance(exc, AssertionError):
         for module in _traceback_frames_modules(exc):
             if any(module.startswith(prefix) for prefix in _STALE_LIB_MODULE_PREFIXES):
@@ -247,34 +241,34 @@ def is_streaming_access_denied_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     if "invokemodelwithresponsestream" not in msg:
         return False
-    # ClientError with an explicit access-denied code is the canonical form.
+    # 带有显式拒绝访问代码的 ClientError 是规范形式。
     try:
         from botocore.exceptions import ClientError
-    except ImportError:  # pragma: no cover — botocore always present with boto3
+    except ImportError:  # pragma: no cover — boto3 存在时 botocore 必然存在
         ClientError = None  # type: ignore[assignment]
     if ClientError is not None and isinstance(exc, ClientError):
         code = (getattr(exc, "response", None) or {}).get("Error", {}).get("Code", "")
         return code in ("AccessDeniedException", "UnauthorizedException")
-    # Wrapped forms (e.g. AnthropicBedrock SDK PermissionDeniedError) — match
-    # on the authorization-failure phrasing AWS uses.
+    # 包装形式（例如 AnthropicBedrock SDK 的 PermissionDeniedError）——
+    # 按 AWS 使用的授权失败措辞匹配。
     return "not authorized" in msg or "accessdenied" in msg
 
 
 # ---------------------------------------------------------------------------
-# AWS credential detection
+# AWS 凭证检测
 # ---------------------------------------------------------------------------
 
-# Priority order matches OpenClaw's resolveAwsSdkEnvVarName():
-#   1. AWS_BEARER_TOKEN_BEDROCK (Bedrock-specific bearer token)
-#   2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY (explicit IAM credentials)
-#   3. AWS_PROFILE (named profile → SSO, assume-role, etc.)
-#   4. Implicit: instance role, ECS task role, Lambda execution role
+# 优先级顺序与 OpenClaw 的 resolveAwsSdkEnvVarName() 一致：
+#   1. AWS_BEARER_TOKEN_BEDROCK（Bedrock 专用的 bearer token）
+#   2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY（显式 IAM 凭证）
+#   3. AWS_PROFILE（命名配置文件 → SSO、assume-role 等）
+#   4. 隐式：实例角色、ECS 任务角色、Lambda 执行角色
 _AWS_CREDENTIAL_ENV_VARS = [
     "AWS_BEARER_TOKEN_BEDROCK",
     "AWS_ACCESS_KEY_ID",
     "AWS_PROFILE",
-    # These are checked by boto3's default chain but we list them for
-    # has_aws_credentials() detection:
+    # 这些会被 boto3 的默认链检查，但我们在 has_aws_credentials()
+    # 检测中列出它们：
     "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
     "AWS_WEB_IDENTITY_TOKEN_FILE",
 ]
@@ -385,15 +379,15 @@ def resolve_bedrock_region(env: Optional[Dict[str, str]] = None) -> str:
 
 
 def bedrock_model_ids_or_none() -> Optional[List[str]]:
-    """Live-discover Bedrock model IDs for the active region.
+    """实时发现当前区域的 Bedrock 模型 ID。
 
-    Returns a list of model ID strings if discovery succeeds and yields
-    at least one model, or ``None`` on failure / empty result.  Callers
-    should fall back to the static curated list when ``None`` is returned.
+    如果发现成功且至少有一个模型，返回模型 ID 字符串列表；
+    失败或结果为空时返回 ``None``。调用者在返回 ``None`` 时应回退到
+    静态策划列表。
 
-    This helper consolidates the discover → extract-ids → fallback
-    pattern that was previously duplicated across ``provider_model_ids``,
-    ``list_authenticated_providers`` section 2, and section 3.
+    这个 helper 合并了之前分散在 ``provider_model_ids``、
+    ``list_authenticated_providers`` 第 2 节和第 3 节中的
+    发现→提取 id→回退 模式。
     """
     try:
         discovered = discover_bedrock_models(resolve_bedrock_region())

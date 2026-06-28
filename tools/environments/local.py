@@ -1,4 +1,4 @@
-"""Local execution environment — spawn-per-call with session snapshot."""
+"""本地执行环境 —— 每次调用重新派生进程，并保留会话快照。"""
 
 import logging
 import os
@@ -21,41 +21,40 @@ logger = logging.getLogger(__name__)
 
 
 def _msys_to_windows_path(cwd: str) -> str:
-    """Translate a Git Bash / MSYS-style POSIX path (``/c/Users/x``) to the
-    native Windows form (``C:\\Users\\x``) so ``os.path.isdir`` and
-    ``subprocess.Popen(..., cwd=...)`` can find it.
+    """把 Git Bash / MSYS 风格的 POSIX 路径（``/c/Users/x``）转换成原生
+    Windows 形式（``C:\\Users\\x``），以便 ``os.path.isdir`` 和
+    ``subprocess.Popen(..., cwd=...)`` 能够找到它。
 
-    No-ops on non-Windows hosts or for paths that aren't in MSYS form.
-    Returns the input unchanged when no translation applies. This is
-    idempotent — calling it on an already-Windows path returns it as-is.
+    在非 Windows 主机上、或路径不是 MSYS 形式时为无操作。
+    当无需转换时原样返回输入。该操作是幂等的 —— 对一个已是 Windows 形式
+    的路径调用本函数会原样返回。
     """
     if not _IS_WINDOWS or not cwd:
         return cwd
-    # Match leading "/<single letter>/" or exactly "/<letter>" (bare drive root).
+    # 匹配开头的 "/<单字母>/" 或恰好 "/<字母>"（裸盘符根）。
     m = re.match(r'^/([a-zA-Z])(/.*)?$', cwd)
     if not m:
         return cwd
     drive = m.group(1).upper()
     tail = (m.group(2) or "").replace('/', '\\')
-    return f"{drive}:{tail or chr(92)}"  # chr(92) = backslash, avoid raw-string escape
+    return f"{drive}:{tail or chr(92)}"  # chr(92) = 反斜杠，避免原始字符串转义
 
 
 def _resolve_safe_cwd(cwd: str) -> str:
-    """Return ``cwd`` if it exists as a directory, else the nearest existing
-    ancestor.  Falls back to ``tempfile.gettempdir()`` only if walking up the
-    path can't find any existing directory (effectively never on a healthy
-    filesystem, but cheap belt-and-braces).
+    """如果 ``cwd`` 作为目录存在则返回它，否则返回最近存在的祖先目录。
+    只有当向上回溯路径也找不到任何存在的目录时，才回退到
+    ``tempfile.gettempdir()``（在健康的文件系统上实际上永远不会发生，但
+    这是一个廉价的双重保险）。
 
-    On Windows, also normalizes Git Bash / MSYS-style POSIX paths
-    (``/c/Users/x``) to native Windows form before the isdir check so a
-    perfectly valid ``pwd -P`` result from bash doesn't get rejected as
-    "missing" (see ``_msys_to_windows_path``).
+    在 Windows 上，还会在 isdir 检查之前把 Git Bash / MSYS 风格的 POSIX
+    路径（``/c/Users/x``）归一化为原生 Windows 形式，以免 bash 返回的一个
+    完全合法的 ``pwd -P`` 结果被当作“缺失”而拒绝（见
+    ``_msys_to_windows_path``）。
 
-    Used by ``_run_bash`` to recover when the configured cwd is gone — most
-    commonly because a previous tool call deleted its own working directory
-    (issue #17558).  Without this guard, ``subprocess.Popen(..., cwd=...)``
-    raises ``FileNotFoundError`` before bash starts, wedging every subsequent
-    terminal call until the gateway restarts.
+    供 ``_run_bash`` 在配置的 cwd 已不存在时做恢复 —— 最常见的情况是上一个
+    工具调用删除了它自己的工作目录（issue #17558）。没有这个守卫，
+    ``subprocess.Popen(..., cwd=...)`` 会在 bash 启动之前抛出
+    ``FileNotFoundError``，卡死后续每一次终端调用，直到网关重启。
     """
     cwd = _msys_to_windows_path(cwd) if _IS_WINDOWS else cwd
     if cwd and os.path.isdir(cwd):
@@ -66,40 +65,37 @@ def _resolve_safe_cwd(cwd: str) -> str:
             return parent
         next_parent = os.path.dirname(parent)
         if next_parent == parent:
-            # Reached the filesystem root and it doesn't exist either —
-            # genuinely nothing to fall back to except the temp dir.
+            # 已到达文件系统根目录且它也不存在 —— 确实除了临时目录之外没有
+            # 别的回退选择了。
             break
         parent = next_parent
     return tempfile.gettempdir()
 
 
-# Hermes-internal env vars that should NOT leak into terminal subprocesses.
+# 不应泄漏到终端子进程中的 Hermes 内部环境变量。
 _HERMES_PROVIDER_ENV_FORCE_PREFIX = "_HERMES_FORCE_"
 
-# Hermes-managed AWS *inference* credentials for ``auth_type="aws_sdk"``
-# providers (Bedrock).  Scoped DELIBERATELY NARROW: this lists only the
-# Bedrock-specific bearer token, which is a Hermes inference secret exactly
-# analogous to ``OPENAI_API_KEY`` — nobody drives the ``aws``/``terraform``/
-# ``boto3`` toolchain off it, so stripping it from terminal/execute_code
-# subprocesses costs no user capability.
+# Hermes 托管的 AWS *推理*凭证，用于 ``auth_type="aws_sdk"`` 的提供方
+# （Bedrock）。作用域被故意收窄：这里只列出 Bedrock 专用的 bearer token，
+# 它是一个 Hermes 推理密钥，与 ``OPENAI_API_KEY`` 完全类似 —— 没有人拿它去
+# 驱动 ``aws``/``terraform``/``boto3`` 工具链，所以从 terminal/execute_code
+# 子进程里剥离它不会损失任何用户能力。
 #
-# The GENERAL AWS credential chain (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-# AWS_SESSION_TOKEN, AWS_PROFILE, and the config/role pointers) is INTENTIONALLY
-# left inheritable.  Per SECURITY.md §3.2 the local terminal is the user's
-# trusted operator shell; the agent having the same general AWS access the
-# user's own shell has is the intended posture, not a leak.  Hard-blocklisting
-# those vars would (a) regress every user who runs aws/terraform/cdk/boto3 in
-# the agent terminal — not just Bedrock users, since the registry is iterated
-# unconditionally — and (b) be unrecoverable, because env_passthrough.py
-# refuses to re-allow anything in this blocklist (GHSA-rhgp-j443-p4rf).  See
-# issue #32314 discussion.
+# 通用的 AWS 凭证链（AWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEY、
+# AWS_SESSION_TOKEN、AWS_PROFILE 以及配置/角色指针）被有意保留为可继承。
+# 依据 SECURITY.md §3.2，本地终端是用户的可信运维 shell；agent 拥有与用户
+# 自己 shell 相同的通用 AWS 访问权限是预期姿态，而非泄漏。把这些变量硬拉进
+# 黑名单会（a）让每个在 agent 终端里运行 aws/terraform/cdk/boto3 的用户都
+# 出现回归 —— 不止 Bedrock 用户，因为注册表是无条件遍历的 —— 而且（b）
+# 无法恢复，因为 env_passthrough.py 拒绝重新放行这个黑名单里的任何内容
+# （GHSA-rhgp-j443-p4rf）。参见 issue #32314 的讨论。
 _AWS_SDK_CREDENTIAL_ENV_VARS = frozenset({
     "AWS_BEARER_TOKEN_BEDROCK",
 })
 
 
 def _build_provider_env_blocklist() -> frozenset:
-    """Derive the blocklist from provider, tool, and gateway config."""
+    """从 provider、tool 和 gateway 配置中派生出黑名单。"""
     blocked: set[str] = set()
 
     try:
@@ -194,7 +190,7 @@ _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 
 
 def _inject_context_hermes_home(env: dict) -> None:
-    """Bridge the context-local Hermes home override into subprocess env."""
+    """把上下文本地的 Hermes home 覆盖值桥接到子进程环境中。"""
     try:
         from hermes_constants import get_hermes_home_override
 
@@ -206,7 +202,7 @@ def _inject_context_hermes_home(env: dict) -> None:
 
 
 def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = None) -> dict:
-    """Filter Hermes-managed secrets from a subprocess environment."""
+    """从子进程环境中过滤掉 Hermes 托管的密钥。"""
     try:
         from tools.env_passthrough import is_env_passthrough as _is_passthrough
     except Exception:
@@ -236,7 +232,7 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
 
 
 def _find_bash() -> str:
-    """Find bash for command execution."""
+    """为命令执行查找 bash。"""
     if not _IS_WINDOWS:
         return (
             shutil.which("bash")
@@ -250,21 +246,19 @@ def _find_bash() -> str:
     if custom and os.path.isfile(custom):
         return custom
 
-    # Prefer our own portable Git install first — this way a broken or
-    # partially-uninstalled system Git can't hijack the bash lookup.  The
-    # install.ps1 installer always drops portable Git here when the user
-    # didn't already have a working system Git.
+    # 优先使用我们自带的便携版 Git —— 这样一个损坏或被部分卸载的系统 Git
+    # 就无法劫持 bash 查找。当用户原本没有可用的系统 Git 时，
+    # install.ps1 安装器总会把便携版 Git 放在这里。
     #
-    # Layouts (both checked so upgrades between MinGit and PortableGit
-    # installs work transparently):
-    #   PortableGit: %LOCALAPPDATA%\hermes\git\bin\bash.exe   (primary)
-    #   MinGit:      %LOCALAPPDATA%\hermes\git\usr\bin\bash.exe (legacy/32-bit fallback)
+    # 布局（两种都检查，以便 MinGit 和 PortableGit 之间的升级能透明工作）：
+    #   PortableGit: %LOCALAPPDATA%\hermes\git\bin\bash.exe   （主选）
+    #   MinGit:      %LOCALAPPDATA%\hermes\git\usr\bin\bash.exe （遗留/32 位回退）
     _local_appdata = os.environ.get("LOCALAPPDATA", "")
     _hermes_portable_git = os.path.join(_local_appdata, "hermes", "git") if _local_appdata else ""
     if _hermes_portable_git:
         for candidate in (
-            os.path.join(_hermes_portable_git, "bin", "bash.exe"),        # PortableGit (primary)
-            os.path.join(_hermes_portable_git, "usr", "bin", "bash.exe"), # MinGit fallback
+            os.path.join(_hermes_portable_git, "bin", "bash.exe"),        # PortableGit（主选）
+            os.path.join(_hermes_portable_git, "usr", "bin", "bash.exe"), # MinGit 回退
         ):
             if os.path.isfile(candidate):
                 return candidate
@@ -288,44 +282,42 @@ def _find_bash() -> str:
     )
 
 
-# Backward compat — process_registry.py imports this name
+# 向后兼容 —— process_registry.py 导入这个名字
 _find_shell = _find_bash
 
 
-# Standard PATH entries for environments with minimal PATH.
+# 用于 PATH 极简的环境的标准 PATH 条目。
 _SANE_PATH = (
     "/opt/homebrew/bin:/opt/homebrew/sbin:"
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
-# Cached directory containing the ``hermes`` console-script.
-# ``_SENTINEL`` distinguishes "not resolved yet" from a resolved ``None``.
+# 缓存包含 ``hermes`` 控制台脚本的目录。
+# ``_SENTINEL`` 用来区分“尚未解析”和已解析为 ``None``。
 _SENTINEL = object()
 _HERMES_BIN_DIR: "str | None | object" = _SENTINEL
 
 
 def _resolve_hermes_bin_dir() -> str | None:
-    """Return the directory holding the ``hermes`` console-script, or None.
+    """返回存放 ``hermes`` 控制台脚本的目录，或 None。
 
-    The terminal tool runs in a freshly-spawned subshell whose PATH is the
-    agent process's PATH plus a static set of system dirs (``_SANE_PATH``).
-    When the gateway is launched by something that does NOT source the user's
-    shell rc — systemd, a service manager, a desktop launcher, cron — the
-    hermes install dir (``~/.local/bin``, the venv ``bin``/``Scripts``, pipx,
-    nix) is absent from that PATH, so plugins shelling out to bare ``hermes``
-    via the terminal tool hit ``command not found`` (exit 127) even though
-    ``hermes`` works fine in the user's own interactive terminal.
+    终端工具运行在一个全新派生的子 shell 中，其 PATH 是 agent 进程的 PATH
+    加上一组静态系统目录（``_SANE_PATH``）。当网关由不读取用户 shell rc 的
+    东西启动时 —— systemd、服务管理器、桌面启动器、cron —— hermes 的安装目录
+    （``~/.local/bin``、venv 的 ``bin``/``Scripts``、pipx、nix）不在该 PATH
+    里，于是通过终端工具 shell 调用裸 ``hermes`` 的插件会命中
+    ``command not found``（exit 127），尽管 ``hermes`` 在用户自己的交互式
+    终端里工作正常。
 
-    We resolve the install dir once (it never changes within a process) and
-    prepend-if-missing it to the subshell PATH so bare ``hermes`` resolves
-    regardless of how the gateway was started.
+    我们解析一次安装目录（它在单个进程内永不变），并在缺失时把它前置到子
+    shell 的 PATH，这样无论网关如何启动，裸 ``hermes`` 都能被解析到。
 
-    Resolution order (cheap, no heavy imports):
-      1. ``shutil.which("hermes")`` — normal PATH-installed shim.
-      2. The directory of ``sys.argv[0]`` when it's an absolute path to a
-         real ``hermes`` executable (covers nix-store / venv wrappers).
-      3. The directory of ``sys.executable`` — the running interpreter's
-         venv ``bin``/``Scripts`` is where its console-scripts live.
+    解析顺序（廉价，无重型导入）：
+      1. ``shutil.which("hermes")`` —— 正常 PATH 安装的 shim。
+      2. 当 ``sys.argv[0]`` 是指向真实 ``hermes`` 可执行文件的绝对路径时，
+         取其所在目录（覆盖 nix-store / venv 包装器）。
+      3. ``sys.executable`` 所在目录 —— 正在运行的解释器所属 venv 的
+         ``bin``/``Scripts`` 正是控制台脚本所在之处。
     """
     global _HERMES_BIN_DIR
     if _HERMES_BIN_DIR is not _SENTINEL:
@@ -362,11 +354,10 @@ def _resolve_hermes_bin_dir() -> str | None:
 
 
 def _prepend_hermes_bin_dir(existing_path: str) -> str:
-    """Prepend the hermes install dir to ``existing_path`` if it's missing.
+    """如果缺失，则把 hermes 安装目录前置到 ``existing_path``。
 
-    Cross-platform (uses ``os.pathsep``). First-occurrence wins, so a PATH
-    that already contains the dir is returned unchanged. Returns the input
-    unchanged when the install dir can't be resolved.
+    跨平台（使用 ``os.pathsep``）。首次出现优先，所以已包含该目录的 PATH
+    会原样返回。当无法解析安装目录时原样返回输入。
     """
     bin_dir = _resolve_hermes_bin_dir()
     if not bin_dir:
@@ -379,26 +370,23 @@ def _prepend_hermes_bin_dir(existing_path: str) -> str:
 
 
 def _append_missing_sane_path_entries(existing_path: str) -> str:
-    """Return a normalised POSIX PATH with missing sane entries appended.
+    """返回一个归一化后的 POSIX PATH，并把缺失的合理条目追加到末尾。
 
-    On POSIX the caller-supplied PATH is rewritten (not merely appended to):
-    empty entries and duplicate entries are dropped, preserving
-    first-occurrence order, then each missing ``_SANE_PATH`` entry is appended
-    once at the end so existing entries keep their precedence.
+    在 POSIX 上，调用方提供的 PATH 会被重写（而不只是追加）：空条目和重复
+    条目被丢弃，保留首次出现顺序，然后每个缺失的 ``_SANE_PATH`` 条目在末尾
+    各追加一次，使已有条目保持原有优先级。
 
-    Two intentional normalisations beyond the bare "add Homebrew dirs" fix:
+    除了“添加 Homebrew 目录”这一基本修复之外，还有两处刻意的归一化：
 
-    - **Empty entries are stripped.** A leading/trailing/double ``:`` encodes
-      an empty PATH element, which POSIX shells interpret as the current
-      working directory — a mild foot-gun in a default terminal environment.
-      We drop these rather than carry them through.
-    - **Duplicates are collapsed** (first occurrence wins), so a caller PATH
-      that already contains repeats is not propagated verbatim.
+    - **空条目被剥离。** 开头/结尾/连续的 ``:`` 表示一个空 PATH 元素，POSIX
+      shell 会把它解释为当前工作目录 —— 在默认终端环境里是个小小的坑。我们
+      直接丢弃它们，而不是带过去。
+    - **重复被合并**（首次出现优先），所以已经包含重复的调用方 PATH 不会
+      被原样传播。
 
-    For a well-formed PATH (no empties, no duplicates) the leading segment is
-    byte-identical to the input and ordering is preserved; only the missing
-    sane entries are appended. On Windows this is a no-op passthrough (the
-    separator is ``;`` and the native PATH must not be touched).
+    对于格式良好的 PATH（无空条目、无重复），开头部分与输入逐字节相同，顺序
+    也被保留；只有缺失的合理条目被追加。在 Windows 上这是一个无操作的透传
+    （分隔符是 ``;``，原生 PATH 不能被改动）。
     """
     if _IS_WINDOWS:
         return existing_path
@@ -407,8 +395,7 @@ def _append_missing_sane_path_entries(existing_path: str) -> str:
     if not existing_path:
         return ":".join(sane_entries)
 
-    # De-duplicate the caller PATH (first occurrence wins) and drop empty
-    # entries before merging in the sane fallbacks.
+    # 在合并合理回退条目之前，对调用方 PATH 去重（首次出现优先）并丢弃空条目。
     seen: set[str] = set()
     ordered_entries: list[str] = []
     for entry in existing_path.split(":"):
@@ -417,8 +404,8 @@ def _append_missing_sane_path_entries(existing_path: str) -> str:
         seen.add(entry)
         ordered_entries.append(entry)
 
-    # _SANE_PATH is a static, duplicate-free constant, so a membership check
-    # against the caller entries is sufficient — no need to track `seen` here.
+    # _SANE_PATH 是静态、无重复的常量，所以对调用方条目做成员检查就够了
+    # —— 这里无需再跟踪 `seen`。
     for entry in sane_entries:
         if entry not in seen:
             ordered_entries.append(entry)
@@ -427,14 +414,12 @@ def _append_missing_sane_path_entries(existing_path: str) -> str:
 
 
 def _path_env_key(run_env: dict) -> str | None:
-    """Return the PATH env key to update without altering Windows casing.
+    """返回要更新的 PATH 环境变量键，且不改变 Windows 大小写。
 
-    Note: this is deliberately a *second* Windows guard, distinct from the
-    early-return in ``_append_missing_sane_path_entries``. Its job is to pick
-    the correctly-cased key (``Path`` vs ``PATH``) so completion writes back to
-    the key the caller already used; the helper's guard makes that helper safe
-    to call standalone (it is, e.g. in the Windows unit tests). Both are
-    intentional.
+    注意：这是刻意的*第二道* Windows 守卫，与 ``_append_missing_sane_path_entries``
+    中的早返回不同。它的职责是挑选大小写正确的键（``Path`` vs ``PATH``），
+    以便补全时写回到调用方已使用的键；而辅助函数里的守卫只是让该辅助函数
+    可以安全地独立调用（例如在 Windows 单元测试里）。两者都是刻意的。
     """
     if not _IS_WINDOWS:
         return "PATH"
@@ -445,7 +430,7 @@ def _path_env_key(run_env: dict) -> str | None:
 
 
 def _make_run_env(env: dict) -> dict:
-    """Build a run environment with a sane PATH and provider-var stripping."""
+    """构建一个具备合理 PATH 并剥离了 provider 变量的运行环境。"""
     try:
         from tools.env_passthrough import is_env_passthrough as _is_passthrough
     except Exception:
@@ -462,9 +447,9 @@ def _make_run_env(env: dict) -> dict:
     path_key = _path_env_key(run_env)
     if path_key is not None:
         new_path = _append_missing_sane_path_entries(run_env.get(path_key, ""))
-        # Ensure the hermes install dir is reachable so plugins can shell out
-        # to bare ``hermes`` via the terminal tool even when the gateway was
-        # launched without it on PATH (systemd, service managers, cron, etc.).
+        # 确保 hermes 安装目录可达，这样即使网关启动时 PATH 里没有它
+        # （systemd、服务管理器、cron 等），插件仍能通过终端工具 shell 调用
+        # 裸 ``hermes``。
         run_env[path_key] = _prepend_hermes_bin_dir(new_path)
 
     _inject_context_hermes_home(run_env)
@@ -472,8 +457,8 @@ def _make_run_env(env: dict) -> dict:
     from hermes_constants import apply_subprocess_home_env
     apply_subprocess_home_env(run_env)
 
-    # Inject ContextVar-based session vars into subprocess env.
-    # ContextVars don't propagate to child processes, so we bridge them here.
+    # 把基于 ContextVar 的会话变量注入到子进程环境中。
+    # ContextVar 不会传播到子进程，所以在这里桥接它们。
     try:
         from gateway.session_context import _UNSET, _VAR_MAP
         for var_name, var in _VAR_MAP.items():
@@ -487,10 +472,10 @@ def _make_run_env(env: dict) -> dict:
 
 
 def _read_terminal_shell_init_config() -> tuple[list[str], bool]:
-    """Return (shell_init_files, auto_source_bashrc) from config.yaml.
+    """从 config.yaml 返回 (shell_init_files, auto_source_bashrc)。
 
-    Best-effort — returns sensible defaults on any failure so terminal
-    execution never breaks because the config file is unreadable.
+    尽力而为 —— 任何失败时都返回合理的默认值，这样终端执行绝不会因为配置
+    文件不可读而中断。
     """
     try:
         from hermes_cli.config import load_config
@@ -507,12 +492,11 @@ def _read_terminal_shell_init_config() -> tuple[list[str], bool]:
 
 
 def _resolve_shell_init_files() -> list[str]:
-    """Resolve the list of files to source before the login-shell snapshot.
+    """解析在登录 shell 快照之前要 source 的文件列表。
 
-    Expands ``~`` and ``${VAR}`` references and drops anything that doesn't
-    exist on disk, so a missing ``~/.bashrc`` never breaks the snapshot.
-    The ``auto_source_bashrc`` path runs only when the user hasn't supplied
-    an explicit list — once they have, Hermes trusts them.
+    展开 ``~`` 和 ``${VAR}`` 引用，并丢弃磁盘上不存在的文件，这样缺失的
+    ``~/.bashrc`` 永远不会破坏快照。``auto_source_bashrc`` 路径只在用户未提供
+    显式列表时才运行 —— 一旦他们提供了，Hermes 就信任他们。
     """
     explicit, auto_bashrc = _read_terminal_shell_init_config()
 
@@ -520,21 +504,18 @@ def _resolve_shell_init_files() -> list[str]:
     if explicit:
         candidates.extend(explicit)
     elif auto_bashrc and not _IS_WINDOWS:
-        # Build a login-shell-ish source list so tools like n / nvm / asdf /
-        # pyenv that self-install into the user's shell rc land on PATH in
-        # the captured snapshot.
+        # 构建一个类似登录 shell 的 source 列表，让那些自安装到用户 shell rc
+        # 里的工具（n / nvm / asdf / pyenv）出现在捕获快照的 PATH 上。
         #
-        # ~/.profile and ~/.bash_profile run first because they have no
-        # interactivity guard — installers like ``n`` and ``nvm`` append
-        # their PATH export there on most distros, and a non-interactive
-        # ``. ~/.profile`` picks that up.
+        # ~/.profile 和 ~/.bash_profile 最先运行，因为它们没有交互守卫 ——
+        # 像 ``n`` 和 ``nvm`` 这样的安装器在大多数发行版上会把 PATH 导出追加
+        # 到这里，而非交互式的 ``. ~/.profile`` 能捕获到它。
         #
-        # ~/.bashrc runs last. On Debian/Ubuntu the default bashrc starts
-        # with ``case $- in *i*) ;; *) return;; esac`` and exits early
-        # when sourced non-interactively, which is why sourcing bashrc
-        # alone misses nvm/n PATH additions placed below that guard. We
-        # still include it so users who put PATH logic in bashrc (and
-        # stripped the guard, or never had one) keep working.
+        # ~/.bashrc 最后运行。在 Debian/Ubuntu 上，默认 bashrc 以
+        # ``case $- in *i*) ;; *) return;; esac`` 开头，非交互式 source 时会
+        # 提前退出，这正是只 source bashrc 会漏掉放在该守卫之下的 nvm/n
+        # PATH 添加的原因。我们仍然包含它，以便把 PATH 逻辑写在 bashrc 里
+        # （并且去掉了守卫，或本来就没有守卫）的用户继续可用。
         candidates.extend(["~/.profile", "~/.bash_profile", "~/.bashrc"])
 
     resolved: list[str] = []
@@ -549,20 +530,20 @@ def _resolve_shell_init_files() -> list[str]:
 
 
 def _prepend_shell_init(cmd_string: str, files: list[str]) -> str:
-    """Prepend ``source <file>`` lines (guarded + silent) to a bash script.
+    """把 ``source <file>`` 行（带守卫且静默）前置到一段 bash 脚本。
 
-    Each file is wrapped so a failing rc file doesn't abort the whole
-    bootstrap: ``set +e`` keeps going on errors, ``2>/dev/null`` hides
-    noisy prompts, and ``|| true`` neutralises the exit status.
+    每个文件都被包了一层，这样一个失败的 rc 文件不会终止整个引导过程：
+    ``set +e`` 在出错时继续，``2>/dev/null`` 隐藏嘈杂提示，``|| true`` 中和
+    退出状态。
     """
     if not files:
         return cmd_string
 
     prelude_parts = ["set +e"]
     for path in files:
-        # shlex.quote isn't available here without an import; the files list
-        # comes from os.path.expanduser output so it's a concrete absolute
-        # path.  Escape single quotes defensively anyway.
+        # 这里没有 import 时 shlex.quote 不可用；文件列表来自
+        # os.path.expanduser 的输出，所以是具体的绝对路径。仍然防御性地转义
+        # 单引号。
         safe = path.replace("'", "'\\''")
         prelude_parts.append(f"[ -r '{safe}' ] && . '{safe}' 2>/dev/null || true")
     prelude = "\n".join(prelude_parts) + "\n"
@@ -570,11 +551,11 @@ def _prepend_shell_init(cmd_string: str, files: list[str]) -> str:
 
 
 class LocalEnvironment(BaseEnvironment):
-    """Run commands directly on the host machine.
+    """直接在宿主机上运行命令。
 
-    Spawn-per-call: every execute() spawns a fresh bash process.
-    Session snapshot preserves env vars across calls.
-    CWD persists via file-based read after each command.
+    每次调用重新派生：每次 execute() 都派生一个全新的 bash 进程。
+    会话快照在调用之间保留环境变量。
+    CWD 通过每次命令后的基于文件的读取来持久化。
     """
 
     def __init__(self, cwd: str = "", timeout: int = 60, env: dict = None):
@@ -584,37 +565,33 @@ class LocalEnvironment(BaseEnvironment):
         self.init_session()
 
     def get_temp_dir(self) -> str:
-        """Return a shell-safe writable temp dir for local execution.
+        """为本地执行返回一个对 shell 安全、可写的临时目录。
 
-        Termux does not provide /tmp by default, but exposes a POSIX TMPDIR.
-        Prefer POSIX-style env vars when available, keep using /tmp on regular
-        Unix systems, and only fall back to tempfile.gettempdir() when it also
-        resolves to a POSIX path.
+        Termux 默认不提供 /tmp，但暴露一个 POSIX TMPDIR。优先使用可用的
+        POSIX 风格环境变量，在常规 Unix 系统上继续使用 /tmp，并仅当
+        tempfile.gettempdir() 也解析为 POSIX 路径时才回退到它。
 
-        Check the environment configured for this backend first so callers can
-        override the temp root explicitly (for example via terminal.env or a
-        custom TMPDIR), then fall back to the host process environment.
+        先检查为此后端配置的环境，这样调用方可以显式覆盖临时根目录（例如
+        通过 terminal.env 或自定义 TMPDIR），然后再回退到宿主进程环境。
 
-        **Windows:** hardcoded ``/tmp`` is wrong in two ways — native Python
-        can't open the path, and the Windows default temp (``%TEMP%``) often
-        contains spaces (``C:\\Users\\Some Name\\AppData\\Local\\Temp``) that
-        break unquoted bash interpolations.  Use a dedicated cache dir under
-        ``HERMES_HOME`` instead — single-word path, guaranteed to exist, same
-        string resolves in both Git Bash and native Python.
+        **Windows：** 硬编码 ``/tmp`` 有两方面错误 —— 原生 Python 无法打开
+        该路径，而且 Windows 默认临时目录（``%TEMP%``）常常包含空格
+        （``C:\\Users\\Some Name\\AppData\\Local\\Temp``），会破坏未加引号的
+        bash 插值。改用 ``HERMES_HOME`` 下的专用缓存目录 —— 单词路径、保证
+        存在、同一字符串在 Git Bash 和原生 Python 中都能解析。
         """
         if _IS_WINDOWS:
-            # Derive a Windows-safe temp dir under HERMES_HOME.  Using
-            # forward slashes makes the same string work unchanged in bash
-            # command interpolations AND in Python ``open()`` — Windows
-            # accepts forward slashes in filesystem paths, and we control
-            # the path so we can guarantee no spaces.
+            # 在 HERMES_HOME 下派生一个对 Windows 安全的临时目录。使用
+            # 正斜杠使同一字符串在 bash 命令插值和 Python ``open()`` 中都
+            # 不变可用 —— Windows 文件系统路径接受正斜杠，并且路径由我们
+            # 控制，可以保证不含空格。
             try:
                 from hermes_constants import get_hermes_home
                 cache_dir = get_hermes_home() / "cache" / "terminal"
             except Exception:
                 cache_dir = Path(tempfile.gettempdir()) / "hermes_terminal"
             cache_dir.mkdir(parents=True, exist_ok=True)
-            # Force forward slashes so the same string serves both contexts.
+            # 强制使用正斜杠，使同一字符串在两种上下文中都可用。
             return str(cache_dir).replace("\\", "/")
 
         for env_var in ("TMPDIR", "TMP", "TEMP"):
@@ -635,12 +612,10 @@ class LocalEnvironment(BaseEnvironment):
                   timeout: int = 120,
                   stdin_data: str | None = None) -> subprocess.Popen:
         bash = _find_bash()
-        # For login-shell invocations (used by init_session to build the
-        # environment snapshot), prepend sources for the user's bashrc /
-        # custom init files so tools registered outside bash_profile
-        # (nvm, asdf, pyenv, …) end up on PATH in the captured snapshot.
-        # Non-login invocations are already sourcing the snapshot and
-        # don't need this.
+        # 对于登录 shell 调用（被 init_session 用来构建环境快照），前置
+        # 用户 bashrc / 自定义初始化文件的 source，使那些在 bash_profile
+        # 之外注册的工具（nvm、asdf、pyenv……）最终出现在捕获快照的 PATH 上。
+        # 非登录调用已经在 source 快照，不需要这一步。
         if login:
             init_files = _resolve_shell_init_files()
             if init_files:
@@ -648,21 +623,17 @@ class LocalEnvironment(BaseEnvironment):
         args = [bash, "-l", "-c", cmd_string] if login else [bash, "-c", cmd_string]
         run_env = _make_run_env(self.env)
 
-        # Recover when the cwd has been deleted out from under us — usually by
-        # a previous tool call that ran ``rm -rf`` on its own working dir
-        # (issue #17558).  Popen would otherwise raise FileNotFoundError on
-        # the cwd before bash starts, wedging every subsequent call until the
-        # gateway restarts.
+        # 当 cwd 被从我们脚下删除时做恢复 —— 通常是因为上一个工具调用对自己
+        # 的工作目录跑了 ``rm -rf``（issue #17558）。否则 Popen 会在 bash 启动
+        # 之前因 cwd 抛出 FileNotFoundError，卡死后续每次调用，直到网关重启。
         #
-        # On Windows, ``_resolve_safe_cwd`` also normalises Git Bash-style
-        # POSIX paths (``/c/Users/...``) to native form so a perfectly valid
-        # ``pwd -P`` result from bash isn't mistakenly treated as "missing"
-        # and spammed as a warning on every command.
+        # 在 Windows 上，``_resolve_safe_cwd`` 还会把 Git Bash 风格的 POSIX
+        # 路径（``/c/Users/...``）归一化为原生形式，以免 bash 返回的一个完全
+        # 合法的 ``pwd -P`` 结果被误判为“缺失”，并在每条命令上都报警。
         safe_cwd = _resolve_safe_cwd(self.cwd)
         if safe_cwd != self.cwd:
-            # MSYS → Windows translation alone shouldn't surface as a warning
-            # (it's a benign normalization, not a recovery). Only warn when
-            # the directory really doesn't exist on disk.
+            # 仅 MSYS → Windows 的翻译不应表现为一条警告（它是良性归一化，
+            # 不是恢复）。只有当目录在磁盘上确实不存在时才报警。
             normalized = _msys_to_windows_path(self.cwd) if _IS_WINDOWS else self.cwd
             if safe_cwd != normalized:
                 logger.warning(
@@ -702,24 +673,24 @@ class LocalEnvironment(BaseEnvironment):
         return proc
 
     def _kill_process(self, proc):
-        """Kill the entire process group (all children)."""
+        """杀死整个进程组（所有子进程）。"""
 
         def _group_alive(pgid: int) -> bool:
             try:
-                # POSIX-only: _IS_WINDOWS is handled before this helper is used.
-                os.killpg(pgid, 0)  # windows-footgun: ok — POSIX process-group alive probe
+                # 仅 POSIX：_IS_WINDOWS 在使用本辅助函数之前已被处理。
+                os.killpg(pgid, 0)  # windows-footgun: ok —— POSIX 进程组存活探测
                 return True
             except ProcessLookupError:
                 return False
             except PermissionError:
-                # The group exists, even if this process cannot signal it.
+                # 该组存在，即使本进程无法向它发信号。
                 return True
 
         def _wait_for_group_exit(pgid: int, timeout: float) -> bool:
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
-                # Reap the wrapper promptly. A dead but unreaped group leader
-                # still makes killpg(pgid, 0) report the group as alive.
+                # 及时回收包装进程。一个已死但未回收的组长进程仍会让
+                # killpg(pgid, 0) 报告该组存活。
                 try:
                     proc.poll()
                 except Exception:
@@ -745,19 +716,18 @@ class LocalEnvironment(BaseEnvironment):
                         raise
 
                 try:
-                    os.killpg(pgid, signal.SIGTERM)  # windows-footgun: ok — POSIX process-group SIGTERM (guarded by _IS_WINDOWS above)
+                    os.killpg(pgid, signal.SIGTERM)  # windows-footgun: ok —— POSIX 进程组 SIGTERM（上面已由 _IS_WINDOWS 守卫）
                 except ProcessLookupError:
                     return
 
-                # Wait on the process group, not just the shell wrapper. Under
-                # load the wrapper can exit before grandchildren do; returning
-                # at that point leaves orphaned process-group members behind.
+                # 等待进程组，而不只是 shell 包装进程。在负载下包装进程可能在
+                # 孙进程之前退出；在那时返回会留下孤立的进程组成员。
                 if _wait_for_group_exit(pgid, 1.0):
                     return
 
                 try:
-                    # POSIX-only: _IS_WINDOWS is handled by the outer branch.
-                    os.killpg(pgid, signal.SIGKILL)  # windows-footgun: ok — POSIX process-group SIGKILL
+                    # 仅 POSIX：_IS_WINDOWS 已由外层分支处理。
+                    os.killpg(pgid, signal.SIGKILL)  # windows-footgun: ok —— POSIX 进程组 SIGKILL
                 except ProcessLookupError:
                     return
                 _wait_for_group_exit(pgid, 2.0)
@@ -772,19 +742,17 @@ class LocalEnvironment(BaseEnvironment):
                 pass
 
     def _update_cwd(self, result: dict):
-        """Read CWD from temp file (local-only, no round-trip needed).
+        """从临时文件读取 CWD（仅本地，无需往返）。
 
-        Skip the assignment when the path no longer exists as a directory —
-        ``pwd -P`` on a deleted cwd can leave a stale value in the marker
-        file, and propagating it would re-wedge the next ``Popen``.  The
-        ``_run_bash`` recovery path will resolve a safe fallback if needed.
+        当路径不再是存在的目录时跳过赋值 —— 对已删除 cwd 跑 ``pwd -P``
+        可能在标记文件里留下过期值，传播它会让下一次 ``Popen`` 再次卡死。
+        如有需要，``_run_bash`` 的恢复路径会解析出一个安全回退。
 
-        On Windows, the value written by Git Bash's ``pwd -P`` is in
-        MSYS form (``/c/Users/x``). Translate it to native Windows form
-        before validating with ``os.path.isdir`` and before storing on
-        ``self.cwd``; otherwise the isdir check rejects every valid
-        result and ``_run_bash`` later prints a misleading "cwd is
-        missing" warning on every command.
+        在 Windows 上，Git Bash 的 ``pwd -P`` 写入的值是 MSYS 形式
+        （``/c/Users/x``）。在用 ``os.path.isdir`` 校验并存入 ``self.cwd``
+        之前先把它翻译成原生 Windows 形式；否则 isdir 检查会拒绝每一个合法
+        结果，而 ``_run_bash`` 之后会在每条命令上打印一条误导性的“cwd 缺失”
+        警告。
         """
         try:
             with open(self._cwd_file, encoding="utf-8") as f:
@@ -796,22 +764,20 @@ class LocalEnvironment(BaseEnvironment):
         except (OSError, FileNotFoundError):
             pass
 
-        # Still strip the marker from output so it's not visible
+        # 仍然从输出里剥离标记，使其不可见
         self._extract_cwd_from_output(result)
 
     def _extract_cwd_from_output(self, result: dict):
-        """Same semantics as the base class, but on Windows the value
-        emitted by ``pwd -P`` inside Git Bash is in MSYS form
-        (``/c/Users/x``). Normalize to native Windows form and validate
-        the directory exists before assigning to ``self.cwd`` — otherwise
-        ``_run_bash``'s safe-cwd recovery would warn on every subsequent
-        command.
+        """语义与基类相同，但在 Windows 上 Git Bash 内 ``pwd -P`` 输出的
+        值是 MSYS 形式（``/c/Users/x``）。在赋值给 ``self.cwd`` 之前先归一化
+        为原生 Windows 形式并校验目录存在 —— 否则 ``_run_bash`` 的安全 cwd
+        恢复会在后续每条命令上都报警。
 
-        Always defers to the base class for stripping the marker text from
-        ``result["output"]`` so output formatting is identical.
+        始终把从 ``result["output"]`` 中剥离标记文本的工作交给基类，使输出
+        格式保持一致。
         """
-        # Snapshot pre-existing cwd, defer to base for parsing + marker
-        # stripping, then validate / normalize whatever it assigned.
+        # 快照已存在的 cwd，交给基类做解析 + 标记剥离，然后校验/归一化它
+        # 赋予的任何值。
         prev_cwd = self.cwd
         super()._extract_cwd_from_output(result)
         if self.cwd != prev_cwd:
@@ -819,12 +785,12 @@ class LocalEnvironment(BaseEnvironment):
             if normalized and os.path.isdir(normalized):
                 self.cwd = normalized
             else:
-                # Stale / non-existent path — keep previous cwd; _run_bash
-                # will resolve a safe fallback on the next call if needed.
+                # 过期 / 不存在的路径 —— 保留之前的 cwd；如有需要
+                # _run_bash 会在下次调用时解析出一个安全回退。
                 self.cwd = prev_cwd
 
     def cleanup(self):
-        """Clean up temp files."""
+        """清理临时文件。"""
         for f in (self._snapshot_path, self._cwd_file):
             try:
                 os.unlink(f)

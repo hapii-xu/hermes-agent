@@ -1,53 +1,53 @@
-# Server Deployment Guide
+# 服务器部署指南
 
-Production deployment of llama.cpp server with OpenAI-compatible API.
+带 OpenAI 兼容 API 的 llama.cpp 服务器生产部署。
 
-## Direct from Hugging Face Hub
+## 直接从 Hugging Face Hub 启动
 
-Prefer the model repo's local-app page first:
+优先使用模型仓库的 local-app 页面：
 
 ```text
 https://huggingface.co/<repo>?local-app=llama.cpp
 ```
 
-If the page shows an exact snippet, copy it. If not, use one of these forms:
+如果页面显示了精确的代码片段，直接复制。如果没有，使用以下形式之一：
 
 ```bash
-# Choose a quant label directly from the Hub repo
+# 直接从 Hub 仓库选择量化标签
 llama-server -hf bartowski/Llama-3.2-3B-Instruct-GGUF:Q8_0
 ```
 
 ```bash
-# Pin an exact GGUF file from the repo tree
+# 从仓库树中固定一个精确的 GGUF 文件
 llama-server \
     --hf-repo microsoft/Phi-3-mini-4k-instruct-gguf \
     --hf-file Phi-3-mini-4k-instruct-q4.gguf \
     -c 4096
 ```
 
-Use the file-specific form when the repo has custom naming or when you already extracted the exact filename from the tree API.
+当仓库使用自定义命名，或你已经从 tree API 提取了精确文件名时，使用指定文件的形式。
 
-## Server Modes
+## 服务器模式
 
 ### llama-server
 
 ```bash
-# Basic server
+# 基础服务器
 ./llama-server \
     -m models/llama-2-7b-chat.Q4_K_M.gguf \
     --host 0.0.0.0 \
     --port 8080 \
-    -c 4096  # Context size
+    -c 4096  # 上下文大小
 
-# With GPU acceleration
+# 带 GPU 加速
 ./llama-server \
     -m models/llama-2-70b.Q4_K_M.gguf \
-    -ngl 40  # Offload 40 layers to GPU
+    -ngl 40  # 将 40 层卸载到 GPU
 ```
 
-## OpenAI-Compatible API
+## OpenAI 兼容 API
 
-### Chat completions
+### 对话补全
 ```bash
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -62,7 +62,7 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-### Streaming
+### 流式输出
 ```bash
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -73,9 +73,9 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-## Docker Deployment
+## Docker 部署
 
-**Dockerfile**:
+**Dockerfile**：
 ```dockerfile
 FROM ubuntu:22.04
 RUN apt-get update && apt-get install -y git build-essential
@@ -87,31 +87,31 @@ EXPOSE 8080
 CMD ["./llama-server", "-m", "/models/model.gguf", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-**Run**:
+**运行**：
 ```bash
 docker run --gpus all -p 8080:8080 llama-cpp:latest
 ```
 
-## Monitoring
+## 监控
 
 ```bash
-# Server metrics endpoint
+# 服务器指标端点
 curl http://localhost:8080/metrics
 
-# Health check
+# 健康检查
 curl http://localhost:8080/health
 ```
 
-**Metrics**:
+**指标**：
 - requests_total
 - tokens_generated
 - prompt_tokens
 - completion_tokens
 - kv_cache_tokens
 
-## Load Balancing
+## 负载均衡
 
-**NGINX**:
+**NGINX**：
 ```nginx
 upstream llama_cpp {
     server llama1:8080;
@@ -126,25 +126,25 @@ server {
 }
 ```
 
-## Performance Tuning
+## 性能调优
 
-**Parallel requests**:
+**并行请求**：
 ```bash
 ./llama-server \
     -m model.gguf \
-    -np 4  # 4 parallel slots
+    -np 4  # 4 个并行槽位
 ```
 
-**Continuous batching**:
+**连续批处理**：
 ```bash
 ./llama-server \
     -m model.gguf \
-    --cont-batching  # Enable continuous batching
+    --cont-batching  # 启用连续批处理
 ```
 
-**Context caching**:
+**上下文缓存**：
 ```bash
 ./llama-server \
     -m model.gguf \
-    --cache-prompt  # Cache processed prompts
+    --cache-prompt  # 缓存已处理的提示词
 ```

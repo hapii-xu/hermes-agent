@@ -1,20 +1,20 @@
 """
-QQBot platform package.
+QQBot 平台包。
 
-Re-exports the main adapter symbols from ``adapter.py`` (the original
-``qqbot.py``) so that **all existing import paths remain unchanged**::
+从 ``adapter.py``（原 ``qqbot.py``）重新导出主要适配器符号，
+以便 **所有现有导入路径保持不变**::
 
-    from gateway.platforms.qqbot import QQAdapter          # works
-    from gateway.platforms.qqbot import check_qq_requirements  # works
+    from gateway.platforms.qqbot import QQAdapter          # 可用
+    from gateway.platforms.qqbot import check_qq_requirements  # 可用
 
-New modules:
-    - ``constants`` — shared constants (API URLs, timeouts, message types)
-    - ``utils`` — User-Agent builder, config helpers
-    - ``crypto`` — AES-256-GCM key generation and decryption
-    - ``onboard`` — QR-code scan-to-configure flow
+新模块：
+    - ``constants`` — 共享常量（API URL、超时、消息类型）
+    - ``utils`` — User-Agent 构建器、配置辅助函数
+    - ``crypto`` — AES-256-GCM 密钥生成与解密
+    - ``onboard`` — 二维码扫码配置流程
 """
 
-# -- Adapter (original qqbot.py) ------------------------------------------
+# -- 适配器（原 qqbot.py）------------------------------------------
 from .adapter import (  # noqa: F401
     QQAdapter,
     QQCloseError,
@@ -23,7 +23,7 @@ from .adapter import (  # noqa: F401
     _ssrf_redirect_guard,
 )
 
-# -- Onboard (QR-code scan-to-configure) -----------------------------------
+# -- 入驻引导（二维码扫码配置）-----------------------------------
 from .onboard import (  # noqa: F401
     BindStatus,
     build_connect_url,
@@ -31,17 +31,17 @@ from .onboard import (  # noqa: F401
 )
 from .crypto import decrypt_secret, generate_bind_key  # noqa: F401
 
-# -- Utils -----------------------------------------------------------------
+# -- 工具函数 -----------------------------------------------------------------
 from .utils import build_user_agent, get_api_headers, coerce_list  # noqa: F401
 
-# -- Chunked upload --------------------------------------------------------
+# -- 分块上传 --------------------------------------------------------
 from .chunked_upload import (  # noqa: F401
     ChunkedUploader,
     UploadDailyLimitExceededError,
     UploadFileTooLargeError,
 )
 
-# -- Inline keyboards ------------------------------------------------------
+# -- 内联键盘 ------------------------------------------------------
 from .keyboards import (  # noqa: F401
     ApprovalRequest,
     ApprovalSender,
@@ -56,28 +56,28 @@ from .keyboards import (  # noqa: F401
 )
 
 __all__ = [
-    # adapter
+    # 适配器
     "QQAdapter",
     "QQCloseError",
     "check_qq_requirements",
     "_coerce_list",
     "_ssrf_redirect_guard",
-    # onboard
+    # 入驻引导
     "BindStatus",
     "build_connect_url",
     "qr_register",
-    # crypto
+    # 加密
     "decrypt_secret",
     "generate_bind_key",
-    # utils
+    # 工具函数
     "build_user_agent",
     "get_api_headers",
     "coerce_list",
-    # chunked upload
+    # 分块上传
     "ChunkedUploader",
     "UploadDailyLimitExceededError",
     "UploadFileTooLargeError",
-    # keyboards
+    # 内联键盘
     "ApprovalRequest",
     "ApprovalSender",
     "InlineKeyboard",

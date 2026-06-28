@@ -1,38 +1,37 @@
 #!/usr/bin/env python3
 """
-Standalone Web Tools Module
+独立 Web 工具模块
 
-This module provides generic web tools that work with multiple backend providers.
-Backend is selected during ``hermes tools`` setup (web.backend in config.yaml).
-When available, Hermes can route Firecrawl calls through a Nous-hosted tool-gateway
-for Nous Subscribers only.
+本模块提供与多种后端提供方协同工作的通用 Web 工具。
+后端在 ``hermes tools`` 设置期间选择（config.yaml 中的 web.backend）。
+可用时，Hermes 可以为 Nous 订阅者通过 Nous 托管的 tool-gateway 路由 Firecrawl 调用。
 
-Available tools:
-- web_search_tool: Search the web for information
-- web_extract_tool: Extract content from specific web pages
+可用工具：
+- web_search_tool：搜索网络以获取信息
+- web_extract_tool：从特定网页提取内容
 
-Backend compatibility:
-- Exa: https://exa.ai (search, extract)
-- Firecrawl: https://docs.firecrawl.dev/introduction (search, extract; direct or derived firecrawl-gateway.<domain> for Nous Subscribers)
-- Parallel: https://docs.parallel.ai (search, extract)
-- Tavily: https://tavily.com (search, extract)
+后端兼容性：
+- Exa：https://exa.ai（搜索、提取）
+- Firecrawl：https://docs.firecrawl.dev/introduction（搜索、提取；直连，或针对 Nous 订阅者派生自 firecrawl-gateway.<domain>）
+- Parallel：https://docs.parallel.ai（搜索、提取）
+- Tavily：https://tavily.com（搜索、提取）
 
-LLM Processing:
-- Uses OpenRouter API with Gemini 3 Flash Preview for intelligent content extraction
-- Extracts key excerpts and creates markdown summaries to reduce token usage
+LLM 处理：
+- 使用 OpenRouter API 调用 Gemini 3 Flash Preview 进行智能内容提取
+- 提取关键摘录并生成 markdown 摘要以减少 token 用量
 
-Debug Mode:
-- Set WEB_TOOLS_DEBUG=true to enable detailed logging
-- Creates web_tools_debug_UUID.json in ./logs directory
-- Captures all tool calls, results, and compression metrics
+调试模式：
+- 设置 WEB_TOOLS_DEBUG=true 以启用详细日志
+- 在 ./logs 目录下创建 web_tools_debug_UUID.json
+- 捕获所有工具调用、结果和压缩指标
 
-Usage:
+用法：
     from web_tools import web_search_tool, web_extract_tool
-    
-    # Search the web
+
+    # 搜索网络
     results = web_search_tool("Python machine learning libraries", limit=3)
-    
-    # Extract content from URLs  
+
+    # 从 URL 提取内容
     content = web_extract_tool(["https://example.com"], format="markdown")
 """
 
@@ -43,11 +42,10 @@ import re
 import asyncio
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 import httpx  # noqa: F401 — kept at module top so tests can patch tools.web_tools.httpx
-# After the web-provider plugin migration (PR #25182), the Firecrawl SDK
-# proxy, client construction, and response-shape normalizers all live in
-# plugins.web.firecrawl.provider. We re-export the names that external
-# code, integration tests, and unit-test patches reach for so the public
-# surface stays stable.
+# 在 web-provider 插件迁移（PR #25182）之后，Firecrawl SDK
+# 代理、客户端构造和响应结构归一化器都位于
+# plugins.web.firecrawl.provider 中。我们重新导出外部代码、集成测试
+# 和单元测试补丁所引用的名称，以保持公共接口稳定。
 if TYPE_CHECKING:
     from firecrawl import Firecrawl  # noqa: F401 — type hints only
 from plugins.web.firecrawl.provider import (
@@ -58,25 +56,25 @@ from plugins.web.firecrawl.provider import (
     _is_tool_gateway_ready,
     check_firecrawl_api_key,
 )
-# Tavily helpers re-exported for backward-compat with existing unit tests
-# (tests/tools/test_web_tools_tavily.py imports these names directly).
+# 重新导出 Tavily 辅助函数，以向后兼容现有单元测试
+# （tests/tools/test_web_tools_tavily.py 直接导入这些名称）。
 from plugins.web.tavily.provider import (  # noqa: F401 — backward-compat names
     _normalize_tavily_documents,
     _normalize_tavily_search_results,
     _tavily_request,
 )
-# Parallel + Exa clients re-exported for backward-compat with existing
-# unit tests (tests/tools/test_web_tools_config.py imports _get_parallel_client
-# / _get_async_parallel_client / _get_exa_client directly).
+# 重新导出 Parallel + Exa 客户端，以向后兼容现有单元测试
+# （tests/tools/test_web_tools_config.py 直接导入 _get_parallel_client
+# / _get_async_parallel_client / _get_exa_client）。
 from plugins.web.parallel.provider import (  # noqa: F401 — backward-compat names
     _get_async_parallel_client,
     _get_parallel_client,
 )
 from plugins.web.exa.provider import _get_exa_client  # noqa: F401
 
-# Module-level cache slots for the per-vendor clients. The plugins read/write
-# these via tools.web_tools so unit tests that reset
-# ``tools.web_tools._<vendor>_client = None`` between cases keep working.
+# 各厂商客户端的模块级缓存槽位。插件通过 tools.web_tools
+# 读写这些槽位，这样在不同用例之间重置
+# ``tools.web_tools._<vendor>_client = None`` 的单元测试仍能正常工作。
 _firecrawl_client: Optional[Any] = None
 _firecrawl_client_config: Optional[Any] = None
 _parallel_client: Optional[Any] = None
@@ -89,8 +87,8 @@ from agent.auxiliary_client import (
     get_async_text_auxiliary_client,
 )
 from tools.debug_helpers import DebugSession
-# Imported solely so unit tests can monkeypatch these names on
-# tools.web_tools (the firecrawl plugin reads them via its own import chain).
+# 仅为单元测试能在 tools.web_tools 上 monkeypatch 这些名称而导入
+# （firecrawl 插件通过自身的导入链读取它们）。
 from tools.managed_tool_gateway import (  # noqa: F401 — backward-compat names for tests
     build_vendor_gateway_url,
     peek_nous_access_token as _peek_nous_access_token,
@@ -108,16 +106,17 @@ import sys
 logger = logging.getLogger(__name__)
 
 
-# ─── Backend Selection ────────────────────────────────────────────────────────
+# ─── 后端选择 ────────────────────────────────────────────────────────────────
 
 def _env_value(name: str) -> str:
-    """Resolve ``name`` via Hermes config-aware env, falling back to process env.
+    """通过 Hermes 配置感知的 env 解析 ``name``，回退到进程环境变量。
 
-    Mirrors the SearXNG provider's ``_searxng_url()`` so that values set
-    through Hermes' config/.env layer (``hermes config set``, ``hermes tools``)
-    are honored here too — not just raw process-env exports. Without this,
-    a config-only ``SEARXNG_URL`` (or any provider key) leaves the backend
-    auto-detect cascade and ``check_web_api_key()`` blind to it. See #34290.
+    镜像 SearXNG 提供方的 ``_searxng_url()``，这样通过 Hermes 的
+    config/.env 层（``hermes config set``、``hermes tools``）设置的值
+    在这里也会被采纳——而不仅仅是原始的进程环境变量导出。否则，
+    一个仅在 config 中设置的 ``SEARXNG_URL``（或任何提供方密钥）会
+    脱离后端自动检测级联，并使 ``check_web_api_key()`` 对其无感知。
+    见 #34290。
     """
     try:
         from hermes_cli.config import get_env_value
@@ -134,7 +133,7 @@ def _has_env(name: str) -> bool:
     return bool(_env_value(name))
 
 def _load_web_config() -> dict:
-    """Load the ``web:`` section from ~/.hermes/config.yaml."""
+    """从 ~/.hermes/config.yaml 加载 ``web:`` 段。"""
     try:
         from hermes_cli.config import load_config
         return load_config().get("web", {})
@@ -142,23 +141,22 @@ def _load_web_config() -> dict:
         return {}
 
 def _get_backend() -> str:
-    """Determine which web backend to use (shared fallback).
+    """确定使用哪个 web 后端（共享回退）。
 
-    Reads ``web.backend`` from config.yaml (set by ``hermes tools``).
-    Falls back to whichever API key is present for users who configured
-    keys manually without running setup.
+    从 config.yaml 读取 ``web.backend``（由 ``hermes tools`` 设置）。
+    对于手动配置了密钥而未运行设置的用户，回退到当前存在的
+    API 密钥对应的那个后端。
     """
     configured = (_load_web_config().get("backend") or "").lower().strip()
     if configured in {"parallel", "firecrawl", "tavily", "exa", "searxng", "brave-free", "ddgs", "xai"}:
         return configured
 
-    # Fallback for manual / legacy config — pick the highest-priority
-    # available backend. Explicit user credentials (TAVILY_API_KEY etc.)
-    # beat the managed-tool-gateway probe so a deliberate setup is not
-    # pre-empted by a Nous OAuth token whose subscription tier may not
-    # actually grant web-search access (the gateway then fails at runtime
-    # with "no subscription" and the tool returns an error to the agent
-    # without falling back). Free-tier backends trail the paid ones.
+    # 针对手动 / 旧式配置的回退——挑选优先级最高的可用后端。
+    # 显式用户凭据（TAVILY_API_KEY 等）优先于 managed-tool-gateway
+    # 探测，这样刻意设置的配置就不会被一个订阅等级可能并未实际授予
+    # web 搜索访问权限的 Nous OAuth token 抢占（网关随后会在运行时
+    # 以 "no subscription" 失败，而工具返回错误给 agent 且不会回退）。
+    # 免费等级后端排在付费后端之后。
     backend_candidates = (
         ("tavily", _has_env("TAVILY_API_KEY")),
         ("exa", _has_env("EXA_API_KEY")),
@@ -173,39 +171,39 @@ def _get_backend() -> str:
         if available:
             return backend
 
-    return "firecrawl"  # default (backward compat)
+    return "firecrawl"  # 默认（向后兼容）
 
 
 def _get_search_backend() -> str:
-    """Determine which backend to use for web_search specifically.
+    """确定 web_search 专用后端。
 
-    Selection priority:
-    1. ``web.search_backend`` (per-capability override)
-    2. ``web.backend`` (shared fallback — existing behavior)
-    3. Auto-detect from env vars
+    选择优先级：
+    1. ``web.search_backend``（按能力覆盖）
+    2. ``web.backend``（共享回退——现有行为）
+    3. 从环境变量自动检测
 
-    This enables using different providers for search vs extract
-    (e.g. SearXNG for search + Firecrawl for extract).
+    这使得搜索与提取可以使用不同的提供方
+    （例如 SearXNG 用于搜索 + Firecrawl 用于提取）。
     """
     return _get_capability_backend("search")
 
 
 def _get_extract_backend() -> str:
-    """Determine which backend to use for web_extract specifically.
+    """确定 web_extract 专用后端。
 
-    Selection priority:
-    1. ``web.extract_backend`` (per-capability override)
-    2. ``web.backend`` (shared fallback — existing behavior)
-    3. Auto-detect from env vars
+    选择优先级：
+    1. ``web.extract_backend``（按能力覆盖）
+    2. ``web.backend``（共享回退——现有行为）
+    3. 从环境变量自动检测
     """
     return _get_capability_backend("extract")
 
 
 def _get_capability_backend(capability: str) -> str:
-    """Shared helper for per-capability backend selection.
+    """按能力选择后端的共享辅助函数。
 
-    Reads ``web.{capability}_backend`` from config; if set and available,
-    uses it. Otherwise falls through to the shared ``_get_backend()``.
+    从 config 读取 ``web.{capability}_backend``；如果已设置且可用，
+    就使用它。否则回退到共享的 ``_get_backend()``。
     """
     cfg = _load_web_config()
     specific = (cfg.get(f"{capability}_backend") or "").lower().strip()
@@ -215,7 +213,7 @@ def _get_capability_backend(capability: str) -> str:
 
 
 def _is_backend_available(backend: str) -> bool:
-    """Return True when the selected backend is currently usable."""
+    """当选中的后端当前可用时返回 True。"""
     if backend == "exa":
         return _has_env("EXA_API_KEY")
     if backend == "parallel":
@@ -231,10 +229,10 @@ def _is_backend_available(backend: str) -> bool:
     if backend == "ddgs":
         return _ddgs_package_importable()
     if backend == "xai":
-        # Cheap probe — env var OR auth.json has OAuth tokens. Must not
-        # call resolve_xai_http_credentials() here because the OAuth path
-        # can trigger a network token refresh, and _is_backend_available
-        # runs on every web_search dispatch + every `hermes tools` repaint.
+        # 廉价探测——环境变量或 auth.json 中有 OAuth token。这里
+        # 绝不能调用 resolve_xai_http_credentials()，因为 OAuth 路径
+        # 可能触发网络 token 刷新，而 _is_backend_available 在每次
+        # web_search 派发 + 每次 `hermes tools` 重绘时都会运行。
         try:
             from tools.xai_http import has_xai_credentials
             return has_xai_credentials()
@@ -244,12 +242,12 @@ def _is_backend_available(backend: str) -> bool:
 
 
 def _ddgs_package_importable() -> bool:
-    """Return True when the ``ddgs`` Python package can be imported.
+    """当 ``ddgs`` Python 包可被导入时返回 True。
 
-    ddgs is the only backend whose availability is driven by a package
-    presence rather than an env var / config entry.  Wrapped in a helper
-    so auto-detect and ``_is_backend_available`` share the same check
-    (and tests can monkeypatch a single symbol).
+    ddgs 是唯一一个可用性由包是否存在（而非环境变量 / config 条目）
+    决定的后端。封装在辅助函数中，以便自动检测和
+    ``_is_backend_available`` 共享同一套检查（测试也可以
+    monkeypatch 单个符号）。
     """
     try:
         import ddgs  # noqa: F401
@@ -257,27 +255,26 @@ def _ddgs_package_importable() -> bool:
     except ImportError:
         return False
 
-# ─── Firecrawl Client ────────────────────────────────────────────────────────
+# ─── Firecrawl 客户端 ────────────────────────────────────────────────────────
 
-# ─── Firecrawl Client ────────────────────────────────────────────────────────
-# After PR #25182, the firecrawl client, lazy SDK proxy, dual-auth config
-# resolution, response normalizers, and check_firecrawl_api_key() all live
-# in plugins.web.firecrawl.provider and are re-exported at the top of this
-# module so external callers (integration tests, tool-registry gating) and
-# unit tests that patch tools.web_tools.<name> continue to work.
+# ─── Firecrawl 客户端 ────────────────────────────────────────────────────────
+# PR #25182 之后，firecrawl 客户端、惰性 SDK 代理、双重认证 config
+# 解析、响应归一化器以及 check_firecrawl_api_key() 都位于
+# plugins.web.firecrawl.provider 中，并在本模块顶部重新导出，以便
+# 外部调用者（集成测试、工具注册门控）以及对
+# tools.web_tools.<name> 打补丁的单元测试继续可用。
 
 
 def _web_requires_env() -> list[str]:
-    """Return tool metadata env vars for the currently enabled web backends.
+    """返回当前已启用 web 后端的工具元数据环境变量。
 
-    The gateway env vars are always reported — they're metadata strings
-    used by the tool registry to light up the tool when the variable is
-    set.  Gating them on ``managed_nous_tools_enabled()`` only saved
-    string noise in the metadata list, but cost a synchronous HTTP
-    refresh against the Nous portal on every CLI startup (invoked at
-    tool-registration time).  The behavioral contract is: if the env var
-    is set, the tool sees it; if not, it doesn't.  Not-logged-in users
-    simply don't have the vars set, so the extra entries are harmless.
+    网关环境变量总是会被上报——它们是工具注册表用来在该变量被设置时
+    点亮工具的元数据字符串。仅当 ``managed_nous_tools_enabled()`` 为真
+    时才对它们做门控，只省下了元数据列表中的字符串噪声，但代价是
+    每次 CLI 启动（在工具注册时调用）都要对 Nous portal 做一次同步
+    HTTP 刷新。其行为契约是：如果环境变量已设置，工具就能看到它；
+    如果没有，就看不到。未登录的用户根本没有设置这些变量，因此
+    多出来的条目是无害的。
     """
     return [
         "EXA_API_KEY",
@@ -292,23 +289,22 @@ def _web_requires_env() -> list[str]:
     ]
 
 
-# ─── Parallel / Tavily / Firecrawl helpers — moved into plugins ──────────────
-# After PR #25182, the per-vendor client construction, request helpers, and
-# response normalizers all live in plugins.web.<vendor>.provider:
+# ─── Parallel / Tavily / Firecrawl 辅助函数 —— 已移入插件 ──────────────────────
+# PR #25182 之后，各厂商的客户端构造、请求辅助函数和响应归一化器
+# 都位于 plugins.web.<vendor>.provider 中：
 #   - parallel: plugins/web/parallel/provider.py
 #   - tavily:   plugins/web/tavily/provider.py
 #   - firecrawl: plugins/web/firecrawl/provider.py
-# The names from the firecrawl plugin (Firecrawl proxy, _get_firecrawl_client,
-# _to_plain_object, _normalize_result_list, _extract_web_search_results,
-# _extract_scrape_payload, _is_tool_gateway_ready, etc.) are re-exported at
-# the top of this module for backward-compat with integration tests and
-# unit-test patches.
+# 来自 firecrawl 插件的名称（Firecrawl 代理、_get_firecrawl_client、
+# _to_plain_object、_normalize_result_list、_extract_web_search_results、
+# _extract_scrape_payload、_is_tool_gateway_ready 等）在本模块顶部
+# 重新导出，以向后兼容集成测试和单元测试补丁。
 
 
 DEFAULT_MIN_LENGTH_FOR_SUMMARIZATION = 5000
 
 def _is_nous_auxiliary_client(client: Any) -> bool:
-    """Return True when the resolved auxiliary backend is Nous Portal."""
+    """当解析出的辅助后端是 Nous Portal 时返回 True。"""
     from urllib.parse import urlparse
 
     base_url = str(getattr(client, "base_url", "") or "")
@@ -317,7 +313,7 @@ def _is_nous_auxiliary_client(client: Any) -> bool:
 
 
 def _resolve_web_extract_auxiliary(model: Optional[str] = None) -> tuple[Optional[Any], Optional[str], Dict[str, Any]]:
-    """Resolve the current web-extract auxiliary client, model, and extra body."""
+    """解析当前的 web-extract 辅助客户端、模型和额外请求体。"""
     client, default_model = get_async_text_auxiliary_client("web_extract")
     configured_model = os.getenv("AUXILIARY_WEB_EXTRACT_MODEL", "").strip()
     effective_model = model or configured_model or default_model
@@ -332,7 +328,7 @@ def _resolve_web_extract_auxiliary(model: Optional[str] = None) -> tuple[Optiona
 
 
 def _get_default_summarizer_model() -> Optional[str]:
-    """Return the current default model for web extraction summarization."""
+    """返回当前 web 提取摘要使用的默认模型。"""
     _, model, _ = _resolve_web_extract_auxiliary()
     return model
 
@@ -340,84 +336,84 @@ _debug = DebugSession("web_tools", env_var="WEB_TOOLS_DEBUG")
 
 
 async def process_content_with_llm(
-    content: str, 
-    url: str = "", 
+    content: str,
+    url: str = "",
     title: str = "",
     model: Optional[str] = None,
     min_length: int = DEFAULT_MIN_LENGTH_FOR_SUMMARIZATION
 ) -> Optional[str]:
     """
-    Process web content using LLM to create intelligent summaries with key excerpts.
-    
-    This function uses Gemini 3 Flash Preview (or specified model) via OpenRouter API 
-    to intelligently extract key information and create markdown summaries,
-    significantly reducing token usage while preserving all important information.
-    
-    For very large content (>500k chars), uses chunked processing with synthesis.
-    For extremely large content (>2M chars), refuses to process entirely.
-    
-    Args:
-        content (str): The raw content to process
-        url (str): The source URL (for context, optional)
-        title (str): The page title (for context, optional)
-        model (str): The model to use for processing (default: google/gemini-3-flash-preview)
-        min_length (int): Minimum content length to trigger processing (default: 5000)
-        
-    Returns:
-        Optional[str]: Processed markdown content, or None if content too short or processing fails
+    使用 LLM 处理 web 内容，生成带有重点摘录的智能摘要。
+
+    本函数通过 OpenRouter API 调用 Gemini 3 Flash Preview（或指定模型），
+    智能地提取关键信息并生成 markdown 摘要，在保留全部重要信息的同时
+    大幅减少 token 用量。
+
+    对于非常大的内容（>50 万字符），采用分块处理后再综合。
+    对于超大的内容（>200 万字符），完全拒绝处理。
+
+    参数：
+        content (str): 要处理的原始内容
+        url (str): 来源 URL（用于上下文，可选）
+        title (str): 页面标题（用于上下文，可选）
+        model (str): 处理所用的模型（默认：google/gemini-3-flash-preview）
+        min_length (int): 触发处理的最小内容长度（默认：5000）
+
+    返回：
+        Optional[str]: 处理后的 markdown 内容；若内容太短或处理失败则返回 None
     """
-    # Size thresholds
-    MAX_CONTENT_SIZE = 2_000_000  # 2M chars - refuse entirely above this
-    CHUNK_THRESHOLD = 500_000     # 500k chars - use chunked processing above this
-    CHUNK_SIZE = 100_000          # 100k chars per chunk
-    MAX_OUTPUT_SIZE = 5000        # Hard cap on final output size
-    
+    # 大小阈值
+    MAX_CONTENT_SIZE = 2_000_000  # 200 万字符——超过此值完全拒绝
+    CHUNK_THRESHOLD = 500_000     # 50 万字符——超过此值使用分块处理
+    CHUNK_SIZE = 100_000          # 每块 10 万字符
+    MAX_OUTPUT_SIZE = 5000        # 最终输出大小的硬上限
+
     try:
         content_len = len(content)
-        
-        # Refuse if content is absurdly large
+
+        # 内容大得离谱时拒绝处理
         if content_len > MAX_CONTENT_SIZE:
             size_mb = content_len / 1_000_000
             logger.warning("Content too large (%.1fMB > 2MB limit). Refusing to process.", size_mb)
             return f"[Content too large to process: {size_mb:.1f}MB. Try a more focused source URL.]"
-        
-        # Skip processing if content is too short
+
+        # 内容太短则跳过处理
         if content_len < min_length:
             logger.debug("Content too short (%d < %d chars), skipping LLM processing", content_len, min_length)
             return None
-        
-        # Create context information
+
+        # 构造上下文信息
         context_info = []
         if title:
             context_info.append(f"Title: {title}")
         if url:
             context_info.append(f"Source: {url}")
         context_str = "\n".join(context_info) + "\n\n" if context_info else ""
-        
-        # Check if we need chunked processing
+
+        # 检查是否需要分块处理
         if content_len > CHUNK_THRESHOLD:
             logger.info("Content large (%d chars). Using chunked processing...", content_len)
             return await _process_large_content_chunked(
                 content, context_str, model, CHUNK_SIZE, MAX_OUTPUT_SIZE
             )
-        
-        # Standard single-pass processing for normal content
+
+        # 普通内容的标准单趟处理
         logger.info("Processing content with LLM (%d characters)", content_len)
-        
+
         processed_content = await _call_summarizer_llm(content, context_str, model)
-        
+
         if processed_content:
-            # Enforce output cap
+            # 强制输出上限
             if len(processed_content) > MAX_OUTPUT_SIZE:
                 processed_content = processed_content[:MAX_OUTPUT_SIZE] + "\n\n[... summary truncated for context management ...]"
-            
-            # Log compression metrics
+
+            # 记录压缩指标
             processed_length = len(processed_content)
             compression_ratio = processed_length / content_len if content_len > 0 else 1.0
             logger.info("Content processed: %d -> %d chars (%.1f%%)", content_len, processed_length, compression_ratio * 100)
-        
+
         return processed_content
-        
+
     except Exception as e:
         logger.warning(
             "web_extract LLM summarization failed (%s). "
@@ -425,9 +421,9 @@ async def process_content_with_llm(
             "or switch to a faster auxiliary model.",
             str(e)[:120],
         )
-        # Fall back to truncated raw content instead of returning a useless
-        # error message.  The first ~5000 chars are almost always more useful
-        # to the model than "[Failed to process content: ...]".
+        # 回退到截断的原始内容，而不是返回一个无用的错误消息。
+        # 对模型而言，前约 5000 字符几乎总是比 "[Failed to process content: ...]"
+        # 更有用。
         truncated = content[:MAX_OUTPUT_SIZE]
         if len(content) > MAX_OUTPUT_SIZE:
             truncated += (
@@ -440,29 +436,29 @@ async def process_content_with_llm(
 
 
 async def _call_summarizer_llm(
-    content: str, 
-    context_str: str, 
-    model: Optional[str], 
+    content: str,
+    context_str: str,
+    model: Optional[str],
     max_tokens: int = 20000,
     is_chunk: bool = False,
     chunk_info: str = ""
 ) -> Optional[str]:
     """
-    Make a single LLM call to summarize content.
-    
-    Args:
-        content: The content to summarize
-        context_str: Context information (title, URL)
-        model: Model to use
-        max_tokens: Maximum output tokens
-        is_chunk: Whether this is a chunk of a larger document
-        chunk_info: Information about chunk position (e.g., "Chunk 2/5")
-        
-    Returns:
-        Summarized content or None on failure
+    发起单次 LLM 调用来摘要内容。
+
+    参数：
+        content: 要摘要的内容
+        context_str: 上下文信息（标题、URL）
+        model: 要使用的模型
+        max_tokens: 最大输出 token 数
+        is_chunk: 这是否是更大文档中的一个分块
+        chunk_info: 关于分块位置的信息（例如 "Chunk 2/5"）
+
+    返回：
+        摘要后的内容，失败时返回 None
     """
     if is_chunk:
-        # Chunk-specific prompt - aware that this is partial content
+        # 针对分块的提示词——意识到这是部分内容
         system_prompt = """You are an expert content analyst processing a SECTION of a larger document. Your job is to extract and summarize the key information from THIS SECTION ONLY.
 
 Important guidelines for chunk processing:
@@ -484,7 +480,7 @@ SECTION CONTENT:
 Extract all important information from this section in a structured format. Focus on facts, data, insights, and key details. Do not add introductions or conclusions."""
 
     else:
-        # Standard full-document prompt
+        # 标准的整文档提示词
         system_prompt = """You are an expert content analyst. Your job is to process web content and create a comprehensive yet concise summary that preserves all important information while dramatically reducing bulk.
 
 Create a well-structured markdown summary that includes:
@@ -501,8 +497,8 @@ Your goal is to preserve ALL important information while reducing length. Never 
 
 Create a markdown summary that captures all key information in a well-organized, scannable format. Include important quotes and code snippets in their original formatting. Focus on actionable information, specific details, and unique insights."""
 
-    # Call the LLM with retry logic — keep retries low since summarization
-    # is a nice-to-have; the caller falls back to truncated content on failure.
+    # 带重试逻辑地调用 LLM——重试次数保持较低，因为摘要只是锦上添花；
+    # 调用方在失败时会回退到截断内容。
     max_retries = 2
     retry_delay = 2
     last_error = None
@@ -522,11 +518,10 @@ Create a markdown summary that captures all key information in a well-organized,
                 ],
                 "temperature": 0.1,
                 "max_tokens": max_tokens,
-                # No explicit timeout — async_call_llm reads auxiliary.web_extract.timeout
-                # from config.yaml. Fresh configs ship with 360s; if the key is absent
-                # the runtime default is 30s (_DEFAULT_AUX_TIMEOUT in
-                # agent/auxiliary_client.py). Users with slow local models should set
-                # or increase auxiliary.web_extract.timeout in config.yaml.
+                # 无显式超时——async_call_llm 从 config.yaml 读取 auxiliary.web_extract.timeout。
+                # 全新配置默认 360s；若该键缺失，运行时默认为 30s
+                # （agent/auxiliary_client.py 中的 _DEFAULT_AUX_TIMEOUT）。使用慢速本地
+                # 模型的用户应在 config.yaml 中设置或增大 auxiliary.web_extract.timeout。
             }
             if extra_body:
                 call_kwargs["extra_body"] = extra_body
@@ -534,13 +529,13 @@ Create a markdown summary that captures all key information in a well-organized,
             content = extract_content_or_reasoning(response)
             if content:
                 return content
-            # Reasoning-only / empty response — let the retry loop handle it
+            # 仅有推理 / 空响应——交给重试循环处理
             logger.warning("LLM returned empty content (attempt %d/%d), retrying", attempt + 1, max_retries)
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 60)
                 continue
-            return content  # Return whatever we got after exhausting retries
+            return content  # 耗尽重试后返回拿到的任何内容
         except RuntimeError:
             logger.warning("No auxiliary model available for web content processing")
             return None
@@ -553,48 +548,47 @@ Create a markdown summary that captures all key information in a well-organized,
                 retry_delay = min(retry_delay * 2, 60)
             else:
                 raise last_error
-    
+
     return None
 
 
 async def _process_large_content_chunked(
-    content: str, 
-    context_str: str, 
-    model: Optional[str], 
+    content: str,
+    context_str: str,
+    model: Optional[str],
     chunk_size: int,
     max_output_size: int
 ) -> Optional[str]:
     """
-    Process large content by chunking, summarizing each chunk in parallel,
-    then synthesizing the summaries.
-    
-    Args:
-        content: The large content to process
-        context_str: Context information
-        model: Model to use
-        chunk_size: Size of each chunk in characters
-        max_output_size: Maximum final output size
-        
-    Returns:
-        Synthesized summary or None on failure
+    通过分块来处理大内容：并行摘要每个分块，再综合各摘要。
+
+    参数：
+        content: 要处理的大内容
+        context_str: 上下文信息
+        model: 要使用的模型
+        chunk_size: 每块的字符大小
+        max_output_size: 最终输出的最大大小
+
+    返回：
+        综合后的摘要，失败时返回 None
     """
-    # Split content into chunks
+    # 将内容切分为分块
     chunks = []
     for i in range(0, len(content), chunk_size):
         chunk = content[i:i + chunk_size]
         chunks.append(chunk)
-    
+
     logger.info("Split into %d chunks of ~%d chars each", len(chunks), chunk_size)
-    
-    # Summarize each chunk in parallel
+
+    # 并行摘要每个分块
     async def summarize_chunk(chunk_idx: int, chunk_content: str) -> tuple[int, Optional[str]]:
-        """Summarize a single chunk."""
+        """摘要单个分块。"""
         try:
             chunk_info = f"[Processing chunk {chunk_idx + 1} of {len(chunks)}]"
             summary = await _call_summarizer_llm(
-                chunk_content, 
-                context_str, 
-                model, 
+                chunk_content,
+                context_str,
+                model,
                 max_tokens=10000,
                 is_chunk=True,
                 chunk_info=chunk_info
@@ -605,14 +599,14 @@ async def _process_large_content_chunked(
         except Exception as e:
             logger.warning("Chunk %d/%d failed: %s", chunk_idx + 1, len(chunks), str(e)[:50])
             return chunk_idx, None
-    
-    # Run all chunk summarizations in parallel
+
+    # 并行运行所有分块摘要
     tasks = [summarize_chunk(i, chunk) for i, chunk in enumerate(chunks)]
-    # Use return_exceptions=True so a single task failure does not discard
-    # all other successfully summarized chunks.
+    # 使用 return_exceptions=True，这样单个任务失败不会丢弃
+    # 所有其他已成功摘要的分块。
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Filter out exceptions, then collect successful summaries in order
+    # 过滤掉异常，然后按顺序收集成功的摘要
     successful_results = []
     for result_item in results:
         if isinstance(result_item, BaseException):
@@ -624,26 +618,26 @@ async def _process_large_content_chunked(
     for chunk_idx, summary in sorted(successful_results, key=lambda x: x[0]):
         if summary:
             summaries.append(f"## Section {chunk_idx + 1}\n{summary}")
-    
+
     if not summaries:
         logger.debug("All chunk summarizations failed")
         return "[Failed to process large content: all chunk summarizations failed]"
-    
+
     logger.info("Got %d/%d chunk summaries", len(summaries), len(chunks))
-    
-    # If only one chunk succeeded, just return it (with cap)
+
+    # 如果只有一个分块成功，直接返回它（带上限）
     if len(summaries) == 1:
         result = summaries[0]
         if len(result) > max_output_size:
             result = result[:max_output_size] + "\n\n[... truncated ...]"
         return result
-    
-    # Synthesize the summaries into a final summary
+
+    # 将各摘要综合为最终摘要
     logger.info("Synthesizing %d summaries...", len(summaries))
-    
+
     combined_summaries = "\n\n---\n\n".join(summaries)
-    
-    synthesis_prompt = f"""You have been given summaries of different sections of a large document. 
+
+    synthesis_prompt = f"""You have been given summaries of different sections of a large document.
 Synthesize these into ONE cohesive, comprehensive summary that:
 1. Removes redundancy between sections
 2. Preserves all key facts, figures, and actionable information
@@ -679,13 +673,13 @@ Create a single, unified markdown summary."""
         response = await async_call_llm(**call_kwargs)
         final_summary = extract_content_or_reasoning(response)
 
-        # Retry once on empty content (reasoning-only response)
+        # 内容为空时（仅有推理的响应）重试一次
         if not final_summary:
             logger.warning("Synthesis LLM returned empty content, retrying once")
             response = await async_call_llm(**call_kwargs)
             final_summary = extract_content_or_reasoning(response)
 
-        # If still None after retry, fall back to concatenated summaries
+        # 重试后仍为 None，则回退到拼接的摘要
         if not final_summary:
             logger.warning("Synthesis failed after retry — concatenating chunk summaries")
             fallback = "\n\n".join(summaries)
@@ -693,20 +687,20 @@ Create a single, unified markdown summary."""
                 fallback = fallback[:max_output_size] + "\n\n[... truncated ...]"
             return fallback
 
-        # Enforce hard cap
+        # 强制硬上限
         if len(final_summary) > max_output_size:
             final_summary = final_summary[:max_output_size] + "\n\n[... summary truncated for context management ...]"
-        
+
         original_len = len(content)
         final_len = len(final_summary)
         compression = final_len / original_len if original_len > 0 else 1.0
-        
+
         logger.info("Synthesis complete: %d -> %d chars (%.2f%%)", original_len, final_len, compression * 100)
         return final_summary
-        
+
     except Exception as e:
         logger.warning("Synthesis failed: %s", str(e)[:100])
-        # Fall back to concatenated summaries with truncation
+        # 回退到带截断的拼接摘要
         fallback = "\n\n".join(summaries)
         if len(fallback) > max_output_size:
             fallback = fallback[:max_output_size] + "\n\n[... truncated due to synthesis failure ...]"
@@ -715,91 +709,87 @@ Create a single, unified markdown summary."""
 
 def clean_base64_images(text: str) -> str:
     """
-    Remove base64 encoded images from text to reduce token count and clutter.
-    
-    This function finds and removes base64 encoded images in various formats:
+    从文本中移除 base64 编码的图片，以减少 token 数和杂乱内容。
+
+    本函数查找并移除多种格式的 base64 编码图片：
     - (data:image/png;base64,...)
     - (data:image/jpeg;base64,...)
     - (data:image/svg+xml;base64,...)
-    - data:image/[type];base64,... (without parentheses)
-    
-    Args:
-        text: The text content to clean
-        
-    Returns:
-        Cleaned text with base64 images replaced with placeholders
+    - data:image/[type];base64,...（不带括号）
+
+    参数：
+        text: 要清理的文本内容
+
+    返回：
+        清理后的文本，其中的 base64 图片被替换为占位符
     """
-    # Pattern to match base64 encoded images wrapped in parentheses
-    # Matches: (data:image/[type];base64,[base64-string])
+    # 匹配被括号包裹的 base64 编码图片的正则
+    # 匹配：(data:image/[type];base64,[base64-string])
     base64_with_parens_pattern = r'\(data:image/[^;]+;base64,[A-Za-z0-9+/=]+\)'
-    
-    # Pattern to match base64 encoded images without parentheses
-    # Matches: data:image/[type];base64,[base64-string]
+    # 匹配不带括号的 base64 编码图片的正则
+    # 匹配：data:image/[type];base64,[base64-string]
     base64_pattern = r'data:image/[^;]+;base64,[A-Za-z0-9+/=]+'
-    
-    # Replace parentheses-wrapped images first
+
+    # 先替换带括号的图片
     cleaned_text = re.sub(base64_with_parens_pattern, '[BASE64_IMAGE_REMOVED]', text)
-    
-    # Then replace any remaining non-parentheses images
+
+    # 再替换剩余的不带括号的图片
     cleaned_text = re.sub(base64_pattern, '[BASE64_IMAGE_REMOVED]', cleaned_text)
-    
+
     return cleaned_text
 
 
-# ─── Exa / Parallel inline helpers — moved into plugins ──────────────────────
-# After PR #25182, the exa client + search/extract and parallel client +
-# search/extract helpers all live in their respective plugins:
+# ─── Exa / Parallel 内联辅助函数 —— 已移入插件 ──────────────────────────────
+# PR #25182 之后，exa 客户端 + 搜索/提取以及 parallel 客户端 +
+# 搜索/提取辅助函数都位于各自的插件中：
 #   - plugins/web/exa/provider.py
 #   - plugins/web/parallel/provider.py
-# Both plugins register through agent.web_search_registry and the
-# dispatchers in this file resolve them via get_active_*_provider().
+# 两个插件都通过 agent.web_search_registry 注册，本文件中的
+# 分发器通过 get_active_*_provider() 来解析它们。
 
 
 def _ensure_web_plugins_loaded() -> None:
-    """Idempotently trigger plugin discovery so the web registry is populated.
+    """幂等地触发插件发现，以填充 web 注册表。
 
-    Every bundled web provider (brave-free, ddgs, searxng, exa, parallel,
-    tavily, firecrawl) registers itself via ``plugins/web/<vendor>/__init__.py``
-    during plugin discovery. Tool dispatch can be reached from contexts that
-    haven't already triggered discovery — subprocess agent runs, delegate
-    children, standalone scripts, certain test paths — and without it the
-    registry is empty and ``get_provider('firecrawl')`` returns ``None`` even
-    when the user has ``web.extract_backend: firecrawl`` configured and
-    ``FIRECRAWL_API_KEY`` set. The symptom is a misleading "No web extract
-    provider configured" error (issue #27580).
+    每个内置的 web 提供方（brave-free、ddgs、searxng、exa、parallel、
+    tavily、firecrawl）都在插件发现期间通过 ``plugins/web/<vendor>/__init__.py``
+    注册自身。工具分发可能从尚未触发发现的上下文中到达——子进程 agent
+    运行、委派子进程、独立脚本、某些测试路径——若不如此，注册表为空，
+    即便用户配置了 ``web.extract_backend: firecrawl`` 并设置了
+    ``FIRECRAWL_API_KEY``，``get_provider('firecrawl')`` 也会返回 ``None``。
+    其症状是一条有误导性的 "No web extract provider configured" 错误
+    （issue #27580）。
 
-    Mirrors :func:`tools.browser_tool._ensure_browser_plugins_loaded` exactly:
-    the underlying discovery call is idempotent and cheap on subsequent
-    invocations.
+    与 :func:`tools.browser_tool._ensure_browser_plugins_loaded` 完全一致：
+    底层的发现调用是幂等的，后续调用开销很小。
     """
     try:
         from hermes_cli.plugins import _ensure_plugins_discovered
 
         _ensure_plugins_discovered()
     except Exception as exc:  # noqa: BLE001
-        # Warning, not debug: if a plugin import is genuinely broken the
-        # user otherwise hits the misleading "No web extract provider
-        # configured" error this helper is meant to eliminate, with no
-        # clue in normal logs about the real cause.
+        # 用 warning 而非 debug：如果某个插件导入确实坏了，用户
+        # 否则会撞上本辅助函数本想消除的那条有误导性的 "No web extract
+        # provider configured" 错误，而正常日志里毫无真实原因的线索。
         logger.warning("Web plugin discovery failed (non-fatal): %s", exc)
 
 
 def web_search_tool(query: str, limit: int = 5) -> str:
     """
-    Search the web for information using available search API backend.
+    使用可用的搜索 API 后端在网络上搜索信息。
 
-    This function provides a generic interface for web search that can work
-    with multiple backends (Parallel or Firecrawl).
+    本函数提供了一个通用的 web 搜索接口，可与多种后端
+    （Parallel 或 Firecrawl）协同工作。
 
-    Note: This function returns search result metadata only (URLs, titles, descriptions).
-    Use web_extract_tool to get full content from specific URLs.
-    
-    Args:
-        query (str): The search query to look up
-        limit (int): Maximum number of results to return (default: 5)
-    
-    Returns:
-        str: JSON string containing search results with the following structure:
+    注意：本函数仅返回搜索结果元数据（URL、标题、描述）。
+    请使用 web_extract_tool 获取特定 URL 的完整内容。
+
+    参数：
+        query (str): 要查询的搜索词
+        limit (int): 返回结果的最大数量（默认：5）
+
+    返回：
+        str: 包含搜索结果的 JSON 字符串，结构如下：
              {
                  "success": bool,
                  "data": {
@@ -814,9 +804,9 @@ def web_search_tool(query: str, limit: int = 5) -> str:
                      ]
                  }
              }
-    
-    Raises:
-        Exception: If search fails or API key is not set
+
+    抛出：
+        Exception: 搜索失败或未设置 API 密钥时
     """
     try:
         limit = int(limit)
@@ -834,16 +824,16 @@ def web_search_tool(query: str, limit: int = 5) -> str:
         "original_response_size": 0,
         "final_response_size": 0
     }
-    
+
     try:
         from tools.interrupt import is_interrupted
         if is_interrupted():
             return tool_error("Interrupted", success=False)
 
-        # Dispatch through the web search registry. All 7 providers
-        # (brave-free, ddgs, searxng, exa, parallel, tavily, firecrawl)
-        # now live as plugins; the dispatcher is just a registry lookup +
-        # delegation. Sync only — every provider's search() is sync.
+        # 通过 web 搜索注册表分发。全部 7 个提供方
+        # （brave-free、ddgs、searxng、exa、parallel、tavily、firecrawl）
+        # 现在都作为插件存在；分发器只是一次注册表查找 + 委派。仅同步——
+        # 每个提供方的 search() 都是同步的。
         _ensure_web_plugins_loaded()
         from agent.web_search_registry import (
             get_active_search_provider,
@@ -853,9 +843,9 @@ def web_search_tool(query: str, limit: int = 5) -> str:
         backend = _get_search_backend()
         provider = _wsp_get_provider(backend) if backend else None
         if provider is None or not provider.supports_search():
-            # Fall back to availability-walked active provider when the
-            # configured backend isn't a registered search provider (typo,
-            # uninstalled plugin, or capability mismatch).
+            # 当配置的后端不是一个已注册的搜索提供方（拼写错误、
+            # 未安装的插件或能力不匹配）时，回退到按可用性遍历的
+            # 活跃提供方。
             provider = get_active_search_provider()
 
         if provider is None:
@@ -899,29 +889,29 @@ async def web_extract_tool(
     min_length: int = DEFAULT_MIN_LENGTH_FOR_SUMMARIZATION
 ) -> str:
     """
-    Extract content from specific web pages using available extraction API backend.
+    使用可用的提取 API 后端从特定网页提取内容。
 
-    This function provides a generic interface for web content extraction that
-    can work with multiple backends. Currently uses Firecrawl.
+    本函数提供了一个通用的 web 内容提取接口，可与多种后端协同工作。
+    目前使用 Firecrawl。
 
-    Args:
-        urls (List[str]): List of URLs to extract content from
-        format (str): Desired output format ("markdown" or "html", optional)
-        use_llm_processing (bool): Whether to process content with LLM for summarization (default: True)
-        model (Optional[str]): The model to use for LLM processing (defaults to current auxiliary backend model)
-        min_length (int): Minimum content length to trigger LLM processing (default: 5000)
+    参数：
+        urls (List[str]): 要提取内容的 URL 列表
+        format (str): 期望的输出格式（"markdown" 或 "html"，可选）
+        use_llm_processing (bool): 是否用 LLM 处理内容以生成摘要（默认：True）
+        model (Optional[str]): LLM 处理所用的模型（默认为当前辅助后端模型）
+        min_length (int): 触发 LLM 处理的最小内容长度（默认：5000）
 
-    Security: URLs are checked for embedded secrets before fetching.
-    
-    Returns:
-        str: JSON string containing extracted content. If LLM processing is enabled and successful,
-             the 'content' field will contain the processed markdown summary instead of raw content.
-    
-    Raises:
-        Exception: If extraction fails or API key is not set
+    安全性：在抓取前会检查 URL 中是否嵌入了密钥。
+
+    返回：
+        str: 包含提取内容的 JSON 字符串。如果启用了 LLM 处理且成功，
+             'content' 字段将包含处理后的 markdown 摘要而非原始内容。
+
+    抛出：
+        Exception: 提取失败或未设置 API 密钥时
     """
-    # Block URLs containing embedded secrets (exfiltration prevention).
-    # URL-decode first so percent-encoded secrets (%73k- = sk-) are caught.
+    # 拦截包含嵌入密钥的 URL（防止数据外泄）。
+    # 先做 URL 解码，这样百分号编码的密钥（%73k- = sk-）也能被捕获。
     from agent.redact import _PREFIX_RE
     from urllib.parse import unquote
     normalized_urls: List[str] = []
@@ -956,11 +946,11 @@ async def web_extract_tool(
         "compression_metrics": [],
         "processing_applied": []
     }
-    
+
     try:
         logger.info("Extracting content from %d URL(s)", len(normalized_urls))
 
-        # ── SSRF protection — filter out private/internal URLs before any backend ──
+        # ── SSRF 防护——在任何后端之前过滤掉私有 / 内部 URL ──
         safe_urls = []
         ssrf_blocked: List[Dict[str, Any]] = []
         for url in normalized_urls:
@@ -972,19 +962,18 @@ async def web_extract_tool(
             else:
                 safe_urls.append(url)
 
-        # Dispatch only safe URLs to the configured backend
+        # 仅将安全 URL 分发给配置的后端
         if not safe_urls:
             results = []
         else:
             backend = _get_extract_backend()
 
-            # All seven providers (brave-free, ddgs, searxng, exa, parallel,
-            # tavily, firecrawl) now live as plugins. The dispatcher is a
-            # registry lookup + delegation. Some providers' extract() is
-            # async (parallel, firecrawl), others sync (exa, tavily) — we
-            # detect coroutine functions and await; sync functions run
-            # inline (the policy gate, SSRF re-check, etc. live inside the
-            # provider itself for the firecrawl per-URL loop).
+            # 全部七个提供方（brave-free、ddgs、searxng、exa、parallel、
+            # tavily、firecrawl）现在都作为插件存在。分发器是一次
+            # 注册表查找 + 委派。某些提供方的 extract() 是异步的
+            # （parallel、firecrawl），另一些是同步的（exa、tavily）——
+            # 我们检测协程函数并 await；同步函数则内联运行（策略门控、
+            # SSRF 复查等位于提供方内部 firecrawl 的逐 URL 循环中）。
             _ensure_web_plugins_loaded()
             from agent.web_search_registry import (
                 get_active_extract_provider,
@@ -993,12 +982,11 @@ async def web_extract_tool(
 
             provider = _wsp_get_provider(backend) if backend else None
             if provider is None or not provider.supports_extract():
-                # When the configured name IS registered but doesn't support
-                # extract (search-only providers like brave-free / ddgs /
-                # searxng), surface that as a typed "search-only" error
-                # rather than silently switching backends. When the name
-                # isn't registered at all (typo / uninstalled plugin), fall
-                # through to the active-provider walk.
+                # 当配置的名称已注册但不支持提取（仅搜索的提供方如
+                # brave-free / ddgs / searxng）时，将其作为一个类型化的
+                # "search-only" 错误暴露出来，而不是静默切换后端。当名称
+                # 根本未注册（拼写错误 / 未安装的插件）时，回退到活跃
+                # 提供方遍历。
                 if provider is not None and not provider.supports_extract():
                     return json.dumps(
                         {
@@ -1030,62 +1018,61 @@ async def web_extract_tool(
                 "Web extract via %s: %d URL(s)", provider.name, len(safe_urls)
             )
 
-            # Async-or-sync dispatch: parallel + firecrawl have async
-            # extract(); exa + tavily are sync.
+            # 异步或同步分发：parallel + firecrawl 有异步 extract()；
+            # exa + tavily 是同步的。
             import inspect
             if inspect.iscoroutinefunction(provider.extract):
                 results = await provider.extract(safe_urls, format=format)
             else:
-                # Run sync extract() in a thread so we don't block the
-                # event loop on network I/O.
+                # 在线程中运行同步 extract()，以免在网络 I/O 上阻塞事件循环。
                 results = await asyncio.to_thread(
                     provider.extract, safe_urls, format=format
                 )
 
-        # Merge any SSRF-blocked results back in
+        # 将任何 SSRF 拦截的结果合并回来
         if ssrf_blocked:
             results = ssrf_blocked + results
 
         response = {"results": results}
-        
+
         pages_extracted = len(response.get('results', []))
         logger.info("Extracted content from %d pages", pages_extracted)
-        
+
         debug_call_data["pages_extracted"] = pages_extracted
         debug_call_data["original_response_size"] = len(json.dumps(response))
         effective_model = model or _get_default_summarizer_model()
         auxiliary_available = check_auxiliary_model()
-        
-        # Process each result with LLM if enabled
+
+        # 如果启用，则用 LLM 处理每个结果
         if use_llm_processing and auxiliary_available:
             logger.info("Processing extracted content with LLM (parallel)...")
             debug_call_data["processing_applied"].append("llm_processing")
-            
-            # Prepare tasks for parallel processing
+
+            # 为并行处理准备任务
             async def process_single_result(result):
-                """Process a single result with LLM and return updated result with metrics."""
+                """用 LLM 处理单个结果，并返回带有指标的更新后结果。"""
                 url = result.get('url', 'Unknown URL')
                 title = result.get('title', '')
                 raw_content = result.get('raw_content', '') or result.get('content', '')
-                
+
                 if not raw_content:
                     return result, None, "no_content"
-                
+
                 original_size = len(raw_content)
-                
-                # Process content with LLM
+
+                # 用 LLM 处理内容
                 processed = await process_content_with_llm(
                     raw_content, url, title, effective_model, min_length
                 )
-                
+
                 if processed:
                     processed_size = len(processed)
                     compression_ratio = processed_size / original_size if original_size > 0 else 1.0
-                    
-                    # Update result with processed content
+
+                    # 用处理后的内容更新结果
                     result['content'] = processed
                     result['raw_content'] = raw_content
-                    
+
                     metrics = {
                         "url": url,
                         "original_size": original_size,
@@ -1104,15 +1091,15 @@ async def web_extract_tool(
                         "reason": "content_too_short"
                     }
                     return result, metrics, "too_short"
-            
-            # Run all LLM processing in parallel
+
+            # 并行运行所有 LLM 处理
             results_list = response.get('results', [])
             tasks = [process_single_result(result) for result in results_list]
-            # Use return_exceptions=True so a single task failure does not
-            # discard all other successfully processed results.
+            # 使用 return_exceptions=True，这样单个任务失败不会丢弃
+            # 所有其他已成功处理的结果。
             processed_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Collect metrics and print results
+            # 收集指标并打印结果
             for result_item in processed_results:
                 if isinstance(result_item, BaseException):
                     logger.warning("Web result processing task failed: %s", result_item)
@@ -1132,13 +1119,13 @@ async def web_extract_tool(
             if use_llm_processing and not auxiliary_available:
                 logger.warning("LLM processing requested but no auxiliary model available, returning raw content")
                 debug_call_data["processing_applied"].append("llm_processing_unavailable")
-            # Print summary of extracted pages for debugging (original behavior)
+            # 打印已提取页面的摘要以供调试（原有行为）
             for result in response.get('results', []):
                 url = result.get('url', 'Unknown URL')
                 content_length = len(result.get('raw_content', ''))
                 logger.info("%s (%d characters)", url, content_length)
-        
-        # Trim output to minimal fields per entry: title, content, error
+
+        # 将输出裁剪为每个条目的最小字段集：title、content、error
         trimmed_results = [
             {
                 "url": r.get("url", ""),
@@ -1155,35 +1142,35 @@ async def web_extract_tool(
             result_json = tool_error("Content was inaccessible or not found")
 
             cleaned_result = clean_base64_images(result_json)
-        
+
         else:
             result_json = json.dumps(trimmed_response, indent=2, ensure_ascii=False)
-            
+
             cleaned_result = clean_base64_images(result_json)
-        
+
         debug_call_data["final_response_size"] = len(cleaned_result)
         debug_call_data["processing_applied"].append("base64_image_removal")
-        
-        # Log debug information
+
+        # 记录调试信息
         _debug.log_call("web_extract_tool", debug_call_data)
         _debug.save()
-        
+
         return cleaned_result
-            
+
     except Exception as e:
         error_msg = f"Error extracting content: {str(e)}"
         logger.debug("%s", error_msg)
-        
+
         debug_call_data["error"] = error_msg
         _debug.log_call("web_extract_tool", debug_call_data)
         _debug.save()
-        
+
         return tool_error(error_msg)
 
 
-# Convenience function to check Firecrawl credentials
+# 检查 Firecrawl 凭据的便捷函数
 def check_web_api_key() -> bool:
-    """Check whether the configured web backend is available."""
+    """检查配置的 web 后端是否可用。"""
     configured = _load_web_config().get("backend", "").lower().strip()
     if configured in {"exa", "parallel", "firecrawl", "tavily", "searxng", "brave-free", "ddgs", "xai"}:
         return _is_backend_available(configured)
@@ -1194,7 +1181,7 @@ def check_web_api_key() -> bool:
 
 
 def check_auxiliary_model() -> bool:
-    """Check if an auxiliary text model is available for LLM content processing."""
+    """检查是否有可用的辅助文本模型用于 LLM 内容处理。"""
     client, _, _ = _resolve_web_extract_auxiliary()
     return client is not None
 
@@ -1203,12 +1190,12 @@ def check_auxiliary_model() -> bool:
 
 if __name__ == "__main__":
     """
-    Simple test/demo when run directly
+    直接运行时的简单测试/演示
     """
     print("🌐 Standalone Web Tools Module")
     print("=" * 40)
-    
-    # Check if API keys are available
+
+    # 检查是否有可用的 API 密钥
     web_available = check_web_api_key()
     tool_gateway_available = _is_tool_gateway_ready()
     firecrawl_key_available = bool(os.getenv("FIRECRAWL_API_KEY", "").strip())
@@ -1257,18 +1244,18 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("🛠️  Web tools ready for use!")
-    
+
     if nous_available:
         print(f"🧠 LLM content processing available with {default_summarizer_model}")
         print(f"   Default min length for processing: {DEFAULT_MIN_LENGTH_FOR_SUMMARIZATION} chars")
-    
-    # Show debug mode status
+
+    # 显示调试模式状态
     if _debug.active:
         print(f"🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
         print(f"   Debug logs will be saved to: {_debug.log_dir}/web_tools_debug_{_debug.session_id}.json")
     else:
         print("🐛 Debug mode disabled (set WEB_TOOLS_DEBUG=true to enable)")
-    
+
     print("\nBasic usage:")
     print("  from web_tools import web_search_tool, web_extract_tool")
     print("  import asyncio")
@@ -1280,7 +1267,7 @@ if __name__ == "__main__":
     print("  async def main():")
     print("      content = await web_extract_tool(['https://example.com'])")
     print("  asyncio.run(main())")
-    
+
     if nous_available:
         print("\nLLM-enhanced usage:")
         print("  # Content automatically processed for pages >5000 chars (default)")
@@ -1295,7 +1282,7 @@ if __name__ == "__main__":
         print("")
         print("  # Disable LLM processing")
         print("  raw_content = await web_extract_tool(['https://example.com'], use_llm_processing=False)")
-    
+
     print("\nDebug mode:")
     print("  # Enable debug logging")
     print("  export WEB_TOOLS_DEBUG=true")
@@ -1305,12 +1292,12 @@ if __name__ == "__main__":
     print("  # - LLM compression metrics")
     print("  # - Final processed results")
     print("  # Logs saved to: ./logs/web_tools_debug_UUID.json")
-    
+
     print("\n📝 Run 'python test_web_tools_llm.py' to test LLM processing capabilities")
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# 注册表
 # ---------------------------------------------------------------------------
 from tools.registry import registry, tool_error
 

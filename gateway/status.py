@@ -1,14 +1,13 @@
 """
-Gateway runtime status helpers.
+Gateway 运行时状态辅助函数。
 
-Provides PID-file based detection of whether the gateway daemon is running,
-used by send_message's check_fn to gate availability in the CLI.
+提供基于 PID 文件的 gateway 守护进程运行检测，被 send_message 的 check_fn
+用于在 CLI 中控制可用性。
 
-The PID file lives at ``{HERMES_HOME}/gateway.pid``.  HERMES_HOME defaults to
-``~/.hermes`` but can be overridden via the environment variable.  This means
-separate HERMES_HOME directories naturally get separate PID files — a property
-that will be useful when we add named profiles (multiple agents running
-concurrently under distinct configurations).
+PID 文件位于 ``{HERMES_HOME}/gateway.pid``。HERMES_HOME 默认为
+``~/.hermes``，但可通过环境变量覆盖。这意味着不同的 HERMES_HOME 目录自然
+会有各自的 PID 文件 —— 这一特性在我们引入命名 profile（多个 agent 在不同
+配置下并发运行）时会很有用。
 """
 
 import hashlib
@@ -36,20 +35,19 @@ _IS_WINDOWS = sys.platform == "win32"
 _UNSET = object()
 _GATEWAY_LOCK_FILENAME = "gateway.lock"
 _gateway_lock_handle = None
-# Windows byte-range locks are mandatory for other readers. Lock a byte well
-# past the JSON payload so runtime status / PID readers can still read the file
-# while another process holds the mutual-exclusion lock.
+# Windows 的字节范围锁对其他读者具有强制性。锁定一个远超 JSON 载荷的字节，
+# 以便运行时状态 / PID 读取者仍能读取该文件，而另一个进程持有互斥锁。
 _WINDOWS_LOCK_OFFSET = 1024 * 1024
 
 
 def _get_pid_path() -> Path:
-    """Return the path to the gateway PID file, respecting HERMES_HOME."""
+    """返回 gateway PID 文件的路径，遵循 HERMES_HOME。"""
     home = get_hermes_home()
     return home / "gateway.pid"
 
 
 def _get_gateway_lock_path(pid_path: Optional[Path] = None) -> Path:
-    """Return the path to the runtime gateway lock file."""
+    """返回运行时 gateway 锁文件的路径。"""
     if pid_path is not None:
         return pid_path.with_name(_GATEWAY_LOCK_FILENAME)
     home = get_hermes_home()
@@ -57,12 +55,12 @@ def _get_gateway_lock_path(pid_path: Optional[Path] = None) -> Path:
 
 
 def _get_runtime_status_path() -> Path:
-    """Return the persisted runtime health/status file path."""
+    """返回持久化的运行时健康/状态文件路径。"""
     return _get_pid_path().with_name(_RUNTIME_STATUS_FILE)
 
 
 def _get_lock_dir() -> Path:
-    """Return the machine-local directory for token-scoped gateway locks."""
+    """返回用于 token 范围 gateway 锁的本机目录。"""
     override = os.getenv("HERMES_GATEWAY_LOCK_DIR")
     if override:
         return Path(override)
@@ -75,10 +73,10 @@ def _utc_now_iso() -> str:
 
 
 def terminate_pid(pid: int, *, force: bool = False) -> None:
-    """Terminate a PID with platform-appropriate force semantics.
+    """以平台合适的强制语义终止一个 PID。
 
-    POSIX uses SIGTERM/SIGKILL. Windows uses taskkill /T /F for true force-kill
-    because os.kill(..., SIGTERM) is not equivalent to a tree-killing hard stop.
+    POSIX 使用 SIGTERM/SIGKILL。Windows 使用 taskkill /T /F 来实现真正的
+    强杀，因为 os.kill(..., SIGTERM) 并不等价于杀掉整棵进程树的硬停止。
     """
     if force and _IS_WINDOWS:
         try:
@@ -110,33 +108,31 @@ def _get_scope_lock_path(scope: str, identity: str) -> Path:
 
 
 def _get_process_start_time(pid: int) -> Optional[int]:
-    """Return a stable per-process start-time fingerprint, or None.
+    """返回稳定的、按进程的启动时间指纹，或 None。
 
-    Used as a PID-reuse guard: a ``(pid, start_time)`` pair uniquely identifies
-    a process, so a recycled PID (same number, different process) yields a
-    different value and is never mistaken for the original.
+    用作 PID 复用守卫：一对 ``(pid, start_time)`` 唯一标识一个进程，因此
+    被回收的 PID（相同的数字、不同的进程）会产生不同的值，绝不会和原来的
+    进程混淆。
 
-    On Linux this is field 22 of ``/proc/<pid>/stat`` (start time in clock
-    ticks since boot, an int).  On platforms without ``/proc`` (macOS, Windows)
-    we fall back to ``psutil.Process(pid).create_time()`` — a float epoch
-    timestamp — quantized to an int (centiseconds) for stable equality.
+    在 Linux 上，这是 ``/proc/<pid>/stat`` 的第 22 个字段（自启动以来的
+    时钟滴答数，整数）。在没有 ``/proc`` 的平台（macOS、Windows）上，我们
+    回退到 ``psutil.Process(pid).create_time()`` —— 一个浮点 epoch
+    时间戳 —— 并量化为整数（厘秒）以获得稳定的相等性。
 
-    The two sources are never mixed on a single platform: ``/proc`` always
-    succeeds first on Linux, and always fails on macOS/Windows so psutil is
-    always used there.  Because the guard only compares the value recorded at
-    spawn against the live value *on the same host*, the differing units across
-    platforms are irrelevant — only same-source equality matters.
+    这两个来源绝不会在单一平台上混用：``/proc`` 在 Linux 上总是先成功，
+    而在 macOS/Windows 上总是失败，因此在那里总是使用 psutil。由于该守卫
+    只比较启动时记录的值和*同一主机*上的实时值，跨平台不同的单位无关紧要
+    —— 只有同来源的相等性才重要。
     """
     stat_path = Path(f"/proc/{pid}/stat")
     try:
-        # Field 22 in /proc/<pid>/stat is process start time (clock ticks).
+        # /proc/<pid>/stat 的第 22 个字段是进程启动时间（时钟滴答数）。
         return int(stat_path.read_text(encoding="utf-8").split()[21])
     except (FileNotFoundError, IndexError, PermissionError, ValueError, OSError):
         pass
 
-    # No /proc (macOS / Windows): psutil is a hard dependency and exposes a
-    # cross-platform creation time.  Quantize to centiseconds so repeated reads
-    # of the same process compare equal without float-precision fragility.
+    # 没有 /proc（macOS / Windows）：psutil 是硬依赖，暴露了跨平台的创建
+    # 时间。量化为厘秒，使对同一进程的重复读取相等，避免浮点精度的脆弱性。
     try:
         import psutil  # type: ignore
         return int(round(psutil.Process(pid).create_time() * 100))
@@ -145,16 +141,16 @@ def _get_process_start_time(pid: int) -> Optional[int]:
 
 
 def get_process_start_time(pid: int) -> Optional[int]:
-    """Public wrapper for retrieving a process start time when available."""
+    """用于在可用时获取进程启动时间的公开包装函数。"""
     return _get_process_start_time(pid)
 
 
 def _read_process_cmdline(pid: int) -> Optional[str]:
-    """Return the process command line as a space-separated string.
+    """以空格分隔的字符串形式返回进程命令行。
 
-    On Linux, reads /proc/<pid>/cmdline directly.  On macOS and other
-    platforms without /proc, falls back to ``ps -p <pid> -o command=``.
-    On Windows (no /proc, no ps), uses psutil.
+    在 Linux 上，直接读取 /proc/<pid>/cmdline。在没有 /proc 的 macOS 及
+    其他平台上，回退到 ``ps -p <pid> -o command=``。在 Windows 上
+    （没有 /proc，也没有 ps），使用 psutil。
     """
     cmdline_path = Path(f"/proc/{pid}/cmdline")
     try:
@@ -177,7 +173,7 @@ def _read_process_cmdline(pid: int) -> Optional[str]:
     except (OSError, subprocess.TimeoutExpired):
         pass
 
-    # Windows fallback: psutil (already used by _pid_exists)
+    # Windows 回退：psutil（_pid_exists 已在使用）
     try:
         import psutil  # type: ignore
         proc = psutil.Process(pid)
@@ -191,24 +187,22 @@ def _read_process_cmdline(pid: int) -> Optional[str]:
 
 
 def _gateway_command_subcommand(command: str | None) -> str | None:
-    """Return the Hermes gateway lifecycle subcommand from a command line.
+    """从命令行返回 Hermes gateway 的生命周期子命令。
 
-    Lifecycle decisions (is the gateway up? did restart relaunch it?) must not
-    fire on loose substring matches.  The previous ``"... gateway" in cmdline``
-    test also matched ``hermes_cli.main gateway status`` and even unrelated
-    processes like ``python -m tui_gateway`` -- which made ``restart()`` race
-    against a still-draining old process and ``status``/``start`` report false
-    positives.  This requires the actual ``gateway`` subcommand followed by
-    ``run`` (or one of the gateway-dedicated entrypoints), excluding the other
-    ``gateway`` management subcommands and any process that merely contains the
-    word "gateway".
+    生命周期决策（gateway 起来了吗？restart 是否重新启动了它？）绝不能基于
+    松散的子串匹配触发。之前的 ``"... gateway" in cmdline`` 测试也会匹配
+    ``hermes_cli.main gateway status``，甚至匹配不相关的进程，例如
+    ``python -m tui_gateway`` —— 这使得 ``restart()`` 与仍在排空的旧进程
+    产生竞态，并让 ``status``/``start`` 报告假阳性。这要求真正的
+    ``gateway`` 子命令后跟 ``run``（或某个 gateway 专用的入口点），排除其他
+    ``gateway`` 管理子命令，以及任何只是恰好包含 "gateway" 这个词的进程。
 
-    Tokenizes quote-aware (``shlex``) so quoted Windows paths with spaces
-    (``"C:\\Program Files\\...\\hermes-gateway.exe"``) survive, and strips
-    ``--profile``/``-p`` selectors from anywhere in argv -- Hermes's
-    ``_apply_profile_override`` removes them before argparse, so the profile
-    flag (and a profile literally named ``gateway``) can legally appear on
-    either side of the ``gateway`` subcommand.
+    使用引号感知的分词（``shlex``），这样带空格的带引号 Windows 路径
+    （``"C:\\Program Files\\...\\hermes-gateway.exe"``）能保留下来，并从
+    argv 的任意位置剥离 ``--profile``/``-p`` 选择器 —— Hermes 的
+    ``_apply_profile_override`` 在 argparse 之前会移除它们，所以 profile
+    标志（以及一个名字就叫 ``gateway`` 的 profile）可以合法地出现在
+    ``gateway`` 子命令的任意一侧。
     """
     if not command:
         return None
@@ -217,12 +211,12 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
         raw_tokens = shlex.split(command, posix=False)
     except ValueError:
         raw_tokens = command.split()
-    # Strip surrounding quotes, normalize slashes + case per token.
+    # 剥离两侧的引号，按 token 规范化斜杠和大小写。
     tokens = [t.strip("\"'").replace("\\", "/").lower() for t in raw_tokens]
     if not tokens:
         return None
 
-    # Gateway-dedicated entrypoints carry no subcommand to inspect.
+    # gateway 专用的入口点没有可检查的子命令。
     for token in tokens:
         if token == "gateway/run.py" or token.endswith("/gateway/run.py"):
             return "run"
@@ -239,9 +233,9 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
     if not has_gateway_entry:
         return None
 
-    # Drop profile selectors anywhere: --profile X / -p X / --profile=X / -p=X.
-    # This consumes a profile VALUE of "gateway" too, so the real subcommand
-    # token is the one we land on below.
+    # 从任意位置丢弃 profile 选择器：--profile X / -p X / --profile=X / -p=X。
+    # 这也会消费掉值为 "gateway" 的 profile，因此真正的子命令 token 就是
+    # 下面落到的那个。
     filtered: list[str] = []
     skip_next = False
     for token in tokens:
@@ -259,32 +253,31 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
         if token != "gateway":
             continue
         if i + 1 >= len(filtered):
-            return "run"  # bare `hermes gateway` defaults to `run`
+            return "run"  # 裸的 `hermes gateway` 默认为 `run`
         return filtered[i + 1]
     return None
 
 
 def looks_like_gateway_command_line(command: str | None) -> bool:
-    """Return True only for a real ``gateway run`` process command line."""
+    """仅当是真正的 ``gateway run`` 进程命令行时返回 True。"""
     return _gateway_command_subcommand(command) == "run"
 
 
 def looks_like_gateway_runtime_command_line(command: str | None) -> bool:
-    """Return True for command lines that can host the gateway runtime.
+    """对于可以承载 gateway 运行时的命令行返回 True。
 
-    ``gateway restart`` is normally a management command, not the gateway
-    runtime. On hosts without a service manager, though, the manual restart
-    fallback executes ``run_gateway()`` in that same process, so its argv stays
-    as ``gateway restart`` while it owns the webhook port and writes runtime
-    state. Keep the public ``looks_like_gateway_command_line()`` strict, and
-    use this broader matcher only when validating Hermes-owned runtime records
-    or no-supervisor cleanup scans.
+    ``gateway restart`` 通常是管理命令，而不是 gateway 运行时。但在没有
+    服务管理器的主机上，手动 restart 回退会在同一进程中执行
+    ``run_gateway()``，因此当它占用 webhook 端口并写入运行时状态时，其 argv
+    仍然是 ``gateway restart``。保持公开的
+    ``looks_like_gateway_command_line()`` 严格，仅在验证 Hermes 拥有的运行时
+    记录或无 supervisor 的清理扫描时使用这个更宽的匹配器。
     """
     return _gateway_command_subcommand(command) in {"run", "restart"}
 
 
 def _looks_like_gateway_process(pid: int) -> bool:
-    """Return True when the live PID still looks like the Hermes gateway."""
+    """当存活的 PID 仍像是 Hermes gateway 时返回 True。"""
     cmdline = _read_process_cmdline(pid)
     if not cmdline:
         return False
@@ -292,7 +285,7 @@ def _looks_like_gateway_process(pid: int) -> bool:
 
 
 def _record_looks_like_gateway(record: dict[str, Any]) -> bool:
-    """Validate gateway identity from PID-file metadata when cmdline is unavailable."""
+    """当 cmdline 不可用时，从 PID 文件元数据校验 gateway 身份。"""
     if record.get("kind") != _GATEWAY_KIND:
         return False
 
@@ -305,12 +298,12 @@ def _record_looks_like_gateway(record: dict[str, Any]) -> bool:
 
 
 def _profile_name_for_home(profile_home: Path) -> Optional[str]:
-    """Return the profile id a HERMES_HOME directory represents, or None.
+    """返回一个 HERMES_HOME 目录所代表的 profile id，或 None。
 
-    A named profile's home is ``<root>/profiles/<name>`` (immediate parent is
-    ``profiles``).  The root/default home (``~/.hermes`` or ``$HERMES_HOME``)
-    has no such parent, so it maps to the default profile (``None`` here, which
-    callers treat as "the bare, flag-less gateway").
+    命名 profile 的 home 是 ``<root>/profiles/<name>``（直接父目录是
+    ``profiles``）。根/默认 home（``~/.hermes`` 或 ``$HERMES_HOME``）没有
+    这样的父目录，因此映射到默认 profile（这里为 ``None``，调用方将其视为
+    "裸的、无标志的 gateway"）。
     """
     if profile_home.parent.name == "profiles":
         return profile_home.name
@@ -318,17 +311,16 @@ def _profile_name_for_home(profile_home: Path) -> Optional[str]:
 
 
 def _command_line_belongs_to_profile(command: str, profile_home: Path) -> bool:
-    """Return True when a gateway command line belongs to ``profile_home``.
+    """当 gateway 命令行属于 ``profile_home`` 时返回 True。
 
-    Mirrors ``hermes_cli.gateway._matches_current_profile`` so the dashboard's
-    cross-profile liveness fallback scopes a live PID to the *right* profile.
-    In a per-profile container, one profile's stale ``gateway_state.json`` can
-    record a PID that the OS has since recycled onto a DIFFERENT profile's live
-    gateway.  That recycled PID's command line still ``looks_like_gateway`` —
-    so without a profile check the dead profile is reported running.  A named
-    profile gateway carries ``-p <name>``/``--profile <name>`` (or, rarely, an
-    explicit ``HERMES_HOME=<path>``) on its argv; the default/root gateway runs
-    bare with no profile flag.
+    镜像 ``hermes_cli.gateway._matches_current_profile``，以便 dashboard 的
+    跨 profile 存活性回退能把一个存活 PID 归到*正确的* profile。在按 profile
+    隔离的容器中，某个 profile 过期的 ``gateway_state.json`` 可能记录了一个
+    PID，而 OS 随后把该 PID 回收给了另一个 profile 存活的 gateway。那个被
+    回收的 PID 的命令行仍然 ``looks_like_gateway`` —— 因此如果不做 profile
+    检查，死掉的 profile 就会被报告为运行中。命名 profile 的 gateway 在其
+    argv 上携带 ``-p <name>``/``--profile <name>``（或罕见的显式
+    ``HERMES_HOME=<path>``）；默认/根 gateway 裸运行，没有 profile 标志。
     """
     command_lc = command.lower()
     profile_name = _profile_name_for_home(profile_home)
@@ -342,11 +334,10 @@ def _command_line_belongs_to_profile(command: str, profile_home: Path) -> bool:
             or f"hermes_home={home_lc}" in command_lc
         )
 
-    # Default/root profile: the gateway runs with no profile flag. Accept unless
-    # the command advertises *some other* profile (an explicit -p/--profile) or
-    # a non-matching explicit HERMES_HOME= on the argv. HERMES_HOME is usually
-    # passed via the environment (not visible on the command line), so its mere
-    # absence is not disqualifying — only a conflicting explicit value is.
+    # 默认/根 profile：gateway 不带 profile 标志运行。除非命令宣告了*其他*
+    # profile（显式的 -p/--profile）或 argv 上有不匹配的显式 HERMES_HOME=，
+    # 否则都接受。HERMES_HOME 通常通过环境传递（命令行上不可见），因此它
+    # 仅仅缺失并不构成不合格 —— 只有冲突的显式值才不合格。
     if "--profile " in command_lc or " -p " in command_lc:
         return False
     if "hermes_home=" in command_lc and f"hermes_home={home_lc}" not in command_lc:
@@ -360,19 +351,18 @@ def _record_matches_live_gateway_pid(
     *,
     expected_home: Optional[Path] = None,
 ) -> bool:
-    """Return True when a live PID still identifies as this gateway record.
+    """当存活 PID 仍然标识为这个 gateway 记录时返回 True。
 
-    Prefer the live command line whenever it is readable. Runtime status files
-    can outlive the gateway process they describe; if PID reuse leaves the same
-    PID occupied by an s6 supervisor/log process, the stale record's argv should
-    not make that unrelated process count as a running gateway.
+    只要在可读时就优先使用实时命令行。运行时状态文件可能比它们所描述的
+    gateway 进程活得更久；如果 PID 复用导致同一个 PID 被 s6 的
+    supervisor/log 进程占用，过期记录的 argv 不应让那个无关进程被算作正在
+    运行的 gateway。
 
-    When ``expected_home`` is provided (the dashboard enumerating a specific
-    profile's state file), the readable live command line must additionally
-    belong to *that* profile — otherwise a PID recycled onto a different
-    profile's live gateway would make the dead profile look alive.  When the
-    live command line cannot be read (Windows/permission), fall back to the
-    persisted record so cross-platform behavior is preserved.
+    当提供了 ``expected_home``（dashboard 枚举某个特定 profile 的状态文件）
+    时，可读的实时命令行必须额外属于*那个* profile —— 否则一个被回收到
+    另一个 profile 存活 gateway 上的 PID 会让死掉的 profile 看起来是活的。
+    当实时命令行无法读取（Windows/权限）时，回退到持久化的记录，以保持跨
+    平台行为一致。
     """
     live_cmdline = _read_process_cmdline(pid)
     if live_cmdline:
@@ -414,9 +404,9 @@ def _read_json_file(path: Path) -> Optional[dict[str, Any]]:
     try:
         raw = path.read_text(encoding="utf-8").strip()
     except (OSError, UnicodeDecodeError):
-        # OSError: file vanished or permission flipped between exists() and
-        # read. UnicodeDecodeError: file holds non-UTF-8 / binary garbage
-        # (a truncated or clobbered status file). Either way it's unusable.
+        # OSError：文件在 exists() 和 read 之间消失，或权限被翻转。
+        # UnicodeDecodeError：文件持有非 UTF-8 / 二进制垃圾（被截断或被破坏的
+        # 状态文件）。无论哪种都不可用。
         return None
     if not raw:
         return None
@@ -439,8 +429,8 @@ def _read_pid_record(pid_path: Optional[Path] = None) -> Optional[dict]:
     try:
         raw = pid_path.read_text().strip()
     except (OSError, UnicodeDecodeError):
-        # File was deleted between exists() and read_text(), permission
-        # flipped, or it holds non-UTF-8 / binary garbage.
+        # 文件在 exists() 和 read_text() 之间被删除、权限被翻转，或者持有
+        # 非 UTF-8 / 二进制垃圾。
         return None
     if not raw:
         return None
@@ -474,14 +464,12 @@ def _pid_from_record(record: Optional[dict[str, Any]]) -> Optional[int]:
 
 
 def _cleanup_invalid_pid_path(pid_path: Path, *, cleanup_stale: bool) -> None:
-    """Delete a stale gateway PID file (and its sibling lock metadata).
+    """删除过期的 gateway PID 文件（及其同级的锁元数据）。
 
-    Called from ``get_running_pid()`` after the runtime lock has already been
-    confirmed inactive, so the on-disk metadata is known to belong to a dead
-    process.  Unlike ``remove_pid_file()`` (which defensively refuses to delete
-    a PID file whose ``pid`` field differs from ``os.getpid()`` to protect
-    ``--replace`` handoffs), this path force-unlinks both files so the next
-    startup sees a clean slate.
+    在 ``get_running_pid()`` 确认运行时锁已不活跃后调用，因此磁盘上的元数据
+    已知属于一个死掉的进程。与 ``remove_pid_file()``（它会防御性地拒绝删除
+    ``pid`` 字段与 ``os.getpid()`` 不同的 PID 文件，以保护 ``--replace``
+    交接）不同，此路径强制取消两个文件的链接，使下次启动看到干净的状态。
     """
     if not cleanup_stale:
         return
@@ -523,44 +511,42 @@ def _try_acquire_file_lock(handle) -> bool:
 
 
 def _pid_exists(pid: int) -> bool:
-    """Cross-platform "is this PID alive" check that does NOT kill the target.
+    """跨平台的"这个 PID 是否存活"检查，不会杀死目标。
 
-    CRITICAL on Windows: Python's ``os.kill(pid, 0)`` is NOT a no-op like it
-    is on POSIX. CPython's Windows implementation
-    (``Modules/posixmodule.c::os_kill_impl``) treats ``sig=0`` as
-    ``CTRL_C_EVENT`` because the two values collide at the C level, and
-    routes it through ``GenerateConsoleCtrlEvent(0, pid)`` — which sends
-    a Ctrl+C to the entire console process group containing the target
-    PID, not just the PID itself. Any caller that wanted to "check if
-    this PID is alive" via ``os.kill(pid, 0)`` on Windows was silently
-    killing that process (and often unrelated processes in the same
-    console group). Long-standing Python quirk; see bpo-14484.
+    在 Windows 上至关重要：Python 的 ``os.kill(pid, 0)`` 并不像 POSIX 上那样
+    是一个空操作。CPython 的 Windows 实现
+    （``Modules/posixmodule.c::os_kill_impl``）把 ``sig=0`` 当作
+    ``CTRL_C_EVENT``，因为这两个值在 C 层面碰撞，并通过
+    ``GenerateConsoleCtrlEvent(0, pid)`` 路由 —— 这会向包含目标 PID 的整个
+    控制台进程组发送 Ctrl+C，而不只是该 PID 本身。任何想在 Windows 上通过
+    ``os.kill(pid, 0)`` "检查这个 PID 是否存活"的调用方，都在悄悄杀死该进程
+    （通常还包括同一控制台组里无关的进程）。由来已久的 Python 怪行为；见
+    bpo-14484。
 
-    Implementation: prefer :mod:`psutil` (hard dependency — the canonical
-    cross-platform answer, maintained by Giampaolo Rodolà, uses
-    ``OpenProcess + GetExitCodeProcess`` on Windows internally). Fall back
-    to a hand-rolled ctypes ``OpenProcess`` / ``WaitForSingleObject`` pair
-    on Windows + ``os.kill(pid, 0)`` on POSIX if psutil is somehow
-    unavailable — e.g. stripped-down install or import error during the
-    scaffold phase before ``psutil`` is pip-installed.
+    实现：优先用 :mod:`psutil`（硬依赖 —— 由 Giampaolo Rodolà 维护的权威
+    跨平台答案，在 Windows 内部使用
+    ``OpenProcess + GetExitCodeProcess``）。如果 psutil 因某种原因不可用
+    （例如精简安装，或在 ``psutil`` 被 pip 安装前的脚手架阶段的导入错误），
+    在 Windows 上回退到手写的 ctypes ``OpenProcess`` /
+    ``WaitForSingleObject`` 对，在 POSIX 上回退到 ``os.kill(pid, 0)``。
     """
     try:
         import psutil  # type: ignore
         return bool(psutil.pid_exists(int(pid)))
     except ImportError:
-        pass  # Fall through to stdlib fallback.
+        pass  # 进入标准库回退。
 
     if _IS_WINDOWS:
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            # Pin return types — default ctypes restype is c_int (signed),
-            # which mangles WAIT_* DWORD return codes into negative numbers.
+            # 固定返回类型 —— 默认 ctypes 的 restype 是 c_int（有符号），会把
+            # WAIT_* 的 DWORD 返回码扭曲成负数。
             kernel32.OpenProcess.restype = ctypes.c_void_p
             kernel32.WaitForSingleObject.restype = ctypes.c_uint
             kernel32.GetLastError.restype = ctypes.c_uint
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            SYNCHRONIZE = 0x100000  # required for WaitForSingleObject
+            SYNCHRONIZE = 0x100000  # WaitForSingleObject 所需
             WAIT_TIMEOUT = 0x00000102
             ERROR_INVALID_PARAMETER = 87
             ERROR_ACCESS_DENIED = 5
@@ -570,14 +556,15 @@ def _pid_exists(pid: int) -> bool:
             if not handle:
                 err = kernel32.GetLastError()
                 if err == ERROR_INVALID_PARAMETER:
-                    return False  # PID definitely gone
+                    return False  # PID 肯定已消失
                 if err == ERROR_ACCESS_DENIED:
-                    return True   # Exists but owned by another user/session
-                return False      # Conservative default for unknown errors
+                    return True   # 存在但由其他用户/session 拥有
+                return False      # 未知错误的保守默认
             try:
                 wait_result = kernel32.WaitForSingleObject(handle, 0)
-                # WAIT_TIMEOUT = still running; anything else (WAIT_OBJECT_0
-                # via exit, WAIT_FAILED via handle issue) = treat as gone.
+                # WAIT_TIMEOUT = 仍在运行；其他任何情况
+                # （通过退出的 WAIT_OBJECT_0、通过句柄问题的 WAIT_FAILED）
+                # = 当作已消失。
                 return wait_result == WAIT_TIMEOUT
             finally:
                 kernel32.CloseHandle(handle)
@@ -585,12 +572,12 @@ def _pid_exists(pid: int) -> bool:
             return False
     else:
         try:
-            os.kill(int(pid), 0)  # windows-footgun: ok — POSIX-only branch (the whole point of _pid_exists)
+            os.kill(int(pid), 0)  # windows-footgun: ok — 仅 POSIX 分支（这正是 _pid_exists 的全部意义）
             return True
         except ProcessLookupError:
             return False
         except PermissionError:
-            # Process exists but we can't signal it — still alive.
+            # 进程存在但我们无法向其发信号 —— 仍然存活。
             return True
         except OSError:
             return False
@@ -609,10 +596,10 @@ def _release_file_lock(handle) -> None:
 
 
 def acquire_gateway_runtime_lock() -> bool:
-    """Claim the cross-process runtime lock for the gateway.
+    """为 gateway 声明跨进程的运行时锁。
 
-    Unlike the PID file, the lock is owned by the live process itself. If the
-    process dies abruptly, the OS releases the lock automatically.
+    与 PID 文件不同，该锁由存活进程本身拥有。如果进程突然死亡，OS 会自动
+    释放锁。
     """
     global _gateway_lock_handle
     if _gateway_lock_handle is not None:
@@ -630,7 +617,7 @@ def acquire_gateway_runtime_lock() -> bool:
 
 
 def release_gateway_runtime_lock() -> None:
-    """Release the gateway runtime lock when owned by this process."""
+    """当本进程持有 gateway 运行时时锁，将其释放。"""
     global _gateway_lock_handle
     handle = _gateway_lock_handle
     if handle is None:
@@ -644,7 +631,7 @@ def release_gateway_runtime_lock() -> None:
 
 
 def is_gateway_runtime_lock_active(lock_path: Optional[Path] = None) -> bool:
-    """Return True when some process currently owns the gateway runtime lock."""
+    """当某个进程当前持有 gateway 运行时锁时返回 True。"""
     global _gateway_lock_handle
     resolved_lock_path = lock_path or _get_gateway_lock_path()
     if _gateway_lock_handle is not None and resolved_lock_path == _get_gateway_lock_path():
@@ -667,11 +654,10 @@ def is_gateway_runtime_lock_active(lock_path: Optional[Path] = None) -> bool:
 
 
 def write_pid_file() -> None:
-    """Write the current process PID and metadata to the gateway PID file.
+    """将当前进程的 PID 和元数据写入 gateway PID 文件。
 
-    Uses atomic O_CREAT | O_EXCL creation so that concurrent --replace
-    invocations race: exactly one process wins and the rest get
-    FileExistsError.
+    使用原子的 O_CREAT | O_EXCL 创建方式，使并发的 --replace 调用产生竞态：
+    恰好一个进程胜出，其余的得到 FileExistsError。
     """
     path = _get_pid_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -679,7 +665,7 @@ def write_pid_file() -> None:
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
-        raise  # Let caller decide: another gateway is racing us
+        raise  # 让调用方决定：另一个 gateway 正在与我们竞态
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(record)
@@ -703,7 +689,7 @@ def write_runtime_status(
     error_message: Any = _UNSET,
     served_profiles: Any = _UNSET,
 ) -> None:
-    """Persist gateway runtime health information for diagnostics/status."""
+    """持久化 gateway 的运行时健康信息，用于诊断/状态查询。"""
     path = _get_runtime_status_path()
     payload = _read_json_file(path) or _build_runtime_status_record()
     current_record = _build_pid_record()
@@ -723,9 +709,9 @@ def write_runtime_status(
     if active_agents is not _UNSET:
         payload["active_agents"] = parse_active_agents(active_agents)
     if served_profiles is not _UNSET:
-        # Profiles this gateway multiplexes (multi-profile mode). Absent/empty
-        # for a single-profile gateway. Lets `hermes status` show per-profile
-        # coverage without a second probe.
+        # 此 gateway 多路复用的 profile（多 profile 模式）。对于单 profile 的
+        # gateway 则缺失/为空。让 `hermes status` 无需二次探测即可显示按
+        # profile 的覆盖情况。
         payload["served_profiles"] = list(served_profiles or [])
 
     if platform is not _UNSET:
@@ -743,24 +729,23 @@ def write_runtime_status(
 
 
 def read_runtime_status(path: Optional[Path] = None) -> Optional[dict[str, Any]]:
-    """Read the persisted gateway runtime health/status information.
+    """读取持久化的 gateway 运行时健康/状态信息。
 
-    ``path`` is optional so callers that need to inspect a *different*
-    profile's state file (e.g. the dashboard enumerating every profile)
-    can do so without mutating ``HERMES_HOME`` in-process.  Defaults to
-    the active profile's ``gateway_state.json``.
+    ``path`` 是可选的，这样需要检查*另一个* profile 的状态文件
+    （例如 dashboard 枚举每个 profile）的调用方可以在不修改进程内
+    ``HERMES_HOME`` 的情况下完成。默认为活动 profile 的
+    ``gateway_state.json``。
     """
     return _read_json_file(path or _get_runtime_status_path())
 
 
 def parse_active_agents(raw: Any) -> int:
-    """Coerce a persisted ``active_agents`` value to a clamped non-negative int.
+    """把持久化的 ``active_agents`` 值强制转换为钳制过的非负整数。
 
-    The shared coercion for the in-flight gateway-turn count. Used on the WRITE
-    side (``write_runtime_status``) and by both HTTP read surfaces
-    (``/api/status`` and ``/health/detailed``) so the count is clamped to a
-    single contract — never negative, never raising on a manually-edited or
-    otherwise non-numeric value (degrades to ``0``).
+    用于在途 gateway 轮次数的共享强制转换。在写入侧
+    （``write_runtime_status``）以及两个 HTTP 读取面
+    （``/api/status`` 和 ``/health/detailed``）使用，使计数遵循单一契约
+    —— 永不为负，永不对手动编辑或其他非数字值抛异常（降级为 ``0``）。
     """
     try:
         return max(0, int(raw))
@@ -768,26 +753,24 @@ def parse_active_agents(raw: Any) -> int:
         return 0
 
 
-# States in which the gateway is alive and could be asked to drain.  Anything
-# else (draining already, stopping, stopped, startup_failed, None) is NOT a
-# valid begin-drain target.
+# gateway 存活且可被要求排空的状态。其他任何状态（已排空、停止中、已停止、
+# 启动失败、None）都不是有效的开始排空目标。
 _DRAINABLE_GATEWAY_STATES = frozenset({"running"})
 
 
 def derive_gateway_busy(
     *, gateway_running: bool, gateway_state: Any, active_agents: Any
 ) -> bool:
-    """Whether the gateway is actively processing in-flight turns.
+    """gateway 是否正在主动处理在途的轮次。
 
-    The contract NAS gates lifecycle actions on.  Busy iff the gateway is live
-    (``gateway_running``), in the ``running`` state, AND at least one agent is
-    mid-turn (``active_agents > 0``).  Degrades to ``False`` whenever liveness
-    is unknown, the state is anything but ``running``, or the count is
-    absent/unparseable — i.e. a down or file-absent gateway reads "not busy",
-    never a spurious "busy".
+    NAS 门控生命周期动作所依赖的契约。当且仅当 gateway 存活
+    （``gateway_running``）、处于 ``running`` 状态、且至少一个 agent 在轮途
+    中（``active_agents > 0``）时为忙。当存活状态未知、状态不是 ``running``、
+    或计数缺失/不可解析时，降级为 ``False`` —— 即一个宕掉或文件缺失的
+    gateway 读作"不忙"，绝不会是虚假的"忙"。
 
-    NOTE: liveness keys off ``gateway_running`` (a live PID / health probe),
-    NEVER ``updated_at`` — a healthy idle gateway never advances that timestamp.
+    NOTE：存活判断依据 ``gateway_running``（存活的 PID / 健康探针），绝不是
+    ``updated_at`` —— 一个健康的空闲 gateway 永远不会推进该时间戳。
     """
     if not gateway_running:
         return False
@@ -800,13 +783,12 @@ def derive_gateway_busy(
 
 
 def derive_gateway_drainable(*, gateway_running: bool, gateway_state: Any) -> bool:
-    """Whether the gateway can accept a begin-drain request right now.
+    """gateway 现在能否接受开始排空的请求。
 
-    True iff the gateway is live and in the ``running`` state — i.e. not already
-    draining/stopping/stopped and not in a failed-start state.  This is
-    independent of ``active_agents``: an idle running gateway is drainable (the
-    drain just completes immediately).  Degrades to ``False`` for a down or
-    non-running gateway.
+    当且仅当 gateway 存活且处于 ``running`` 状态时为 True —— 即没有已经在
+    排空/停止中/已停止，也不在启动失败状态。这与 ``active_agents`` 无关：
+    一个空闲的运行中 gateway 是可排空的（排空只是立即完成）。对于宕掉或非
+    运行中的 gateway 降级为 ``False``。
     """
     return bool(gateway_running) and gateway_state in _DRAINABLE_GATEWAY_STATES
 
@@ -816,20 +798,18 @@ def get_runtime_status_running_pid(
     *,
     expected_home: Optional[Path] = None,
 ) -> Optional[int]:
-    """Return a live gateway PID from the runtime status record, if valid.
+    """如果有效，从运行时状态记录返回存活的 gateway PID。
 
-    ``get_running_pid()`` is the primary liveness source because it verifies the
-    runtime lock and PID file.  Launch-service managers can still leave us with
-    a live process and a fresh ``gateway_state.json`` but no ``gateway.pid``; use
-    this as a conservative fallback by checking both the persisted state and the
-    OS process identity.
+    ``get_running_pid()`` 是首要的存活判定来源，因为它校验运行时锁和 PID
+    文件。但启动服务管理器仍可能让我们得到一个存活进程和一份新鲜的
+    ``gateway_state.json``，却没有 ``gateway.pid``；这里作为保守的回退，通过
+    同时检查持久化状态和 OS 进程身份来判定。
 
-    ``expected_home`` scopes the OS-identity check to a specific profile's
-    HERMES_HOME.  Pass it when validating *another* profile's state file (the
-    dashboard enumerating every profile): a stale record whose PID the OS has
-    recycled onto a different profile's live gateway must not be reported
-    running for the dead profile.  Omit it (the default) for the active
-    profile, where any live gateway command line is acceptable.
+    ``expected_home`` 把 OS 身份检查限定到某个特定 profile 的 HERMES_HOME。
+    在验证*另一个* profile 的状态文件（dashboard 枚举每个 profile）时传入它：
+    一条过期记录的 PID 若被 OS 回收到另一个 profile 存活的 gateway 上，绝不能
+    为死掉的 profile 报告为运行中。对活动 profile 省略它（默认），那里任何
+    存活的 gateway 命令行都可以接受。
     """
     payload = runtime if runtime is not None else read_runtime_status()
     if not isinstance(payload, dict):
@@ -856,12 +836,11 @@ def get_runtime_status_running_pid(
 
 
 def remove_pid_file() -> None:
-    """Remove the gateway PID file, but only if it belongs to this process.
+    """移除 gateway PID 文件，但仅当它属于本进程时。
 
-    During --replace handoffs, the old process's atexit handler can fire AFTER
-    the new process has written its own PID file.  Blindly removing the file
-    would delete the new process's record, leaving the gateway running with no
-    PID file (invisible to ``get_running_pid()``).
+    在 --replace 交接期间，旧进程的 atexit 处理器可能在新进程写入自己的
+    PID 文件之后才触发。盲目删除文件会删掉新进程的记录，使 gateway 在没有
+    PID 文件的情况下运行（对 ``get_running_pid()`` 不可见）。
     """
     try:
         path = _get_pid_path()
@@ -872,7 +851,7 @@ def remove_pid_file() -> None:
             except (KeyError, TypeError, ValueError):
                 file_pid = None
             if file_pid is not None and file_pid != os.getpid():
-                # PID file belongs to a different process — leave it alone.
+                # PID 文件属于另一个进程 —— 不要动它。
                 return
         path.unlink(missing_ok=True)
     except Exception:
@@ -880,10 +859,10 @@ def remove_pid_file() -> None:
 
 
 def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, Any]] = None) -> tuple[bool, Optional[dict[str, Any]]]:
-    """Acquire a machine-local lock keyed by scope + identity.
+    """获取一个以 scope + identity 为键的本机锁。
 
-    Used to prevent multiple local gateways from using the same external identity
-    at once (e.g. the same Telegram bot token across different HERMES_HOME dirs).
+    用于防止多个本地 gateway 同时使用同一个外部身份（例如跨不同 HERMES_HOME
+    目录使用同一个 Telegram bot token）。
     """
     lock_path = _get_scope_lock_path(scope, identity)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -897,10 +876,9 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
 
     existing = _read_json_file(lock_path)
     if existing is None and lock_path.exists():
-        # Lock file exists but is empty or contains invalid JSON — treat as
-        # stale.  This happens when a previous process was killed between
-        # O_CREAT|O_EXCL and the subsequent json.dump() (e.g. DNS failure
-        # during rapid Slack reconnect retries).
+        # 锁文件存在但为空或包含无效 JSON —— 当作过期处理。这发生在前一个
+        # 进程在 O_CREAT|O_EXCL 和随后的 json.dump() 之间被杀掉时
+        # （例如 Slack 快速重连重试期间的 DNS 故障）。
         try:
             lock_path.unlink(missing_ok=True)
         except OSError:
@@ -927,13 +905,11 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
                     and current_start != existing.get("start_time")
                 ):
                     stale = True
-                # When start_time comparison is unavailable (macOS / Windows
-                # have no /proc, so both sides are None), fall back to
-                # checking the live process command line.  When cmdline is
-                # also unreadable (Windows has no ps), consult the lock
-                # record's own argv — the gateway writes it at startup and
-                # it's the only identity signal on platforms without ps.
-                # Both oracles must indicate "not a gateway" to mark stale.
+                # 当 start_time 比较不可用时（macOS / Windows 没有 /proc，所以
+                # 两边都是 None），回退到检查实时进程命令行。当 cmdline 也
+                # 不可读时（Windows 没有 ps），查阅锁记录自身的 argv ——
+                # gateway 在启动时写入它，在没有 ps 的平台上这是唯一的身份
+                # 信号。两个判断都必须表明"不是 gateway"才能标记为过期。
                 if (
                     not stale
                     and existing.get("start_time") is None
@@ -943,12 +919,11 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
                     live_cmdline = _read_process_cmdline(existing_pid)
                     if live_cmdline is not None or not _record_looks_like_gateway(existing):
                         stale = True
-                # Secondary defence against boot-time PID+start_time collisions:
-                # systemd spawns core services deterministically, so an unrelated
-                # process (e.g. cron) can land on the exact same PID and jiffy
-                # count as a previous gateway. If both start_times are known and
-                # match but the live process is not a gateway, and we can confirm
-                # that by reading its cmdline, the lock is stale.
+                # 对启动时 PID+start_time 碰撞的二次防御：systemd 确定性地
+                # 拉起核心服务，因此一个无关进程（例如 cron）可能恰好落在与
+                # 之前的 gateway 完全相同的 PID 和 jiffy 计数上。如果两个
+                # start_time 都已知且匹配，但实时进程不是 gateway，并且我们
+                # 能通过读取其 cmdline 确认这一点，那么锁就是过期的。
                 if (
                     not stale
                     and existing.get("start_time") is not None
@@ -958,9 +933,9 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
                     live_cmdline = _read_process_cmdline(existing_pid)
                     if live_cmdline is not None:
                         stale = True
-                # Check if process is stopped (Ctrl+Z / SIGTSTP) — stopped
-                # processes still appear alive to _pid_exists but are not
-                # actually running. Treat them as stale so --replace works.
+                # 检查进程是否被停止（Ctrl+Z / SIGTSTP）—— 停止的进程对
+                # _pid_exists 仍然显示存活，但实际上并未运行。把它们当作
+                # 过期处理，以便 --replace 能工作。
                 if not stale:
                     try:
                         _proc_status = Path(f"/proc/{existing_pid}/status")
@@ -968,7 +943,7 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
                             for _line in _proc_status.read_text(encoding="utf-8").splitlines():
                                 if _line.startswith("State:"):
                                     _state = _line.split()[1]
-                                    if _state in {"T", "t"}:  # stopped or tracing stop
+                                    if _state in {"T", "t"}:  # 停止或追踪停止
                                         stale = True
                                     break
                     except (OSError, PermissionError):
@@ -998,7 +973,7 @@ def acquire_scoped_lock(scope: str, identity: str, metadata: Optional[dict[str, 
 
 
 def release_scoped_lock(scope: str, identity: str) -> None:
-    """Release a previously-acquired scope lock when owned by this process."""
+    """当本进程持有时，释放之前获取的 scope 锁。"""
     lock_path = _get_scope_lock_path(scope, identity)
     existing = _read_json_file(lock_path)
     if not existing:
@@ -1018,18 +993,15 @@ def release_all_scoped_locks(
     owner_pid: Optional[int] = None,
     owner_start_time: Optional[int] = None,
 ) -> int:
-    """Remove scoped lock files in the lock directory.
+    """移除锁目录中的 scoped 锁文件。
 
-    Called during --replace to clean up stale locks left by stopped/killed
-    gateway processes that did not release their locks gracefully. When an
-    ``owner_pid`` is provided, only lock records belonging to that gateway
-    process are removed. ``owner_start_time`` further narrows the match to
-    protect against PID reuse.
+    在 --replace 期间调用，清理被停止/杀掉的 gateway 进程未优雅释放的过期锁。
+    当提供 ``owner_pid`` 时，只移除属于该 gateway 进程的锁记录。
+    ``owner_start_time`` 进一步缩小匹配范围，以防 PID 复用。
 
-    When no owner is provided, preserves the legacy behavior and removes every
-    scoped lock file in the directory.
+    当未提供 owner 时，保留旧行为，移除目录中的每个 scoped 锁文件。
 
-    Returns the number of lock files removed.
+    返回被移除的锁文件数量。
     """
     lock_dir = _get_lock_dir()
     removed = 0
@@ -1058,39 +1030,35 @@ def release_all_scoped_locks(
     return removed
 
 
-# ── --replace takeover marker ─────────────────────────────────────────
+# ── --replace 接管标记 ─────────────────────────────────────────
 #
-# When a new gateway starts with ``--replace``, it SIGTERMs the existing
-# gateway so it can take over the bot token. PR #5646 made SIGTERM exit
-# the gateway with code 1 so ``Restart=on-failure`` can revive it after
-# unexpected kills — but that also means a --replace takeover target
-# exits 1, which tricks systemd into reviving it 30 seconds later,
-# starting a flap loop against the replacer when both services are
-# enabled in the user's systemd (e.g. ``hermes.service`` + ``hermes-
-# gateway.service``).
+# 当一个新 gateway 以 ``--replace`` 启动时，它会向现有的 gateway 发送
+# SIGTERM，以便接管 bot token。PR #5646 让 SIGTERM 以退出码 1 退出
+# gateway，这样 ``Restart=on-failure`` 可以在意外杀掉后恢复它 —— 但这
+# 也意味着 --replace 的接管目标会以 1 退出，这会诱使 systemd 在 30 秒后
+# 恢复它，当两个服务都在用户的 systemd 中启用时（例如 ``hermes.service``
+# + ``hermes-gateway.service``），就会与接管方开始抖动循环。
 #
-# The takeover marker breaks the loop: the replacer writes a short-lived
-# file naming the target PID + start_time BEFORE sending SIGTERM.
-# The target's shutdown handler reads the marker and, if it names
-# this process, treats the SIGTERM as a planned takeover and exits 0.
-# The marker is unlinked after the target has consumed it, so a stale
-# marker left by a crashed replacer can grief at most one future
-# shutdown on the same PID — and only within _TAKEOVER_MARKER_TTL_S.
+# 接管标记打破了这个循环：接管方在发送 SIGTERM 之前写入一个短暂的文件，
+# 指明目标 PID + start_time。目标的关闭处理器读取该标记，如果它指明了本
+# 进程，就把这次 SIGTERM 当作计划中的接管并以 0 退出。标记在目标消费它
+# 之后被取消链接，因此崩溃的接管方留下的过期标记最多只能祸害同一 PID
+# 上的一次未来关闭 —— 而且只在 _TAKEOVER_MARKER_TTL_S 之内。
 
 _TAKEOVER_MARKER_FILENAME = ".gateway-takeover.json"
-_TAKEOVER_MARKER_TTL_S = 60  # Marker older than this is treated as stale
+_TAKEOVER_MARKER_TTL_S = 60  # 早于此时长的标记被视为过期
 _PLANNED_STOP_MARKER_FILENAME = ".gateway-planned-stop.json"
 _PLANNED_STOP_MARKER_TTL_S = 60
 
 
 def _get_takeover_marker_path() -> Path:
-    """Return the path to the --replace takeover marker file."""
+    """返回 --replace 接管标记文件的路径。"""
     home = get_hermes_home()
     return home / _TAKEOVER_MARKER_FILENAME
 
 
 def _get_planned_stop_marker_path() -> Path:
-    """Return the path to the intentional gateway stop marker file."""
+    """返回主动 gateway 停止标记文件的路径。"""
     home = get_hermes_home()
     return home / _PLANNED_STOP_MARKER_FILENAME
 
@@ -1135,18 +1103,15 @@ def _consume_pid_marker_for_self(
 
     our_pid = os.getpid()
     our_start_time = _get_process_start_time(our_pid)
-    # Start-time is a PID-reuse guard. It is only meaningful when both
-    # sides actually have it: ``_get_process_start_time`` returns None on
-    # platforms without ``/proc`` (macOS, native Windows — the very
-    # platform the planned-stop watcher exists for). Requiring a non-None
-    # match there would make every consume return False, so a legitimate
-    # ``hermes gateway stop`` on Windows would be misclassified as an
-    # unexpected ``UNKNOWN`` exit (exit 1) and revived by the service
-    # manager. So: when both start_times are known they must match; when
-    # either is unknown, fall back to PID equality alone (bounded by the
-    # marker's short TTL). This mirrors ``planned_stop_marker_targets_self``
-    # so the watcher's non-destructive probe and this authoritative
-    # consume agree on every platform (issue #34597).
+    # start_time 是一个 PID 复用守卫。它只在两边都确实有它时才有意义：
+    # ``_get_process_start_time`` 在没有 ``/proc`` 的平台（macOS、原生
+    # Windows —— 正是 planned-stop 监视器所针对的平台）上返回 None。在那里
+    # 要求非 None 的匹配会让每次消费都返回 False，于是 Windows 上合法的
+    # ``hermes gateway stop`` 会被误判为意外的 ``UNKNOWN`` 退出（退出码 1）
+    # 并被服务管理器恢复。所以：当两个 start_time 都已知时必须匹配；当任一
+    # 未知时，仅回退到 PID 相等性（受标记的短 TTL 约束）。这镜像了
+    # ``planned_stop_marker_targets_self``，使监视器的非破坏性探针与此处
+    # 权威的消费在每个平台上一致（issue #34597）。
     if target_pid != our_pid:
         matches = False
     elif target_start_time is not None and our_start_time is not None:
@@ -1163,15 +1128,13 @@ def _consume_pid_marker_for_self(
 
 
 def write_takeover_marker(target_pid: int) -> bool:
-    """Record that ``target_pid`` is being replaced by the current process.
+    """记录 ``target_pid`` 正在被当前进程接管。
 
-    Captures the target's ``start_time`` so that PID reuse after the
-    target exits cannot later match the marker. Also records the
-    replacer's PID and a UTC timestamp for TTL-based staleness checks.
+    捕获目标的 ``start_time``，以便目标退出后的 PID 复用不会在之后匹配该
+    标记。还记录接管方的 PID 和一个 UTC 时间戳，用于基于 TTL 的过期检查。
 
-    Returns True on successful write, False on any failure. The caller
-    should proceed with the SIGTERM even if the write fails (the marker
-    is a best-effort signal, not a correctness requirement).
+    写入成功返回 True，任何失败返回 False。即使写入失败，调用方也应继续
+    发送 SIGTERM（该标记是尽力而为的信号，不是正确性要求）。
     """
     try:
         target_start_time = _get_process_start_time(target_pid)
@@ -1188,15 +1151,14 @@ def write_takeover_marker(target_pid: int) -> bool:
 
 
 def consume_takeover_marker_for_self() -> bool:
-    """Check & unlink the takeover marker if it names the current process.
+    """检查并在接管标记指明当前进程时取消其链接。
 
-    Returns True only when a valid (non-stale) marker names this PID +
-    start_time. A returning True indicates the current SIGTERM is a
-    planned --replace takeover; the caller should exit 0 instead of
-    signalling ``_signal_initiated_shutdown``.
+    仅当一个有效（未过期）的标记指明本 PID + start_time 时返回 True。返回
+    True 表示当前的 SIGTERM 是计划中的 --replace 接管；调用方应以 0 退出，
+    而不是发信号给 ``_signal_initiated_shutdown``。
 
-    Always unlinks the marker on match (and on detected staleness) so
-    subsequent unrelated signals don't re-trigger.
+    匹配时（以及检测到过期时）总是取消标记链接，以便后续无关信号不会重复
+    触发。
     """
     return _consume_pid_marker_for_self(
         _get_takeover_marker_path(),
@@ -1207,7 +1169,7 @@ def consume_takeover_marker_for_self() -> bool:
 
 
 def clear_takeover_marker() -> None:
-    """Remove the takeover marker unconditionally. Safe to call repeatedly."""
+    """无条件移除接管标记。可安全地重复调用。"""
     try:
         _get_takeover_marker_path().unlink(missing_ok=True)
     except OSError:
@@ -1215,11 +1177,11 @@ def clear_takeover_marker() -> None:
 
 
 def write_planned_stop_marker(target_pid: int) -> bool:
-    """Record that ``target_pid`` is being stopped intentionally.
+    """记录 ``target_pid`` 正在被主动停止。
 
-    The gateway exits non-zero for unexpected SIGTERM so service managers can
-    revive it. Service stop commands send the same SIGTERM, so the CLI writes
-    this short-lived marker first to let the target process exit cleanly.
+    gateway 在收到意外的 SIGTERM 时以非零退出，以便服务管理器能恢复它。服务
+    停止命令发送相同的 SIGTERM，因此 CLI 先写入这个短暂标记，让目标进程干净
+    地退出。
     """
     try:
         target_start_time = _get_process_start_time(target_pid)
@@ -1236,7 +1198,7 @@ def write_planned_stop_marker(target_pid: int) -> bool:
 
 
 def consume_planned_stop_marker_for_self() -> bool:
-    """Return True when the current process is being intentionally stopped."""
+    """当当前进程正被主动停止时返回 True。"""
     return _consume_pid_marker_for_self(
         _get_planned_stop_marker_path(),
         pid_field="target_pid",
@@ -1246,22 +1208,19 @@ def consume_planned_stop_marker_for_self() -> bool:
 
 
 def planned_stop_marker_targets_self() -> bool:
-    """Return True only when a live planned-stop marker names the current process.
+    """仅当一份存活的 planned-stop 标记指明当前进程时返回 True。
 
-    This is a **non-destructive** probe used by the watcher thread
-    (``gateway/run.py:_run_planned_stop_watcher``) to decide whether to
-    trigger shutdown. Unlike :func:`consume_planned_stop_marker_for_self`,
-    it never unlinks a marker that matches us — the shutdown handler does
-    the authoritative consume on its own thread.
+    这是一个**非破坏性**探针，由监视器线程
+    （``gateway/run.py:_run_planned_stop_watcher``）用于决定是否触发关闭。
+    与 :func:`consume_planned_stop_marker_for_self` 不同，它从不取消指明
+    本进程的标记链接 —— 关闭处理器会在自己的线程上做权威的消费。
 
-    It *does* clean up markers that can never apply to this process:
-    malformed markers and markers older than the TTL are unlinked so a
-    stale file left behind by a previous gateway instance cannot wedge
-    the new one. Markers naming a different PID/start_time are left in
-    place (they may still be consumed legitimately by the process they
-    name) but report False here.
+    它*确实*会清理永远不可能适用于本进程的标记：畸形标记和早于 TTL 的标记
+    会被取消链接，以免前一个 gateway 实例留下的过期文件卡住新的实例。指明
+    不同 PID/start_time 的标记会留在原处（它们仍可能被它们所指明的进程合法
+    消费），但在此处报告 False。
 
-    Returns False (without raising) on any read/parse error.
+    任何读取/解析错误都返回 False（不抛异常）。
     """
     path = _get_planned_stop_marker_path()
     record = _read_json_file(path)
@@ -1273,7 +1232,7 @@ def planned_stop_marker_targets_self() -> bool:
         target_start_time = record.get("target_start_time")
         written_at = record.get("written_at") or ""
     except (KeyError, TypeError, ValueError):
-        # Malformed marker can never match anyone — drop it.
+        # 畸形标记永远不可能匹配任何人 —— 丢弃它。
         try:
             path.unlink(missing_ok=True)
         except OSError:
@@ -1281,8 +1240,8 @@ def planned_stop_marker_targets_self() -> bool:
         return False
 
     if _marker_is_stale(written_at, _PLANNED_STOP_MARKER_TTL_S):
-        # A marker this old is past its useful life regardless of target —
-        # clean it up so it cannot crash-loop a freshly booted gateway.
+        # 如此旧的标记无论目标如何都已过有效期 —— 清理它，以免它让新启动的
+        # gateway 崩溃循环。
         try:
             path.unlink(missing_ok=True)
         except OSError:
@@ -1293,14 +1252,12 @@ def planned_stop_marker_targets_self() -> bool:
     if target_pid != our_pid:
         return False
 
-    # Start-time is a PID-reuse guard. It is only meaningful when both
-    # sides actually have it: ``_get_process_start_time`` returns None on
-    # platforms without ``/proc`` (macOS, native Windows — the very
-    # platform this watcher exists for). Requiring a non-None match there
-    # would make the watcher never fire and re-break the #33778 Windows
-    # session-resume path. So: when both start_times are known they must
-    # match; when either is unknown, fall back to PID equality alone
-    # (the marker is short-lived under a 60s TTL, bounding reuse risk).
+    # start_time 是一个 PID 复用守卫。它只在两边都确实有它时才有意义：
+    # ``_get_process_start_time`` 在没有 ``/proc`` 的平台（macOS、原生
+    # Windows —— 正是此监视器所针对的平台）上返回 None。在那里要求非 None
+    # 的匹配会让监视器永不触发，并重新破坏 #33778 的 Windows session-resume
+    # 路径。所以：当两个 start_time 都已知时必须匹配；当任一未知时，仅
+    # 回退到 PID 相等性（标记在 60s TTL 下是短暂的，限制了复用风险）。
     our_start_time = _get_process_start_time(our_pid)
     if target_start_time is not None and our_start_time is not None:
         return target_start_time == our_start_time
@@ -1308,7 +1265,7 @@ def planned_stop_marker_targets_self() -> bool:
 
 
 def clear_planned_stop_marker() -> None:
-    """Remove the planned-stop marker unconditionally."""
+    """无条件移除 planned-stop 标记。"""
     try:
         _get_planned_stop_marker_path().unlink(missing_ok=True)
     except OSError:
@@ -1320,10 +1277,9 @@ def get_running_pid(
     *,
     cleanup_stale: bool = True,
 ) -> Optional[int]:
-    """Return the PID of a running gateway instance, or ``None``.
+    """返回正在运行的 gateway 实例的 PID，或 ``None``。
 
-    Checks the PID file and verifies the process is actually alive.
-    Cleans up stale PID files automatically.
+    检查 PID 文件并验证进程确实存活。自动清理过期的 PID 文件。
     """
     resolved_pid_path = pid_path or _get_pid_path()
     resolved_lock_path = _get_gateway_lock_path(resolved_pid_path)
@@ -1368,5 +1324,5 @@ def is_gateway_running(
     *,
     cleanup_stale: bool = True,
 ) -> bool:
-    """Check if the gateway daemon is currently running."""
+    """检查 gateway 守护进程当前是否在运行。"""
     return get_running_pid(pid_path, cleanup_stale=cleanup_stale) is not None

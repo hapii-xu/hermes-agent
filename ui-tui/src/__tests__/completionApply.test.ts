@@ -4,8 +4,8 @@ import { applyCompletion, completionToApplyOnSubmit } from '../domain/slash.js'
 
 describe('applyCompletion', () => {
   it('replaces from compReplace and drops the leading slash from the row', () => {
-    // The gateway's slash completer returns bare command names with
-    // replace_from = 1 (after the leading "/").
+    // gateway 的 slash completer 返回纯命令名，
+    // replace_from = 1（即前导 "/" 之后的位置）。
     expect(applyCompletion('/ex', 'exit', 1)).toBe('/exit')
   })
 
@@ -20,15 +20,15 @@ describe('applyCompletion', () => {
 
 describe('completionToApplyOnSubmit', () => {
   it('accepts a completion that finishes a partial command name', () => {
-    // "/ex" -> "/exit": a real token change, so Enter accepts it.
+    // "/ex" -> "/exit"：发生了实际的 token 变化，因此 Enter 接受该补全。
     expect(completionToApplyOnSubmit('/ex', 'exit', 1)).toBe('/exit')
   })
 
   it('does NOT swallow Enter when the completion only adds a trailing space', () => {
-    // This is the bug: once "/exit" is fully typed, the gateway returns the
-    // command with a trailing space ("exit ") so the classic-CLI dropdown
-    // stays open. In the TUI that must NOT eat the Enter — the command is
-    // already complete, so Enter should submit.
+    // 这就是 bug：当 "/exit" 已完整输入后，gateway 返回的命令
+    // 带有尾部空格（"exit "），导致 classic-CLI 下拉菜单保持打开。
+    // 在 TUI 中绝不能吞掉 Enter —— 命令已经完整，
+    // Enter 应该执行提交。
     expect(completionToApplyOnSubmit('/exit', 'exit ', 1)).toBeNull()
   })
 

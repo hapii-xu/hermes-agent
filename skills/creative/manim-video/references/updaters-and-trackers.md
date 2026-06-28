@@ -1,39 +1,39 @@
-# Updaters and Value Trackers
+# 更新器与值追踪器
 
-## The problem updaters solve
+## 更新器解决的问题
 
-Normal animations are discrete: `self.play()` goes from state A to state B. But what if you need continuous relationships — a label that always hovers above a moving dot, or a line that always connects two points?
+普通动画是离散的：`self.play()` 从状态 A 走到状态 B。但如果你需要持续的关系呢 —— 一个始终悬在移动点上方的标签，或一条始终连接两点的线？
 
-Without updaters, you'd manually reposition every dependent object before every `self.play()`. Five animations that move a dot means five manual repositioning calls for the label. Miss one and it freezes in the wrong spot.
+没有更新器，你就得在每次 `self.play()` 之前手动重新定位每个依赖对象。五次移动点的动画意味着五次对标签的手动重新定位。漏掉一次它就会卡在错误的位置。
 
-Updaters let you declare a relationship ONCE. Manim calls the updater function EVERY FRAME (15-60 fps depending on quality) to enforce that relationship, no matter what else is happening.
+更新器让你只需"声明一次"这种关系。Manim 会在"每一帧"（根据质量为 15-60 fps）调用更新器函数来强制维持这种关系，不管此刻还在发生什么。
 
-## ValueTracker: an invisible steering wheel
+## ValueTracker：一个隐形的方向盘
 
-A ValueTracker is an invisible Mobject that holds a single float. It never appears on screen. It exists so you can ANIMATE it while other objects REACT to its value.
+ValueTracker 是一个持有单个浮点数的隐形 Mobject。它从不出现在屏幕上。它存在的意义是让你可以"动画化"它，而其他对象则"响应"它的值。
 
-Think of it as a slider: drag the slider from 0 to 5, and every object wired to it responds in real time.
+把它想成一个滑块：把滑块从 0 拖到 5，每个连到它的对象都会实时响应。
 
 ```python
-tracker = ValueTracker(0)        # invisible, stores 0.0
-tracker.get_value()              # read: 0.0
-tracker.set_value(5)             # write: jump to 5.0 instantly
-tracker.animate.set_value(5)     # animate: smoothly interpolate to 5.0
+tracker = ValueTracker(0)        # 隐形，存储 0.0
+tracker.get_value()              # 读：0.0
+tracker.set_value(5)             # 写：瞬间跳到 5.0
+tracker.animate.set_value(5)     # 动画化：平滑插值到 5.0
 ```
 
-### The three-step pattern
+### 三步模式
 
-Every ValueTracker usage follows this:
+每个 ValueTracker 的用法都遵循这个：
 
-1. **Create the tracker** (the invisible slider)
-2. **Create visible objects that READ the tracker** via updaters
-3. **Animate the tracker** — all dependents update automatically
+1. **创建追踪器**（那个隐形滑块）
+2. **创建通过更新器"读取"追踪器"的可视对象**
+3. **动画化追踪器** —— 所有依赖者自动更新
 
 ```python
-# Step 1: Create tracker
+# 第 1 步：创建追踪器
 x_tracker = ValueTracker(1)
 
-# Step 2: Create dependent objects
+# 第 2 步：创建依赖对象
 dot = always_redraw(lambda: Dot(axes.c2p(x_tracker.get_value(), 0), color=YELLOW))
 v_line = always_redraw(lambda: axes.get_vertical_line(
     axes.c2p(x_tracker.get_value(), func(x_tracker.get_value())), color=BLUE
@@ -43,72 +43,72 @@ label = always_redraw(lambda: DecimalNumber(x_tracker.get_value(), font_size=24)
 
 self.add(dot, v_line, label)
 
-# Step 3: Animate the tracker — everything follows
+# 第 3 步：动画化追踪器 —— 一切随之而动
 self.play(x_tracker.animate.set_value(5), run_time=3)
 ```
 
-## Types of updaters
+## 更新器的种类
 
-### Lambda updater (most common)
+### Lambda 更新器（最常见）
 
-Runs a function every frame, passing the mobject itself:
+每帧运行一个函数，把 mobject 本身作为参数传入：
 
 ```python
-# Label always stays above the dot
+# 标签始终保持在点上方
 label.add_updater(lambda m: m.next_to(dot, UP, buff=0.2))
 
-# Line always connects two points
+# 线始终连接两点
 line.add_updater(lambda m: m.put_start_and_end_on(
     point_a.get_center(), point_b.get_center()
 ))
 ```
 
-### Time-based updater (with dt)
+### 基于时间的更新器（带 dt）
 
-The second argument `dt` is the time since the last frame (~0.017s at 60fps):
+第二个参数 `dt` 是自上一帧以来的时间（60fps 下约 0.017s）：
 
 ```python
-# Continuous rotation
+# 持续旋转
 square.add_updater(lambda m, dt: m.rotate(0.5 * dt))
 
-# Continuous rightward drift
+# 持续向右漂移
 dot.add_updater(lambda m, dt: m.shift(RIGHT * 0.3 * dt))
 
-# Oscillation
+# 振荡
 dot.add_updater(lambda m, dt: m.move_to(
     axes.c2p(m.get_center()[0], np.sin(self.time))
 ))
 ```
 
-Use `dt` updaters for physics simulations, continuous motion, and time-dependent effects.
+物理模拟、持续运动、随时间变化的效果用 `dt` 更新器。
 
-### always_redraw: full rebuild every frame
+### always_redraw：每帧完整重建
 
-Creates a new mobject from scratch each frame. More expensive than `add_updater` but handles cases where the mobject's structure changes (not just position/color):
+每帧从零创建一个新的 mobject。比 `add_updater` 开销更大，但能处理 mobject 的结构本身变化（而不仅仅是位置/颜色）的情况：
 
 ```python
-# Brace that follows a resizing square
+# 跟随一个正在缩放的正方形的花括号
 brace = always_redraw(Brace, square, UP)
 
-# Area under curve that updates as function changes
+# 随函数变化而更新的曲线下面积
 area = always_redraw(lambda: axes.get_area(
     graph, x_range=[0, x_tracker.get_value()], color=BLUE, opacity=0.3
 ))
 
-# Label that reconstructs its text
+# 重建自身文字的标签
 counter = always_redraw(lambda: Text(
     f"n = {int(x_tracker.get_value())}", font_size=24, font="Menlo"
 ).to_corner(UR))
 ```
 
-**When to use which:**
-- `add_updater` — position, color, opacity changes (cheap, preferred)
-- `always_redraw` — when the shape/structure itself changes (expensive, use sparingly)
+**何时用哪个：**
+- `add_updater` —— 位置、颜色、不透明度变化（开销小，首选）
+- `always_redraw` —— 当形状/结构本身变化时（开销大，少用）
 
-## DecimalNumber: showing live values
+## DecimalNumber：显示实时值
 
 ```python
-# Counter that tracks a ValueTracker
+# 跟踪 ValueTracker 的计数器
 tracker = ValueTracker(0)
 number = DecimalNumber(0, font_size=48, num_decimal_places=1, color=PRIMARY)
 number.add_updater(lambda m: m.set_value(tracker.get_value()))
@@ -118,64 +118,64 @@ self.add(number)
 self.play(tracker.animate.set_value(100), run_time=3)
 ```
 
-### Variable: the labeled version
+### Variable：带标签的版本
 
 ```python
 var = Variable(0, Text("x", font_size=24, font="Menlo"), num_decimal_places=2)
 self.add(var)
 self.play(var.tracker.animate.set_value(PI), run_time=2)
-# Displays: x = 3.14
+# 显示：x = 3.14
 ```
 
-## Removing updaters
+## 移除更新器
 
 ```python
-# Remove all updaters
+# 移除所有更新器
 mobject.clear_updaters()
 
-# Suspend temporarily (during an animation that would fight the updater)
+# 临时挂起（在某个会与更新器打架的动画期间）
 mobject.suspend_updating()
 self.play(mobject.animate.shift(RIGHT))
 mobject.resume_updating()
 
-# Remove specific updater (if you stored a reference)
+# 移除特定更新器（如果你保存了引用）
 def my_updater(m):
     m.next_to(dot, UP)
 label.add_updater(my_updater)
-# ... later ...
+# …… 之后 ……
 label.remove_updater(my_updater)
 ```
 
-## Animation-based updaters
+## 基于动画的更新器
 
 ### UpdateFromFunc / UpdateFromAlphaFunc
 
-These are ANIMATIONS (passed to `self.play`), not persistent updaters:
+这些是"动画"（传给 `self.play`），不是持久更新器：
 
 ```python
-# Call a function on each frame of the animation
+# 在动画的每一帧调用一个函数
 self.play(UpdateFromFunc(mobject, lambda m: m.next_to(moving_target, UP)), run_time=3)
 
-# With alpha (0 to 1) — useful for custom interpolation
+# 带 alpha（0 到 1）—— 适合自定义插值
 self.play(UpdateFromAlphaFunc(circle, lambda m, a: m.set_fill(opacity=a)), run_time=2)
 ```
 
 ### turn_animation_into_updater
 
-Convert a one-shot animation into a continuous updater:
+把一个一次性动画转换成持续更新器：
 
 ```python
 from manim import turn_animation_into_updater
 
-# This would normally play once — now it loops forever
+# 这通常只播放一次 —— 现在它永远循环
 turn_animation_into_updater(Rotating(gear, rate=PI/4))
 self.add(gear)
-self.wait(5)  # gear rotates for 5 seconds
+self.wait(5)  # 齿轮旋转 5 秒
 ```
 
-## Practical patterns
+## 实用模式
 
-### Pattern 1: Dot tracing a function
+### 模式 1：点沿函数追踪
 
 ```python
 tracker = ValueTracker(0)
@@ -193,7 +193,7 @@ self.add(graph, dot, tangent)
 self.play(tracker.animate.set_value(2*PI), run_time=6, rate_func=linear)
 ```
 
-### Pattern 2: Live area under curve
+### 模式 2：实时曲线下面积
 
 ```python
 tracker = ValueTracker(0.5)
@@ -202,7 +202,7 @@ area = always_redraw(lambda: axes.get_area(
     color=PRIMARY, opacity=0.3
 ))
 area_label = always_redraw(lambda: DecimalNumber(
-    # Numerical integration
+    # 数值积分
     sum(func(x) * 0.01 for x in np.arange(0, tracker.get_value(), 0.01)),
     font_size=24
 ).next_to(axes, RIGHT))
@@ -211,10 +211,10 @@ self.add(area, area_label)
 self.play(tracker.animate.set_value(4), run_time=5)
 ```
 
-### Pattern 3: Connected diagram
+### 模式 3：连接图
 
 ```python
-# Nodes that can be moved, with edges that auto-follow
+# 可移动的节点，边自动跟随
 node_a = Dot(LEFT * 2, color=PRIMARY)
 node_b = Dot(RIGHT * 2, color=SECONDARY)
 edge = Line().add_updater(lambda m: m.put_start_and_end_on(
@@ -227,13 +227,13 @@ label = Text("edge", font_size=18, font="Menlo").add_updater(
 self.add(node_a, node_b, edge, label)
 self.play(node_a.animate.shift(UP * 2), run_time=2)
 self.play(node_b.animate.shift(DOWN + RIGHT), run_time=2)
-# Edge and label follow automatically
+# 边和标签自动跟随
 ```
 
-### Pattern 4: Parameter exploration
+### 模式 4：参数探索
 
 ```python
-# Explore how a parameter changes a curve
+# 探索一个参数如何改变曲线
 a_tracker = ValueTracker(1)
 curve = always_redraw(lambda: axes.plot(
     lambda x: a_tracker.get_value() * np.sin(x),
@@ -249,12 +249,12 @@ self.play(a_tracker.animate.set_value(0.5), run_time=2)
 self.play(a_tracker.animate.set_value(1), run_time=1)
 ```
 
-## Common mistakes
+## 常见错误
 
-1. **Updater fights animation:** If a mobject has an updater that sets its position, and you try to animate it elsewhere, the updater wins every frame. Suspend updating first.
+1. **更新器与动画打架：** 如果一个 mobject 有一个设定其位置的更新器，而你又试图把它动画化到别处，更新器每帧都会赢。先挂起更新。
 
-2. **always_redraw for simple moves:** If you only need to reposition, use `add_updater`. `always_redraw` reconstructs the entire mobject every frame — expensive and unnecessary for position tracking.
+2. **简单移动用 always_redraw：** 如果你只需要重新定位，用 `add_updater`。`always_redraw` 每帧重建整个 mobject —— 用于位置追踪既昂贵又没必要。
 
-3. **Forgetting to add to scene:** Updaters only run on mobjects that are in the scene. `always_redraw` creates the mobject but you still need `self.add()`.
+3. **忘记加入场景：** 更新器只对已在场景中的 mobject 运行。`always_redraw` 创建了 mobject，但你仍需要 `self.add()`。
 
-4. **Updater creates new mobjects without cleanup:** If your updater creates Text objects every frame, they accumulate. Use `always_redraw` (which handles cleanup) or update properties in-place.
+4. **更新器创建新 mobject 但不清理：** 如果你的更新器每帧创建 Text 对象，它们会堆积。用 `always_redraw`（它会处理清理）或就地更新属性。

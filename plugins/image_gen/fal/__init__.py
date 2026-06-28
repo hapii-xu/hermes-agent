@@ -1,24 +1,23 @@
-"""FAL.ai image generation backend.
+"""FAL.ai 图像生成后端。
 
-Wraps the 18-model FAL catalog (FLUX 2, Z-Image, Nano Banana, GPT
-Image 1.5, Recraft, Imagen 4, Qwen, Ideogram, …) as an
-:class:`ImageGenProvider` implementation.
+将包含 18 个模型的 FAL 目录（FLUX 2、Z-Image、Nano Banana、GPT
+Image 1.5、Recraft、Imagen 4、Qwen、Ideogram 等）封装为
+:class:`ImageGenProvider` 实现。
 
-The heavy lifting — model catalog, payload construction, request
-submission, managed-Nous-gateway selection, Clarity Upscaler chaining
-— lives in :mod:`tools.image_generation_tool`. This plugin reaches into
-that module via call-time indirection (``import tools.image_generation_tool as _it``)
-so:
+核心功能——模型目录、请求体构建、请求提交、managed-Nous-gateway 选择、
+Clarity Upscaler 链式调用——均位于 :mod:`tools.image_generation_tool` 模块中。
+本插件通过调用时间接引用（``import tools.image_generation_tool as _it``）
+访问该模块，因此：
 
-* the existing test suite (``tests/tools/test_image_generation.py``,
-  ``tests/tools/test_managed_media_gateways.py``) keeps patching
+* 现有测试套件（``tests/tools/test_image_generation.py``、
+  ``tests/tools/test_managed_media_gateways.py``）无需修改即可继续 patch
   ``image_tool._submit_fal_request`` / ``image_tool.fal_client`` /
-  ``image_tool._managed_fal_client`` without modification, and
-* there's exactly one canonical FAL code path on disk — the plugin is a
-  registration adapter, not a parallel implementation.
+  ``image_tool._managed_fal_client``；
+* 磁盘上仅存在唯一的规范 FAL 代码路径——本插件仅为注册适配器，
+  而非并行的重复实现。
 
-See issue #26241 for the migration plan and the
-``plugin-extraction-test-patch-compatibility.md`` rules this follows.
+迁移计划及本文件所遵循的
+``plugin-extraction-test-patch-compatibility.md`` 规则详见 issue #26241。
 """
 
 from __future__ import annotations

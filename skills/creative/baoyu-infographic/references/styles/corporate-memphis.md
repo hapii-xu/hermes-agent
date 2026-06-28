@@ -1,29 +1,29 @@
 # corporate-memphis
 
-Flat vector people with vibrant geometric fills
+扁平矢量人物，配明快的几何填充
 
-## Color Palette
+## 配色
 
-- Primary: Bright, saturated - purple, orange, teal, yellow
-- Background: White or light pastels
-- Accents: Gradient fills, geometric patterns
+- 主色：鲜亮、饱和——紫、橙、青、黄
+- 背景：白色或浅粉彩
+- 点缀：渐变填充、几何图案
 
-## Visual Elements
+## 视觉元素
 
-- Flat vector illustration
-- Disproportionate human figures
-- Abstract body shapes
-- Floating geometric elements
-- No outlines, solid fills
-- Plant and object accents
+- 扁平矢量插画
+- 比例夸张的人形
+- 抽象的身体形状
+- 悬浮的几何元素
+- 无描边，纯色填充
+- 植物和物件点缀
 
-## Typography
+## 字体排印
 
-- Clean sans-serif
-- Bold headings
-- Professional but friendly
-- Minimal decoration
+- 干净的无衬线字体
+- 粗体标题
+- 专业但友好
+- 极简装饰
 
-## Best For
+## 最适用于
 
-Business presentations, tech products, marketing materials, corporate training
+商业演示、科技产品、营销材料、企业培训

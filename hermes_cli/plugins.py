@@ -1,34 +1,33 @@
 """
-Hermes Plugin System
+Hermes 插件系统
 ====================
 
-Discovers, loads, and manages plugins from four sources:
+从四个来源发现、加载和管理插件：
 
-1. **Bundled plugins** – ``<repo>/plugins/<name>/`` (shipped with hermes-agent;
-   ``memory/`` and ``context_engine/`` subdirs are excluded — they have their
-   own discovery paths)
-2. **User plugins**   – ``~/.hermes/plugins/<name>/``
-3. **Project plugins** – ``./.hermes/plugins/<name>/`` (opt-in via
-   ``HERMES_ENABLE_PROJECT_PLUGINS``)
-4. **Pip plugins**     – packages that expose the ``hermes_agent.plugins``
-   entry-point group.
+1. **内置插件** – ``<repo>/plugins/<name>/``（随 hermes-agent 一起发布；
+   ``memory/`` 和 ``context_engine/`` 子目录被排除——它们有
+   各自的发现路径）
+2. **用户插件**   – ``~/.hermes/plugins/<name>/``
+3. **项目插件** – ``./.hermes/plugins/<name>/``（需通过
+   ``HERMES_ENABLE_PROJECT_PLUGINS`` 环境变量启用）
+4. **Pip 插件**     – 暴露 ``hermes_agent.plugins``
+   entry-point 组的包。
 
-Later sources override earlier ones on name collision, so a user or project
-plugin with the same name as a bundled plugin replaces it.
+当名称冲突时，后续来源会覆盖前面的来源，因此与内置插件同名的
+用户或项目插件会替换它。
 
-Each directory plugin must contain a ``plugin.yaml`` manifest **and** an
-``__init__.py`` with a ``register(ctx)`` function.
+每个目录插件必须包含一个 ``plugin.yaml`` 清单文件**和**一个
+带有 ``register(ctx)`` 函数的 ``__init__.py``。
 
-Lifecycle hooks
+生命周期钩子
 ---------------
-Plugins may register callbacks for any of the hooks in ``VALID_HOOKS``.
-The agent core calls ``invoke_hook(name, **kwargs)`` at the appropriate
-points.
+插件可以为 ``VALID_HOOKS`` 中的任何钩子注册回调。
+代理核心在适当的时机调用 ``invoke_hook(name, **kwargs)``。
 
-Tool registration
+工具注册
 -----------------
-``PluginContext.register_tool()`` delegates to ``tools.registry.register()``
-so plugin-defined tools appear alongside the built-in tools.
+``PluginContext.register_tool()`` 委托给 ``tools.registry.register()``，
+使插件定义的工具与内置工具一起显示。
 """
 
 from __future__ import annotations
@@ -53,11 +52,11 @@ from hermes_cli.middleware import OBSERVER_SCHEMA_VERSION, VALID_MIDDLEWARE
 
 
 def get_bundled_plugins_dir() -> Path:
-    """Locate the bundled ``plugins/`` directory.
+    """定位内置的 ``plugins/`` 目录。
 
-    Honours ``HERMES_BUNDLED_PLUGINS`` (set by the Nix wrapper / packaged
-    installs) so read-only store paths are consulted first.  Falls back to
-    the in-repo path used during development.
+    优先使用 ``HERMES_BUNDLED_PLUGINS`` 环境变量（由 Nix wrapper / 打包安装设置），
+    以便首先查询只读的 store 路径。如果未设置，则回退到开发时使用的
+    仓库内路径。
     """
     env_override = os.getenv("HERMES_BUNDLED_PLUGINS")
     if env_override:
@@ -66,25 +65,23 @@ def get_bundled_plugins_dir() -> Path:
 
 try:
     import yaml
-except ImportError:  # pragma: no cover – yaml is optional at import time
+except ImportError:  # pragma: no cover – yaml 在导入时是可选的
     yaml = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Plugin developer debug logging
+# 插件开发者调试日志
 # ---------------------------------------------------------------------------
 #
-# Set ``HERMES_PLUGINS_DEBUG=1`` to surface verbose plugin-discovery logs to
-# stderr in addition to ~/.hermes/logs/agent.log. Aimed at plugin authors
-# trying to figure out why their plugin isn't showing up: which directories
-# were scanned, which manifests parsed, which plugins were skipped (and why),
-# what each ``register(ctx)`` call registered, and full tracebacks on load
-# failure.
+# 设置 ``HERMES_PLUGINS_DEBUG=1`` 可以在 stderr 和 ~/.hermes/logs/agent.log
+# 中显示详细的插件发现日志。旨在帮助插件作者排查插件未显示的问题：
+# 扫描了哪些目录、解析了哪些清单、跳过了哪些插件（以及原因）、
+# 每个 ``register(ctx)`` 调用注册了什么，以及加载失败时的完整堆栈跟踪。
 #
-# The env var is read once at import time; tests that need to flip it
-# mid-process can call ``_install_plugin_debug_handler(force=True)``.
+# 环境变量在导入时读取一次；需要在进程中途切换的测试可以调用
+# ``_install_plugin_debug_handler(force=True)``。
 
 _PLUGINS_DEBUG = os.getenv("HERMES_PLUGINS_DEBUG", "").strip().lower() in {
     "1", "true", "yes", "on",
@@ -93,10 +90,10 @@ _DEBUG_HANDLER_INSTALLED = False
 
 
 def _install_plugin_debug_handler(force: bool = False) -> None:
-    """When HERMES_PLUGINS_DEBUG is on, tee plugin logs to stderr at DEBUG.
+    """当 HERMES_PLUGINS_DEBUG 开启时，将插件日志以 DEBUG 级别输出到 stderr。
 
-    Idempotent: only attaches the handler once per process unless ``force``
-    is passed. Does not touch the root logger or other Hermes loggers.
+    幂等操作：每个进程只附加一次处理器，除非传入 ``force`` 参数。
+    不会触及根日志记录器或其他 Hermes 日志记录器。
     """
     global _DEBUG_HANDLER_INSTALLED, _PLUGINS_DEBUG
     if force:
@@ -110,8 +107,8 @@ def _install_plugin_debug_handler(force: bool = False) -> None:
     handler.setFormatter(logging.Formatter("[plugins] %(levelname)s %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
-    # Don't double-emit through the root logger when the central logging
-    # config also writes to stderr. agent.log still captures everything.
+    # 当中央日志配置也输出到 stderr 时，避免通过根日志记录器重复输出。
+    # agent.log 仍然会捕获所有内容。
     logger.propagate = True
     _DEBUG_HANDLER_INSTALLED = True
     logger.debug(
@@ -122,7 +119,7 @@ def _install_plugin_debug_handler(force: bool = False) -> None:
 _install_plugin_debug_handler()
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 VALID_HOOKS: Set[str] = {
@@ -130,9 +127,9 @@ VALID_HOOKS: Set[str] = {
     "post_tool_call",
     "transform_terminal_output",
     "transform_tool_result",
-    # Transform LLM output before it's returned to the user.
-    # Plugins return a string to replace the response text, or None/empty to leave unchanged.
-    # First non-None string wins. Useful for vocabulary/personality transformation.
+    # 在 LLM 输出返回给用户之前进行转换。
+    # 插件返回一个字符串来替换响应文本，或返回 None/空字符串保持不变。
+    # 第一个非 None 的字符串生效。适用于词汇/个性转换。
     "transform_llm_output",
     "pre_llm_call",
     "post_llm_call",
@@ -145,50 +142,46 @@ VALID_HOOKS: Set[str] = {
     "on_session_reset",
     "subagent_start",
     "subagent_stop",
-    # Gateway pre-dispatch hook. Fired once per incoming MessageEvent
-    # after the internal-event guard but BEFORE auth/pairing and agent
-    # dispatch. Plugins may return a dict to influence flow:
-    #   {"action": "skip",    "reason": "..."}  -> drop message (no reply)
-    #   {"action": "rewrite", "text": "..."}    -> replace event.text, continue
-    #   {"action": "allow"}  /  None             -> normal dispatch
-    # Kwargs: event: MessageEvent, gateway: GatewayRunner, session_store.
+    # Gateway 预分发钩子。在每个传入的 MessageEvent 触发一次，
+    # 在内部事件守卫之后但在 auth/pairing 和代理分发之前。
+    # 插件可以返回一个 dict 来影响流程：
+    #   {"action": "skip",    "reason": "..."}  -> 丢弃消息（不回复）
+    #   {"action": "rewrite", "text": "..."}    -> 替换 event.text，继续
+    #   {"action": "allow"}  /  None             -> 正常分发
+    # 参数：event: MessageEvent, gateway: GatewayRunner, session_store。
     "pre_gateway_dispatch",
-    # Approval lifecycle hooks. Fired by tools/approval.py when a dangerous
-    # command needs user approval -- fires BOTH for CLI-interactive prompts
-    # and for gateway/ACP approvals (Telegram, Discord, Slack, TUI, etc.).
-    # Observers only: return values are ignored. Plugins cannot veto or
-    # pre-answer an approval from these hooks (use pre_tool_call to block
-    # a tool before it reaches approval).
+    # 审批生命周期钩子。由 tools/approval.py 在危险命令需要用户审批时触发
+    # -- 同时适用于 CLI 交互式提示和 gateway/ACP 审批（Telegram、Discord、
+    # Slack、TUI 等）。仅作为观察者：返回值被忽略。插件不能从这些钩子否决或
+    # 预先回答审批（使用 pre_tool_call 在工具到达审批之前阻止它）。
     #
-    # Kwargs for pre_approval_request:
+    # pre_approval_request 的参数：
     #   command: str, description: str, pattern_key: str, pattern_keys: list[str],
     #   session_key: str, surface: "cli" | "gateway"
-    # Kwargs for post_approval_response: same as above plus
+    # post_approval_response 的参数：同上，另外加上
     #   choice: "once" | "session" | "always" | "deny" | "timeout"
     "pre_approval_request",
     "post_approval_response",
-    # Kanban task lifecycle hooks. Fired by hermes_cli.kanban_db when a task
-    # transitions state, AFTER the change is committed to the board DB (so the
-    # hook always sees durable state and a slow plugin can never hold the
-    # SQLite write lock). Observers only: return values are ignored.
+    # Kanban 任务生命周期钩子。由 hermes_cli.kanban_db 在任务状态转换时触发，
+    # 在变更提交到看板数据库之后（因此钩子总是看到持久化状态，慢速插件
+    # 永远不会持有 SQLite 写锁）。仅作为观察者：返回值被忽略。
     #
-    # WHICH PROCESS each fires in matters, because kanban workers run as
-    # separate `hermes -p <profile> chat -q` subprocesses:
-    #   - kanban_task_claimed   -> the DISPATCHER process (gateway-embedded
-    #                              dispatcher or `hermes kanban dispatch`),
-    #                              right before the worker subprocess spawns.
-    #   - kanban_task_completed -> the WORKER process, when it calls
-    #                              kanban_complete (or a CLI/manual complete).
-    #   - kanban_task_blocked   -> the WORKER process (worker-initiated block)
-    #                              or whichever process drove the block.
-    # A plugin that needs to observe every transition centrally should hook in
-    # the dispatcher; one that needs per-task in-session context should hook in
-    # the worker.
+    # 每个钩子在哪个进程中触发很重要，因为 kanban worker 作为独立的
+    # `hermes -p <profile> chat -q` 子进程运行：
+    #   - kanban_task_claimed   -> 调度器进程（嵌入 gateway 的调度器或
+    #                              `hermes kanban dispatch`），在 worker
+    #                              子进程生成之前。
+    #   - kanban_task_completed -> WORKER 进程，当它调用 kanban_complete
+    #                              （或 CLI/手动完成）时。
+    #   - kanban_task_blocked   -> WORKER 进程（worker 发起的阻塞）或
+    #                              驱动阻塞的任何进程。
+    # 需要集中观察每个转换的插件应该挂在调度器中；需要每个任务会话上下文
+    # 的插件应该挂在 worker 中。
     #
-    # Common kwargs: task_id: str, board: str | None, assignee: str | None,
-    #   run_id: int | None, profile_name: str.
-    # kanban_task_completed adds: summary: str | None.
-    # kanban_task_blocked adds:   reason: str | None.
+    # 公共参数：task_id: str, board: str | None, assignee: str | None,
+    #   run_id: int | None, profile_name: str。
+    # kanban_task_completed 额外参数：summary: str | None。
+    # kanban_task_blocked 额外参数：reason: str | None。
     "kanban_task_claimed",
     "kanban_task_completed",
     "kanban_task_blocked",
@@ -200,16 +193,15 @@ _NS_PARENT = "hermes_plugins"
 
 
 def _env_enabled(name: str) -> bool:
-    """Return True when an env var is set to a truthy opt-in value."""
+    """当环境变量设置为 truthy 的启用值时返回 True。"""
     return env_var_enabled(name)
 
 
 def _get_disabled_plugins() -> set:
-    """Read the disabled plugins list from config.yaml.
+    """从 config.yaml 读取禁用插件列表。
 
-    Kept for backward compat and explicit deny-list semantics. A plugin
-    name in this set will never load, even if it appears in
-    ``plugins.enabled``.
+    保留此函数以保持向后兼容和明确的拒绝列表语义。此集合中的插件名称
+    永远不会加载，即使它出现在 ``plugins.enabled`` 中。
     """
     try:
         from hermes_cli.config import load_config
@@ -221,18 +213,15 @@ def _get_disabled_plugins() -> set:
 
 
 def _get_enabled_plugins() -> Optional[set]:
-    """Read the enabled-plugins allow-list from config.yaml.
+    """从 config.yaml 读取启用插件的允许列表。
 
-    Plugins are opt-in by default — only plugins whose name appears in
-    this set are loaded. Returns:
+    插件默认是 opt-in 的——只有名称出现在此集合中的插件才会被加载。返回值：
 
-    * ``None`` — the key is missing or malformed. Callers should treat
-      this as "nothing enabled yet" (the opt-in default); the first
-      ``migrate_config`` run populates the key with a grandfathered set
-      of currently-installed user plugins so existing setups don't
-      break on upgrade.
-    * ``set()`` — an empty list was explicitly set; nothing loads.
-    * ``set(...)`` — the concrete allow-list.
+    * ``None`` — 键缺失或格式错误。调用者应将其视为"尚未启用任何插件"
+      （opt-in 默认值）；第一次 ``migrate_config`` 运行会用当前已安装
+      用户插件的祖父集合填充此键，以便现有设置在升级时不会中断。
+    * ``set()`` — 明确设置了空列表；不加载任何插件。
+    * ``set(...)`` — 具体的允许列表。
     """
     try:
         from hermes_cli.config import load_config
@@ -251,7 +240,7 @@ def _get_enabled_plugins() -> Optional[set]:
 
 
 # ---------------------------------------------------------------------------
-# Data classes
+# 数据类
 # ---------------------------------------------------------------------------
 
 _VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform", "model-provider"}
@@ -259,7 +248,7 @@ _VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform
 
 @dataclass
 class PluginManifest:
-    """Parsed representation of a plugin.yaml manifest."""
+    """plugin.yaml 清单的解析表示。"""
 
     name: str
     version: str = ""
@@ -268,35 +257,33 @@ class PluginManifest:
     requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
     provides_tools: List[str] = field(default_factory=list)
     provides_hooks: List[str] = field(default_factory=list)
-    source: str = ""        # "user", "project", or "entrypoint"
+    source: str = ""        # "user"、"project" 或 "entrypoint"
     path: Optional[str] = None
-    # Plugin kind — see plugins.py module docstring for semantics.
-    # ``standalone`` (default): hooks/tools of its own; opt-in via
-    #                           ``plugins.enabled``.
-    # ``backend``: pluggable backend for an existing core tool (e.g.
-    #              image_gen). Built-in (bundled) backends auto-load;
-    #              user-installed still gated by ``plugins.enabled``.
-    # ``exclusive``: category with exactly one active provider (memory).
-    #              Selection via ``<category>.provider`` config key; the
-    #              category's own discovery system handles loading and the
-    #              general scanner skips these.
-    # ``platform``: gateway messaging platform adapter (e.g. IRC). Bundled
-    #              platform plugins auto-load so every shipped platform is
-    #              available out of the box; user-installed platform plugins
-    #              in ~/.hermes/plugins/ still gated by ``plugins.enabled``
-    #              (untrusted code).
+    # 插件类型——参见 plugins.py 模块文档字符串了解语义。
+    # ``standalone``（默认）：拥有自己的钩子/工具；通过
+    #                        ``plugins.enabled`` opt-in 启用。
+    # ``backend``：现有核心工具的可插拔后端（例如 image_gen）。
+    #             内置（bundled）后端自动加载；用户安装的后端
+    #             仍由 ``plugins.enabled`` 控制。
+    # ``exclusive``：只有一个活动提供者的类别（memory）。通过
+    #               ``<category>.provider`` 配置键选择；该类别
+    #               自己的发现系统处理加载，通用扫描器跳过这些。
+    # ``platform``：gateway 消息平台适配器（例如 IRC）。bundled
+    #              平台插件自动加载，以便每个随附的平台都开箱即用；
+    #              ~/.hermes/plugins/ 中用户安装的平台插件仍由
+    #              ``plugins.enabled`` 控制（不受信任的代码）。
     kind: str = "standalone"
-    # Registry key — path-derived, used by ``plugins.enabled``/``disabled``
-    # lookups and by ``hermes plugins list``. For a flat plugin at
-    # ``plugins/disk-cleanup/`` the key is ``disk-cleanup``; for a nested
-    # category plugin at ``plugins/image_gen/openai/`` the key is
-    # ``image_gen/openai``. When empty, falls back to ``name``.
+    # 注册表键——从路径派生，用于 ``plugins.enabled``/``disabled``
+    # 查找和 ``hermes plugins list``。对于 ``plugins/disk-cleanup/``
+    # 中的扁平插件，键为 ``disk-cleanup``；对于
+    # ``plugins/image_gen/openai/`` 中的嵌套类别插件，键为
+    # ``image_gen/openai``。为空时，回退到 ``name``。
     key: str = ""
 
 
 @dataclass
 class LoadedPlugin:
-    """Runtime state for a single loaded plugin."""
+    """单个已加载插件的运行时状态。"""
 
     manifest: PluginManifest
     module: Optional[types.ModuleType] = None

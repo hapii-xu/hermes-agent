@@ -1,20 +1,19 @@
 """
-hermes fallback — manage the fallback provider chain.
+hermes fallback — 管理 fallback provider 链。
 
-Fallback providers are tried in order when the primary model fails with
-rate-limit, overload, or connection errors. See:
-https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers
+当主模型遇到速率限制、过载或连接错误时，会按顺序尝试 fallback provider。
+参见: https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers
 
-Subcommands:
-  hermes fallback [list]   Show the current fallback chain (default when no subcommand)
-  hermes fallback add      Pick provider + model via the same picker as `hermes model`,
-                           then append the selection to the chain
-  hermes fallback remove   Pick an entry to delete from the chain
-  hermes fallback clear    Remove all fallback entries
+子命令:
+  hermes fallback [list]   显示当前 fallback 链（无子命令时的默认操作）
+  hermes fallback add      通过与 `hermes model` 相同的选择器选取 provider + model，
+                           然后将选择追加到链中
+  hermes fallback remove   从链中选取一个条目进行删除
+  hermes fallback clear    移除所有 fallback 条目
 
-Storage: ``fallback_providers`` in ``~/.hermes/config.yaml`` (top-level, list of
-``{provider, model, base_url?, api_mode?}`` dicts).  The legacy single-dict
-``fallback_model`` format is migrated to the new list format on first add.
+存储: ``~/.hermes/config.yaml`` 中的 ``fallback_providers``（顶层，由
+``{provider, model, base_url?, api_mode?}`` 字典组成的列表）。旧版单字典
+``fallback_model`` 格式在首次 add 时会迁移为新的列表格式。
 """
 from __future__ import annotations
 
@@ -25,30 +24,30 @@ from hermes_cli.fallback_config import get_fallback_chain
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 def _read_chain(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return the normalized fallback chain as a list of dicts.
+    """返回规范化的 fallback 链（字典列表形式）。
 
-    Accepts both the new list format (``fallback_providers``) and the legacy
-    ``fallback_model`` format. When both are present, the effective chain is
-    merged with ``fallback_providers`` entries kept first. The returned list is
-    always a fresh copy — callers can mutate without touching the config dict.
+    同时支持新的列表格式（``fallback_providers``）和旧版
+    ``fallback_model`` 格式。当两者同时存在时，有效链会合并，
+    ``fallback_providers`` 的条目保持在前面。返回的列表始终是
+    全新副本——调用方可以自由修改而不会影响原始 config 字典。
     """
     return get_fallback_chain(config)
 
 
 def _write_chain(config: Dict[str, Any], chain: List[Dict[str, Any]]) -> None:
-    """Persist the chain to ``fallback_providers`` and clear legacy key."""
+    """将链持久化到 ``fallback_providers`` 并清除旧版键。"""
     config["fallback_providers"] = chain
-    # Drop the legacy single-dict key on write so there's only one source of truth.
+    # 写入时移除旧版单字典键，确保只有一个数据源。
     if "fallback_model" in config:
         config.pop("fallback_model", None)
 
 
 def _format_entry(entry: Dict[str, Any]) -> str:
-    """One-line human-readable rendering of a fallback entry."""
+    """将 fallback 条目渲染为单行可读文本。"""
     provider = entry.get("provider", "?")
     model = entry.get("model", "?")
     base = entry.get("base_url")
@@ -57,11 +56,11 @@ def _format_entry(entry: Dict[str, Any]) -> str:
 
 
 def _extract_fallback_from_model_cfg(model_cfg: Any) -> Optional[Dict[str, Any]]:
-    """Pull the ``{provider, model, base_url?, api_mode?}`` dict from a ``config["model"]`` snapshot."""
+    """从 ``config["model"]`` 快照中提取 ``{provider, model, base_url?, api_mode?}`` 字典。"""
     if not isinstance(model_cfg, dict):
         return None
     provider = (model_cfg.get("provider") or "").strip()
-    # The picker writes the selected model to ``model.default``.
+    # 选择器会将选中的模型写入 ``model.default``。
     model = (model_cfg.get("default") or model_cfg.get("model") or "").strip()
     if not provider or not model:
         return None
@@ -76,7 +75,7 @@ def _extract_fallback_from_model_cfg(model_cfg: Any) -> Optional[Dict[str, Any]]
 
 
 def _snapshot_auth_active_provider() -> Any:
-    """Return the current ``active_provider`` in auth.json, or a sentinel if unavailable."""
+    """返回 auth.json 中当前的 ``active_provider``，不可用时返回哨兵值。"""
     try:
         from hermes_cli.auth import _load_auth_store
         store = _load_auth_store()
@@ -86,7 +85,7 @@ def _snapshot_auth_active_provider() -> Any:
 
 
 def _restore_auth_active_provider(value: Any) -> None:
-    """Write back a previously snapshotted ``active_provider`` value."""
+    """回写之前快照的 ``active_provider`` 值。"""
     try:
         from hermes_cli.auth import _auth_store_lock, _load_auth_store, _save_auth_store
         with _auth_store_lock():
@@ -94,18 +93,18 @@ def _restore_auth_active_provider(value: Any) -> None:
             store["active_provider"] = value
             _save_auth_store(store)
     except Exception:
-        # Best-effort — if auth.json can't be restored, the user's primary
-        # provider may have been deactivated by the picker.  They can re-run
-        # `hermes model` to fix it.  Don't fail the fallback add.
+        # 尽力而为——如果 auth.json 无法恢复，用户的
+        # 主 provider 可能已被选择器停用。可以重新运行
+        # `hermes model` 来修复。不要因此导致 fallback add 失败。
         pass
 
 
 # ---------------------------------------------------------------------------
-# Subcommand handlers
+# 子命令处理函数
 # ---------------------------------------------------------------------------
 
 def cmd_fallback_list(args) -> None:  # noqa: ARG001
-    """Print the current fallback chain."""
+    """打印当前 fallback 链。"""
     from hermes_cli.config import load_config
 
     config = load_config()
@@ -133,7 +132,7 @@ def cmd_fallback_list(args) -> None:  # noqa: ARG001
 
 
 def _describe_primary(config: Dict[str, Any]) -> Optional[str]:
-    """One-line description of the primary model for display purposes."""
+    """主模型的单行描述，用于显示。"""
     model_cfg = config.get("model")
     if isinstance(model_cfg, dict):
         provider = (model_cfg.get("provider") or "?").strip() or "?"
@@ -145,14 +144,14 @@ def _describe_primary(config: Dict[str, Any]) -> Optional[str]:
 
 
 def cmd_fallback_add(args) -> None:
-    """Launch the same picker as `hermes model`, then append the selection to the chain."""
+    """启动与 `hermes model` 相同的选择器，然后将选择追加到链中。"""
     from hermes_cli.main import _require_tty, select_provider_and_model
     from hermes_cli.config import load_config, save_config
 
     _require_tty("fallback add")
 
-    # Snapshot BEFORE the picker runs so we can distinguish "user actually
-    # picked something" from "user cancelled" by comparing before/after.
+    # 在选择器运行之前做快照，这样可以通过比较前后状态
+    # 来区分"用户确实选了内容"和"用户取消了"。
     before_cfg = load_config()
     model_before = copy.deepcopy(before_cfg.get("model"))
     active_provider_before = _snapshot_auth_active_provider()
@@ -165,26 +164,26 @@ def cmd_fallback_add(args) -> None:
     try:
         select_provider_and_model(args=args)
     except SystemExit:
-        # Some provider flows exit on auth failure — restore state and re-raise.
+        # 某些 provider 流程在认证失败时会退出——恢复状态后重新抛出。
         _restore_model_cfg(model_before)
         _restore_auth_active_provider(active_provider_before)
         raise
 
-    # Read the post-picker state to see what the user selected.
+    # 读取选择器运行后的状态以查看用户选了什么。
     after_cfg = load_config()
     model_after = after_cfg.get("model")
 
     new_entry = _extract_fallback_from_model_cfg(model_after)
     if not new_entry:
-        # Picker didn't complete (user cancelled or flow bailed).  Nothing to do.
+        # 选择器未完成（用户取消或流程中止）。无需处理。
         _restore_model_cfg(model_before)
         _restore_auth_active_provider(active_provider_before)
         print()
         print("  No fallback added.")
         return
 
-    # Picker picked the same thing that's already the primary → nothing changed,
-    # and there's nothing useful to add as a fallback to itself.
+    # 选择器选中的内容与当前主模型相同→没有变化，
+    # 也没有有意义的内容可以作为自身的 fallback。
     primary_entry = _extract_fallback_from_model_cfg(model_before)
     if primary_entry and primary_entry["provider"] == new_entry["provider"] \
             and primary_entry["model"] == new_entry["model"]:
@@ -195,17 +194,17 @@ def cmd_fallback_add(args) -> None:
         print("  A provider cannot be a fallback for itself — no change.")
         return
 
-    # Reload the config with the primary restored, then append the new entry
-    # to ``fallback_providers``.  We deliberately re-load (rather than mutating
-    # ``after_cfg``) because the picker may have touched other top-level keys
-    # (custom_providers, providers credentials) that we want to keep.
+    # 恢复主模型后重新加载 config，然后将新条目追加到
+    # ``fallback_providers``。这里特意重新加载（而不是直接修改
+    # ``after_cfg``），因为选择器可能修改了其他顶层键
+    # （custom_providers、providers 凭证），我们希望保留这些更改。
     _restore_model_cfg(model_before)
     _restore_auth_active_provider(active_provider_before)
 
     final_cfg = load_config()
     chain = _read_chain(final_cfg)
 
-    # Reject exact-duplicate fallback entries.
+    # 拒绝完全重复的 fallback 条目。
     for existing in chain:
         if existing.get("provider") == new_entry["provider"] \
                 and existing.get("model") == new_entry["model"]:
@@ -225,7 +224,7 @@ def cmd_fallback_add(args) -> None:
 
 
 def _restore_model_cfg(model_before: Any) -> None:
-    """Restore ``config["model"]`` to a previously-captured snapshot."""
+    """将 ``config["model"]`` 恢复到之前捕获的快照。"""
     from hermes_cli.config import load_config, save_config
 
     cfg = load_config()
@@ -237,7 +236,7 @@ def _restore_model_cfg(model_before: Any) -> None:
 
 
 def cmd_fallback_remove(args) -> None:  # noqa: ARG001
-    """Pick an entry from the chain and remove it."""
+    """从链中选取一个条目并移除。"""
     from hermes_cli.config import load_config, save_config
 
     config = load_config()
@@ -277,7 +276,7 @@ def cmd_fallback_remove(args) -> None:  # noqa: ARG001
 
 
 def cmd_fallback_clear(args) -> None:  # noqa: ARG001
-    """Remove all fallback entries (with confirmation)."""
+    """移除所有 fallback 条目（需确认）。"""
     from hermes_cli.config import load_config, save_config
 
     config = load_config()
@@ -312,7 +311,7 @@ def cmd_fallback_clear(args) -> None:  # noqa: ARG001
 
 
 def _numbered_pick(question: str, choices: List[str]) -> Optional[int]:
-    """Fallback numbered-list picker when curses is unavailable."""
+    """当 curses 不可用时的回退编号列表选择器。"""
     print(question)
     for i, c in enumerate(choices, 1):
         print(f"  {i}. {c}")
@@ -334,11 +333,11 @@ def _numbered_pick(question: str, choices: List[str]) -> Optional[int]:
 
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# 命令分发
 # ---------------------------------------------------------------------------
 
 def cmd_fallback(args) -> None:
-    """Top-level dispatcher for ``hermes fallback [subcommand]``."""
+    """``hermes fallback [子命令]`` 的顶层分发器。"""
     sub = getattr(args, "fallback_command", None)
     if sub in {None, "", "list", "ls"}:
         cmd_fallback_list(args)

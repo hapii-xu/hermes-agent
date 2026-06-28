@@ -1,21 +1,21 @@
 """
-Image Generation Provider Registry
-==================================
+图像生成 Provider 注册表
+========================
 
-Central map of registered providers. Populated by plugins at import-time via
-``PluginContext.register_image_gen_provider()``; consumed by the
-``image_generate`` tool to dispatch each call to the active backend.
+已注册 provider 的中心映射表。由插件在导入时通过
+``PluginContext.register_image_gen_provider()`` 注册；
+由 ``image_generate`` 工具消费，将每次调用分派到当前活跃的 backend。
 
-Active selection
-----------------
-The active provider is chosen by ``image_gen.provider`` in ``config.yaml``.
-If unset, :func:`get_active_provider` applies fallback logic:
+活跃选择逻辑
+------------
+活跃 provider 由 ``config.yaml`` 中的 ``image_gen.provider`` 决定。
+如果未设置，:func:`get_active_provider` 将按以下回退逻辑选择：
 
-1. If exactly one provider is registered, use it.
-2. Otherwise if a provider named ``fal`` is registered, use it (legacy
-   default — matches pre-plugin behavior).
-3. Otherwise return ``None`` (the tool surfaces a helpful error pointing
-   the user at ``hermes tools``).
+1. 如果只注册了一个 provider，直接使用它。
+2. 否则如果注册了名为 ``fal`` 的 provider，使用它（遗留
+   默认值——与插件化之前的行为一致）。
+3. 否则返回 ``None``（工具会显示有用的错误信息，
+   引导用户使用 ``hermes tools``）。
 """
 
 from __future__ import annotations
@@ -34,11 +34,10 @@ _lock = threading.Lock()
 
 
 def register_provider(provider: ImageGenProvider) -> None:
-    """Register an image generation provider.
+    """注册一个图像生成 provider。
 
-    Re-registration (same ``name``) overwrites the previous entry and logs
-    a debug message — this makes hot-reload scenarios (tests, dev loops)
-    behave predictably.
+    重复注册（相同 ``name``）会覆盖之前的条目并记录一条 debug
+    日志——这使得热重载场景（测试、开发循环）的行为可预期。
     """
     if not isinstance(provider, ImageGenProvider):
         raise TypeError(
@@ -58,7 +57,7 @@ def register_provider(provider: ImageGenProvider) -> None:
 
 
 def list_providers() -> List[ImageGenProvider]:
-    """Return all registered providers, sorted by name."""
+    """返回所有已注册的 provider，按名称排序。"""
     with _lock:
         items = list(_providers.values())
     return sorted(items, key=lambda p: p.name)

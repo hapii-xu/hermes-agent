@@ -1,43 +1,42 @@
 #!/usr/bin/env python3
 """
-Video Generation Tool
-=====================
+视频生成工具
+============
 
-Single ``video_generate`` tool that dispatches to a plugin-registered
-video generation provider. Mirrors the ``image_generate`` design:
+对外提供单个 ``video_generate`` 工具，负责派发到由插件注册的视频生成
+provider。该设计与 ``image_generate`` 保持一致：
 
-- ``agent/video_gen_provider.py`` defines the :class:`VideoGenProvider` ABC.
-- ``agent/video_gen_registry.py`` holds the active providers (populated by
-  plugins at import time).
-- Each provider lives under ``plugins/video_gen/<name>/``.
+- ``agent/video_gen_provider.py`` 定义了 :class:`VideoGenProvider` 抽象基类。
+- ``agent/video_gen_registry.py`` 持有当前可用的 provider（在导入阶段由插件
+  填充）。
+- 每个 provider 位于 ``plugins/video_gen/<name>/`` 目录下。
 
-The tool itself is intentionally backend-agnostic and ships **no in-tree
-provider** — turn on a backend by enabling a plugin (``hermes plugins
-enable video_gen/<name>``) and selecting it in ``hermes tools`` → Video
-Generation.
+该工具本身刻意与后端无关，并且**不内置任何 provider**——通过启用插件
+（``hermes plugins enable video_gen/<name>``）并在 ``hermes tools`` → 视频生成
+中选中它来开启某个后端。
 
-Unified surface
----------------
-One tool covers the common cases — text-to-video, image-to-video, video
-edit, video extend — with a compact schema:
+统一接口
+--------
+单个工具即可覆盖常见场景——文生视频、图生视频、视频编辑、视频续拍——
+schema 紧凑：
 
-    prompt                   text instruction (required for generate/edit)
+    prompt                   文本指令（generate/edit 时必填）
     operation                "generate" | "edit" | "extend"
-    image_url                drives image-to-video when operation=generate
-    video_url                source video for edit/extend
-    reference_image_urls     list, up to provider-declared cap
-    duration                 seconds (provider clamps)
+    image_url                operation=generate 时驱动图生视频
+    video_url                edit/extend 的源视频
+    reference_image_urls     列表，上限由 provider 声明
+    duration                 秒数（由 provider 钳制）
     aspect_ratio             "16:9" | "9:16" | "1:1" | ...
     resolution               "480p" | "540p" | "720p" | "1080p"
-    negative_prompt          optional (Pixverse/Kling style)
-    audio                    optional (Veo3/Pixverse pricing tier)
-    seed                     optional
-    model                    optional, override the active provider's default
+    negative_prompt          可选（Pixverse/Kling 风格）
+    audio                    可选（Veo3/Pixverse 的计价档位）
+    seed                     可选
+    model                    可选，覆盖当前 provider 的默认模型
 
-Providers ignore parameters they do not support. The tool layer does
-**lightweight** validation (type/required-prompt) and lets each provider
-do its own clamping inside :meth:`VideoGenProvider.generate` — that keeps
-the tool surface stable as new providers ship with different capabilities.
+provider 会忽略它不支持的参数。工具层只做**轻量级**校验（类型/必填
+prompt），把实际的钳制工作交给每个 provider 在
+:meth:`VideoGenProvider.generate` 内部完成——这样随着新 provider 带
+着不同能力上线，工具接口仍能保持稳定。
 """
 
 from __future__ import annotations
@@ -60,12 +59,10 @@ logger = logging.getLogger(__name__)
 
 VIDEO_GENERATE_SCHEMA: Dict[str, Any] = {
     "name": "video_generate",
-    # Placeholder — the real description is built dynamically at
-    # get_tool_definitions() time so it reflects the active backend's
-    # actual capabilities (which modalities / resolutions / duration
-    # ranges the user's currently-selected model supports).
-    # See _build_dynamic_video_schema() below and the dynamic-tool-schemas
-    # skill at github/hermes-agent-dev/references/dynamic-tool-schemas.md.
+    # 占位符——真正的 description 会在 get_tool_definitions() 时动态构建，
+    # 以反映当前后端的实际能力（用户当前选中的模型支持哪些模态 / 分辨率 /
+    # 时长范围）。见下文 _build_dynamic_video_schema() 以及 dynamic-tool-schemas
+    # 技能文档 github/hermes-agent-dev/references/dynamic-tool-schemas.md。
     "description": "(rebuilt at get_definitions() time — see _build_dynamic_video_schema)",
     "parameters": {
         "type": "object",
@@ -161,7 +158,7 @@ VIDEO_GENERATE_SCHEMA: Dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
-# Config readers (mirror image_generation_tool.py)
+# 配置读取（与 image_generation_tool.py 保持一致）
 # ---------------------------------------------------------------------------
 
 
@@ -192,15 +189,14 @@ def _read_configured_video_model() -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Availability check
+# 可用性检查
 # ---------------------------------------------------------------------------
 
 
 def check_video_generation_requirements() -> bool:
-    """Return True when at least one registered provider reports available.
+    """当至少有一个已注册的 provider 报告可用时返回 True。
 
-    Triggers plugin discovery (idempotent) so user-installed plugins are
-    visible to the toolset gate.
+    会触发插件发现（幂等），以便用户安装的插件能被工具集门槛看到。
     """
     try:
         from agent.video_gen_registry import list_providers
@@ -219,15 +215,15 @@ def check_video_generation_requirements() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# 派发
 # ---------------------------------------------------------------------------
 
 
 def _resolve_active_provider():
-    """Return the active provider object or None.
+    """返回当前活动的 provider 对象，没有则返回 None。
 
-    Forces plugin discovery before checking the registry — handles cases
-    where a long-lived session was started before a plugin was installed.
+    在检查注册表之前强制触发插件发现——以处理某个长寿会话在插件安装
+    之前就已经启动的情况。
     """
     try:
         from agent.video_gen_registry import get_active_provider
@@ -266,7 +262,7 @@ def _missing_provider_error(configured: Optional[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Handler
+# 处理器
 # ---------------------------------------------------------------------------
 
 
@@ -319,19 +315,19 @@ def _handle_video_generate(args: Dict[str, Any], **_kw: Any) -> str:
     seed = _coerce_int(args.get("seed"))
     model_override = (args.get("model") or "").strip() or None
 
-    # Soft validation — providers do their own. Prompt is required by the
-    # schema; the backend may still accept image-only on its image-to-video
-    # endpoint but our surface always needs a prompt.
+    # 软校验——真正的校验由 provider 自己做。schema 要求 prompt 必填；
+    # 后端在其图生视频端点上可能仍然接受纯图片输入，但本工具接口始终需要
+    # 一个 prompt。
     if not prompt:
         return tool_error("prompt is required for video generation")
 
-    # Resolve the active provider.
+    # 解析当前活动的 provider。
     configured = _read_configured_video_provider()
     provider = _resolve_active_provider()
     if provider is None:
         return _missing_provider_error(configured)
 
-    # Resolve model: explicit arg wins, then config, then provider default.
+    # 解析模型：显式参数优先，其次是配置，最后是 provider 默认值。
     model = model_override or _read_configured_video_model() or provider.default_model()
 
     kwargs: Dict[str, Any] = {
@@ -346,14 +342,14 @@ def _handle_video_generate(args: Dict[str, Any], **_kw: Any) -> str:
         "audio": audio,
         "seed": seed,
     }
-    # Drop None entries so providers see clean defaults.
+    # 去掉为 None 的项，以便 provider 看到干净的默认值。
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     try:
         result = provider.generate(prompt=prompt, **kwargs)
     except TypeError as exc:
-        # A provider that hasn't widened its signature is a bug, not a
-        # caller error — log and surface a clear contract message.
+        # provider 没有扩展其函数签名属于 bug，而非调用方错误——
+        # 记录日志并返回一条清晰的契约错误信息。
         logger.warning(
             "video_gen provider '%s' rejected kwargs (signature too narrow): %s",
             getattr(provider, "name", "?"), exc,
@@ -395,20 +391,19 @@ def _handle_video_generate(args: Dict[str, Any], **_kw: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Dynamic schema — reflect the active backend's actual capabilities
+# 动态 schema——反映当前后端的实际能力
 # ---------------------------------------------------------------------------
 #
-# Why dynamic: the user's configured backend determines which operations
-# (generate/edit/extend), modalities (text / image / refs), aspect ratios,
-# resolutions, durations, and audio/negative-prompt flags are real. A model
-# that calls video_generate without knowing the active backend wastes a
-# turn on something like "fal-ai/veo3.1/image-to-video requires image_url".
-# Surfacing the per-model surface in the description means the model
-# usually gets the call right on the first try.
+# 为什么要动态：用户配置的后端决定了哪些操作（generate/edit/extend）、
+# 模态（文本 / 图片 / 参考）、宽高比、分辨率、时长，以及 audio/
+# negative-prompt 开关是真实存在的。如果模型在不知道当前后端的情况下
+# 调用 video_generate，就会浪费一回合，比如「fal-ai/veo3.1/image-to-video
+# requires image_url」这种错误。在 description 中暴露每个模型的接口，
+# 意味着模型通常能在第一次就调用正确。
 #
-# Memoization: model_tools.get_tool_definitions() keys its cache on
-# config.yaml mtime, so when the user changes provider/model via
-# `hermes tools` or `/skills`, the schema rebuilds automatically.
+# 记忆化：model_tools.get_tool_definitions() 以 config.yaml 的 mtime 作为
+# 缓存键，因此当用户通过 `hermes tools` 或 `/skills` 更改 provider/model 时，
+# schema 会自动重建。
 
 
 _GENERIC_DESCRIPTION = (
@@ -431,15 +426,14 @@ def _format_model_caveats(
     model_meta: Dict[str, Any],
     backend_caps: Dict[str, Any],
 ) -> List[str]:
-    """Pull human-readable caveats out of one model's catalog metadata.
+    """从某个模型的目录元数据中提取人类可读的注意事项。
 
-    Only surfaces things that meaningfully differ from the backend's
-    overall capabilities — repeating defaults is noise.
+    只暴露那些与后端整体能力有实质差异的内容——重复默认值只会是噪音。
     """
     caveats: List[str] = []
 
     modalities = set(model_meta.get("modalities") or [])
-    modality = model_meta.get("modality")  # FAL's plugin uses this key for single-modality entries
+    modality = model_meta.get("modality")  # FAL 的插件为单模态条目使用此键
     if modality:
         modalities.add(modality)
 
@@ -457,12 +451,11 @@ def _format_model_caveats(
 
 
 def _build_dynamic_video_schema() -> Dict[str, Any]:
-    """Build a description that reflects the active backend's actual surface.
+    """构建一段反映当前后端实际接口的描述。
 
-    Cheap: reads config (already memoized by the caller), asks the active
-    provider for `capabilities()` and the active model's catalog entry,
-    and formats a few lines of prose. Falls back to the generic
-    description when no provider is configured or registered.
+    开销很小：读取配置（已由调用方记忆化），向当前 provider 请求
+    `capabilities()` 以及当前模型的目录条目，并格式化几行说明文字。当没有
+    配置或注册任何 provider 时，回退到通用描述。
     """
     parts: List[str] = [_GENERIC_DESCRIPTION]
 
@@ -513,13 +506,12 @@ def _build_dynamic_video_schema() -> Dict[str, Any]:
         line += f" · model: {active_model}"
     parts.append(line)
 
-    # Model-specific caveats (the high-signal stuff)
+    # 模型专用注意事项（高信号内容）
     for c in _format_model_caveats(model_meta, caps):
         parts.append(f"- {c}")
 
-    # Backend modality summary — only useful when the backend supports
-    # both text and image. Single-modality backends are already covered by
-    # the model caveat above.
+    # 后端模态概要——仅在后端同时支持文本和图片时才有用。单模态后端已由
+    # 上方的模型注意事项覆盖。
     modalities = set(caps.get("modalities") or [])
     if "text" in modalities and "image" in modalities and not model_meta.get("modality"):
         parts.append(
@@ -547,7 +539,7 @@ def _build_dynamic_video_schema() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# 注册表
 # ---------------------------------------------------------------------------
 
 

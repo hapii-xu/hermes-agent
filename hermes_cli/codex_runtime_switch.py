@@ -1,14 +1,13 @@
-"""Shared logic for the /codex-runtime slash command.
+"""/codex-runtime 斜杠命令的共享逻辑。
 
-Toggles `model.openai_runtime` between "auto" (= chat_completions, Hermes'
-default) and "codex_app_server" (= hand turns to a codex subprocess).
+在 ``model.openai_runtime`` 的 "auto"（即 chat_completions，Hermes 默认值）
+和 "codex_app_server"（将会话转交给 codex 子进程处理）之间切换。
 
-Both CLI (cli.py) and gateway (gateway/run.py) call into this module so the
-behavior stays identical across surfaces.
+CLI（cli.py）和 gateway（gateway/run.py）都调用此模块，从而保持跨界面行为一致。
 
-The actual runtime resolution happens in hermes_cli.runtime_provider's
-_maybe_apply_codex_app_server_runtime() helper, which reads the persisted
-config value. This module just persists the value and reports the change.
+实际的运行时解析在 hermes_cli.runtime_provider 的
+_maybe_apply_codex_app_server_runtime() 辅助函数中进行，
+该函数读取持久化的配置值。本模块只负责持久化该值并报告变更。
 """
 
 from __future__ import annotations
@@ -25,8 +24,8 @@ VALID_RUNTIMES = ("auto", "codex_app_server")
 
 @dataclass
 class CodexRuntimeStatus:
-    """Result of a /codex-runtime invocation. Callers render this however
-    suits their surface (CLI uses Rich panels, gateway sends a text message)."""
+    """``/codex-runtime`` 调用的结果。调用方根据所在界面进行渲染
+    （CLI 使用 Rich 面板，gateway 发送文本消息）。"""
 
     success: bool
     new_value: Optional[str] = None
@@ -38,11 +37,11 @@ class CodexRuntimeStatus:
 
 
 def parse_args(arg_string: str) -> tuple[Optional[str], list[str]]:
-    """Parse the slash-command argument string. Returns (value, errors).
+    """解析斜杠命令的参数字符串。返回 (value, errors)。
 
-    No args         → return current state (value=None)
-    'auto' / 'codex_app_server' / 'on' / 'off' → return that value
-    anything else   → error
+    无参数              → 返回当前状态（value=None）
+    'auto' / 'codex_app_server' / 'on' / 'off' → 返回对应值
+    其他内容            → 错误
     """
     raw = (arg_string or "").strip().lower()
     if not raw:
@@ -60,8 +59,8 @@ def parse_args(arg_string: str) -> tuple[Optional[str], list[str]]:
 
 
 def get_current_runtime(config: dict) -> str:
-    """Read the current `model.openai_runtime` value from a config dict.
-    Returns 'auto' for unset / empty / unrecognized values."""
+    """从配置字典中读取当前的 `model.openai_runtime` 值。
+    对于未设置、空值或无法识别的值，返回 'auto'。"""
     if not isinstance(config, dict):
         return "auto"
     model_cfg = config.get("model") or {}
@@ -74,8 +73,8 @@ def get_current_runtime(config: dict) -> str:
 
 
 def set_runtime(config: dict, new_value: str) -> str:
-    """Mutate the config dict in place to persist the new runtime value.
-    Returns the previous value for callers that want to report a delta."""
+    """就地修改配置字典以持久化新的运行时值。
+    返回旧值，供调用方报告变更时使用。"""
     if new_value not in VALID_RUNTIMES:
         raise ValueError(
             f"invalid runtime {new_value!r}; must be one of {VALID_RUNTIMES}"
@@ -88,8 +87,8 @@ def set_runtime(config: dict, new_value: str) -> str:
 
 
 def check_codex_binary_ok() -> tuple[bool, Optional[str]]:
-    """Best-effort verification that codex CLI is installed at acceptable
-    version. Returns (ok, version_or_message)."""
+    """尽力验证 codex CLI 是否已安装且版本可接受。
+    返回 (ok, version_or_message)。"""
     try:
         from agent.transports.codex_app_server import check_codex_binary
 
@@ -104,22 +103,21 @@ def apply(
     *,
     persist_callback=None,
 ) -> CodexRuntimeStatus:
-    """Top-level entry point used by both CLI and gateway handlers.
+    """CLI 和 gateway 处理器共用的顶层入口点。
 
     Args:
-        config: in-memory config dict (will be mutated when new_value is set)
-        new_value: desired runtime; None means "show current state only"
-        persist_callback: optional callable taking the mutated config dict
-            and persisting it to disk. Skipped when None (used by tests).
+        config: 内存中的配置字典（设置 new_value 时会就地修改）
+        new_value: 期望的运行时；None 表示"仅显示当前状态"
+        persist_callback: 可选的可调用对象，接收修改后的配置字典
+            并将其持久化到磁盘。为 None 时跳过（用于测试）。
 
-    Returns: CodexRuntimeStatus describing the outcome.
+    Returns: 描述操作结果的 CodexRuntimeStatus。
     """
     current = get_current_runtime(config)
 
-    # Cache the codex binary check for this apply() call. Subprocess spawn
-    # is cheap (~50ms for `codex --version`), but we'd otherwise call it up
-    # to 3 times in the enable path (read-only/state, gate, success message).
-    # None = not yet checked; (bool, str) = result.
+    # 为此次 apply() 调用缓存 codex 二进制检查结果。子进程启动成本较低
+    # （`codex --version` 约 50ms），但在启用路径中（只读/状态、门控、成功消息）
+    # 可能会调用最多 3 次。None = 尚未检查；(bool, str) = 结果。
     _binary_check: Optional[tuple[bool, Optional[str]]] = None
 
     def _check_binary_cached() -> tuple[bool, Optional[str]]:
@@ -128,7 +126,7 @@ def apply(
             _binary_check = check_codex_binary_ok()
         return _binary_check
 
-    # Read-only call: just report state
+    # 只读调用：仅报告当前状态
     if new_value is None:
         ok, ver = _check_binary_cached()
         msg = (
@@ -144,7 +142,7 @@ def apply(
             codex_version=ver if ok else None,
         )
 
-    # No change requested
+    # 未请求更改
     if new_value == current:
         return CodexRuntimeStatus(
             success=True,
@@ -153,9 +151,9 @@ def apply(
             message=f"openai_runtime already set to {current}",
         )
 
-    # If switching ON, verify codex CLI is installed before persisting —
-    # an opt-in toggle that silently fails on the first turn is the
-    # worst possible UX. Block here with a clear install hint.
+    # 切换为开启状态时，在持久化前验证 codex CLI 是否已安装 —
+    # 一个在第一次调用时静默失败的可选开关是最差的用户体验。
+    # 在此处阻止并给出明确的安装提示。
     if new_value == "codex_app_server":
         ok, ver_or_msg = _check_binary_cached()
         if not ok:
@@ -192,16 +190,15 @@ def apply(
         ok, ver = _check_binary_cached()
         if ok:
             msg_lines.append(f"codex CLI: {ver}")
-        # Auto-migrate Hermes' MCP servers + Codex's installed curated
-        # plugins into ~/.codex/config.toml so the spawned codex subprocess
-        # sees the same tool surface AND can call back into Hermes for
-        # browser/web/delegate_task/vision/memory tools (#7 fix).
-        # Failures are non-fatal — the runtime change still proceeds.
+        # 自动将 Hermes 的 MCP 服务器和 Codex 已安装的精选插件迁移到
+        # ~/.codex/config.toml，让生成的 codex 子进程能看到相同的工具界面，
+        # 同时可通过 MCP 回调调用 Hermes 的 browser/web/delegate_task/vision/memory 工具（修复 #7）。
+        # 失败不致命 — 运行时切换仍会继续。
         try:
             from hermes_cli.codex_runtime_plugin_migration import migrate
             mig_report = migrate(config)
-            # Tools/MCP servers (excluding the hermes-tools callback,
-            # which is internal plumbing — surface separately).
+            # 工具/MCP 服务器（不含 hermes-tools 回调，
+            # 那是内部管道 — 单独显示）。
             user_servers = [
                 s for s in mig_report.migrated if s != "hermes-tools"
             ]
@@ -210,7 +207,7 @@ def apply(
                     f"Migrated {len(user_servers)} MCP server(s): "
                     f"{', '.join(user_servers)}"
                 )
-            # Native Codex plugin migration (Linear, GitHub, etc.)
+            # 原生 Codex 插件迁移（Linear、GitHub 等）
             if mig_report.migrated_plugins:
                 msg_lines.append(
                     f"Migrated {len(mig_report.migrated_plugins)} native "
@@ -221,8 +218,8 @@ def apply(
                     f"Codex plugin discovery skipped: "
                     f"{mig_report.plugin_query_error}"
                 )
-            # Permissions + Hermes tool callback are always-on production
-            # bits the user benefits from knowing about.
+            # 权限配置和 Hermes 工具回调属于始终启用的生产级内容，
+            # 用户应当知晓。
             if mig_report.wrote_permissions_default:
                 msg_lines.append(
                     f"Default sandbox: {mig_report.wrote_permissions_default} "

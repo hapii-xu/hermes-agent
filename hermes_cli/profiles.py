@@ -1,22 +1,22 @@
 """
-Profile management for multiple isolated Hermes instances.
+多个隔离 Hermes 实例的 profile 管理。
 
-Each profile is a fully independent HERMES_HOME directory with its own
-config.yaml, .env, memory, sessions, skills, gateway, cron, and logs.
-Profiles live under ``~/.hermes/profiles/<name>/`` by default.
+每个 profile 是一个完全独立的 HERMES_HOME 目录，拥有自己的
+config.yaml、.env、memory、sessions、skills、gateway、cron 和 logs。
+Profile 默认位于 ``~/.hermes/profiles/<name>/``。
 
-The "default" profile is ``~/.hermes`` itself — backward compatible,
-zero migration needed.
+"default" profile 就是 ``~/.hermes`` 本身 — 向后兼容，
+无需迁移。
 
-Usage::
+用法::
 
-    hermes profile create coder          # fresh profile + bundled skills
-    hermes profile create coder --clone  # also copy config, .env, SOUL.md, skills
-    hermes profile create coder --clone-all  # full copy of source profile
-    coder chat                           # use via wrapper alias
-    hermes -p coder chat                 # or via flag
-    hermes profile use coder             # set as sticky default
-    hermes profile delete coder          # remove profile + alias + service
+    hermes profile create coder          # 全新 profile + 内置 skills
+    hermes profile create coder --clone  # 同时复制 config、.env、SOUL.md、skills
+    hermes profile create coder --clone-all  # 完整复制源 profile
+    coder chat                           # 通过 wrapper 别名使用
+    hermes -p coder chat                 # 或通过 flag
+    hermes profile use coder             # 设为粘性默认值
+    hermes profile delete coder          # 移除 profile + 别名 + 服务
 """
 
 import json
@@ -35,7 +35,7 @@ from agent.skill_utils import is_excluded_skill_path
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
-# Directories bootstrapped inside every new profile
+# 每个新 profile 中引导创建的目录
 _PROFILE_DIRS = [
     "memories",
     "sessions",
@@ -45,53 +45,51 @@ _PROFILE_DIRS = [
     "plans",
     "workspace",
     "cron",
-    # Back-compat/Docker HOME for tool subprocesses. Host subprocesses keep
-    # the user's real HOME by default so normal CLI credentials remain visible;
-    # containers still use this directory for persistent HOME state.
-    # See hermes_constants.get_subprocess_home().
+    # 工具子进程的向后兼容/Docker HOME。宿主机子进程默认保留
+    # 用户的真实 HOME，以便常规 CLI 凭证仍然可见；
+    # 容器仍使用此目录作为持久化 HOME 状态。
+    # 参见 hermes_constants.get_subprocess_home()。
     "home",
 ]
 
-# Files copied during --clone (if they exist in the source)
+# --clone 期间复制的文件（如果源中存在）
 _CLONE_CONFIG_FILES = [
     "config.yaml",
     ".env",
     "SOUL.md",
 ]
 
-# Subdirectory files copied during --clone (path relative to profile root).
-# Memory files are part of the agent's curated identity — just as important
-# as SOUL.md for continuity when cloning a profile.
+# --clone 期间复制的子目录文件（路径相对于 profile 根目录）。
+# Memory 文件是 agent 精心策划的身份的一部分 — 对克隆 profile 时
+# 的连续性而言与 SOUL.md 同等重要。
 _CLONE_SUBDIR_FILES = [
     "memories/MEMORY.md",
     "memories/USER.md",
 ]
 
-# Runtime files stripped after --clone-all (shouldn't carry over).
-# Kept as a post-copy step rather than in the ignore filter because they
-# are created dynamically during normal use and may be absent at copy time.
+# --clone-all 后剥离的运行时文件（不应延续）。
+# 作为复制后步骤而非忽略过滤器保留，因为这些文件
+# 在正常使用期间动态创建，复制时可能不存在。
 _CLONE_ALL_STRIP: list[str] = [
     "gateway.pid",
     "gateway_state.json",
     "processes.json",
 ]
 
-# Infrastructure artifacts excluded from --clone-all when the source is the
-# default profile (``~/.hermes``).  Named profiles never contain these
-# directories at root, so the exclusion is gated to avoid silently dropping
-# user data from a named-profile source.
+# 当源为默认 profile（``~/.hermes``）时从 --clone-all 中排除的基础设施
+# 制品。命名 profile 在根目录下永远不会包含这些目录，因此排除仅
+# 在条件满足时生效，以避免静默丢弃来自命名 profile 源的用户数据。
 #
-# Rationale per item:
-#   hermes-agent  — git repo checkout (~84 MB source + ~3 GB venv)
-#   .worktrees    — git worktrees
-#   profiles      — sibling named profiles (recursive copy never intended)
-#   bin           — installed binaries (tirith etc., ~10 MB) shared per-host
-#   node_modules  — npm packages (hundreds of MB)
+# 逐项说明：
+#   hermes-agent  — git 仓库检出（约 84 MB 源码 + 约 3 GB venv）
+#   .worktrees    — git worktree
+#   profiles      — 同级命名 profile（绝不意图递归复制）
+#   bin           — 已安装的二进制文件（tirith 等，约 10 MB），每台主机共享
+#   node_modules  — npm 包（数百 MB）
 #
-# See ``_DEFAULT_EXPORT_EXCLUDE_ROOT`` below for the broader export-side
-# exclusion list (export also drops logs / caches because the archive is a
-# portable snapshot; clone-all keeps those because the cloned profile is
-# meant to keep working immediately).
+# 参见下方 ``_DEFAULT_EXPORT_EXCLUDE_ROOT`` 了解更广泛的导出侧
+# 排除列表（导出还会丢弃 logs / caches，因为归档是便携快照；
+# clone-all 保留这些是因为克隆的 profile 需要立即继续使用）。
 _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "hermes-agent",
     ".worktrees",
@@ -100,20 +98,19 @@ _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "node_modules",
 })
 
-# Per-profile history artifacts excluded from --clone-all regardless of the
-# source profile.  A new profile is a fresh workspace — inheriting the source
-# profile's session history, backup archives, or quick-backup snapshots is
-# never useful (restoring one inside the clone would resurrect the SOURCE
-# profile's state) and can balloon the copy by tens of GB.  Unlike
-# ``_CLONE_ALL_DEFAULT_EXCLUDE_ROOT`` this set is NOT gated on the default
-# profile: named profiles accumulate the same artifacts.
+# 无论源 profile 如何，从 --clone-all 中排除的每个 profile 的历史
+# 制品。新 profile 是全新的工作区 — 继承源 profile 的 session 历史、
+# 备份归档或快速备份快照毫无用处（在克隆中恢复其中一个会复活
+# 源 profile 的状态），且可能使副本膨胀数十 GB。与
+# ``_CLONE_ALL_DEFAULT_EXCLUDE_ROOT`` 不同，此集合不依赖于默认
+# profile：命名 profile 同样会积累相同的制品。
 #
-# Rationale per item:
-#   state.db (+wal/shm) — SQLite session store (can reach many GB)
-#   sessions            — per-session transcript/data dirs
-#   backups             — `hermes backup` archives
-#   state-snapshots     — quick-backup snapshot trees
-#   checkpoints         — session checkpoint data
+# 逐项说明：
+#   state.db (+wal/shm) — SQLite session 存储（可达数 GB）
+#   sessions            — 每个 session 的转录/数据目录
+#   backups             — `hermes backup` 归档
+#   state-snapshots     — 快速备份快照树
+#   checkpoints         — session 检查点数据
 _CLONE_ALL_HISTORY_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "state.db",
     "state.db-wal",
@@ -124,17 +121,17 @@ _CLONE_ALL_HISTORY_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "checkpoints",
 })
 
-# Marker file written by `hermes profile create --no-skills`.  When present in
-# a profile's root, callers of seed_profile_skills() (fresh-create, `hermes
-# update`'s all-profile sync, the web dashboard) skip bundled-skill seeding
-# for that profile.  The user can still install skills manually via
-# `hermes skills install` or drop SKILL.md files into the profile's skills/.
-# Delete the marker file to opt back in.
+# 由 `hermes profile create --no-skills` 写入的标记文件。当存在于
+# profile 根目录时，seed_profile_skills() 的调用者（新建、`hermes
+# update` 的全 profile 同步、web dashboard）会跳过该 profile 的内置
+# skill 播种。用户仍可通过 `hermes skills install` 手动安装 skill，
+# 或将 SKILL.md 文件放入 profile 的 skills/ 目录。
+# 删除此标记文件即可重新启用。
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
 
 def has_bundled_skills_opt_out(profile_dir: Path) -> bool:
-    """Return True if the profile opted out of bundled-skill seeding."""
+    """如果 profile 选择退出内置 skill 播种则返回 True。"""
     try:
         return (profile_dir / NO_BUNDLED_SKILLS_MARKER).exists()
     except OSError:
@@ -142,25 +139,23 @@ def has_bundled_skills_opt_out(profile_dir: Path) -> bool:
 
 
 def _clone_all_copytree_ignore(source_dir: Path):
-    """Exclude infrastructure artifacts when cloning a profile via --clone-all.
+    """通过 --clone-all 克隆 profile 时排除基础设施制品。
 
-    Three categories:
-      1. Root-level entries in ``_CLONE_ALL_HISTORY_EXCLUDE_ROOT`` — session
-         history, backups, and snapshots that belong to the SOURCE profile
-         and should never carry into a fresh clone.  Applies to any source.
-      2. Root-level entries in ``_CLONE_ALL_DEFAULT_EXCLUDE_ROOT`` — known
-         Hermes infrastructure directories that only the default profile
-         (``~/.hermes``) ever contains.  Gated on ``source_dir`` actually
-         being the default profile so a named-profile source never has its
-         own data silently dropped.
-      3. Universal exclusions at any depth — Python bytecode caches that
-         are stale or regenerable (``__pycache__``, ``*.pyc``, ``*.pyo``)
-         and runtime sockets / temp files (``*.sock``, ``*.tmp``).
+    三个类别：
+      1. ``_CLONE_ALL_HISTORY_EXCLUDE_ROOT`` 中的根级条目 — 属于
+         源 profile 的 session 历史、备份和快照，绝不应带入全新
+         克隆。适用于任何源。
+      2. ``_CLONE_ALL_DEFAULT_EXCLUDE_ROOT`` 中的根级条目 — 仅
+         默认 profile（``~/.hermes``）才包含的已知 Hermes 基础设施
+         目录。仅在 ``source_dir`` 确实是默认 profile 时才生效，
+         避免命名 profile 源的数据被静默丢弃。
+      3. 任意深度的通用排除 — 过时或可重新生成的 Python 字节码
+         缓存（``__pycache__``、``*.pyc``、``*.pyo``）以及运行时
+         socket / 临时文件（``*.sock``、``*.tmp``）。
 
-    The export-side ignore (``_default_export_ignore``) uses the same
-    two-tier pattern with the broader ``_DEFAULT_EXPORT_EXCLUDE_ROOT`` set
-    because the export archive is a portable snapshot rather than a live
-    clone.
+    导出侧的忽略（``_default_export_ignore``）使用相同的双层模式
+    配合更广泛的 ``_DEFAULT_EXPORT_EXCLUDE_ROOT`` 集合，因为导出归档
+    是便携快照而非活跃克隆。
     """
     source_resolved = source_dir.resolve()
     is_default_source = source_resolved == _get_default_hermes_home().resolve()
@@ -168,7 +163,7 @@ def _clone_all_copytree_ignore(source_dir: Path):
     def _ignore(directory: str, names: List[str]) -> List[str]:
         ignored: list[str] = []
         for entry in names:
-            # Universal exclusions at any depth.
+            # 任意深度的通用排除。
             if (
                 entry == "__pycache__"
                 or entry.endswith((".pyc", ".pyo", ".sock", ".tmp"))
@@ -178,16 +173,16 @@ def _clone_all_copytree_ignore(source_dir: Path):
             try:
                 at_root = Path(directory).resolve() == source_resolved
             except (OSError, ValueError):
-                # ``resolve()`` can fail on unusual FS layouts (broken
-                # symlinks, missing parents).  Fail open — better to
-                # over-copy than silently drop user data.
+                # ``resolve()`` 在异常 FS 布局（断裂的符号链接、
+                # 缺失的父目录）上可能失败。选择放行 — 宁可
+                # 多复制也不要静默丢弃用户数据。
                 at_root = False
             if at_root:
-                # History artifacts: excluded for ANY source profile.
+                # 历史制品：任何源 profile 均排除。
                 if entry in _CLONE_ALL_HISTORY_EXCLUDE_ROOT:
                     ignored.append(entry)
                     continue
-                # Infrastructure: only the default profile contains these.
+                # 基础设施：仅默认 profile 包含这些。
                 if is_default_source and entry in _CLONE_ALL_DEFAULT_EXCLUDE_ROOT:
                     ignored.append(entry)
         return ignored
@@ -195,40 +190,40 @@ def _clone_all_copytree_ignore(source_dir: Path):
     return _ignore
 
 
-# Directories/files to exclude when exporting the default (~/.hermes) profile.
-# The default profile contains infrastructure (repo checkout, worktrees, DBs,
-# caches, binaries) that named profiles don't have.  We exclude those so the
-# export is a portable, reasonable-size archive of actual profile data.
+# 导出默认 (~/.hermes) profile 时要排除的目录/文件。
+# 默认 profile 包含命名 profile 所没有的基础设施（仓库检出、worktree、
+# 数据库、缓存、二进制文件）。我们排除这些以使导出成为实际 profile
+# 数据的便携、大小合理的归档。
 _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
-    # Infrastructure
-    "hermes-agent",         # repo checkout (multi-GB)
-    ".worktrees",           # git worktrees
-    "profiles",             # other profiles — never recursive-export
-    "bin",                  # installed binaries (tirith, etc.)
-    "node_modules",         # npm packages
-    # Databases & runtime state
+    # 基础设施
+    "hermes-agent",         # 仓库检出（数 GB）
+    ".worktrees",           # git worktree
+    "profiles",             # 其他 profile — 绝不递归导出
+    "bin",                  # 已安装的二进制文件（tirith 等）
+    "node_modules",         # npm 包
+    # 数据库与运行时状态
     "state.db", "state.db-shm", "state.db-wal",
     "hermes_state.db",
     "response_store.db", "response_store.db-shm", "response_store.db-wal",
     "gateway.pid", "gateway_state.json", "processes.json",
-    "auth.json",            # API keys, OAuth tokens, credential pools
-    ".env",                 # API keys (dotenv)
+    "auth.json",            # API 密钥、OAuth token、凭证池
+    ".env",                 # API 密钥（dotenv）
     "auth.lock", "active_profile", ".update_check",
     "errors.log",
     ".hermes_history",
-    # Caches (regenerated on use)
+    # 缓存（使用时重新生成）
     "image_cache", "audio_cache", "document_cache",
     "browser_screenshots", "checkpoints",
     "sandboxes",
-    "logs",                 # gateway logs
+    "logs",                 # gateway 日志
 })
 
-# Names that cannot be used as profile aliases
+# 不能用作 profile 别名的名称
 _RESERVED_NAMES = frozenset({
     "hermes", "default", "test", "tmp", "root", "sudo",
 })
 
-# Hermes subcommands that cannot be used as profile names/aliases
+# 不能用作 profile 名称/别名的 Hermes 子命令
 _HERMES_SUBCOMMANDS = frozenset({
     "chat", "model", "gateway", "setup", "whatsapp", "login", "logout",
     "status", "cron", "doctor", "dump", "config", "pairing", "skills", "tools",
@@ -238,55 +233,55 @@ _HERMES_SUBCOMMANDS = frozenset({
 
 
 # ---------------------------------------------------------------------------
-# Path helpers
+# 路径辅助函数
 # ---------------------------------------------------------------------------
 
 def _get_profiles_root() -> Path:
-    """Return the directory where named profiles are stored.
+    """返回存储命名 profile 的目录。
 
-    Anchored to the hermes root, NOT to the current HERMES_HOME
-    (which may itself be a profile).  This ensures ``coder profile list``
-    can see all profiles.
+    锚定到 hermes 根目录，而非当前的 HERMES_HOME
+    （后者本身可能就是一个 profile）。这确保 ``coder profile list``
+    能看到所有 profile。
 
-    In Docker/custom deployments where HERMES_HOME points outside
-    ``~/.hermes``, profiles live under ``HERMES_HOME/profiles/`` so
-    they persist on the mounted volume.
+    在 Docker/自定义部署中，如果 HERMES_HOME 指向 ``~/.hermes`` 之外，
+    profile 则位于 ``HERMES_HOME/profiles/`` 下，以便持久化到
+    已挂载的卷。
     """
     return _get_default_hermes_home() / "profiles"
 
 
 def _get_default_hermes_home() -> Path:
-    """Return the default (pre-profile) HERMES_HOME path.
+    """返回默认（pre-profile）HERMES_HOME 路径。
 
-    In standard deployments this is ``~/.hermes``.
-    In Docker/custom deployments where HERMES_HOME is outside ``~/.hermes``
-    (e.g. ``/opt/data``), returns HERMES_HOME directly.
+    在标准部署中为 ``~/.hermes``。
+    在 Docker/自定义部署中，如果 HERMES_HOME 位于 ``~/.hermes`` 之外
+    （例如 ``/opt/data``），则直接返回 HERMES_HOME。
     """
     from hermes_constants import get_default_hermes_root
     return get_default_hermes_root()
 
 
 def _get_active_profile_path() -> Path:
-    """Return the path to the sticky active_profile file."""
+    """返回粘性 active_profile 文件的路径。"""
     return _get_default_hermes_home() / "active_profile"
 
 
 def _get_wrapper_dir() -> Path:
-    """Return the directory for wrapper scripts."""
+    """返回 wrapper 脚本的目录。"""
     return Path.home() / ".local" / "bin"
 
 
 # ---------------------------------------------------------------------------
-# Validation
+# 校验
 # ---------------------------------------------------------------------------
 
 def normalize_profile_name(name: str) -> str:
-    """Return the canonical profile id used on disk and in CLI ``-p`` argv.
+    """返回在磁盘和 CLI ``-p`` 参数中使用的规范 profile id。
 
-    Named profiles are stored lowercase under ``profiles/<id>/``. The special
-    alias ``default`` is matched case-insensitively (``Default`` → ``default``).
-    Dashboards and tools may pass title-cased display labels; normalize before
-    validation, assignment, and subprocess spawn (see issue #18498).
+    命名 profile 以小写存储在 ``profiles/<id>/`` 下。特殊别名
+    ``default`` 不区分大小写匹配（``Default`` → ``default``）。
+    Dashboard 和工具可能传入标题大写显示标签；在验证、赋值和
+    子进程启动之前进行规范化（参见 issue #18498）。
     """
     if not isinstance(name, str):
         name = str(name)
@@ -299,19 +294,19 @@ def normalize_profile_name(name: str) -> str:
 
 
 def validate_profile_name(name: str) -> None:
-    """Raise ``ValueError`` if *name* is not a valid profile identifier.
+    """如果 *name* 不是有效的 profile 标识符则抛出 ``ValueError``。
 
-    Validates the input as-given — strict lowercase match. Callers that accept
-    mixed-case or title-cased input from users (dashboard UI, CLI args) should
-    call :func:`normalize_profile_name` first. This separation keeps validate
-    honest about what the on-disk directory name must look like, while
-    ingress-point normalization handles UX flexibility (see #18498).
+    按原样验证输入 — 严格小写匹配。接受混合大小写或标题大写输入
+    的调用者（dashboard UI、CLI 参数）应先调用
+    :func:`normalize_profile_name`。这种分离使 validate 对磁盘上
+    目录名称的要求保持诚实，同时入口处的规范化处理 UX 灵活性
+    （参见 #18498）。
 
-    Also rejects names in :data:`_RESERVED_NAMES` (``hermes``, ``test``,
-    ``tmp``, ``root``, ``sudo``) that would create confusing on-disk
-    collisions (a ``hermes`` profile inside ``~/.hermes/``) or get refused
-    at alias-creation time anyway. ``default`` is a special pass-through —
-    it's a valid alias for the built-in root profile.
+    还会拒绝 :data:`_RESERVED_NAMES` 中的名称（``hermes``、``test``、
+    ``tmp``、``root``、``sudo``），因为这些名称会在磁盘上产生令人困惑的
+    冲突（``~/.hermes/`` 内的 ``hermes`` profile），或者在别名创建时
+    无论如何都会被拒绝。``default`` 是特殊放行 — 它是内置根
+    profile 的有效别名。
     """
     if name == "default":
         return  # special alias for ~/.hermes
@@ -329,7 +324,7 @@ def validate_profile_name(name: str) -> None:
 
 
 def get_profile_dir(name: str) -> Path:
-    """Resolve a profile name to its HERMES_HOME directory."""
+    """将 profile 名称解析为其 HERMES_HOME 目录。"""
     canon = normalize_profile_name(name)
     if canon == "default":
         return _get_default_hermes_home()
@@ -337,7 +332,7 @@ def get_profile_dir(name: str) -> Path:
 
 
 def profile_exists(name: str) -> bool:
-    """Check whether a profile directory exists."""
+    """检查 profile 目录是否存在。"""
     canon = normalize_profile_name(name)
     if canon == "default":
         return True
@@ -345,13 +340,13 @@ def profile_exists(name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Alias / wrapper script management
+# 别名 / wrapper 脚本管理
 # ---------------------------------------------------------------------------
 
 def check_alias_collision(name: str) -> Optional[str]:
-    """Return a human-readable collision message, or None if the name is safe.
+    """返回人类可读的冲突消息，如果名称安全则返回 None。
 
-    Checks: reserved names, hermes subcommands, existing binaries in PATH.
+    检查：保留名称、hermes 子命令、PATH 中已有的二进制文件。
     """
     canon = normalize_profile_name(name)
     if canon in _RESERVED_NAMES:
@@ -359,7 +354,7 @@ def check_alias_collision(name: str) -> Optional[str]:
     if canon in _HERMES_SUBCOMMANDS:
         return f"'{canon}' conflicts with a hermes subcommand"
 
-    # Check existing commands in PATH
+    # 检查 PATH 中已有的命令
     wrapper_dir = _get_wrapper_dir()
     is_windows = sys.platform == "win32"
     try:
@@ -369,37 +364,37 @@ def check_alias_collision(name: str) -> Optional[str]:
         )
         if result.returncode == 0:
             existing_path = result.stdout.strip().splitlines()[0]
-            # Allow overwriting our own wrappers
+            # 允许覆盖我们自己的 wrapper
             expected = wrapper_dir / (f"{canon}.bat" if is_windows else canon)
             if existing_path == str(expected):
                 try:
                     content = expected.read_text()
                     if "hermes -p" in content:
-                        return None  # it's our wrapper, safe to overwrite
+                        return None  # 是我们自己的 wrapper，可以安全覆盖
                 except Exception:
                     pass
             return f"'{canon}' conflicts with an existing command ({existing_path})"
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    return None  # safe
+    return None  # 安全
 
 
 def _is_wrapper_dir_in_path() -> bool:
-    """Check if ~/.local/bin is in PATH."""
+    """检查 ~/.local/bin 是否在 PATH 中。"""
     wrapper_dir = str(_get_wrapper_dir())
     return wrapper_dir in os.environ.get("PATH", "").split(os.pathsep)
 
 
 def create_wrapper_script(name: str, target: Optional[str] = None) -> Optional[Path]:
-    """Create a shell wrapper script at ~/.local/bin/<name>.
+    """在 ~/.local/bin/<name> 创建一个 shell wrapper 脚本。
 
-    The wrapper file is named after ``name`` (the alias). The profile it
-    activates is ``target`` if given, otherwise ``name`` — this lets a custom
-    alias name point at a differently-named profile without a post-hoc rewrite.
+    wrapper 文件以 ``name``（别名）命名。激活的 profile 是 ``target``
+    （如果给定），否则是 ``name`` — 这允许自定义别名指向不同名称的
+    profile 而无需事后重写。
 
-    On Windows, creates a ``.bat`` file instead of a POSIX shell script.
-    Returns the path to the created wrapper, or None if creation failed.
+    在 Windows 上，创建 ``.bat`` 文件而非 POSIX shell 脚本。
+    返回创建的 wrapper 路径，如果创建失败则返回 None。
     """
     canon = normalize_profile_name(name)
     profile = normalize_profile_name(target) if target else canon
@@ -432,12 +427,12 @@ def create_wrapper_script(name: str, target: Optional[str] = None) -> Optional[P
 
 
 def remove_wrapper_script(name: str) -> bool:
-    """Remove the wrapper script for a profile. Returns True if removed."""
+    """移除 profile 的 wrapper 脚本。移除成功返回 True。"""
     wrapper_dir = _get_wrapper_dir()
     canon = normalize_profile_name(name)
     is_windows = sys.platform == "win32"
 
-    # Check both the extensionless path (POSIX) and .bat (Windows)
+    # 同时检查无扩展名路径（POSIX）和 .bat（Windows）
     candidates = [wrapper_dir / canon]
     if is_windows:
         candidates.insert(0, wrapper_dir / f"{canon}.bat")
@@ -445,7 +440,7 @@ def remove_wrapper_script(name: str) -> bool:
     for wrapper_path in candidates:
         if wrapper_path.exists():
             try:
-                # Verify it's our wrapper before removing
+                # 删除前验证是我们自己的 wrapper
                 content = wrapper_path.read_text()
                 if "hermes -p" in content:
                     wrapper_path.unlink()
@@ -456,13 +451,13 @@ def remove_wrapper_script(name: str) -> bool:
 
 
 def _migrate_profile_config_if_outdated(profile_dir: Path) -> None:
-    """Bring a copied profile config.yaml up to the current schema.
+    """将复制的 profile config.yaml 更新到当前 schema。
 
-    Profile creation can clone a config file that predates schema tracking (no
-    ``_config_version``) or that is simply older than the running Hermes. If we
-    leave it untouched, the first desktop/doctor view of the new profile shows a
-    scary ``v0 → latest`` warning even though we just created the profile. Scope
-    the normal migration pipeline to the new profile and keep it non-interactive.
+    Profile 创建可能克隆了一个早于 schema 跟踪（没有
+    ``_config_version``）或 просто 比当前运行的 Hermes 更旧的 config 文件。
+    如果我们不做处理，新 profile 首次被 desktop/doctor 查看时会显示
+    可怕的 ``v0 → latest`` 警告，即使我们刚刚创建了该 profile。
+    将正常迁移管道限定到新 profile 并保持非交互模式。
     """
     config_path = profile_dir / "config.yaml"
     if not config_path.exists():
@@ -480,24 +475,24 @@ def _migrate_profile_config_if_outdated(profile_dir: Path) -> None:
         finally:
             reset_hermes_home_override(token)
     except Exception:
-        # Profile creation should not fail because an old copied config could
-        # not be migrated. The next `hermes doctor --fix` can still surface the
-        # detailed error in the target profile.
+        # Profile 创建不应因为旧复制的 config 无法迁移而失败。
+        # 下一次 `hermes doctor --fix` 仍可以在目标 profile 中
+        # 显示详细错误。
         pass
 
 
 def find_alias_for_profile(profile_name: str) -> Optional[str]:
-    """Return the alias name of the wrapper that activates *profile_name*, or None.
+    """返回激活 *profile_name* 的 wrapper 的别名名称，如果没有则返回 None。
 
-    A wrapper created by :func:`create_wrapper_script` is a file named after the
-    alias whose body invokes ``hermes -p <profile>``. When the alias name equals
-    the profile name this is trivial, but a custom alias (``hermes profile alias
-    <profile> --name <custom>``) produces a differently-named file — so the
-    display side cannot assume ``wrapper == profile`` and must reverse-look-up.
+    由 :func:`create_wrapper_script` 创建的 wrapper 是一个以别名命名的文件，
+    其内容调用 ``hermes -p <profile>``。当别名等于 profile 名称时这是平凡的，
+    但自定义别名（``hermes profile alias <profile> --name <custom>``）产生
+    不同命名的文件 — 因此显示侧不能假设 ``wrapper == profile``，必须进行
+    反向查找。
 
-    A custom alias (name != profile) is preferred over the profile-named wrapper
-    so ``profile list``/``show`` surface the command the user actually typed.
-    Results are sorted for deterministic output when several aliases match.
+    自定义别名（name != profile）优先于 profile 同名 wrapper，
+    以便 ``profile list``/``show`` 显示用户实际输入的命令。
+    当多个别名匹配时，结果排序以确保输出确定性。
     """
     wrapper_dir = _get_wrapper_dir()
     if not wrapper_dir.is_dir():
@@ -511,7 +506,7 @@ def find_alias_for_profile(profile_name: str) -> Optional[str]:
     for entry in sorted(wrapper_dir.iterdir()):
         if not entry.is_file():
             continue
-        # Only our own wrappers are named with the alias and (on Windows) .bat.
+        # 只有我们自己的 wrapper 才以别名命名，（在 Windows 上）带 .bat 后缀。
         if is_windows and entry.suffix != ".bat":
             continue
         if not is_windows and entry.suffix:

@@ -125,24 +125,23 @@ def _fmt_usd(d: float) -> str:
 
 
 def _is_finite_num(v: Any) -> TypeGuard[float]:
-    """True iff v is a real numeric value (int or float, not bool, not NaN/Inf).
+    """当且仅当 v 是合法的数值（int 或 float，排除 bool 和 NaN/Inf）时返回 True。
 
-    Typed as a ``TypeGuard[float]`` so the type checker narrows ``v`` to a real
-    number in the positive branch — callers can then do arithmetic / pass it to
-    ``_fmt_usd`` without a None-operand warning.
+    使用 ``TypeGuard[float]`` 类型标注，使类型检查器在条件为真的分支中将 ``v``
+    收窄为实数类型——调用方可以安全地对其进行算术运算或传递给 ``_fmt_usd``，
+    而不会触发 None 操作数警告。
     """
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
 def build_nous_credits_snapshot(account_info) -> Optional[AccountUsageSnapshot]:
-    """Map a NousPortalAccountInfo into an AccountUsageSnapshot for /usage.
+    """将 NousPortalAccountInfo 映射为 /usage 命令所用的 AccountUsageSnapshot。
 
-    Shows dollar magnitudes (subscription / top-up / total) + renewal date + a
-    portal CTA. When the portal supplies a subscription denominator
-    (``monthly_credits``), also emits a subscription-usage window so the renderer
-    shows a real ``% used`` gauge; when it's absent (older portals) the view
-    gracefully degrades to magnitudes-only. Returns None when there's no usable
-    account info to show (fail-open: caller just shows nothing).
+    展示金额信息（订阅 / 充值 / 总额）+ 续费日期 + 门户引导链接。
+    当门户提供了订阅额度上限（``monthly_credits``）时，还会生成一个订阅用量窗口，
+    使渲染器能够显示真实的 ``% used`` 进度条；若该字段缺失（旧版门户），
+    则优雅降级为仅展示金额。当没有可用的账户信息时返回 None（失败开放：
+    调用方不显示任何内容）。
     """
     try:
         from hermes_cli.nous_account import nous_portal_topup_url
@@ -156,18 +155,17 @@ def build_nous_credits_snapshot(account_info) -> Optional[AccountUsageSnapshot]:
         windows: list[AccountUsageWindow] = []
         details: list[str] = []
 
-        # Subscription usage gauge — only when the portal supplies a positive
-        # monthly_credits denominator AND a finite remaining balance that does
-        # not exceed the cap. Money math is on float dollars (allowed: numeric
-        # account fields, NOT a server-provided *_usd string). used = cap -
-        # remaining; clamp [0,100] so a debt balance (remaining < 0) reads 100%.
-        # Excluded on purpose:
-        #   - non-finite values (NaN/Infinity slip past isinstance and json.loads
-        #     parses bare NaN/Infinity by default) → would render "$nan"/"$inf"
-        #     and a falsely-confident gauge;
-        #   - remaining > cap (rollover balance spanning the period) → monthly_credits
-        #     is no longer a meaningful denominator, and "$X of $Y left" with X>Y
-        #     reads as a contradiction. Both fall back to the magnitudes lines.
+        # 订阅用量进度条——仅当门户提供了正的 monthly_credits 上限
+        # 且剩余余额为有限值且不超过上限时才显示。金额计算基于浮点美元
+        # （允许的：数值型账户字段，而非服务端提供的 *_usd 字符串）。
+        # 已用 = 上限 - 剩余；钳位到 [0,100]，使欠费余额（剩余 < 0）显示为 100%。
+        # 故意排除的情况：
+        #   - 非有限值（NaN/Infinity 会绕过 isinstance 检查，且 json.loads
+        #     默认会解析裸 NaN/Infinity）→ 会渲染出 "$nan"/"$inf" 和
+        #     虚假的进度条；
+        #   - 剩余 > 上限（跨期结转余额）→ monthly_credits 不再是有效的
+        #     分母，"$X of $Y left" 中 X>Y 看起来自相矛盾。两者均回退到
+        #     仅展示金额的行。
         if sub is not None:
             monthly_credits = getattr(sub, "monthly_credits", None)
             sub_remaining = getattr(sub, "credits_remaining", None)
@@ -231,19 +229,19 @@ def build_nous_credits_snapshot(account_info) -> Optional[AccountUsageSnapshot]:
 
 
 def nous_credits_lines(*, markdown: bool = False, timeout: float = 10.0) -> list[str]:
-    """Return rendered Nous-credits /usage lines, or [] when there's nothing to show.
+    """返回渲染后的 Nous 积分 /usage 行，无内容时返回 []。
 
-    Account-independent of any live agent: gated on "a Nous account is logged in"
-    (a cheap local auth-state check), then a wall-clock-bounded portal fetch. Shared
-    by the CLI ``_show_usage`` and the TUI ``session.usage`` RPC so both surfaces show
-    the same block regardless of session API-call count or resume state. Fail-open:
-    any auth/portal hiccup or timeout returns [] (the caller shows nothing).
+    与具体 agent 无关的账户查询：先检查"是否有 Nous 账户已登录"（一个轻量级
+    本地认证状态检查），然后带超时限制地请求门户。CLI 的 ``_show_usage`` 和
+    TUI 的 ``session.usage`` RPC 共用此逻辑，因此两个界面无论会话 API 调用
+    次数或恢复状态如何，都显示相同的内容块。失败开放：任何认证/门户异常或
+    超时均返回 []（调用方不显示任何内容）。
 
-    Dev override: when HERMES_DEV_CREDITS_FIXTURE selects a fixture state, /usage
-    renders from that fixture instead of the real portal (so the block + gauge are
-    testable without a live account). Throwaway scaffolding.
+    开发覆盖：当 HERMES_DEV_CREDITS_FIXTURE 选择了一个 fixture 状态时，/usage
+    将从该 fixture 渲染而非真实门户（以便在没有真实账户的情况下测试内容块和
+    进度条）。一次性脚手架代码。
     """
-    # Dev fixture short-circuit — render /usage from the injected state, no portal.
+    # 开发 fixture 短路——从注入的状态渲染 /usage，不访问门户。
     try:
         from agent.credits_tracker import dev_fixture_credits_state
 
@@ -274,19 +272,19 @@ def nous_credits_lines(*, markdown: bool = False, timeout: float = 10.0) -> list
         snapshot = build_nous_credits_snapshot(account)
         return render_account_usage_lines(snapshot, markdown=markdown)
     except Exception:
-        # Fail-open (caller shows nothing), but leave a breadcrumb so a dead
-        # /usage credits block is diagnosable in agent.log without a dev flag.
+        # 失败开放（调用方不显示任何内容），但留下痕迹以便在不开启开发标志的情况下
+        # 在 agent.log 中诊断死掉的 /usage 积分块。
         logger.debug("credits ▸ /usage portal fetch/render failed (fail-open)", exc_info=True)
         return []
 
 
 def _snapshot_from_credits_state(state) -> Optional[AccountUsageSnapshot]:
-    """Map a header-shaped CreditsState (e.g. a dev fixture) to the /usage snapshot.
+    """将头部形状的 CreditsState（如开发 fixture）映射为 /usage 快照。
 
-    Renders the same magnitudes + monthly-grant % window the portal path produces,
-    so HERMES_DEV_CREDITS_FIXTURE can exercise /usage without a live account. The
-    *_usd strings are mock display values here (not server balance to compute on);
-    the % comes from CreditsState.used_fraction (micros math). Fail-open → None.
+    渲染与门户路径相同的金额 + 月度额度 % 窗口，
+    以便 HERMES_DEV_CREDITS_FIXTURE 无需真实账户即可测试 /usage。
+    *_usd 字符串在此处是模拟显示值（而非用于计算的服务端余额）；
+    % 来自 CreditsState.used_fraction（微分数学）。失败开放 → None。
     """
     try:
         if state is None:
@@ -340,12 +338,11 @@ def _snapshot_from_credits_state(state) -> Optional[AccountUsageSnapshot]:
 
 @dataclass(frozen=True)
 class CreditsView:
-    """Surface-agnostic data for the ``/credits`` command.
+    """与展示面无关的 ``/credits`` 命令数据。
 
-    One portal fetch, one parse — consumed identically by the CLI panel, the
-    gateway button, and any other money surface. Fail-open: when not logged in
-    or the portal is unreachable, ``logged_in`` is False / ``topup_url`` is None
-    and callers degrade gracefully.
+    一次门户请求，一次解析——由 CLI 面板、网关按钮以及其他货币展示面
+    以相同方式消费。失败开放：未登录或门户不可达时，``logged_in`` 为 False /
+    ``topup_url`` 为 None，调用方优雅降级。
     """
 
     logged_in: bool
@@ -356,12 +353,11 @@ class CreditsView:
 
 
 def build_credits_view(*, markdown: bool = False, timeout: float = 10.0) -> CreditsView:
-    """Build the /credits view: balance block + identity line + top-up URL.
+    """构建 /credits 视图：余额块 + 身份行 + 充值 URL。
 
-    Reuses the same account fetch + snapshot + URL builder as the /usage credits
-    block, so the numbers always match. The balance block is the rendered
-    snapshot MINUS its trailing top-up/command-hint lines (the /credits surface
-    supplies its own affordance). Fail-open → ``CreditsView(logged_in=False)``.
+    复用与 /usage 积分块相同的账户获取 + 快照 + URL 构建器，
+    因此数字始终匹配。余额块是渲染快照去掉末尾充值/命令提示行之后的结果
+    （/credits 展示面自行提供操作入口）。失败开放 → ``CreditsView(logged_in=False)``。
     """
     not_logged_in = CreditsView(logged_in=False)
     try:
@@ -393,9 +389,9 @@ def build_credits_view(*, markdown: bool = False, timeout: float = 10.0) -> Cred
         return not_logged_in
 
     snapshot = build_nous_credits_snapshot(account)
-    # Balance lines = the snapshot block minus the two trailing affordance lines
-    # ("Top up: <url>" + "(or run /credits)") that build_nous_credits_snapshot
-    # appends for the /usage surface. /credits renders its own button/panel.
+    # 余额行 = 快照块去掉末尾两行操作入口
+    # （"Top up: <url>" + "(or run /credits)"），这两行由 build_nous_credits_snapshot
+    # 为 /usage 展示面追加。/credits 自行渲染按钮/面板。
     balance_lines: list[str] = []
     if snapshot is not None:
         rendered = render_account_usage_lines(snapshot, markdown=markdown)
@@ -406,7 +402,7 @@ def build_credits_view(*, markdown: bool = False, timeout: float = 10.0) -> Cred
             and not line.lstrip().startswith("(or run")
         ]
 
-    # Identity line — shown before any open (roadmap §4.4).
+    # 身份行——在任何开放操作前显示（路线图 §4.4）。
     email = getattr(account, "email", None)
     org_name = getattr(account, "org_name", None)
     who: list[str] = []

@@ -1,69 +1,69 @@
-# Autoreason: Iterative Refinement Methodology
+# Autoreason：迭代精炼方法论
 
-Complete reference for the autoreason iterative refinement method, derived from experimental results across subjective writing tasks, competitive programming, and four model tiers. Use this when any output (paper draft, experiment script, analysis, task definition) needs iterative improvement.
+autoreason 迭代精炼方法的完整参考，源自跨主观写作任务、竞赛编程以及四个模型层级的实验结果。当任何输出（论文初稿、实验脚本、分析、任务定义）需要迭代改进时，请使用本方法。
 
-**Source**: [NousResearch/autoreason](https://github.com/NousResearch/autoreason) — "Autoreason: When Iterative LLM Refinement Works and Why It Fails"
+**来源**：[NousResearch/autoreason](https://github.com/NousResearch/autoreason) ——「Autoreason: When Iterative LLM Refinement Works and Why It Fails」
 
 ---
 
-## Strategy Selection Guide
+## 策略选择指南
 
-### Decision Tree
+### 决策树
 
 ```
-Is the task objectively verifiable (code, math, factual)?
-├── YES → Does the model solve it on the first attempt?
-│   ├── YES → Use single pass (no refinement needed)
-│   └── NO → Use autoreason (structured analysis → reason-informed revision)
+任务是否可客观验证（代码、数学、事实）？
+├── 是 → 模型能否在第一次尝试时解决？
+│   ├── 是 → 使用单次通过（无需精炼）
+│   └── 否 → 使用 autoreason（结构化分析 → 基于推理的修订）
 │
-└── NO (subjective) → What model tier are you using?
-    ├── Weak (Llama 8B, small models)
-    │   → Single pass. Model too weak for refinement to help.
-    │     Invest in generation quality, not iteration.
+└── 否（主观）→ 你在用哪个模型层级？
+    ├── 弱（Llama 8B、小模型）
+    │   → 单次通过。模型太弱，精炼无益。
+    │     把精力投入到生成质量上，而非迭代。
     │
-    ├── Mid-tier (Haiku 3.5, Gemini Flash)
-    │   → Autoreason with stronger judges. This is the sweet spot.
-    │     Self-refinement DESTROYS weak model outputs — autoreason prevents this.
+    ├── 中端（Haiku 3.5、Gemini Flash）
+    │   → 使用更强评审的 autoreason。这是最佳区间。
+    │     自我精炼会毁掉弱模型的输出——autoreason 能避免这一点。
     │
-    ├── Strong (Sonnet 4)
-    │   → Autoreason for open-ended tasks. Wins 3/5.
-    │     Critique-and-revise for concrete technical tasks (2/5).
+    ├── 强（Sonnet 4）
+    │   → 开放式任务用 autoreason。胜率 3/5。
+    │     具体技术任务用 critique-and-revise（2/5）。
     │
-    └── Frontier (Sonnet 4.6, Opus)
-        ├── Constrained scope? → Autoreason. Wins 2/3 constrained tasks.
-        └── Unconstrained? → Critique-and-revise or single pass.
-            Autoreason FAILS on unconstrained frontier tasks (comes last).
+    └── 前沿（Sonnet 4.6、Opus）
+        ├── 受约束范围？→ autoreason。在 2/3 受约束任务上取胜。
+        └── 不受约束？→ critique-and-revise 或单次通过。
+            autoreason 在不受约束的前沿任务上会失败（垫底）。
 ```
 
-### Strategy Comparison Table
+### 策略对比表
 
-| Strategy | Best For | Avoid When | Compute (per iteration) |
+| 策略 | 最适合 | 应避免的情况 | 算力（每次迭代） |
 |----------|----------|------------|------------------------|
-| **Single pass** | Frontier models, template tasks, tight budgets | Mid-tier models where quality ceiling is low | 1 call |
-| **Critique-and-revise** | Concrete technical requirements (system design, specifications) | Weak models (degrades output), unconstrained subjective tasks | 2 calls |
-| **Autoreason** | Mid-tier models, constrained scope, tasks with genuine tradeoffs | Weak models (Llama 8B), frontier + unconstrained | ~6 calls |
-| **Best-of-N** | Almost never recommended | Weak models especially — worse than single pass | N calls |
+| **单次通过** | 前沿模型、模板化任务、预算紧张 | 质量上限较低的中端模型 | 1 次调用 |
+| **Critique-and-revise** | 具体技术需求（系统设计、规格说明） | 弱模型（会劣化输出）、不受约束的主观任务 | 2 次调用 |
+| **Autoreason** | 中端模型、受约束范围、存在真正权衡的任务 | 弱模型（Llama 8B）、前沿 + 不受约束 | ~6 次调用 |
+| **Best-of-N** | 几乎不推荐 | 尤其是弱模型——比单次通过更差 | N 次调用 |
 
-### Why Each Strategy Fails
+### 每种策略为何失败
 
-| Strategy | Failure Mode | Mechanism |
+| 策略 | 失败模式 | 机理 |
 |----------|-------------|-----------|
-| **Single pass** | Quality ceiling | No mechanism to improve beyond first attempt |
-| **Critique-and-revise** | Progressive degradation | Model hallucinates problems (sycophancy), scope creeps each pass, never declines to change |
-| **Best-of-N** | Random selection | Without good ranking signal, more samples = more mediocre options |
-| **Autoreason (unconstrained)** | Synthesis drift | Stronger models produce syntheses so consistently preferred that incumbent never stabilizes |
+| **单次通过** | 质量上限 | 没有改进首次尝试之外的机制 |
+| **Critique-and-revise** | 渐进劣化 | 模型臆造问题（谄媚）、范围每轮扩大、从不拒绝改动 |
+| **Best-of-N** | 随机选择 | 没有好的排序信号时，样本越多 = 平庸选项越多 |
+| **Autoreason（不受约束）** | 综合漂移 | 更强模型产出的综合被一致偏好，使得在位者永远无法稳定 |
 
 ---
 
-## The Autoreason Loop
+## Autoreason 循环
 
-### Architecture
+### 架构
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                    ITERATION LOOP                         │
+│                    迭代循环                                │
 │                                                           │
-│   Incumbent A ──► Critic ──► Author B ──► Synthesizer     │
+│   在位者 A ──► Critic ──► Author B ──► Synthesizer         │
 │       │                                      │            │
 │       │              ┌───────────────────────┘            │
 │       ▼              ▼                                    │
@@ -71,324 +71,322 @@ Is the task objectively verifiable (code, math, factual)?
 │       │              │            │                       │
 │       └──────────────┼────────────┘                       │
 │                      ▼                                    │
-│              Judge Panel (blind)                          │
+│              评审组（盲评）                                │
 │                      │                                    │
 │                      ▼                                    │
-│                   Winner                                  │
+│                   胜者                                    │
 │                      │                                    │
 │              ┌───────┴───────┐                            │
 │              ▼               ▼                            │
-│         A wins k=2      B or AB wins                      │
-│         consecutive?    → new incumbent                   │
+│         A 连续 k=2      B 或 AB 胜                         │
+│         次？             → 新在位者                        │
 │              │                                            │
 │              ▼                                            │
-│           CONVERGED                                       │
+│           收敛                                            │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### Roles
+### 角色
 
-Every role is a **fresh, isolated agent** with no shared context:
+每个角色都是一个**全新、隔离的 agent**，没有共享上下文：
 
-| Role | Input | Output | Key Rule |
+| 角色 | 输入 | 输出 | 关键规则 |
 |------|-------|--------|----------|
-| **Critic** | Task + Incumbent A | List of problems | Find problems ONLY. No fixes. No suggestions. |
-| **Author B** | Task + A + Critique | Revised version B | Address each criticism. State which problem each change fixes. |
-| **Synthesizer** | Task + X + Y (randomized labels) | Synthesis AB | Take strongest elements of each. Not a compromise. |
-| **Judge Panel** | Task + A, AB, B (randomized labels + order) | Ranking | Rank best to worst. No authorship stake. |
+| **Critic** | 任务 + 在位者 A | 问题列表 | 只找问题。不给修复。不给建议。 |
+| **Author B** | 任务 + A + 批评 | 修订版本 B | 逐条回应批评。说明每次改动修复了哪个问题。 |
+| **Synthesizer** | 任务 + X + Y（标签随机化） | 综合 AB | 取两者最强要素。不是折中。 |
+| **评审组** | 任务 + A、AB、B（标签与顺序随机化） | 排名 | 从最好到最差排序。不带作者身份立场。 |
 
-### Configuration
+### 配置
 
-| Parameter | Value | Rationale |
+| 参数 | 取值 | 理由 |
 |-----------|-------|-----------|
-| **Convergence k** | 2 | k=1 premature (94% displaced later). k=2 converges 100%, quality plateaus. k=3 fails 24%, 2x cost, no quality gain. |
-| **Author temperature** | 0.7-0.8 | Encourages diverse revisions |
-| **Judge temperature** | 0.3 | Encourages consistent evaluation |
-| **In-loop judges** | 3 | Balance per-pass cost vs evaluation stability |
-| **Final evaluation judges** | 7 | Higher statistical power for final comparison |
-| **Max tokens** | 4096 | Standard; 8192 for long-form (papers) |
-| **Judge type** | Chain-of-thought | 3x faster convergence on some tasks. Always use. |
-| **Tiebreak** | Conservative (incumbent wins) | Prevents false positives — A must be genuinely beaten |
-| **Max passes** | 25 (constrained), 50 (remedy) | Safety cap; most converge by pass 10-15 |
+| **收敛 k** | 2 | k=1 过早（94% 之后被替换）。k=2 100% 收敛，质量见顶。k=3 失败率 24%，2 倍开销，无质量收益。 |
+| **Author 温度** | 0.7-0.8 | 鼓励多样化修订 |
+| **评审温度** | 0.3 | 鼓励一致的评判 |
+| **在循环内的评审** | 3 | 平衡单轮开销与评判稳定性 |
+| **最终评估评审** | 7 | 更高统计功效用于最终比较 |
+| **最大 token 数** | 4096 | 标准；长文本（论文）用 8192 |
+| **评审类型** | 思维链 | 在某些任务上收敛快 3 倍。始终使用。 |
+| **平局裁决** | 保守（在位者胜） | 防止假阳性——A 必须被真正击败 |
+| **最大轮数** | 25（受约束）、50（补救） | 安全上限；多数在第 10-15 轮收敛 |
 
-### Prompts
+### 提示词
 
 #### Critic
 ```
-System: You are a critical reviewer. Your only job is to find real problems. 
-Be specific and concrete. Do not suggest fixes.
+System: 你是一名严格的评审。你的唯一工作是找出真实的问题。
+要具体、明确。不要建议修复方案。
 
-User: Find real problems with this proposal. Focus on:
-- Things that won't work as described
-- Complexity that doesn't pay for itself
-- Assumptions that are wrong
-- Missing pieces
-Do NOT propose fixes. Just the problems.
+User: 找出这份提案中的真实问题。聚焦于：
+- 无法按描述实现的地方
+- 得不偿失的复杂性
+- 错误的假设
+- 缺失的部分
+不要提出修复方案。只列问题。
 ```
 
 #### Author B
 ```
-System: You are a senior consultant revising a proposal based on specific 
-criticisms. Address each valid criticism directly. Do not make changes not 
-motivated by an identified problem.
+System: 你是一名资深顾问，根据具体批评修订一份提案。逐条直接回应每条
+有效批评。不要做未被已识别问题所驱动的改动。
 
-User: [TASK] + [VERSION A] + [CRITIC OUTPUT]
-Revise to address these problems. For each change, state which problem it fixes.
+User: [任务] + [版本 A] + [批评输出]
+针对这些问题进行修订。对每处改动，说明它修复了哪个问题。
 ```
 
 #### Synthesizer
 ```
-System: You are given two versions as equal inputs. Take the strongest elements 
-from each and produce a coherent synthesis. This is not a compromise.
+System: 你会拿到作为对等输入的两个版本。从每个版本中取最强要素，
+产出一份连贯的综合。这不是折中。
 
-User: [TASK] + [VERSION X] + [VERSION Y]
-(labels randomized — synthesizer doesn't know which is incumbent)
+User: [任务] + [版本 X] + [版本 Y]
+（标签已随机化——synthesizer 不知道哪个是在位者）
 ```
 
-#### Judge (Chain-of-Thought) — ALWAYS USE THIS VERSION
+#### 评审（思维链）—— 始终使用此版本
 ```
-System: You are an independent evaluator. Think carefully before deciding.
+System: 你是一名独立评估者。在决定前仔细思考。
 
-User: [TASK] + Three proposals. For each, think step by step:
-1. What does it get right?
-2. What does it get wrong or miss?
-3. Are numbers and claims defensible?
-4. Is detail appropriate or bloated?
-After reasoning, rank all three.
-RANKING: [best], [second], [worst]
+User: [任务] + 三份提案。对每一份，逐步思考：
+1. 它哪里做对了？
+2. 它哪里做错了或遗漏了？
+3. 数字和主张是否站得住脚？
+4. 细节是恰当还是臃肿？
+推理之后，对三份全部排序。
+RANKING: [最好], [第二], [最差]
 ```
 
-#### Baseline Prompts (for comparison experiments)
+#### 基线提示词（用于对比实验）
 
-| Baseline | Prompt |
+| 基线 | 提示词 |
 |----------|--------|
-| **Conservative** | "Make minimal improvements while preserving what works. Do not add new sections or significantly expand scope." |
-| **Improve this** | "Improve this document." (no further guidance) |
-| **Harsh critic** | "Critically evaluate and rewrite, fixing all weaknesses you identify." |
-| **Critique & revise** | Step 1: "Produce a structured critique. List specific weaknesses." Step 2: "Revise to address each criticism." |
+| **保守** | 「在保留有效部分的同时做最小改进。不要新增章节或大幅扩展范围。」 |
+| **改进这个** | 「改进这份文档。」（无更多指引） |
+| **严苛评审** | 「批判性地评估并重写，修复你识别出的所有弱点。」 |
+| **Critique & revise** | 第一步：「产出结构化的批评。列出具体弱点。」第二步：「针对每条批评进行修订。」 |
 
 ---
 
-## Scoring: Borda Count
+## 计分：Borda 计数
 
-Judges rank candidates. Points awarded by rank position:
+评审对候选者排序。按排名位置计分：
 
-| Rank | Points (3 candidates) |
+| 名次 | 得分（3 个候选者） |
 |------|----------------------|
-| 1st | 3 |
-| 2nd | 2 |
-| 3rd | 1 |
+| 第 1 | 3 |
+| 第 2 | 2 |
+| 第 3 | 1 |
 
-**Aggregation**: Sum across all judges. Winner = highest total.
-**Tiebreak**: Incumbent (A) wins any tie.
+**汇总**：跨所有评审求和。胜者 = 总分最高。
+**平局裁决**：在位者（A）赢得任何平局。
 
-**Example** (3 judges):
-- Judge 1: AB > A > B → AB gets 3, A gets 2, B gets 1
-- Judge 2: A > AB > B → A gets 3, AB gets 2, B gets 1
-- Judge 3: AB > B > A → AB gets 3, B gets 2, A gets 1
-- Totals: AB=8, A=6, B=4 → AB wins, becomes new incumbent
+**示例**（3 位评审）：
+- 评审 1：AB > A > B → AB 得 3，A 得 2，B 得 1
+- 评审 2：A > AB > B → A 得 3，AB 得 2，B 得 1
+- 评审 3：AB > B > A → AB 得 3，B 得 2，A 得 1
+- 总计：AB=8，A=6，B=4 → AB 胜，成为新在位者
 
-**Randomization per judge**:
-- Candidate labels randomized (A might be called "Proposal X" for one judge, "Proposal Z" for another)
-- Presentation order randomized (AB might appear first or last)
-- This prevents position bias and label bias
+**每位评审的随机化**：
+- 候选者标签随机化（A 对某位评审可能叫「提案 X」，对另一位叫「提案 Z」）
+- 呈现顺序随机化（AB 可能出现在最前或最后）
+- 这能防止位置偏差与标签偏差
 
 ---
 
-## Model Selection Guide
+## 模型选择指南
 
-### Empirical Results by Model Tier
+### 按模型层级的实证结果
 
-| Model | Autoreason Wins | Autoreason Avg Borda | Best Baseline | Margin | Recommendation |
+| 模型 | Autoreason 胜 | Autoreason 平均 Borda | 最佳基线 | 差距 | 建议 |
 |-------|----------------|---------------------|---------------|--------|----------------|
-| **Llama 3.1 8B** | 1/3 | 23.7 | 25.0 (single) | -1.3 | Skip autoreason. Model too weak for diverse candidates. |
-| **Gemini 2.0 Flash** | 2/3 | 25.0 | 20.0 (single) | +5.0 | Good candidate. Moderate gains. |
-| **Haiku 3.5** | 3/3 | **42.0** | 33.7 (single) | **+8.3** | **Best candidate.** Perfect scores. Baselines actively destroy quality. |
-| **Sonnet 4** | 3/5 | 27.8 | 22.4 (C&R) | +5.4 | Good candidate for open tasks. C&R better for technical tasks. |
-| **Sonnet 4.6 (unconstrained)** | 0/1 | 7.0 | 31.0 (C&R) | -24.0 | Do NOT use autoreason without constraints. |
-| **Sonnet 4.6 (constrained)** | 2/3 | 29.0 | 27.0 (improve) | +2.0 | Use only with scope constraints. |
+| **Llama 3.1 8B** | 1/3 | 23.7 | 25.0（单次） | -1.3 | 跳过 autoreason。模型太弱，无法产出多样候选。 |
+| **Gemini 2.0 Flash** | 2/3 | 25.0 | 20.0（单次） | +5.0 | 合适候选。中等收益。 |
+| **Haiku 3.5** | 3/3 | **42.0** | 33.7（单次） | **+8.3** | **最佳候选。** 满分。基线会主动毁掉质量。 |
+| **Sonnet 4** | 3/5 | 27.8 | 22.4（C&R） | +5.4 | 适合开放式任务。技术任务用 C&R 更好。 |
+| **Sonnet 4.6（不受约束）** | 0/1 | 7.0 | 31.0（C&R） | -24.0 | 不要在无约束下使用 autoreason。 |
+| **Sonnet 4.6（受约束）** | 2/3 | 29.0 | 27.0（改进） | +2.0 | 仅在带范围约束时使用。 |
 
-### The Generation-Evaluation Gap
+### 生成-评估差距
 
-The core insight: **autoreason's value depends on the gap between a model's generation capability and its self-evaluation capability.**
+核心洞察：**autoreason 的价值取决于模型的生成能力与其自我评估能力之间的差距。**
 
 ```
-Weak models (Llama 8B):
-  Generation: Poor  |  Self-evaluation: Poor
-  Gap: Small (both bad) → Autoreason can't help, no diverse candidates
+弱模型（Llama 8B）：
+  生成：差  |  自我评估：差
+  差距：小（都差）→ autoreason 帮不上忙，没有多样候选
 
-Mid-tier models (Haiku, Flash):
-  Generation: Decent  |  Self-evaluation: Poor
-  Gap: LARGE → Autoreason's sweet spot. External eval bridges the gap.
+中端模型（Haiku、Flash）：
+  生成：尚可  |  自我评估：差
+  差距：大 → autoreason 的最佳区间。外部评估弥合差距。
 
-Strong models (Sonnet 4):
-  Generation: Good  |  Self-evaluation: Decent
-  Gap: Moderate → Autoreason helps on 3/5 tasks
+强模型（Sonnet 4）：
+  生成：好  |  自我评估：尚可
+  差距：中等 → autoreason 在 3/5 任务上有帮助
 
-Frontier models (Sonnet 4.6):
-  Generation: Excellent  |  Self-evaluation: Good
-  Gap: Small → Simple methods suffice. Autoreason hurts on unconstrained tasks.
+前沿模型（Sonnet 4.6）：
+  生成：优秀  |  自我评估：好
+  差距：小 → 简单方法即可。autoreason 在不受约束任务上有害。
 ```
 
-**Practical rule**: As model costs drop and capabilities improve, today's frontier becomes tomorrow's mid-tier. The generation-evaluation gap is structural, not temporary. Match refinement architecture to the model's position on the capability curve.
+**实用规则**：随着模型成本下降、能力提升，今天的前沿会成为明天的中端。生成-评估差距是结构性的，不是暂时的。让精炼架构与模型在能力曲线上的位置相匹配。
 
-### Judge Selection
+### 评审选择
 
-| Author Model | Recommended Judge | Rationale |
+| Author 模型 | 推荐评审 | 理由 |
 |-------------|------------------|-----------|
-| Llama 8B | Don't use autoreason | Model too weak |
-| Gemini Flash | Sonnet 4 | Cross-model evaluation works |
-| Haiku 3.5 | Sonnet 4 | Strong external eval is the mechanism |
-| Haiku 3.5 | Haiku 3.5 (same) | Still works — tournament structure provides value even without strong judges (20.7 vs 18.3 avg Borda) |
-| Sonnet 4 | Sonnet 4 (same) | Same-model judges work at this tier |
-| Sonnet 4.6 | Sonnet 4.6 (same) | Only with scope constraints |
+| Llama 8B | 不要用 autoreason | 模型太弱 |
+| Gemini Flash | Sonnet 4 | 跨模型评估有效 |
+| Haiku 3.5 | Sonnet 4 | 强外部评估就是其机理 |
+| Haiku 3.5 | Haiku 3.5（同模型） | 仍有效——即便没有强评审，锦标赛结构也提供价值（平均 Borda 20.7 vs 18.3） |
+| Sonnet 4 | Sonnet 4（同模型） | 该层级下同模型评审有效 |
+| Sonnet 4.6 | Sonnet 4.6（同模型） | 仅在带范围约束时 |
 
 ---
 
-## Scope Constraint Design
+## 范围约束设计
 
-### What Makes Autoreason Work on Constrained Tasks
+### 为何 autoreason 在受约束任务上有效
 
-The same model (Sonnet 4.6) goes from **last place** (unconstrained) to **first place** (constrained) with scope constraints. The constraints bound the improvement space so synthesis drift can't accumulate.
+同一个模型（Sonnet 4.6）从**垫底**（不受约束）变为**第一**（受约束）。约束界定了改进空间，使综合漂移无法累积。
 
-### Effective Constraints
+### 有效约束
 
-| Constraint Type | Example | Why It Works |
+| 约束类型 | 示例 | 为何有效 |
 |----------------|---------|-------------|
-| **Fixed facts** | "Use only these 8 data points, add nothing else" | Bounds information space |
-| **Fixed deliverable** | "500-word startup pitch" (not "improve this") | Defines done condition |
-| **Fixed structure** | "Exactly 4 sections, each with 3 numbered items" | Prevents structural drift |
-| **Fixed change items** | "Address exactly these 3 reviewer concerns" | Bounds modification scope |
+| **固定事实** | 「只用这 8 个数据点，不要加别的」 | 限定信息空间 |
+| **固定交付物** | 「500 字创业路演」（而非「改进这个」） | 定义完成条件 |
+| **固定结构** | 「恰好 4 节，每节 3 个编号项」 | 防止结构漂移 |
+| **固定改动项** | 「恰好回应这 3 条评审意见」 | 限定修改范围 |
 
-### Ineffective Constraints
+### 无效约束
 
-| Constraint | Why It Fails | What Happens |
+| 约束 | 为何失败 | 会发生什么 |
 |-----------|-------------|-------------|
-| Word count alone | Not a scope constraint | False convergence — rejected for length, not quality |
-| "Be concise" | Too vague | Ignored after 2-3 passes |
-| "Be comprehensive" | Anti-constraint | Invites scope creep |
-| No constraints at all | Unbounded improvement space | Synthesis dominates, no convergence |
+| 仅字数 | 不是范围约束 | 假收敛——因长度被拒，而非质量 |
+| 「要简洁」 | 太模糊 | 2-3 轮后被忽略 |
+| 「要全面」 | 反约束 | 助长范围蔓延 |
+| 完全没有约束 | 改进空间无界 | 综合占主导，无法收敛 |
 
-### Task Categories
+### 任务类别
 
-| Task Type | Autoreason Works? | Why |
+| 任务类型 | autoreason 是否有效？ | 原因 |
 |-----------|-------------------|-----|
-| Tasks with genuine tradeoffs (strategy, policy) | Yes | Multiple valid approaches for tournament to select between |
-| Constrained writing (pitch, memo, postmortem) | Mostly (2/3) | Bounded scope, clear evaluation criteria |
-| Template-filling (incident postmortem) | No | One correct structure, minimal decision space |
-| Competitive programming | Yes | Naturally scoped, test suite provides external verification |
-| Open-ended unconstrained + frontier model | No | Synthesis drift, no convergence |
+| 存在真正权衡的任务（战略、政策） | 是 | 有多种合理方案供锦标赛挑选 |
+| 受约束写作（路演、备忘、复盘） | 多数有效（2/3） | 范围有界，评估标准清晰 |
+| 模板填空（事故复盘） | 否 | 只有一种正确结构，决策空间极小 |
+| 竞赛编程 | 是 | 天然受限，测试套件提供外部验证 |
+| 开放式不受约束 + 前沿模型 | 否 | 综合漂移，无法收敛 |
 
 ---
 
-## Failure Taxonomy
+## 失败分类
 
-| Failure Mode | Condition | Detection | Evidence |
+| 失败模式 | 条件 | 检测 | 证据 |
 |-------------|-----------|-----------|----------|
-| **Self-correction unreliable** | No external evaluation signal | Baselines degrade below single pass | Haiku baselines: 16.3 avg vs 33.7 single pass |
-| **Drift / synthesis dominance** | Unconstrained scope | A wins <15%, AB dominates | Sonnet 4.6 unconstrained: A wins 12%, AB wins 60%+ |
-| **Overfitting to visible feedback** | Shallow revision loop (C&R) | High public/private divergence | C&R overfits 32% on hard code problems |
-| **No convergence** | Broken judge pipeline | Parsing failures, <3 valid judges | Mixed panel parser failure: 11+ passes |
-| **Model too weak** | Insufficient generation diversity | All candidates look similar | Llama 8B wins only 1/3 tasks |
+| **自我纠正不可靠** | 无外部评估信号 | 基线劣于单次通过 | Haiku 基线：平均 16.3 vs 单次通过 33.7 |
+| **漂移 / 综合占主导** | 不受约束范围 | A 胜率 <15%，AB 占主导 | Sonnet 4.6 不受约束：A 胜率 12%，AB 胜率 60%+ |
+| **对可见反馈过拟合** | 浅层修订循环（C&R） | 公开/私有分歧大 | C&R 在难题上过拟合 32% |
+| **无法收敛** | 评审流水线损坏 | 解析失败、有效评审 <3 | 混合面板解析失败：11+ 轮 |
+| **模型太弱** | 生成多样性不足 | 所有候选看起来相似 | Llama 8B 只在 1/3 任务上取胜 |
 
-### Recovery Patterns
+### 恢复模式
 
-| Failure | Recovery |
+| 失败 | 恢复 |
 |---------|----------|
-| No convergence (drift) | Add scope constraints to the task |
-| No convergence (broken judges) | Fix parser, ensure 3 valid judges before continuing |
-| Quality degrades with iteration | Switch to single pass or add constraints |
-| Model too weak | Use a stronger model for generation, keep weak model for cheap roles |
-| Overfitting (code) | Use structured analysis step, not just test feedback |
+| 无法收敛（漂移） | 给任务加范围约束 |
+| 无法收敛（评审损坏） | 修复解析器，确保继续前有 3 个有效评审 |
+| 质量随迭代劣化 | 切换到单次通过或加约束 |
+| 模型太弱 | 用更强的模型生成，弱模型留给廉价角色 |
+| 过拟合（代码） | 用结构化分析步骤，而不是只用测试反馈 |
 
 ---
 
-## Code Domain Adaptation
+## 代码领域适配
 
-The autoreason method adapts differently for code vs writing:
+autoreason 方法在代码与写作上的适配方式不同：
 
-### Writing Domain
+### 写作领域
 ```
-Call 1: Critic (find problems in incumbent)
-Call 2: Author B (revise based on critique)
-Call 3: Synthesizer (merge A and B)
-Calls 4-6: Judge Panel (3 blind judges rank A, B, AB)
-```
-
-### Code Domain (6-call budget)
-```
-Call 1: Initial generation
-Call 2: Structured analysis (5 points — NO CODE):
-  - Problem analysis: what does the problem actually require?
-  - Approach analysis: what approach did we use, is it correct?
-  - Failure analysis: why did tests fail?
-  - Alternative approaches: what else could work?
-  - Edge cases: what inputs might break the solution?
-Calls 3-6: Reason-informed revisions
-  - Each revision must explain WHY it fixes the issue
-  - Sees test results from public (visible) test cases
+调用 1：Critic（找在位者的问题）
+调用 2：Author B（基于批评修订）
+调用 3：Synthesizer（合并 A 和 B）
+调用 4-6：评审组（3 位盲评评审对 A、B、AB 排序）
 ```
 
-**Key difference**: The code strategy replaces the judge panel with test-suite evaluation (objective ground truth). The structured analysis step (Call 2) is what drives recovery — it forces reasoning about *why* the approach failed before attempting fixes.
+### 代码领域（6 次调用预算）
+```
+调用 1：初始生成
+调用 2：结构化分析（5 点 —— 不写代码）：
+  - 问题分析：这个问题真正需要什么？
+  - 方法分析：我们用了什么方法，是否正确？
+  - 失败分析：测试为什么失败？
+  - 备选方法：还有什么可行？
+  - 边界情况：哪些输入可能破坏解？
+调用 3-6：基于推理的修订
+  - 每次修订必须解释它为何能修复问题
+  - 看得到公开（可见）测试用例的结果
+```
 
-**Results**: Recovery is the mechanism. Among problems where both autoreason and single-pass failed initially, autoreason recovered 62% vs single-pass's 43% (McNemar p=0.041, Cohen's h=0.32).
+**关键区别**：代码策略用测试套件评估（客观真值）替代评审组。结构化分析步骤（调用 2）是驱动恢复的关键——它迫使在尝试修复之前，先推理方法*为何*失败。
+
+**结果**：恢复就是机理。在 autoreason 和单次通过都最初失败的问题中，autoreason 恢复了 62%，而单次通过恢复 43%（McNemar p=0.041，Cohen's h=0.32）。
 
 ---
 
-## Applying Autoreason to Paper Writing
+## 把 autoreason 应用于论文写作
 
-The paper itself was refined using autoreason (Section 8 of the paper):
+论文本身是用 autoreason 精炼的（论文第 8 节）：
 
-### Setup
-- Model: claude-opus-4
-- Judges: 3 Opus judges
-- Enhancement: Ground-truth critic (access to actual experimental data)
-- Result: Converged in 9 passes
+### 设置
+- 模型：claude-opus-4
+- 评审：3 位 Opus 评审
+- 增强：真值 critic（可访问真实实验数据）
+- 结果：9 轮收敛
 
-### Key Findings for Paper Refinement
+### 论文精炼的关键发现
 
-1. **Ground-truth critic is essential**: Without ground-truth access, Opus hallucinated a fabricated ablation study, fake confidence intervals, wrong model names, and incorrect role descriptions. With ground-truth access, the critic caught all four on pass 1.
+1. **真值 critic 至关重要**：没有真值访问时，Opus 臆造了一项虚构的消融研究、假的置信区间、错误的模型名以及不正确的角色描述。有了真值访问，critic 在第 1 轮就抓出了全部四个。
 
-2. **Judge panel integrity matters**: A broken parser in one judge (Gemini output format mismatch) reduced the panel from 3 to 2 judges. This prevented convergence for 11+ passes. Fixing to 3 working judges, the same incumbent converged in 2 passes. A broken judge doesn't add noise — it prevents equilibrium.
+2. **评审组的完整性很重要**：一位评审（Gemini 输出格式不匹配）里损坏的解析器把评审组从 3 人减到 2 人。这导致连续 11+ 轮无法收敛。修回 3 个可用评审后，同一个在位者 2 轮就收敛了。损坏的评审不是增加噪声——而是阻止达到均衡。
 
-### Recommended Setup for Paper Refinement
+### 论文精炼的推荐设置
 
 ```
-Critic prompt: "You are reviewing a research paper draft. You have access to the 
-actual experimental results [GROUND TRUTH DATA]. Find factual errors, unsupported 
-claims, hallucinated results, and structural problems. Do not suggest fixes."
+Critic 提示词：「你在评审一份研究论文初稿。你可以访问实际实验结果
+[真值数据]。找出事实错误、无支撑的主张、臆造的结果以及结构问题。
+不要建议修复。」
 
-Author B prompt: "Revise this paper draft to fix the identified problems. For each 
-change, cite the specific problem it addresses. Do not add claims not supported by 
-the provided experimental data."
+Author B 提示词：「修订这份论文初稿以修复已识别的问题。对每处改动，
+引用它针对的具体问题。不要加入未被提供的实验数据所支撑的主张。」
 
-Judge prompt (CoT): "Compare three versions of this paper. For each, evaluate:
-1. Factual accuracy against the provided results
-2. Clarity of the narrative and contribution
-3. Whether claims are properly hedged and supported
-4. Writing quality (concision, precision, no filler)
-After reasoning, rank all three. RANKING: [best], [second], [worst]"
+评审提示词（CoT）：「比较这份论文的三个版本。对每一版，评估：
+1. 相对所提供结果的事实准确性
+2. 叙事与贡献的清晰度
+3. 主张是否被恰当地加限定并有支撑
+4. 写作质量（简洁、精确、无废话）
+推理之后，对三份全部排序。RANKING: [最好], [第二], [最差]」
 ```
 
-### What to Provide as Ground Truth
-- All experimental result JSON files
-- Statistical test outputs
-- Raw numbers for every table and figure
-- Configuration files showing exact hyperparameters
-- Code that generated the results (for method description accuracy)
+### 作为真值应提供什么
+- 所有实验结果 JSON 文件
+- 统计检验输出
+- 每张表和每幅图的原始数字
+- 显示确切超参数的配置文件
+- 生成结果的代码（用于方法描述的准确性）
 
 ---
 
-## Compute Budget Reference
+## 算力预算参考
 
-| Method | Calls per Pass | Typical Passes | Total Calls | Relative Cost |
+| 方法 | 每轮调用数 | 典型轮数 | 总调用数 | 相对开销 |
 |--------|---------------|----------------|-------------|---------------|
-| Single pass | 1 | 1 | 1 | 1x |
+| 单次通过 | 1 | 1 | 1 | 1x |
 | Best-of-N | N | 1 | N | Nx |
 | Critique & revise | 2 | 15 | 30 | 30x |
-| Autoreason (in-loop) | ~6 | 10-15 | 60-90 | 60-90x |
-| Autoreason (with final eval) | ~6 + 7 | 10-15 + 1 | 67-97 | ~80x |
+| Autoreason（循环内） | ~6 | 10-15 | 60-90 | 60-90x |
+| Autoreason（含最终评估） | ~6 + 7 | 10-15 + 1 | 67-97 | ~80x |
 
-**Cost-quality tradeoff**: Autoreason uses ~6x more compute per pass and typically runs more passes. This is a real tradeoff. The method trades compute for evaluation quality. On constrained tasks with mid-tier models, this tradeoff is strongly positive. On unconstrained tasks with frontier models, it's negative.
+**成本-质量权衡**：autoreason 每轮多用约 6 倍算力，且通常跑更多轮。这是真实的权衡。该方法用算力换评估质量。在中端模型的受约束任务上，这种权衡是强正面的。在前沿模型的不受约束任务上则是负面的。
 
-**CoT judges reduce cost**: 1 CoT judge provides evaluation quality comparable to 3 standard judges, at ~40% cost savings. Always use CoT judges.
+**CoT 评审降低成本**：1 位 CoT 评审提供的评估质量相当于 3 位标准评审，成本节省约 40%。始终使用 CoT 评审。

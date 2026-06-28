@@ -1,24 +1,24 @@
-"""MCP catalog — curated, Nous-approved MCP servers shipped with the repo.
+"""MCP catalog — 精选的、Nous 批准的、随仓库一起发布的 MCP 服务器。
 
-Mirrors the optional-skills/ pattern: each catalog entry lives under
-``optional-mcps/<name>/manifest.yaml`` and ships disabled. Users discover
-entries via ``hermes mcp catalog`` or the interactive ``hermes mcp picker``,
-and install them with ``hermes mcp install <name>`` (or by toggling in the
-picker, which flows them through any required env/OAuth setup).
+镜像 optional-skills/ 模式:每个 catalog 条目位于
+``optional-mcps/<name>/manifest.yaml`` 下并默认禁用。用户通过
+``hermes mcp catalog`` 或交互式 ``hermes mcp picker`` 发现条目,
+并使用 ``hermes mcp install <name>`` 安装它们(或通过在
+picker 中切换,这会引导它们完成任何所需的环境/OAuth 设置)。
 
-Catalog policy:
-- Entries are added only by merging a PR into hermes-agent. Presence in the
-  ``optional-mcps/`` directory = Nous approval. No community tier, no trust
-  signals beyond "it's in the catalog".
-- Manifests pin transport details (commands, args, refs). MCPs are never
-  auto-updated; users explicitly re-run ``hermes mcp install <name>`` to
-  pull a new manifest version after a repo update.
-- Secrets prompted at install time go to ``~/.hermes/.env`` (the
-  .env-is-for-secrets rule). Non-secret env vars also go to .env to keep
-  one credential store.
+Catalog 策略:
+- 条目仅通过合并 PR 到 hermes-agent 来添加。存在于
+  ``optional-mcps/`` 目录中 = Nous 批准。没有社区层,没有
+  超出"它在 catalog 中"的信任信号。
+- Manifest 固定传输细节(命令、参数、引用)。MCP 从不
+  自动更新;用户显式重新运行 ``hermes mcp install <name>`` 以
+  在仓库更新后拉取新的 manifest 版本。
+- 安装时提示的密钥进入 ``~/.hermes/.env``(
+  .env 用于密钥规则)。非密钥环境变量也进入 .env 以保持
+  一个凭证存储。
 
-See website/docs/user-guide/mcp-catalog.md for user docs.
-See references/mcp-catalog.md (this repo's skill) for the manifest schema.
+参见 website/docs/user-guide/mcp-catalog.md 了解用户文档。
+参见 references/mcp-catalog.md(本仓库的 skill)了解 manifest schema。
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from hermes_cli.cli_output import prompt as _prompt_input
 
 _MANIFEST_VERSION = 1
 
-# Substituted at install time inside `transport.command` / `transport.args`.
+# 在安装时在 `transport.command` / `transport.args` 内部替换。
 _INSTALL_DIR_VAR = "${INSTALL_DIR}"
 
 
@@ -81,27 +81,27 @@ class TransportSpec:
 
 @dataclass
 class InstallSpec:
-    """Optional bootstrap step (git clone + dep install).
+    """可选的引导步骤(git clone + 依赖安装)。
 
-    Omit for one-shot launchable servers (npx, uvx).
+    对于一次性可启动的服务器(npx、uvx)省略。
     """
     type: str  # "git"
     url: str
-    ref: str  # commit/tag/branch — pinned, never floats
+    ref: str  # commit/tag/branch — 固定的,从不浮动
     bootstrap: List[str] = field(default_factory=list)
 
 
 @dataclass
 class ToolsSpec:
-    """Manifest-side tool-selection hints.
+    """Manifest 端的工具选择提示。
 
-    Drives the pre-checked state of the install-time tool checklist, and acts
-    as the fallback selection when probe fails. See install_entry() flow.
+    驱动安装时工具清单的预选状态,并作为
+    探测失败时的后备选择。参见 install_entry() 流程。
     """
 
-    # If declared, these tool names are pre-checked in the checklist (or
-    # applied directly when probe fails). If None, all probed tools are
-    # pre-checked (or no filter is written when probe fails).
+    # 如果声明,这些工具名在清单中被预选(或
+    # 在探测失败时直接应用)。如果为 None,所有探测到的工具都被
+    # 预选(或在探测失败时不写入过滤器)。
     default_enabled: Optional[List[str]] = None
 
 
@@ -122,13 +122,13 @@ class CatalogEntry:
 
 
 class CatalogError(Exception):
-    """Manifest parse/validation failure or install error."""
+    """Manifest 解析/验证失败或安装错误。"""
 
 
 def _catalog_root() -> Path:
-    """Return the optional-mcps/ directory shipped with this Hermes install."""
-    # Prefer the env-var override / packaged location; fall back to the repo's
-    # optional-mcps/ next to the package (source checkout).
+    """返回此 Hermes 安装附带的 optional-mcps/ 目录。"""
+    # 优先使用环境变量覆盖/打包位置;回退到包旁边的
+    # 仓库的 optional-mcps/(源代码检出)。
     return get_optional_mcps_dir(Path(__file__).parent.parent / "optional-mcps")
 
 
@@ -148,7 +148,7 @@ def _parse_env_spec(raw: Any) -> EnvVarSpec:
 
 
 def _parse_manifest(path: Path) -> CatalogEntry:
-    """Read and validate a manifest.yaml. Raise CatalogError on any problem."""
+    """读取并验证 manifest.yaml。任何问题都抛出 CatalogError。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
@@ -263,12 +263,12 @@ def _parse_manifest(path: Path) -> CatalogEntry:
 
 
 def list_catalog() -> List[CatalogEntry]:
-    """Return all valid catalog entries, sorted by name.
+    """返回所有有效的 catalog 条目,按名称排序。
 
-    Invalid manifests are skipped silently (CI tests catch them at PR time).
-    Manifests with a future ``manifest_version`` are also skipped, but the
-    skip is surfaced via :func:`catalog_diagnostics` so the picker / catalog
-    UIs can tell the user their Hermes is out of date.
+    无效的 manifest 被静默跳过(CI 测试在 PR 时捕获它们)。
+    具有未来 ``manifest_version`` 的 manifest 也被跳过,但
+    跳过通过 :func:`catalog_diagnostics` 暴露,这样 picker / catalog
+    UI 可以告诉用户他们的 Hermes 已过期。
     """
     root = _catalog_root()
     if not root.exists():
@@ -283,8 +283,8 @@ def list_catalog() -> List[CatalogEntry]:
             entries.append(_parse_manifest(manifest))
         except CatalogError as exc:
             msg = str(exc)
-            # Recognize the future-manifest error specifically so the UI can
-            # surface a more actionable nudge than "broken manifest".
+            # 专门识别未来 manifest 错误,这样 UI 可以
+            # 比"损坏的 manifest"提供更可操作的通知。
             if "manifest_version" in msg and "unsupported" in msg:
                 _CATALOG_DIAGNOSTICS.append((child.name, "future_manifest", msg))
             else:
@@ -293,26 +293,26 @@ def list_catalog() -> List[CatalogEntry]:
     return entries
 
 
-# Populated by list_catalog(). Inspected by the picker / catalog UIs so the
-# user gets actionable feedback instead of a silently-shorter list.
+# 由 list_catalog() 填充。由 picker / catalog UI 检查,这样
+# 用户获得可操作的反馈,而不是静默变短的列表。
 _CATALOG_DIAGNOSTICS: List[tuple] = []
 
 
 def catalog_diagnostics() -> List[tuple]:
-    """Diagnostics from the most recent :func:`list_catalog` call.
+    """来自最近 :func:`list_catalog` 调用的诊断。
 
-    Returns a list of ``(entry_name, kind, message)`` tuples where ``kind``
-    is one of:
-      - ``future_manifest`` — manifest_version is newer than this Hermes
-        understands. Update Hermes to install this entry.
-      - ``invalid`` — manifest is malformed in some other way (caught by
-        CI for shipped manifests; user-modified manifests can hit this).
+    返回 ``(entry_name, kind, message)`` 元组列表,其中 ``kind``
+    是以下之一:
+      - ``future_manifest`` — manifest_version 比此 Hermes
+        理解的更新。更新 Hermes 以安装此条目。
+      - ``invalid`` — manifest 以某种其他方式格式错误(对于已发布的
+        manifest 被 CI 捕获;用户修改的 manifest 可能遇到此问题)。
     """
     return list(_CATALOG_DIAGNOSTICS)
 
 
 def get_entry(name: str) -> Optional[CatalogEntry]:
-    """Look up a single entry by name. ``official/<name>`` prefix accepted."""
+    """按名称查找单个条目。接受 ``official/<name>`` 前缀。"""
     if name.startswith("official/"):
         name = name[len("official/"):]
     for entry in list_catalog():
@@ -325,7 +325,7 @@ def get_entry(name: str) -> Optional[CatalogEntry]:
 
 
 def installed_servers() -> Dict[str, dict]:
-    """Return current ``mcp_servers`` block from config.yaml."""
+    """返回 config.yaml 中当前的 ``mcp_servers`` 块。"""
     cfg = load_config()
     servers = cfg.get("mcp_servers") or {}
     return servers if isinstance(servers, dict) else {}
@@ -350,17 +350,17 @@ def is_enabled(name: str) -> bool:
 
 
 def _install_root() -> Path:
-    """Where git-bootstrapped MCPs are cloned. Per-user, profile-aware."""
+    """git 引导的 MCP 被克隆到哪里。每用户,配置文件感知。"""
     root = get_hermes_home() / "mcp-installs"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _run_bootstrap(cwd: Path, commands: List[str]) -> None:
-    """Execute bootstrap commands in *cwd*. Raise CatalogError on first failure.
+    """在 *cwd* 中执行引导命令。首次失败时抛出 CatalogError。
 
-    Each command runs through the shell (so `&&` etc. work). The output is
-    streamed to the user's terminal for visibility.
+    每个命令通过 shell 运行(这样 `&&` 等可以工作)。输出被
+    流式传输到用户的终端以便查看。
     """
     for cmd in commands:
         print(color(f"  $ {cmd}", Colors.DIM))
@@ -372,8 +372,8 @@ def _run_bootstrap(cwd: Path, commands: List[str]) -> None:
 
 
 def _do_git_install(entry: CatalogEntry) -> Path:
-    """Clone the entry's repo into ``~/.hermes/mcp-installs/<name>`` and run
-    bootstrap commands. Returns the install directory."""
+    """将条目的仓库克隆到 ``~/.hermes/mcp-installs/<name>`` 并运行
+    引导命令。返回安装目录。"""
     assert entry.install is not None and entry.install.type == "git"
     install = entry.install
     dest = _install_root() / entry.name
@@ -383,17 +383,18 @@ def _do_git_install(entry: CatalogEntry) -> Path:
         raise CatalogError("git is required to install this MCP but was not found on PATH")
 
     if dest.exists():
-        # Fresh checkout each install — manifest version is the source of truth,
-        # so wipe + re-clone for determinism.
+        # 每次安装都是全新的检出 — manifest 版本是真实来源,
+        # 所以清除 + 重新克隆以确保确定性。
         print(color(f"  Removing existing install at {dest}", Colors.DIM))
         shutil.rmtree(dest)
 
     print(color(f"  Cloning {install.url} ({install.ref}) → {dest}", Colors.CYAN))
 
-    # `git clone --branch` only accepts branches and tags, NOT commit SHAs.
-    # Detecting SHA-shaped refs upfront avoids a guaranteed stderr leak on
-    # the fast path (the --branch attempt would always fail noisily for a
-    # SHA ref before we fall back to full-clone-then-checkout).
+    # `git clone --branch` 只接受分支和标签,不接受 commit SHA。
+    # 预先检测 SHA 形状的引用可以避免在
+    # 快速路径上保证的 stderr 泄漏(对于 SHA 引用,
+    # --branch 尝试总会在我们回退到完整克隆然后检出之前
+    # 嘈杂地失败)。
     is_sha_ref = bool(re.fullmatch(r"[0-9a-f]{7,40}", install.ref))
 
     if not is_sha_ref:
@@ -403,8 +404,8 @@ def _do_git_install(entry: CatalogEntry) -> Path:
         if proc.returncode == 0:
             pass
         else:
-            # Branch/tag form failed (unlikely for valid manifests; possible if
-            # the ref was deleted upstream). Fall through to the full-clone path.
+            # 分支/标签形式失败(对于有效的 manifest 不太可能;如果
+            # 引用在上游被删除则可能)。回退到完整克隆路径。
             if dest.exists():
                 shutil.rmtree(dest)
             is_sha_ref = True  # treat the same as a SHA ref from here

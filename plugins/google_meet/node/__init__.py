@@ -1,26 +1,26 @@
-"""Remote 'node host' primitive for the google_meet plugin.
+"""google_meet 插件的远程"节点主机"原语。
 
-Lets the Meet bot (Playwright + Chrome) run on a different machine than
-the hermes-agent gateway. The gateway speaks a small JSON-over-WebSocket
-RPC protocol to the remote node; the node wraps the existing
-``plugins.google_meet.process_manager`` API.
+允许 Meet bot（Playwright + Chrome）运行在与
+hermes-agent 网关不同的机器上。网关通过一个小型 JSON-over-WebSocket
+RPC 协议与远程节点通信；节点包装现有的
+``plugins.google_meet.process_manager`` API。
 
-Topology
+拓扑
 --------
     gateway (Linux)  ── ws://mac.local:18789 ──▶  node server (Mac)
                                                   └─ process_manager
                                                      └─ meet_bot (Playwright)
 
-Why: Google sign-in + Chrome profile live on the user's laptop. Running
-the bot there reuses that profile without shipping credentials to the
-server.
+原因：Google 登录 + Chrome 配置文件位于用户的笔记本电脑上。
+在本地运行 bot 可以复用该配置文件，而无需将凭证传输到
+服务器。
 
-Public surface
+公共接口
 --------------
-    NodeClient     — gateway-side RPC client (short-lived sync WS per call)
-    NodeServer     — long-running server that hosts the bot
-    NodeRegistry   — local JSON registry of approved nodes (name → url+token)
-    protocol       — message envelope helpers (make_request, encode, decode, ...)
+    NodeClient     — 网关侧 RPC 客户端（每次调用使用短生命周期同步 WS）
+    NodeServer     — 托管 bot 的长运行服务器
+    NodeRegistry   — 已批准节点的本地 JSON 注册表（name → url+token）
+    protocol       — 消息信封辅助函数（make_request、encode、decode 等）
 """
 
 from __future__ import annotations

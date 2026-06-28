@@ -1,10 +1,9 @@
-"""Hermes-managed Camofox state helpers.
+"""Hermes 托管的 Camofox 状态辅助函数。
 
-Provides profile-scoped identity and state directory paths for Camofox
-persistent browser profiles.  When managed persistence is enabled, Hermes
-sends a deterministic userId derived from the active profile so that
-Camofox can map it to the same persistent browser profile directory
-across restarts.
+为 Camofox 持久化浏览器配置提供按 profile 作用域的身份信息和状态目录
+路径。当启用了托管式持久化时，Hermes 会发送一个由当前 profile 派生出的
+确定性 userId，使 Camofox 在多次重启后仍能把它映射到同一个持久化浏览器
+配置目录。
 """
 
 from __future__ import annotations
@@ -20,16 +19,16 @@ CAMOFOX_STATE_SUBDIR = "camofox"
 
 
 def get_camofox_state_dir() -> Path:
-    """Return the profile-scoped root directory for Camofox persistence."""
+    """返回 Camofox 持久化使用的、按 profile 作用域的根目录。"""
     return get_hermes_home() / CAMOFOX_STATE_DIR_NAME / CAMOFOX_STATE_SUBDIR
 
 
 def get_camofox_identity(task_id: Optional[str] = None) -> Dict[str, str]:
-    """Return the stable Hermes-managed Camofox identity for this profile.
+    """返回当前 profile 对应的、稳定的 Hermes 托管 Camofox 身份信息。
 
-    The user identity is profile-scoped (same Hermes profile = same userId).
-    The session key is scoped to the logical browser task so newly created
-    tabs within the same profile reuse the same identity contract.
+    用户身份按 profile 作用域（同一个 Hermes profile = 同一个 userId）。
+    会话密钥按逻辑浏览器任务作用域，因此同一 profile 内新建的标签页会
+    复用同一份身份契约。
     """
     scope_root = str(get_camofox_state_dir())
     logical_scope = task_id or "default"

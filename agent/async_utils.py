@@ -1,24 +1,24 @@
-"""Async/sync bridging helpers.
+"""async/sync 桥接辅助工具。
 
-The codebase has ~30 sites that schedule a coroutine onto an event loop from a
-worker thread via :func:`asyncio.run_coroutine_threadsafe`.  That function can
-raise :class:`RuntimeError` (e.g. the loop was closed during a shutdown race),
-and when it does the coroutine object is never awaited and never closed —
-which triggers a ``"coroutine '<name>' was never awaited"`` RuntimeWarning and
-leaks the coroutine's frame until GC.
+代码库中约有 30 处通过 :func:`asyncio.run_coroutine_threadsafe`
+从工作线程将协程调度到事件循环上。该函数可能抛出
+:class:`RuntimeError`（例如在关机竞态中事件循环已被关闭），
+此时协程对象既不会被 await，也不会被关闭 ——
+这会触发 ``"coroutine '<name>' was never awaited"`` RuntimeWarning
+并使协程帧泄漏直至 GC 回收。
 
-:func:`safe_schedule_threadsafe` wraps the call, closes the coroutine on
-scheduling failure, and returns ``None`` (instead of a half-formed future) so
-callers can branch cleanly:
+:func:`safe_schedule_threadsafe` 对该调用进行封装：
+在调度失败时关闭协程，并返回 ``None``（而非半成品的 future），
+以便调用方可以干净地处理失败情况：
 
     fut = safe_schedule_threadsafe(coro, loop)
     if fut is None:
-        return  # or fallback behavior
+        return  # 或执行回退逻辑
     fut.result(timeout=5)
 
-The helper deliberately does NOT also handle ``future.result()`` failures —
-that is a separate concern.  Once the loop has accepted the coroutine, its
-lifecycle belongs to the loop, not the scheduling thread.
+此辅助函数故意不处理 ``future.result()`` 的失败 ——
+那是另一个关注点。一旦事件循环接受了协程，
+其生命周期就属于事件循环，而非调度线程。
 """
 from __future__ import annotations
 
@@ -39,17 +39,17 @@ def safe_schedule_threadsafe(
     log_message: str = "Failed to schedule coroutine on loop",
     log_level: int = logging.DEBUG,
 ) -> Optional[Future]:
-    """Schedule ``coro`` on ``loop`` from a sync context, leak-safe.
+    """从同步上下文将 ``coro`` 调度到 ``loop`` 上，防止协程泄漏。
 
-    Returns the :class:`concurrent.futures.Future` on success, or ``None`` if
-    the loop is missing or :func:`asyncio.run_coroutine_threadsafe` raised
-    (e.g. the loop was closed during a shutdown race).  In all failure paths
-    the coroutine is :meth:`close`-d so it does not trigger
-    ``"coroutine was never awaited"`` warnings or leak its frame.
+    成功时返回 :class:`concurrent.futures.Future`；
+    若事件循环为空或 :func:`asyncio.run_coroutine_threadsafe` 抛出异常
+    （例如关机竞态中事件循环已关闭），则返回 ``None``。
+    在所有失败路径中，协程都会被 :meth:`close`，
+    以避免触发 ``"coroutine was never awaited"`` 警告或泄漏协程帧。
 
-    Callers retain full control over what to do with the returned future
-    (call ``.result(timeout=...)``, attach ``add_done_callback``, ignore it
-    fire-and-forget, etc.).
+    调用方对返回的 future 拥有完全控制权：
+    可以调用 ``.result(timeout=...)``、附加 ``add_done_callback``，
+    或忽略它（fire-and-forget）等。
     """
     log = logger if logger is not None else _DEFAULT_LOGGER
 

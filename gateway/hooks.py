@@ -1,39 +1,39 @@
 """
-Event Hook System
+事件钩子（Event Hook）系统
 
-A lightweight event-driven system that fires handlers at key lifecycle points.
-Hooks are discovered from ~/.hermes/hooks/ directories, each containing:
-  - HOOK.yaml  (metadata: name, description, events list)
-  - handler.py (Python handler with async def handle(event_type, context))
+一个轻量级事件驱动系统，在关键生命周期点触发 handler。钩子从
+~/.hermes/hooks/ 目录中发现，每个钩子目录包含：
+  - HOOK.yaml  （元数据：name、description、events 列表）
+  - handler.py （Python handler，包含 async def handle(event_type, context)）
 
-Events:
-  - gateway:startup     -- Gateway process starts
-  - session:start       -- New session created (first message of a new session)
-  - session:end         -- Session ends (user ran /new or /reset)
-  - session:reset       -- Session reset completed (new session entry created)
-  - agent:start         -- Agent begins processing a message
-  - agent:step          -- Each turn in the tool-calling loop
-  - agent:end           -- Agent finishes processing
-  - command:*           -- Any slash command executed (wildcard match)
+事件（Events）：
+  - gateway:startup     -- gateway 进程启动
+  - session:start       -- 新会话创建（一个新会话的第一条消息）
+  - session:end         -- 会话结束（用户执行了 /new 或 /reset）
+  - session:reset       -- 会话重置完成（创建了新的会话条目）
+  - agent:start         -- agent 开始处理一条消息
+  - agent:step          -- tool-calling 循环中的每一个 turn
+  - agent:end           -- agent 完成处理
+  - command:*           -- 任意斜杠命令被执行（通配匹配）
 
-Errors in hooks are caught and logged but never block the main pipeline.
+钩子中出现的错误会被捕获并记录，但绝不会阻塞主管线。
 
-Context dict passed to ``agent:start`` / ``agent:end`` handlers:
-  platform     -- source platform name (e.g. "telegram", "matrix", "slack")
-  user_id      -- platform user id of the sender
-  chat_id      -- platform chat id (group/DM identifier)
-  thread_id    -- Telegram forum-topic id / thread root id (string; empty
-                  when not in a thread / topic)
-  chat_type    -- "dm" | "group" | "forum" (empty if unknown)
-  session_id   -- Hermes session id
-  message      -- inbound message text (truncated to 500 chars)
+传给 ``agent:start`` / ``agent:end`` handler 的 context dict：
+  platform     -- 来源平台名（例如 "telegram"、"matrix"、"slack"）
+  user_id      -- 发送者的平台用户 id
+  chat_id      -- 平台聊天 id（群组/DM 标识符）
+  thread_id    -- Telegram forum-topic id / thread root id（字符串；不在
+                  thread / topic 中时为空）
+  chat_type    -- "dm" | "group" | "forum"（未知时为空）
+  session_id   -- Hermes 会话 id
+  message      -- 入站消息文本（截断到 500 字符）
 
-``agent:end`` adds:
-  response     -- agent response text (truncated to 500 chars)
+``agent:end`` 额外包含：
+  response     -- agent 响应文本（截断到 500 字符）
 
-Handlers posting a follow-up into the same Telegram forum-topic should
-include ``message_thread_id=int(thread_id)`` when ``chat_type == "forum"``
-and ``thread_id`` is non-empty.
+向同一个 Telegram forum-topic 投递 follow-up 的 handler，当
+``chat_type == "forum"`` 且 ``thread_id`` 非空时，应当带上
+``message_thread_id=int(thread_id)``。
 """
 
 import asyncio
@@ -51,9 +51,9 @@ HOOKS_DIR = get_hermes_home() / "hooks"
 
 class HookRegistry:
     """
-    Discovers, loads, and fires event hooks.
+    发现、加载并触发事件钩子。
 
-    Usage:
+    用法（Usage）：
         registry = HookRegistry()
         registry.discover_and_load()
         await registry.emit("agent:start", {"platform": "telegram", ...})
@@ -62,31 +62,30 @@ class HookRegistry:
     def __init__(self):
         # event_type -> [handler_fn, ...]
         self._handlers: Dict[str, List[Callable]] = {}
-        self._loaded_hooks: List[dict] = []  # metadata for listing
+        self._loaded_hooks: List[dict] = []  # 用于列表展示的元数据
 
     @property
     def loaded_hooks(self) -> List[dict]:
-        """Return metadata about all loaded hooks."""
+        """返回所有已加载钩子的元数据。"""
         return list(self._loaded_hooks)
 
     def _register_builtin_hooks(self) -> None:
-        """Register built-in hooks that are always active.
+        """注册总是处于激活状态的内置钩子。
 
-        Currently empty — no shipped built-in hooks. Kept as the extension
-        point for future always-on gateway hooks so they drop in without
-        re-plumbing discover_and_load().
+        目前为空——没有随产品发布的内置钩子。这里保留为扩展点，以便将来
+        的常驻 gateway 钩子能直接插入，而无需重新改写 discover_and_load()。
         """
         return
 
     def discover_and_load(self) -> None:
         """
-        Scan the hooks directory for hook directories and load their handlers.
+        扫描钩子目录中的各钩子目录，并加载它们的 handler。
 
-        Also registers built-in hooks that are always active.
+        同时也会注册总是处于激活状态的内置钩子。
 
-        Each hook directory must contain:
-          - HOOK.yaml with at least 'name' and 'events' keys
-          - handler.py with a top-level 'handle' function (sync or async)
+        每个钩子目录必须包含：
+          - HOOK.yaml，至少包含 'name' 和 'events' 键
+          - handler.py，包含一个顶层 'handle' 函数（同步或异步）
         """
         self._register_builtin_hooks()
 
@@ -115,13 +114,13 @@ class HookRegistry:
                     print(f"[hooks] Skipping {hook_name}: no events declared", flush=True)
                     continue
 
-                # Dynamically load the handler module.
-                # Register in sys.modules BEFORE exec_module so Pydantic /
-                # dataclasses / typing introspection can resolve forward
-                # references (triggered by `from __future__ import annotations`
-                # in the handler). Without this, a handler that declares a
-                # Pydantic BaseModel for webhook/event payloads fails at first
-                # dispatch with "TypeAdapter ... is not fully defined".
+                # 动态加载 handler 模块。
+                # 在 exec_module 之前注册到 sys.modules 中，这样 Pydantic /
+                # dataclasses / typing 内省就能解析前向引用（这些引用由
+                # handler 中的 `from __future__ import annotations` 触发）。
+                # 否则，一个为 webhook/event payload 声明了 Pydantic
+                # BaseModel 的 handler 在首次分发时会以
+                # "TypeAdapter ... is not fully defined" 失败。
                 module_name = f"hermes_hook_{hook_name}"
                 spec = importlib.util.spec_from_file_location(
                     module_name, handler_path
@@ -143,7 +142,7 @@ class HookRegistry:
                     print(f"[hooks] Skipping {hook_name}: no 'handle' function found", flush=True)
                     continue
 
-                # Register the handler for each declared event
+                # 为每个声明的事件注册 handler
                 for event in events:
                     self._handlers.setdefault(event, []).append(handle_fn)
 
@@ -160,10 +159,10 @@ class HookRegistry:
                 print(f"[hooks] Error loading hook {hook_dir.name}: {e}", flush=True)
 
     def _resolve_handlers(self, event_type: str) -> List[Callable]:
-        """Return all handlers that should fire for ``event_type``.
+        """返回应当为 ``event_type`` 触发的所有 handler。
 
-        Exact matches fire first, followed by wildcard matches (e.g.
-        ``command:*`` matches ``command:reset``).
+        精确匹配先触发，随后是通配匹配（例如 ``command:*`` 会匹配
+        ``command:reset``）。
         """
         handlers = list(self._handlers.get(event_type, []))
         if ":" in event_type:
@@ -174,16 +173,15 @@ class HookRegistry:
 
     async def emit(self, event_type: str, context: Optional[Dict[str, Any]] = None) -> None:
         """
-        Fire all handlers registered for an event, discarding return values.
+        触发为某个事件注册的所有 handler，丢弃返回值。
 
-        Supports wildcard matching: handlers registered for "command:*" will
-        fire for any "command:..." event. Handlers registered for a base type
-        like "agent" won't fire for "agent:start" -- only exact matches and
-        explicit wildcards.
+        支持通配匹配：注册到 "command:*" 的 handler 会对任意
+        "command:..." 事件触发。而注册到像 "agent" 这种基础类型的 handler
+        不会对 "agent:start" 触发——只有精确匹配和显式通配才会触发。
 
-        Args:
-            event_type: The event identifier (e.g. "agent:start").
-            context:    Optional dict with event-specific data.
+        参数（Args）：
+            event_type: 事件标识符（例如 "agent:start"）。
+            context:    可选的 dict，携带事件特定数据。
         """
         if context is None:
             context = {}
@@ -191,7 +189,7 @@ class HookRegistry:
         for fn in self._resolve_handlers(event_type):
             try:
                 result = fn(event_type, context)
-                # Support both sync and async handlers
+                # 同时支持同步和异步 handler
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as e:
@@ -202,14 +200,13 @@ class HookRegistry:
         event_type: str,
         context: Optional[Dict[str, Any]] = None,
     ) -> List[Any]:
-        """Fire handlers and return their non-None return values in order.
+        """触发 handler，并按顺序返回其中非 None 的返回值。
 
-        Like :meth:`emit` but captures each handler's return value. Used for
-        decision-style hooks (e.g. ``command:<name>`` policies that want to
-        allow/deny/rewrite the command before normal dispatch).
+        类似 :meth:`emit`，但会捕获每个 handler 的返回值。用于决策式钩子
+        （例如 ``command:<name>`` 策略，希望在常规分发之前对命令做
+        允许/拒绝/改写）。
 
-        Exceptions from individual handlers are logged but do not abort the
-        remaining handlers.
+        单个 handler 抛出的异常会被记录，但不会中断其余 handler 的执行。
         """
         if context is None:
             context = {}

@@ -1,31 +1,31 @@
-## Feature Description
+## 功能描述
 
-<!-- What do you want? -->
+<!-- 你想要什么？ -->
 
-## Motivation
+## 动机
 
-<!-- Why would this be useful? What problem does it solve? -->
+<!-- 为什么这会有用？它解决了什么问题？ -->
 
-## Proposed Solution
+## 建议方案
 
-<!-- How could it work? Include API sketches, CLI examples, or mockups if helpful -->
+<!-- 它可以如何工作？如有帮助，可附上 API 草图、CLI 示例或原型图 -->
 
 ```
-# Example usage
+# 示例用法
 ```
 
-## Alternatives Considered
+## 考虑过的替代方案
 
-<!-- Other approaches and why they're less ideal -->
+<!-- 其他方案，以及为什么它们不够理想 -->
 
 -
 
-## Scope / Effort Estimate
+## 范围 / 工作量预估
 
-<!-- How big is this? What areas of the codebase would it touch? -->
+<!-- 这个功能有多大？会触及代码库的哪些区域？ -->
 
-Small / Medium / Large — <!-- explanation -->
+Small / Medium / Large —— <!-- 说明 -->
 
-## Additional Context
+## 补充信息
 
-<!-- Links to similar features in other tools, relevant discussions, etc. -->
+<!-- 其他工具中类似功能的链接、相关讨论等 -->

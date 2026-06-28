@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Toolset Distributions Module
+工具集分发模块
 
-This module defines distributions of toolsets for data generation runs.
-Each distribution specifies which toolsets should be used and their probability
-of being selected for any given prompt during the batch processing.
+本模块定义了数据生成运行所用的工具集分发方案。
+每个分发方案指定在批处理过程中，针对任意给定提示，
+应使用哪些工具集及其被选中的概率。
 
-A distribution is a dictionary mapping toolset names to their selection probability (%).
-Probabilities should sum to 100, but the system will normalize if they don't.
+分发方案是一个字典，将工具集名称映射到其选中概率（%）。
+概率之和应为 100，但系统会在不满足时自动归一化。
 
-Usage:
+使用方法：
     from toolset_distributions import get_distribution, list_distributions
-    
-    # Get a specific distribution
+
+    # 获取特定分发方案
     dist = get_distribution("image_gen")
-    
-    # List all available distributions
+
+    # 列出所有可用的分发方案
     all_dists = list_distributions()
 """
 
@@ -24,10 +24,10 @@ import random
 from toolsets import validate_toolset
 
 
-# Distribution definitions
-# Each key is a distribution name, and the value is a dict of toolset_name: probability_percentage
+# 分发方案定义
+# 每个键是分发方案名称，对应的值是 toolset_name: probability_percentage 的字典
 DISTRIBUTIONS = {
-    # Default: All tools available 100% of the time
+    # 默认：所有工具 100% 可用
     "default": {
         "description": "All available tools, all the time",
         "toolsets": {

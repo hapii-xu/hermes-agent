@@ -1,44 +1,44 @@
-# API Evaluation
+# API 评估
 
-Guide to evaluating OpenAI, Anthropic, and other API-based language models.
+评估 OpenAI、Anthropic 及其他基于 API 的语言模型的指南。
 
-## Overview
+## 概览
 
-The lm-evaluation-harness supports evaluating API-based models through a unified `TemplateAPI` interface. This allows benchmarking of:
-- OpenAI models (GPT-4, GPT-3.5, etc.)
-- Anthropic models (Claude 3, Claude 2, etc.)
-- Local OpenAI-compatible APIs
-- Custom API endpoints
+lm-evaluation-harness 通过统一的 `TemplateAPI` 接口支持评估基于 API 的模型。这允许对以下对象做基准测试：
+- OpenAI 模型（GPT-4、GPT-3.5 等）
+- Anthropic 模型（Claude 3、Claude 2 等）
+- 本地 OpenAI 兼容 API
+- 自定义 API 端点
 
-**Why evaluate API models**:
-- Benchmark closed-source models
-- Compare API models to open models
-- Validate API performance
-- Track model updates over time
+**为什么要评估 API 模型**：
+- 对闭源模型做基准测试
+- 把 API 模型和开源模型做比较
+- 验证 API 性能
+- 随时间跟踪模型更新
 
-## Supported API Models
+## 支持的 API 模型
 
-| Provider | Model Type | Request Types | Logprobs |
+| 提供方 | 模型类型 | 请求类型 | Logprobs |
 |----------|------------|---------------|----------|
-| OpenAI (completions) | `openai-completions` | All | ✅ Yes |
-| OpenAI (chat) | `openai-chat-completions` | `generate_until` only | ❌ No |
-| Anthropic (completions) | `anthropic-completions` | All | ❌ No |
-| Anthropic (chat) | `anthropic-chat` | `generate_until` only | ❌ No |
-| Local (OpenAI-compatible) | `local-completions` | Depends on server | Varies |
+| OpenAI（completions） | `openai-completions` | 全部 | ✅ 支持 |
+| OpenAI（chat） | `openai-chat-completions` | 仅 `generate_until` | ❌ 不支持 |
+| Anthropic（completions） | `anthropic-completions` | 全部 | ❌ 不支持 |
+| Anthropic（chat） | `anthropic-chat` | 仅 `generate_until` | ❌ 不支持 |
+| 本地（OpenAI 兼容） | `local-completions` | 取决于服务端 | 视情况而定 |
 
-**Note**: Models without logprobs can only be evaluated on generation tasks, not perplexity or loglikelihood tasks.
+**注意**：不支持 logprobs 的模型只能在生成类任务上评估，不能用于困惑度（perplexity）或对数似然（loglikelihood）任务。
 
-## OpenAI Models
+## OpenAI 模型
 
-### Setup
+### 设置
 
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-### Completion Models (Legacy)
+### Completion 模型（旧版）
 
-**Available models**: `davinci-002`, `babbage-002`
+**可用模型**：`davinci-002`、`babbage-002`
 
 ```bash
 lm_eval --model openai-completions \
@@ -47,14 +47,14 @@ lm_eval --model openai-completions \
   --batch_size auto
 ```
 
-**Supports**:
-- `generate_until`: ✅
-- `loglikelihood`: ✅
-- `loglikelihood_rolling`: ✅
+**支持**：
+- `generate_until`：✅
+- `loglikelihood`：✅
+- `loglikelihood_rolling`：✅
 
-### Chat Models
+### Chat 模型
 
-**Available models**: `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`
+**可用模型**：`gpt-4`、`gpt-4-turbo`、`gpt-3.5-turbo`
 
 ```bash
 lm_eval --model openai-chat-completions \
@@ -64,14 +64,14 @@ lm_eval --model openai-chat-completions \
   --batch_size auto
 ```
 
-**Supports**:
-- `generate_until`: ✅
-- `loglikelihood`: ❌ (no logprobs)
-- `loglikelihood_rolling`: ❌
+**支持**：
+- `generate_until`：✅
+- `loglikelihood`：❌（无 logprobs）
+- `loglikelihood_rolling`：❌
 
-**Important**: Chat models don't provide logprobs, so they can only be used with generation tasks (MMLU, GSM8K, HumanEval), not perplexity tasks.
+**重要**：Chat 模型不提供 logprobs，所以只能用于生成类任务（MMLU、GSM8K、HumanEval），不能用于困惑度任务。
 
-### Configuration Options
+### 配置选项
 
 ```bash
 lm_eval --model openai-chat-completions \
@@ -84,44 +84,44 @@ lm_eval --model openai-chat-completions \
     batch_size=auto
 ```
 
-**Parameters**:
-- `model`: Model identifier (required)
-- `base_url`: API endpoint (default: OpenAI)
-- `num_concurrent`: Concurrent requests (default: 5)
-- `max_retries`: Retry failed requests (default: 3)
-- `timeout`: Request timeout in seconds (default: 60)
-- `tokenizer`: Tokenizer to use (default: matches model)
-- `tokenizer_backend`: `"tiktoken"` or `"huggingface"`
+**参数**：
+- `model`：模型标识符（必填）
+- `base_url`：API 端点（默认：OpenAI）
+- `num_concurrent`：并发请求数（默认：5）
+- `max_retries`：失败请求重试次数（默认：3）
+- `timeout`：请求超时秒数（默认：60）
+- `tokenizer`：要使用的分词器（默认：与模型匹配）
+- `tokenizer_backend`：`"tiktoken"` 或 `"huggingface"`
 
-### Cost Management
+### 成本管理
 
-OpenAI charges per token. Estimate costs before running:
+OpenAI 按 token 计费。运行前先估算成本：
 
 ```python
-# Rough estimate
+# 粗略估算
 num_samples = 1000
-avg_tokens_per_sample = 500  # input + output
+avg_tokens_per_sample = 500  # 输入 + 输出
 cost_per_1k_tokens = 0.01  # GPT-3.5 Turbo
 
 total_cost = (num_samples * avg_tokens_per_sample / 1000) * cost_per_1k_tokens
 print(f"Estimated cost: ${total_cost:.2f}")
 ```
 
-**Cost-saving tips**:
-- Use `--limit N` for testing
-- Start with `gpt-3.5-turbo` before `gpt-4`
-- Set `max_gen_toks` to minimum needed
-- Use `num_fewshot=0` for zero-shot when possible
+**省钱技巧**：
+- 测试时用 `--limit N`
+- 先从 `gpt-3.5-turbo` 起步，再用 `gpt-4`
+- 把 `max_gen_toks` 设到所需的最小值
+- 可能时用 `num_fewshot=0` 做 zero-shot
 
-## Anthropic Models
+## Anthropic 模型
 
-### Setup
+### 设置
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Completion Models (Legacy)
+### Completion 模型（旧版）
 
 ```bash
 lm_eval --model anthropic-completions \
@@ -130,9 +130,9 @@ lm_eval --model anthropic-completions \
   --batch_size auto
 ```
 
-### Chat Models (Recommended)
+### Chat 模型（推荐）
 
-**Available models**: `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, `claude-3-haiku-20240307`
+**可用模型**：`claude-3-5-sonnet-20241022`、`claude-3-opus-20240229`、`claude-3-sonnet-20240229`、`claude-3-haiku-20240307`
 
 ```bash
 lm_eval --model anthropic-chat \
@@ -142,9 +142,9 @@ lm_eval --model anthropic-chat \
   --batch_size auto
 ```
 
-**Aliases**: `anthropic-chat-completions` (same as `anthropic-chat`)
+**别名**：`anthropic-chat-completions`（与 `anthropic-chat` 相同）
 
-### Configuration Options
+### 配置选项
 
 ```bash
 lm_eval --model anthropic-chat \
@@ -156,42 +156,42 @@ lm_eval --model anthropic-chat \
     timeout=60
 ```
 
-### Cost Management
+### 成本管理
 
-Anthropic pricing (as of 2024):
-- Claude 3.5 Sonnet: $3.00 / 1M input, $15.00 / 1M output
-- Claude 3 Opus: $15.00 / 1M input, $75.00 / 1M output
-- Claude 3 Haiku: $0.25 / 1M input, $1.25 / 1M output
+Anthropic 定价（截至 2024 年）：
+- Claude 3.5 Sonnet：$3.00 / 百万输入，$15.00 / 百万输出
+- Claude 3 Opus：$15.00 / 百万输入，$75.00 / 百万输出
+- Claude 3 Haiku：$0.25 / 百万输入，$1.25 / 百万输出
 
-**Budget-friendly strategy**:
+**预算友好的策略**：
 ```bash
-# Test on small sample first
+# 先在小样本上测试
 lm_eval --model anthropic-chat \
   --model_args model=claude-3-haiku-20240307 \
   --tasks mmlu \
   --limit 100
 
-# Then run full eval on best model
+# 然后用最好的模型跑完整评估
 lm_eval --model anthropic-chat \
   --model_args model=claude-3-5-sonnet-20241022 \
   --tasks mmlu \
   --num_fewshot 5
 ```
 
-## Local OpenAI-Compatible APIs
+## 本地 OpenAI 兼容 API
 
-Many local inference servers expose OpenAI-compatible APIs (vLLM, Text Generation Inference, llama.cpp, Ollama).
+很多本地推理服务都暴露 OpenAI 兼容 API（vLLM、Text Generation Inference、llama.cpp、Ollama）。
 
-### vLLM Local Server
+### vLLM 本地服务
 
-**Start server**:
+**启动服务**：
 ```bash
 vllm serve meta-llama/Llama-2-7b-hf \
   --host 0.0.0.0 \
   --port 8000
 ```
 
-**Evaluate**:
+**评估**：
 ```bash
 lm_eval --model local-completions \
   --model_args \
@@ -204,14 +204,14 @@ lm_eval --model local-completions \
 
 ### Text Generation Inference (TGI)
 
-**Start server**:
+**启动服务**：
 ```bash
 docker run --gpus all --shm-size 1g -p 8080:80 \
   ghcr.io/huggingface/text-generation-inference:latest \
   --model-id meta-llama/Llama-2-7b-hf
 ```
 
-**Evaluate**:
+**评估**：
 ```bash
 lm_eval --model local-completions \
   --model_args \
@@ -222,13 +222,13 @@ lm_eval --model local-completions \
 
 ### Ollama
 
-**Start server**:
+**启动服务**：
 ```bash
 ollama serve
 ollama pull llama2:7b
 ```
 
-**Evaluate**:
+**评估**：
 ```bash
 lm_eval --model local-completions \
   --model_args \
@@ -237,14 +237,14 @@ lm_eval --model local-completions \
   --tasks mmlu
 ```
 
-### llama.cpp Server
+### llama.cpp 服务
 
-**Start server**:
+**启动服务**：
 ```bash
 ./server -m models/llama-2-7b.gguf --host 0.0.0.0 --port 8080
 ```
 
-**Evaluate**:
+**评估**：
 ```bash
 lm_eval --model local-completions \
   --model_args \
@@ -253,25 +253,25 @@ lm_eval --model local-completions \
   --tasks gsm8k
 ```
 
-## Custom API Implementation
+## 自定义 API 实现
 
-For custom API endpoints, subclass `TemplateAPI`:
+对于自定义 API 端点，子类化 `TemplateAPI`：
 
-### Create `my_api.py`
+### 创建 `my_api.py`
 
 ```python
 from lm_eval.models.api_models import TemplateAPI
 import requests
 
 class MyCustomAPI(TemplateAPI):
-    """Custom API model."""
+    """自定义 API 模型。"""
 
     def __init__(self, base_url, api_key, **kwargs):
         super().__init__(base_url=base_url, **kwargs)
         self.api_key = api_key
 
     def _create_payload(self, messages, gen_kwargs):
-        """Create API request payload."""
+        """创建 API 请求载荷。"""
         return {
             "messages": messages,
             "api_key": self.api_key,
@@ -279,19 +279,19 @@ class MyCustomAPI(TemplateAPI):
         }
 
     def parse_generations(self, response):
-        """Parse generation response."""
+        """解析生成响应。"""
         return response.json()["choices"][0]["text"]
 
     def parse_logprobs(self, response):
-        """Parse logprobs (if available)."""
-        # Return None if API doesn't provide logprobs
+        """解析 logprobs（如果可用）。"""
+        # 如果 API 不提供 logprobs，返回 None
         logprobs = response.json().get("logprobs")
         if logprobs:
             return logprobs["token_logprobs"]
         return None
 ```
 
-### Register and Use
+### 注册并使用
 
 ```python
 from lm_eval import evaluator
@@ -310,58 +310,58 @@ results = evaluator.simple_evaluate(
 )
 ```
 
-## Comparing API and Open Models
+## 比较 API 模型和开源模型
 
-### Side-by-Side Evaluation
+### 并排评估
 
 ```bash
-# Evaluate OpenAI GPT-4
+# 评估 OpenAI GPT-4
 lm_eval --model openai-chat-completions \
   --model_args model=gpt-4-turbo \
   --tasks mmlu,gsm8k,hellaswag \
   --num_fewshot 5 \
   --output_path results/gpt4.json
 
-# Evaluate open Llama 2 70B
+# 评估开源 Llama 2 70B
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-70b-hf,dtype=bfloat16 \
   --tasks mmlu,gsm8k,hellaswag \
   --num_fewshot 5 \
   --output_path results/llama2-70b.json
 
-# Compare results
+# 比较结果
 python scripts/compare_results.py \
   results/gpt4.json \
   results/llama2-70b.json
 ```
 
-### Typical Comparisons
+### 典型对比
 
-| Model | MMLU | GSM8K | HumanEval | Cost |
+| 模型 | MMLU | GSM8K | HumanEval | 成本 |
 |-------|------|-------|-----------|------|
 | GPT-4 Turbo | 86.4% | 92.0% | 67.0% | $$$$ |
 | Claude 3 Opus | 86.8% | 95.0% | 84.9% | $$$$ |
 | GPT-3.5 Turbo | 70.0% | 57.1% | 48.1% | $$ |
-| Llama 2 70B | 68.9% | 56.8% | 29.9% | Free (self-host) |
-| Mixtral 8x7B | 70.6% | 58.4% | 40.2% | Free (self-host) |
+| Llama 2 70B | 68.9% | 56.8% | 29.9% | 免费（自托管） |
+| Mixtral 8x7B | 70.6% | 58.4% | 40.2% | 免费（自托管） |
 
-## Best Practices
+## 最佳实践
 
-### Rate Limiting
+### 速率限制
 
-Respect API rate limits:
+遵守 API 速率限制：
 ```bash
 lm_eval --model openai-chat-completions \
   --model_args \
     model=gpt-4-turbo,\
-    num_concurrent=3,\  # Lower concurrency
-    timeout=120 \  # Longer timeout
+    num_concurrent=3,\  # 更低的并发
+    timeout=120 \  # 更长的超时
   --tasks mmlu
 ```
 
-### Reproducibility
+### 可复现性
 
-Set temperature to 0 for deterministic results:
+把 temperature 设为 0 以获得确定性结果：
 ```bash
 lm_eval --model openai-chat-completions \
   --model_args model=gpt-4-turbo \
@@ -369,7 +369,7 @@ lm_eval --model openai-chat-completions \
   --gen_kwargs temperature=0.0
 ```
 
-Or use `seed` for sampling:
+或用 `seed` 做采样：
 ```bash
 lm_eval --model anthropic-chat \
   --model_args model=claude-3-5-sonnet-20241022 \
@@ -377,28 +377,28 @@ lm_eval --model anthropic-chat \
   --gen_kwargs temperature=0.7,seed=42
 ```
 
-### Caching
+### 缓存
 
-API models automatically cache responses to avoid redundant calls:
+API 模型会自动缓存响应，避免冗余调用：
 ```bash
-# First run: makes API calls
+# 第一次运行：发起 API 调用
 lm_eval --model openai-chat-completions \
   --model_args model=gpt-4-turbo \
   --tasks mmlu \
   --limit 100
 
-# Second run: uses cache (instant, free)
+# 第二次运行：使用缓存（即时，免费）
 lm_eval --model openai-chat-completions \
   --model_args model=gpt-4-turbo \
   --tasks mmlu \
   --limit 100
 ```
 
-Cache location: `~/.cache/lm_eval/`
+缓存位置：`~/.cache/lm_eval/`
 
-### Error Handling
+### 错误处理
 
-APIs can fail. Use retries:
+API 可能失败。使用重试：
 ```bash
 lm_eval --model openai-chat-completions \
   --model_args \
@@ -408,52 +408,52 @@ lm_eval --model openai-chat-completions \
   --tasks mmlu
 ```
 
-## Troubleshooting
+## 故障排查
 
-### "Authentication failed"
+### 「Authentication failed」（认证失败）
 
-Check API key:
+检查 API key：
 ```bash
-echo $OPENAI_API_KEY  # Should print sk-...
-echo $ANTHROPIC_API_KEY  # Should print sk-ant-...
+echo $OPENAI_API_KEY  # 应打印 sk-...
+echo $ANTHROPIC_API_KEY  # 应打印 sk-ant-...
 ```
 
-### "Rate limit exceeded"
+### 「Rate limit exceeded」（超出速率限制）
 
-Reduce concurrency:
+降低并发：
 ```bash
 --model_args num_concurrent=1
 ```
 
-Or add delays between requests.
+或 在请求之间加延迟。
 
-### "Timeout error"
+### 「Timeout error」（超时错误）
 
-Increase timeout:
+增加超时：
 ```bash
 --model_args timeout=180
 ```
 
-### "Model not found"
+### 「Model not found」（找不到模型）
 
-For local APIs, verify server is running:
+对于本地 API，验证服务是否在运行：
 ```bash
 curl http://localhost:8000/v1/models
 ```
 
-### Cost Runaway
+### 成本失控
 
-Use `--limit` for testing:
+测试时用 `--limit`：
 ```bash
 lm_eval --model openai-chat-completions \
   --model_args model=gpt-4-turbo \
   --tasks mmlu \
-  --limit 50  # Only 50 samples
+  --limit 50  # 仅 50 个样本
 ```
 
-## Advanced Features
+## 高级功能
 
-### Custom Headers
+### 自定义请求头
 
 ```bash
 lm_eval --model local-completions \
@@ -462,7 +462,7 @@ lm_eval --model local-completions \
     header="Authorization: Bearer token,X-Custom: value"
 ```
 
-### Disable SSL Verification (Development Only)
+### 禁用 SSL 验证（仅用于开发）
 
 ```bash
 lm_eval --model local-completions \
@@ -471,7 +471,7 @@ lm_eval --model local-completions \
     verify_certificate=false
 ```
 
-### Custom Tokenizer
+### 自定义分词器
 
 ```bash
 lm_eval --model openai-chat-completions \
@@ -481,10 +481,10 @@ lm_eval --model openai-chat-completions \
     tokenizer_backend=huggingface
 ```
 
-## References
+## 参考
 
-- OpenAI API: https://platform.openai.com/docs/api-reference
-- Anthropic API: https://docs.anthropic.com/claude/reference
-- TemplateAPI: `lm_eval/models/api_models.py`
-- OpenAI models: `lm_eval/models/openai_completions.py`
-- Anthropic models: `lm_eval/models/anthropic_llms.py`
+- OpenAI API：https://platform.openai.com/docs/api-reference
+- Anthropic API：https://docs.anthropic.com/claude/reference
+- TemplateAPI：`lm_eval/models/api_models.py`
+- OpenAI 模型：`lm_eval/models/openai_completions.py`
+- Anthropic 模型：`lm_eval/models/anthropic_llms.py`

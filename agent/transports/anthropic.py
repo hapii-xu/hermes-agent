@@ -1,7 +1,7 @@
-"""Anthropic Messages API transport.
+"""Anthropic Messages API 传输层。
 
-Delegates to the existing adapter functions in agent/anthropic_adapter.py.
-This transport owns format conversion and normalization — NOT client lifecycle.
+委托给 agent/anthropic_adapter.py 中已有的适配器函数。
+该传输层负责格式转换与规范化——不负责客户端生命周期管理。
 """
 
 from typing import Any, Dict, List, Optional
@@ -11,10 +11,10 @@ from agent.transports.types import NormalizedResponse
 
 
 class AnthropicTransport(ProviderTransport):
-    """Transport for api_mode='anthropic_messages'.
+    """api_mode='anthropic_messages' 的传输实现。
 
-    Wraps the existing functions in anthropic_adapter.py behind the
-    ProviderTransport ABC.  Each method delegates — no logic is duplicated.
+    将 anthropic_adapter.py 中的现有函数封装在 ProviderTransport 抽象类后面。
+    每个方法均委托调用——不重复任何逻辑。
     """
 
     @property
@@ -22,10 +22,10 @@ class AnthropicTransport(ProviderTransport):
         return "anthropic_messages"
 
     def convert_messages(self, messages: List[Dict[str, Any]], **kwargs) -> Any:
-        """Convert OpenAI messages to Anthropic (system, messages) tuple.
+        """将 OpenAI 消息格式转换为 Anthropic (system, messages) 元组。
 
         kwargs:
-            base_url: Optional[str] — affects thinking signature handling.
+            base_url: Optional[str] — 影响思考签名的处理方式。
         """
         from agent.anthropic_adapter import convert_messages_to_anthropic
 
@@ -33,7 +33,7 @@ class AnthropicTransport(ProviderTransport):
         return convert_messages_to_anthropic(messages, base_url=base_url)
 
     def convert_tools(self, tools: List[Dict[str, Any]]) -> Any:
-        """Convert OpenAI tool schemas to Anthropic input_schema format."""
+        """将 OpenAI 工具 schema 转换为 Anthropic input_schema 格式。"""
         from agent.anthropic_adapter import convert_tools_to_anthropic
 
         return convert_tools_to_anthropic(tools)
@@ -45,11 +45,11 @@ class AnthropicTransport(ProviderTransport):
         tools: Optional[List[Dict[str, Any]]] = None,
         **params,
     ) -> Dict[str, Any]:
-        """Build Anthropic messages.create() kwargs.
+        """构建 Anthropic messages.create() 的关键字参数。
 
-        Calls convert_messages and convert_tools internally.
+        内部会调用 convert_messages 和 convert_tools。
 
-        params (all optional):
+        params（均为可选）:
             max_tokens: int
             reasoning_config: dict | None
             tool_choice: str | None
@@ -78,10 +78,10 @@ class AnthropicTransport(ProviderTransport):
         )
 
     def normalize_response(self, response: Any, **kwargs) -> NormalizedResponse:
-        """Normalize Anthropic response to NormalizedResponse.
+        """将 Anthropic 响应规范化为 NormalizedResponse。
 
-        Parses content blocks (text, thinking, tool_use), maps stop_reason
-        to OpenAI finish_reason, and collects reasoning_details in provider_data.
+        解析内容块（text、thinking、tool_use），将 stop_reason 映射为 OpenAI finish_reason，
+        并将 reasoning_details 收集到 provider_data 中。
         """
         import json
         from agent.anthropic_adapter import _to_plain_data, _sanitize_replay_block
@@ -94,26 +94,22 @@ class AnthropicTransport(ProviderTransport):
         reasoning_parts = []
         reasoning_details = []
         tool_calls = []
-        # Verbatim, order-preserving copy of every content block in the turn.
-        # Anthropic signs each thinking block against the turn content that
-        # PRECEDES it at its position; when a turn interleaves thinking and
-        # tool_use (adaptive/interleaved thinking, Claude 4.6+), the parallel
-        # reasoning_details + tool_calls lists below lose that cross-type
-        # ordering. Replaying the latest assistant message in the wrong order
-        # invalidates the signatures -> HTTP 400 "thinking ... blocks in the
-        # latest assistant message cannot be modified". Preserve the exact
-        # block sequence here so the adapter can replay it unchanged. See
-        # tests/agent/test_anthropic_thinking_block_order.py.
+        # 逐字、保序地复制该轮次中的每个内容块。
+        # Anthropic 对每个 thinking 块的签名基于该块在轮次中前面的内容；
+        # 当一轮交替出现 thinking 和 tool_use（自适应/交替思考，Claude 4.6+），
+        # 下面的 reasoning_details + tool_calls 列表会丢失跨类型的顺序。
+        # 以错误顺序重放最新的助手消息会使签名失效 -> HTTP 400 "thinking ... blocks in the
+        # latest assistant message cannot be modified"。在此保留精确的块序列，
+        # 以便适配器能原样重放。参见 tests/agent/test_anthropic_thinking_block_order.py。
         ordered_blocks = []
 
         for block in response.content:
             block_dict = _to_plain_data(block)
             clean_block = None
             if isinstance(block_dict, dict):
-                # Sanitize at capture so output-only SDK fields (parsed_output,
-                # caller, citations=None, …) never persist to state.db and leak
-                # back as request input on replay → HTTP 400 "Extra inputs are
-                # not permitted". Defence-in-depth with the replay-side sanitize.
+                # 在捕获时进行清理，防止仅用于输出的 SDK 字段（parsed_output、
+                # caller、citations=None 等）持久化到 state.db，并在重放时作为请求输入泄漏
+                # → HTTP 400 "Extra inputs are not permitted"。与重放侧的清理形成纵深防御。
                 clean_block = _sanitize_replay_block(block_dict)
                 if clean_block is not None:
                     ordered_blocks.append(clean_block)
@@ -122,9 +118,9 @@ class AnthropicTransport(ProviderTransport):
             elif block.type in ("thinking", "redacted_thinking"):
                 if block.type == "thinking":
                     reasoning_parts.append(block.thinking)
-                # Use the sanitized block (clean_block) for reasoning_details too,
-                # since _extract_preserved_thinking_blocks replays these on the
-                # non-ordered path. Falls back to raw only if sanitize dropped it.
+                # reasoning_details 也使用清理后的块（clean_block），
+                # 因为 _extract_preserved_thinking_blocks 在非排序路径上会重放这些块。
+                # 仅当清理丢弃了块时，才回退到原始值。
                 if isinstance(clean_block, dict):
                     reasoning_details.append(clean_block)
                 elif isinstance(block_dict, dict):
@@ -132,17 +128,14 @@ class AnthropicTransport(ProviderTransport):
             elif block.type == "tool_use":
                 name = block.name
                 if strip_tool_prefix and name.startswith(_MCP_PREFIX):
-                    # On the OAuth wire every tool carries a double-underscore
-                    # ``mcp__`` prefix (added in build_anthropic_kwargs to avoid
-                    # Anthropic's single-underscore third-party classifier).
-                    # Reverse it back to the name the registry/dispatcher knows.
-                    # Two original forms map onto the same ``mcp__`` wire name:
-                    #   ``mcp__read_file``       <- bare native tool ``read_file``
-                    #   ``mcp__linear_get_issue`` <- MCP server tool
-                    #                                ``mcp_linear_get_issue``
-                    # Resolve by registry lookup, preferring whichever original
-                    # is actually registered; never rewrite a name the LLM used
-                    # that already resolves natively. GH-25255.
+                    # 在 OAuth 通信协议中，每个工具都带有双下划线 ``mcp__`` 前缀
+                    # （在 build_anthropic_kwargs 中添加，以规避 Anthropic 对单下划线第三方工具的分类器）。
+                    # 将其还原为注册表/分发器所知道的名称。
+                    # 两种原始形式映射到同一个 ``mcp__`` 线协议名：
+                    #   ``mcp__read_file``        <- 裸原生工具 ``read_file``
+                    #   ``mcp__linear_get_issue`` <- MCP 服务器工具 ``mcp_linear_get_issue``
+                    # 通过注册表查找来解析，优先选择实际已注册的原始名称；
+                    # 不要重写 LLM 使用的已能原生解析的名称。GH-25255。
                     from tools.registry import registry as _tool_registry
                     if not _tool_registry.get_entry(name):
                         bare = name[len(_MCP_PREFIX):]            # read_file
@@ -164,11 +157,9 @@ class AnthropicTransport(ProviderTransport):
         provider_data = {}
         if reasoning_details:
             provider_data["reasoning_details"] = reasoning_details
-        # Only worth carrying the ordered-blocks channel when the turn
-        # actually interleaves signed thinking with tool_use — that's the
-        # only shape the parallel lists reconstruct incorrectly. A turn that
-        # is purely text, or thinking-then-tools with a single leading
-        # thinking block, replays correctly without it.
+        # 只有当该轮次确实将有签名的思考块与 tool_use 交替出现时，
+        # 才需要携带有序块通道——这是并行列表无法正确重建的唯一情形。
+        # 纯文本轮次，或只有单个领头 thinking 块的思考后工具调用，无需此通道也能正确重放。
         _has_signed_thinking = any(
             isinstance(b, dict)
             and b.get("type") in ("thinking", "redacted_thinking")
@@ -192,23 +183,19 @@ class AnthropicTransport(ProviderTransport):
         )
 
     def validate_response(self, response: Any) -> bool:
-        """Check Anthropic response structure is valid.
+        """检查 Anthropic 响应结构是否有效。
 
-        An empty content list is legitimate for terminal stop reasons that
-        carry no text payload:
+        对于不携带文本内容的终止停止原因，空内容列表是合法的：
 
-        - ``end_turn`` — the model's canonical "nothing more to add" after a
-          tool turn that already delivered the user-facing text.
-        - ``refusal`` — the model declined to respond (Claude 4.5+). The
-          Messages API returns an empty ``content`` list with this stop
-          reason. Treating it as invalid sends a deterministic refusal into
-          the invalid-response retry loop, which reproduces the refusal on
-          every attempt and surfaces a misleading "rate limited / invalid
-          response" error instead of the refusal. ``normalize_response`` maps
-          ``refusal`` → ``content_filter`` so the agent loop's refusal handler
-          can surface it.
+        - ``end_turn`` —— 模型在工具轮次完成后发出的标准"无需补充"信号，
+          该轮次已向用户返回了文本。
+        - ``refusal`` —— 模型拒绝响应（Claude 4.5+）。Messages API 在该停止原因下
+          返回空的 ``content`` 列表。若将其视为无效则会把确定性的拒绝行为送入无效响应重试循环，
+          每次尝试均复现拒绝，并呈现出误导性的"限速/无效响应"错误，而非拒绝信息。
+          ``normalize_response`` 将 ``refusal`` 映射为 ``content_filter``，
+          以便 agent 循环的拒绝处理器能正常呈现。
 
-        Treating either as invalid falsely retries a completed response.
+        将任一情形视为无效都会对已完成的响应进行虚假重试。
         """
         if response is None:
             return False
@@ -220,7 +207,7 @@ class AnthropicTransport(ProviderTransport):
         return True
 
     def extract_cache_stats(self, response: Any) -> Optional[Dict[str, int]]:
-        """Extract Anthropic cache_read and cache_creation token counts."""
+        """提取 Anthropic 的缓存读取和缓存创建 token 计数。"""
         usage = getattr(response, "usage", None)
         if usage is None:
             return None
@@ -230,7 +217,7 @@ class AnthropicTransport(ProviderTransport):
             return {"cached_tokens": cached, "creation_tokens": written}
         return None
 
-    # Promote the adapter's canonical mapping to module level so it's shared
+    # 将适配器的标准映射提升到模块级别以便共享
     _STOP_REASON_MAP = {
         "end_turn": "stop",
         "tool_use": "tool_calls",
@@ -241,11 +228,11 @@ class AnthropicTransport(ProviderTransport):
     }
 
     def map_finish_reason(self, raw_reason: str) -> str:
-        """Map Anthropic stop_reason to OpenAI finish_reason."""
+        """将 Anthropic stop_reason 映射为 OpenAI finish_reason。"""
         return self._STOP_REASON_MAP.get(raw_reason, "stop")
 
 
-# Auto-register on import
+# 导入时自动注册
 from agent.transports import register_transport  # noqa: E402
 
 register_transport("anthropic_messages", AnthropicTransport)

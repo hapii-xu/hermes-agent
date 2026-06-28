@@ -1,4 +1,4 @@
-"""Honcho-based session management for conversation history."""
+"""基于 Honcho 的对话历史会话管理。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Sentinel to signal the async writer thread to shut down
+# 用于通知异步写入线程关闭的哨兵对象
 _ASYNC_SHUTDOWN = object()
 _PEER_ID_HASH_LEN = 8
 _PEER_ID_HASH_ESCALATION_LENGTHS = (_PEER_ID_HASH_LEN, 12, 16, 24, 32, 64)
@@ -27,16 +27,16 @@ _PEER_ID_HASH_ESCALATION_LENGTHS = (_PEER_ID_HASH_LEN, 12, 16, 24, 32, 64)
 @dataclass
 class HonchoSession:
     """
-    A conversation session backed by Honcho.
+    由 Honcho 支持的对话会话。
 
-    Provides a local message cache that syncs to Honcho's
-    AI-native memory system for user modeling.
+    提供本地消息缓存，同步到 Honcho 的
+    AI 原生记忆系统以进行用户建模。
     """
 
-    key: str  # channel:chat_id
-    user_peer_id: str  # Honcho peer ID for the user
-    assistant_peer_id: str  # Honcho peer ID for the assistant
-    honcho_session_id: str  # Honcho session ID
+    key: str  # channel:chat_id（频道:聊天ID）
+    user_peer_id: str  # 用户的 Honcho peer ID
+    assistant_peer_id: str  # 助手的 Honcho peer ID
+    honcho_session_id: str  # Honcho 会话 ID
     messages: list[dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)

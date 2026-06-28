@@ -1,28 +1,23 @@
-"""Auto-installation of LSP server binaries.
+"""LSP 服务器二进制程序的自动安装。
 
-Tries to install missing servers using whatever package manager is
-appropriate.  All installs go to a Hermes-owned bin staging dir,
-``<HERMES_HOME>/lsp/bin/``, so we don't pollute the user's global
-toolchain.
+尝试使用合适的包管理器安装缺失的服务器。所有安装都指向
+Hermes 管理的 bin 暂存目录 ``<HERMES_HOME>/lsp/bin/``，
+以免污染用户的全局工具链。
 
-Strategies:
+安装策略：
 
-- ``auto`` — attempt to install with the best available package
-  manager.  This is the default.
-- ``manual`` — never install; if a binary is missing, the server is
-  silently skipped and the user is told about it via ``hermes lsp
-  status``.
-- ``off`` — same as ``manual`` for now (kept distinct so we can
-  evolve behavior later, e.g. logging differently).
+- ``auto`` — 尝试使用最佳的可用包管理器进行安装。这是默认策略。
+- ``manual`` — 永不自动安装；如果二进制程序缺失，则静默跳过该服务器，
+  并通过 ``hermes lsp status`` 告知用户。
+- ``off`` — 目前与 ``manual`` 相同（保留区分以便将来演化行为，
+  例如不同的日志记录方式）。
 
-The actual installs happen synchronously the first time a server is
-needed and concurrent calls to :func:`try_install` for the same
-package are deduplicated via a per-package lock.
+实际安装会在首次需要某个服务器时同步执行，并且对同一包的
+并发 :func:`try_install` 调用会通过每包级别的锁进行去重。
 
-Failure modes are non-fatal: every install path is wrapped in
-try/except and returns ``None`` on failure.  The tool layer then
-falls back to its in-process syntax checker, exactly as if the user
-hadn't enabled LSP at all.
+失败模式是非致命的：每个安装路径都用 try/except 包装，
+失败时返回 ``None``。然后工具层会回退到进程内的语法检查器，
+与用户根本没有启用 LSP 时的行为完全一致。
 """
 from __future__ import annotations
 
@@ -37,28 +32,29 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("agent.lsp.install")
 
-# Package-name → install-strategy hint registry.  Each entry is a
-# tuple of strategy name + package name + executable name.  When the
-# install completes, we look for the executable in
-# ``<HERMES_HOME>/lsp/bin/`` first, then on PATH.
+# 包名 → 安装策略提示注册表。每个条目是一个
+# 策略名称 + 包名 + 可执行文件名 的元组。安装完成后，
+# 我们首先在 ``<HERMES_HOME>/lsp/bin/`` 中查找可执行文件，
+# 然后在 PATH 中查找。
 #
-# Optional fields:
-#   - ``extra_pkgs``: list of sibling packages to install alongside
-#     ``pkg`` in the same node_modules tree.  Used when an LSP server
-#     has a runtime peer dependency that npm doesn't auto-pull (e.g.
-#     typescript-language-server needs ``typescript``).
+# 可选字段：
+#   - ``extra_pkgs``：需要与 ``pkg`` 一起安装在同一 node_modules
+#     树中的兄弟包列表。当 LSP 服务器有 npm 不会自动拉取的
+#     运行时对等依赖时使用（例如 typescript-language-server
+#     需要 ``typescript``）。
 INSTALL_RECIPES: Dict[str, Dict[str, Any]] = {
     # Python
     "pyright": {"strategy": "npm", "pkg": "pyright", "bin": "pyright-langserver"},
-    # JS/TS family
+    # JS/TS 系列
     "typescript-language-server": {
         "strategy": "npm",
         "pkg": "typescript-language-server",
         "bin": "typescript-language-server",
-        # typescript-language-server requires the `typescript` SDK
-        # (tsserver) to be importable from the same node_modules tree;
-        # otherwise initialize() fails with "Could not find a valid
-        # TypeScript installation".  Install them together.
+        # typescript-language-server 要求 `typescript` SDK
+        # (tsserver) 可以从同一 node_modules 树中导入；
+        # 否则 initialize() 会失败并报错
+        # "Could not find a valid TypeScript installation"。
+        # 因此将它们一起安装。
         "extra_pkgs": ["typescript"],
     },
     "@vue/language-server": {
@@ -94,13 +90,13 @@ INSTALL_RECIPES: Dict[str, Dict[str, Any]] = {
     },
     # Go
     "gopls": {"strategy": "go", "pkg": "golang.org/x/tools/gopls@latest", "bin": "gopls"},
-    # Rust — too heavy (hundreds of MB to bootstrap).  We do NOT
-    # auto-install rust-analyzer; users install via rustup.
+    # Rust — 体积过大（引导程序需要数百 MB）。我们不会
+    # 自动安装 rust-analyzer；用户需通过 rustup 安装。
     "rust-analyzer": {"strategy": "manual", "pkg": "", "bin": "rust-analyzer"},
-    # C/C++ — manual (clangd ships with LLVM, very heavy)
+    # C/C++ — 手动安装（clangd 随 LLVM 分发，体积很大）
     "clangd": {"strategy": "manual", "pkg": "", "bin": "clangd"},
-    # Lua — manual (LuaLS is platform-specific binaries from GitHub
-    # releases; complex enough that we punt to the user)
+    # Lua — 手动安装（LuaLS 是从 GitHub releases 获取的
+    # 平台特定二进制程序；情况复杂，交由用户处理）
     "lua-language-server": {"strategy": "manual", "pkg": "", "bin": "lua-language-server"},
 }
 
@@ -116,7 +112,7 @@ def _is_windows() -> bool:
 
 
 def hermes_lsp_bin_dir() -> Path:
-    """Return the Hermes-owned bin staging dir for LSP servers."""
+    """返回 Hermes 管理的 LSP 服务器 bin 暂存目录。"""
     home = os.environ.get("HERMES_HOME")
     if home is None:
         home = os.path.join(os.path.expanduser("~"), ".hermes")
@@ -126,7 +122,7 @@ def hermes_lsp_bin_dir() -> Path:
 
 
 def _native_binary_candidates(base: Path) -> list[Path]:
-    """Return platform-native executable candidates for a staged binary."""
+    """返回已暂存二进制程序的平台原生可执行文件候选列表。"""
     candidates = [base]
     if _is_windows():
         existing = {str(base).lower()}
@@ -140,7 +136,7 @@ def _native_binary_candidates(base: Path) -> list[Path]:
 
 
 def _existing_binary(name: str) -> Optional[str]:
-    """Probe the staging dir + PATH for a binary named ``name``."""
+    """在暂存目录和 PATH 中探测名为 ``name`` 的二进制程序。"""
     for staged in _native_binary_candidates(hermes_lsp_bin_dir() / name):
         if staged.exists() and os.access(staged, os.X_OK):
             return str(staged)
@@ -165,19 +161,18 @@ def _get_lock(pkg: str) -> threading.Lock:
 
 
 def try_install(pkg: str, strategy: str = "auto") -> Optional[str]:
-    """Try to install ``pkg`` and return the binary path if successful.
+    """尝试安装 ``pkg``，成功时返回二进制程序路径。
 
-    ``strategy`` is ``"auto"``, ``"manual"``, or ``"off"``.  In
-    ``manual``/``off`` mode, this function only probes for an
-    existing binary and returns ``None`` if not found.
+    ``strategy`` 可以是 ``"auto"``、``"manual"`` 或 ``"off"``。
+    在 ``manual``/``off`` 模式下，此函数仅探测已有的
+    二进制程序，未找到时返回 ``None``。
 
-    The install is cached per-package — a second call returns the
-    same path (or ``None``) without reinstalling.  Concurrent calls
-    are serialized.
+    安装结果按包缓存——第二次调用会返回相同的路径
+    （或 ``None``），不会重新安装。并发调用会被串行化。
     """
     if strategy not in {"auto",}:
-        # Only ``auto`` triggers an actual install.  In manual/off,
-        # we still check whether the binary already exists.
+        # 只有 ``auto`` 才会触发实际安装。在 manual/off 模式下，
+        # 我们仍然检查二进制程序是否已存在。
         recipe = INSTALL_RECIPES.get(pkg, {})
         bin_name = recipe.get("bin", pkg)
         return _existing_binary(bin_name)
@@ -187,7 +182,7 @@ def try_install(pkg: str, strategy: str = "auto") -> Optional[str]:
 
     lock = _get_lock(pkg)
     with lock:
-        # Double-check after acquiring lock.
+        # 获取锁后进行双重检查。
         if pkg in _install_results:
             return _install_results[pkg]
         result = _do_install(pkg)
@@ -198,13 +193,13 @@ def try_install(pkg: str, strategy: str = "auto") -> Optional[str]:
 def _do_install(pkg: str) -> Optional[str]:
     recipe = INSTALL_RECIPES.get(pkg)
     if recipe is None:
-        # Not in our registry — best-effort: just probe PATH.
+        # 不在我们的注册表中——尽力而为：仅探测 PATH。
         return shutil.which(pkg)
 
     strategy = recipe.get("strategy", "manual")
     bin_name = recipe.get("bin", pkg)
 
-    # Check if already present (shutil.which or staging dir)
+    # 检查是否已存在（shutil.which 或暂存目录）
     existing = _existing_binary(bin_name)
     if existing:
         return existing
@@ -233,16 +228,16 @@ def _install_npm(
     bin_name: str,
     extra_pkgs: Optional[list] = None,
 ) -> Optional[str]:
-    """Install an npm package into our staging dir.
+    """将 npm 包安装到我们的暂存目录。
 
-    Uses ``npm install --prefix`` so the binaries land in
-    ``<staging>/node_modules/.bin/<bin_name>`` and we symlink them up
-    one level for direct PATH-style access.
+    使用 ``npm install --prefix``，使二进制程序落在
+    ``<staging>/node_modules/.bin/<bin_name>``，然后我们将它们
+    符号链接到上一级目录，以便通过 PATH 方式直接访问。
 
-    ``extra_pkgs`` is a list of sibling packages to install in the
-    same ``node_modules`` tree.  Used for LSP servers with runtime
-    peer deps that npm doesn't auto-pull (typescript-language-server
-    needs ``typescript`` next to it; intelephense ships standalone).
+    ``extra_pkgs`` 是要安装在同一 ``node_modules`` 树中的
+    兄弟包列表。用于具有 npm 不会自动拉取的运行时对等依赖
+    的 LSP 服务器（typescript-language-server 旁边需要
+    ``typescript``；intelephense 独立分发）。
     """
     npm = shutil.which("npm")
     if npm is None:
@@ -273,17 +268,17 @@ def _install_npm(
         logger.warning("[install] npm install errored for %s: %s", pkg, e)
         return None
 
-    # Find the bin
+    # 查找二进制程序
     nm_bin = staging / "node_modules" / ".bin" / bin_name
     for c in _native_binary_candidates(nm_bin):
         if c.exists():
-            # Symlink into our `lsp/bin/` for stable PATH access.
+            # 符号链接到我们的 `lsp/bin/` 以获得稳定的 PATH 访问。
             link = hermes_lsp_bin_dir() / c.name
             if not link.exists():
                 try:
                     link.symlink_to(c)
                 except (OSError, NotImplementedError):
-                    # Symlinks fail on some Windows setups — copy instead.
+                    # 某些 Windows 环境下符号链接会失败——改用复制。
                     try:
                         shutil.copy2(c, link)
                     except OSError:
@@ -294,7 +289,7 @@ def _install_npm(
 
 
 def _install_go(pkg: str, bin_name: str) -> Optional[str]:
-    """Install a Go module to GOBIN=<staging>."""
+    """将 Go 模块安装到 GOBIN=<staging>。"""
     go = shutil.which("go")
     if go is None:
         logger.info("[install] cannot install %s: go not on PATH", pkg)
@@ -331,13 +326,13 @@ def _install_go(pkg: str, bin_name: str) -> Optional[str]:
 
 
 def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
-    """Install a Python package into a hermes-owned target dir.
+    """将 Python 包安装到 Hermes 管理的目标目录。
 
-    We avoid polluting the user's site-packages by using
-    ``pip install --target``.  Bins go into
-    ``<staging>/python-packages/bin/`` which we symlink into
-    ``<staging>/bin``.  Note: this only works for packages that ship a
-    console script.
+    我们使用 ``pip install --target`` 以避免污染用户的
+    site-packages。二进制程序会放到
+    ``<staging>/python-packages/bin/``，然后符号链接到
+    ``<staging>/bin``。注意：这仅适用于包含 console script
+    的包。
     """
     pip_target = hermes_lsp_bin_dir().parent / "python-packages"
     pip_target.mkdir(parents=True, exist_ok=True)
@@ -359,8 +354,8 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
     except (subprocess.TimeoutExpired, OSError) as e:
         logger.warning("[install] pip install errored for %s: %s", pkg, e)
         return None
-    # Look for the console script.  POSIX wheels generally write to bin/,
-    # while native Windows installs use Scripts/.
+    # 查找 console script。POSIX 平台的 wheel 通常写入 bin/，
+    # 而 Windows 原生安装使用 Scripts/。
     script_dirs = [pip_target / "bin"]
     if _is_windows():
         script_dirs.append(pip_target / "Scripts")
@@ -381,10 +376,10 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
 
 
 def detect_status(pkg: str) -> str:
-    """Return ``installed``, ``missing``, or ``manual-only`` for a package.
+    """返回包的 ``installed``、``missing`` 或 ``manual-only`` 状态。
 
-    Used by the ``hermes lsp status`` CLI to give users a quick
-    overview of what's available without spawning anything.
+    供 ``hermes lsp status`` CLI 使用，让用户快速了解
+    哪些服务器可用，而无需启动任何进程。
     """
     recipe = INSTALL_RECIPES.get(pkg)
     bin_name = recipe.get("bin", pkg) if recipe else pkg

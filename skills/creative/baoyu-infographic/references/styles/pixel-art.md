@@ -1,29 +1,29 @@
 # pixel-art
 
-Retro 8-bit gaming aesthetic
+复古 8 位游戏美学
 
-## Color Palette
+## 配色
 
-- Primary: Limited palette - NES/SNES colors
-- Background: Black or dark blue, scanlines optional
-- Accents: Bright pixel highlights, CRT glow
+- 主色：有限调色板——NES/SNES 色彩
+- 背景：黑色或深蓝，可选扫描线
+- 点缀：明亮像素高光、CRT 辉光
 
-## Visual Elements
+## 视觉元素
 
-- Visible pixel grid
-- Limited color count per sprite
-- 8-bit or 16-bit style
-- Retro game UI elements
-- Pixel-perfect edges
-- Dithering for gradients
+- 可见的像素网格
+- 每个精灵图颜色数量有限
+- 8 位或 16 位风格
+- 复古游戏 UI 元素
+- 像素级精确的边缘
+- 用抖动实现渐变
 
-## Typography
+## 字体排印
 
-- Pixel fonts
-- Blocky letterforms
-- Game UI style text
-- Score/stat display style
+- 像素字体
+- 方正的字形
+- 游戏 UI 风格文字
+- 分数/属性显示风格
 
-## Best For
+## 最适用于
 
-Gaming topics, nostalgia content, developer audiences, retro tech themes
+游戏主题、怀旧内容、开发者受众、复古科技主题

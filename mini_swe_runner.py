@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
 """
-SWE Runner with Hermes Trajectory Format
+SWE Runner（使用 Hermes 轨迹格式）
 
-A runner that uses Hermes-Agent's built-in execution environments
-(local, docker, modal) and outputs trajectories in the Hermes-Agent format
-compatible with batch_runner.py and trajectory_compressor.py.
+一个使用 Hermes-Agent 内置执行环境（local、docker、modal）的运行器，
+输出与 batch_runner.py 和 trajectory_compressor.py 兼容的 Hermes-Agent 格式轨迹。
 
-Features:
-- Uses Hermes-Agent's Docker, Modal, or Local environments for command execution
-- Outputs trajectories in Hermes format (from/value pairs with <tool_call>/<tool_response> XML)
-- Compatible with the trajectory compression pipeline
-- Supports batch processing from JSONL prompt files
+功能特性：
+- 使用 Hermes-Agent 的 Docker、Modal 或 Local 环境执行命令
+- 以 Hermes 格式输出轨迹（带有 <tool_call>/<tool_response> XML 的 from/value 对）
+- 与轨迹压缩流水线兼容
+- 支持从 JSONL 提示文件进行批量处理
 
-Usage:
-    # Run a single task with local environment
+用法：
+    # 使用 local 环境运行单个任务
     python mini_swe_runner.py --task "Create a hello world Python script" --env local
-    
-    # Run with Docker
+
+    # 使用 Docker 运行
     python mini_swe_runner.py --task "List files in /tmp" --env docker --image python:3.11-slim
-    
-    # Run with Modal (cloud)
+
+    # 使用 Modal（云端）运行
     python mini_swe_runner.py --task "Install numpy and test it" --env modal --image python:3.11-slim
-    
-    # Batch mode from JSONL file
+
+    # 从 JSONL 文件进行批量模式
     python mini_swe_runner.py --prompts_file prompts.jsonl --output_file trajectories.jsonl --env docker
 """
 
@@ -36,7 +35,7 @@ import fire
 from dotenv import load_dotenv
 from agent.tool_dispatch_helpers import make_tool_result_message
 
-# Load environment variables
+# 加载环境变量
 load_dotenv()
 
 
@@ -44,10 +43,10 @@ def _effective_temperature_for_model(
     model: str,
     base_url: Optional[str] = None,
 ) -> Optional[float]:
-    """Return a fixed temperature for models with strict sampling contracts.
+    """为有严格采样约束的模型返回固定温度值。
 
-    Returns ``None`` when the model manages temperature server-side (Kimi);
-    callers must omit the ``temperature`` kwarg entirely in that case.
+    当模型在服务端管理温度时（如 Kimi）返回 ``None``；
+    调用方在这种情况下必须完全省略 ``temperature`` 参数。
     """
     try:
         from agent.auxiliary_client import _fixed_temperature_for_model, OMIT_TEMPERATURE
@@ -55,14 +54,14 @@ def _effective_temperature_for_model(
         return None
     result = _fixed_temperature_for_model(model, base_url)
     if result is OMIT_TEMPERATURE:
-        return None  # caller must omit temperature
+        return None  # 调用方必须省略 temperature 参数
     return result
 
 
 
 
 # ============================================================================
-# Terminal Tool Definition (matches Hermes-Agent format)
+# Terminal 工具定义（与 Hermes-Agent 格式匹配）
 # ============================================================================
 
 TERMINAL_TOOL_DEFINITION = {

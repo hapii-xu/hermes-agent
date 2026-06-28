@@ -1,16 +1,16 @@
-"""``hermes lsp`` CLI subcommand.
+"""``hermes lsp`` CLI 子命令。
 
-Subcommands:
+子命令：
 
-- ``status`` — show service state, configured servers, install status.
-- ``install <server_id>`` — eagerly install one server's binary.
-- ``install-all`` — try to install every server with a known recipe.
-- ``restart`` — tear down running clients so the next edit re-spawns.
-- ``which <server_id>`` — print the resolved binary path for one server.
-- ``list`` — print the registry of supported servers.
+- ``status`` — 显示 service 状态、已配置的 server、安装状态。
+- ``install <server_id>`` — 主动安装某个 server 的二进制文件。
+- ``install-all`` — 尝试安装所有具有已知配方的 server。
+- ``restart`` — 拆除运行中的 client，使下次编辑时重新生成。
+- ``which <server_id>`` — 打印某个 server 的解析后二进制路径。
+- ``list`` — 打印支持的 server 注册表。
 
-The handlers are kept here (rather than in
-``hermes_cli/main.py``) so the LSP module ships self-contained.
+处理函数放在这里（而不是 ``hermes_cli/main.py`` 中），
+以便 LSP 模块可以独立发布。
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import sys
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
-    """Wire the ``hermes lsp`` subcommand tree into the main argparse."""
+    """将 ``hermes lsp`` 子命令树接入主 argparse。"""
     parser = subparsers.add_parser(
         "lsp",
         help="Language Server Protocol management",
@@ -67,7 +67,7 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run_lsp_command(args: argparse.Namespace) -> int:
-    """Top-level dispatcher for ``hermes lsp <subcommand>``."""
+    """``hermes lsp <subcommand>`` 的顶层调度器。"""
     sub = getattr(args, "lsp_command", None) or "status"
     try:
         if sub == "status":
@@ -140,9 +140,9 @@ def _cmd_status(emit_json: bool) -> int:
         if disabled:
             out.append(f"  disabled in cfg: {', '.join(disabled)}")
 
-    # Surface backend-tool gaps that aren't visible in the registry table:
-    # some servers spawn fine but emit no diagnostics without a sidecar
-    # binary (bash-language-server -> shellcheck).
+    # 暴露注册表中不可见的后端工具缺失问题：
+    # 某些服务器可以正常启动，但没有辅助二进制程序时不会输出任何诊断信息
+    # （如 bash-language-server -> shellcheck）。
     backend_warnings = _backend_warnings()
     if backend_warnings:
         out.append("")
@@ -260,11 +260,10 @@ def _cmd_which(server_id: str) -> int:
 
 
 def _recipe_pkg_for(server_id: str) -> str:
-    """Map a registry ``server_id`` to its install-recipe package key."""
-    # The mapping lives here (not in install.py) because it's a CLI
-    # convenience layer.  Most server_ids are also their own recipe
-    # key, but a few differ (e.g. ``vue-language-server`` →
-    # ``@vue/language-server``).
+    """将注册表中的 ``server_id`` 映射到对应的安装配方包名。"""
+    # 映射放在这里（而非 install.py）是因为这属于 CLI 便利层。
+    # 大多数 server_id 与其配方键相同，但有少数例外
+    # （如 ``vue-language-server`` → ``@vue/language-server``）。
     aliases = {
         "vue-language-server": "@vue/language-server",
         "astro-language-server": "@astrojs/language-server",
@@ -275,16 +274,14 @@ def _recipe_pkg_for(server_id: str) -> str:
 
 
 def _backend_warnings() -> list:
-    """Return human-readable notes about LSP backend tools that are missing
-    in a way that won't surface elsewhere.
+    """返回关于缺失的 LSP 后端工具的人类可读提示，
+    这些情况不会在其他地方浮现。
 
-    Some language servers ship as thin wrappers around an external CLI for
-    actual diagnostics — they spawn cleanly but never emit any errors when
-    the sidecar binary isn't on PATH.  bash-language-server / shellcheck
-    is the load-bearing example.
+    某些 language server 只是外部 CLI 的薄封装——服务器可以正常启动，
+    但当辅助二进制程序不在 PATH 中时永远不会报告任何错误。
+    bash-language-server / shellcheck 是典型示例。
 
-    Returned strings are short, actionable, and include the install
-    suggestion across common platforms.
+    返回的字符串简洁、可操作，并包含常见平台的安装建议。
     """
     import shutil as _shutil
     from agent.lsp.install import _existing_binary

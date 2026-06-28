@@ -1,32 +1,28 @@
-"""Blueprints: shareable plain-language automations layered on skills + cron.
+"""Blueprints：叠加在技能 + cron 之上的、可分享的自然语言自动化。
 
-A "blueprint" is NOT a new object type. It is an ordinary skill (a SKILL.md the
-agent loads) that additionally declares an automation schedule in its
-frontmatter:
+"blueprint"（蓝图）并不是一种新的对象类型。它就是一个普通的技能（一个 agent 会加载
+的 SKILL.md），只不过额外在其 frontmatter 中声明了一个自动化调度：
 
     metadata:
       hermes:
         blueprint:
-          schedule: "0 9 * * *"     # presence of `blueprint:` marks it runnable
-          deliver: origin            # optional (default "origin")
-          prompt: "..."              # optional task instruction for the run
-          no_agent: false            # optional
+          schedule: "0 9 * * *"     # 出现 `blueprint:` 即表示它可被调度运行
+          deliver: origin            # 可选（默认 "origin"）
+          prompt: "..."              # 可选，本次运行的任务指令
+          no_agent: false            # 可选
 
-Because a blueprint is just a skill, it flows through the ENTIRE existing
-skills-hub pipeline for free — search, inspect, quarantine, security scan,
-install, lock-file provenance, audit log, taps, the centralized index, and
-`hermes skills publish` for sharing. No new source type, no new store, no new
-transport. This module is the thin bridge between that skill metadata and the
-existing cron `create_job()` API:
+因为蓝图本质上就是一个技能，所以它可以免费流经整个已有的 skills-hub 流水线 —— 搜索、
+查看、隔离、安全扫描、安装、lock-file 溯源、审计日志、taps、集中化索引，以及
+`hermes skills publish` 用于分享。没有新的来源类型、没有新的存储、没有新的传输方式。
+本模块只是技能元数据与已有 cron `create_job()` API 之间的一层薄薄的桥接：
 
   * ``parse_blueprint(skill_md_text)``  -> BlueprintSpec | None
   * ``blueprint_spec_for_installed(name)`` -> BlueprintSpec | None
-  * ``create_blueprint_job(spec, ...)`` -> the created cron job dict
-  * ``export_blueprint(job, body)``      -> a shareable SKILL.md string
+  * ``create_blueprint_job(spec, ...)`` -> 创建出的 cron job dict
+  * ``export_blueprint(job, body)``      -> 一份可分享的 SKILL.md 字符串
 
-The dev guide's "Extend, Don't Duplicate" rule is the whole design: the blueprint
-is a skill, the schedule is a cron job, sharing is the existing publish/tap/
-index path.
+开发指南中的「扩展而非重复」原则就是整个设计的核心：蓝图是技能，调度是 cron job，
+分享是已有的 publish/tap/index 路径。
 """
 
 from __future__ import annotations
@@ -51,12 +47,12 @@ __all__ = [
 
 
 class BlueprintError(ValueError):
-    """Raised when a blueprint block is present but malformed."""
+    """当 blueprint 块存在但格式错误时抛出。"""
 
 
 @dataclass
 class BlueprintSpec:
-    """Parsed ``metadata.hermes.blueprint`` automation spec for a skill."""
+    """从某个技能解析出的 ``metadata.hermes.blueprint`` 自动化规格。"""
 
     skill_name: str
     schedule: str
@@ -70,13 +66,13 @@ class BlueprintSpec:
 
 
 def _split_frontmatter(text: str) -> Optional[Dict[str, Any]]:
-    """Return the parsed YAML frontmatter mapping, or None if absent/invalid."""
+    """返回解析后的 YAML frontmatter 映射；若不存在或无效则返回 None。"""
     if not isinstance(text, str):
         return None
     stripped = text.lstrip()
     if not stripped.startswith("---"):
         return None
-    # Find the closing fence after the opening one.
+    # 在开栏之后寻找闭合栏。
     after_open = stripped[3:]
     end = after_open.find("\n---")
     if end == -1:
@@ -93,11 +89,11 @@ def _split_frontmatter(text: str) -> Optional[Dict[str, Any]]:
 
 
 def parse_blueprint(skill_md_text: str) -> Optional[BlueprintSpec]:
-    """Extract a BlueprintSpec from a SKILL.md string, or None if not a blueprint.
+    """从一段 SKILL.md 字符串中提取 BlueprintSpec；若不是蓝图则返回 None。
 
-    A skill is a blueprint iff ``metadata.hermes.blueprint`` is a mapping containing
-    a non-empty ``schedule``. Raises BlueprintError if the block exists but is
-    structurally invalid (so a typo surfaces instead of silently no-op'ing).
+    当且仅当 ``metadata.hermes.blueprint`` 是一个包含非空 ``schedule`` 的映射时，
+    该技能才是一个蓝图。若该块存在但结构非法，则抛出 BlueprintError（这样一处笔误
+    会被暴露出来，而不是静默地变成无操作）。
     """
     fm = _split_frontmatter(skill_md_text)
     if not fm:
@@ -142,10 +138,10 @@ def parse_blueprint(skill_md_text: str) -> Optional[BlueprintSpec]:
 
 
 def blueprint_spec_for_installed(skill_name: str) -> Optional[BlueprintSpec]:
-    """Locate an installed skill's SKILL.md and parse its blueprint block.
+    """定位某个已安装技能的 SKILL.md 并解析其中的 blueprint 块。
 
-    Searches the standard skills tree for ``<skill_name>/SKILL.md``. Returns
-    None if the skill isn't found or isn't a blueprint.
+    在标准技能树中搜索 ``<skill_name>/SKILL.md``。若找不到该技能，或它不是蓝图，
+    则返回 None。
     """
     try:
         from tools.skills_hub import SKILLS_DIR
@@ -153,7 +149,7 @@ def blueprint_spec_for_installed(skill_name: str) -> Optional[BlueprintSpec]:
         return None
 
     base = Path(SKILLS_DIR)
-    # Skills live at skills/<category>/<name>/SKILL.md or skills/<name>/SKILL.md.
+    # 技能位于 skills/<category>/<name>/SKILL.md 或 skills/<name>/SKILL.md。
     candidates = list(base.glob(f"**/{skill_name}/SKILL.md"))
     for path in candidates:
         try:
@@ -162,7 +158,7 @@ def blueprint_spec_for_installed(skill_name: str) -> Optional[BlueprintSpec]:
             continue
         spec = parse_blueprint(text)
         if spec is not None:
-            # Prefer the frontmatter name, fall back to the directory name.
+            # 优先用 frontmatter 里的 name，其次回退到目录名。
             if not spec.skill_name:
                 spec.skill_name = skill_name
             return spec
@@ -174,12 +170,11 @@ def blueprint_to_job_spec(
     *,
     name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build the ``cron.jobs.create_job`` kwargs dict for a BlueprintSpec.
+    """为 BlueprintSpec 构造 ``cron.jobs.create_job`` 的 kwargs dict。
 
-    This is the single source of truth for translating a blueprint into a job.
-    Both the direct ``create_blueprint_job`` path and the suggestion path
-    (``register_blueprint_suggestion``) build on it, so a blueprint scheduled now and
-    a blueprint accepted from a suggestion produce an identical job.
+    这是把蓝图翻译成 job 的唯一真相来源。直接的 ``create_blueprint_job`` 路径和
+    建议路径（``register_blueprint_suggestion``）都建立在它之上，因此「现在调度的蓝图」
+    和「从建议中采纳的蓝图」会产生完全相同的 job。
     """
     return {
         "prompt": spec.prompt,
@@ -200,11 +195,10 @@ def create_blueprint_job(
     origin: Optional[Dict[str, Any]] = None,
     name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create the cron job described by a BlueprintSpec via the existing cron API.
+    """通过已有的 cron API 创建 BlueprintSpec 所描述的 cron job。
 
-    The blueprint's skill is loaded before the run (cron ``skills=[name]``); the
-    optional ``prompt`` becomes the task instruction. Delivery, model, and
-    toolsets carry through. Returns the created job dict.
+    该蓝图的技能会在运行之前被加载（cron 的 ``skills=[name]``）；可选的 ``prompt``
+    成为任务指令。delivery、model 和 toolsets 会透传过去。返回创建出的 job dict。
     """
     from cron.jobs import create_job
 
@@ -215,13 +209,11 @@ def create_blueprint_job(
 
 
 def register_blueprint_suggestion(spec: BlueprintSpec) -> Optional[Dict[str, Any]]:
-    """Turn an installed blueprint into a pending Suggested Cron Job.
+    """把一个已安装的蓝图变成一条待定的 Suggested Cron Job。
 
-    Blueprints are source ``blueprint`` of the unified suggestion surface: installing
-    a skill that carries a ``blueprint:`` block does NOT auto-schedule it — it
-    registers a suggestion the user accepts (or dismisses) like any other.
-    Returns the suggestion record, or None if it was skipped (already
-    seen/dismissed, backlog full, etc.).
+    蓝图是统一建议入口中来源为 ``blueprint`` 的条目：安装一个带 ``blueprint:`` 块的
+    技能并不会自动调度它 —— 而是注册一条建议，让用户像对待其他建议一样去采纳（或忽略）。
+    返回该建议记录；若被跳过（已见过/已忽略、积压已满等）则返回 None。
     """
     if not spec.skill_name:
         return None
@@ -244,17 +236,17 @@ def register_blueprint_suggestion(spec: BlueprintSpec) -> Optional[Dict[str, Any
 
 
 def export_blueprint(job: Dict[str, Any], body: str, *, blueprint_name: Optional[str] = None) -> str:
-    """Render a shareable blueprint SKILL.md from an existing cron job dict.
+    """从已有的 cron job dict 渲染出一份可分享的蓝图 SKILL.md。
 
-    The inverse of ``create_blueprint_job``: take a cron job a user already built
-    and emit a SKILL.md (with a ``metadata.hermes.blueprint`` block) they can hand
-    to ``hermes skills publish`` to share. ``body`` is the plain-language
-    description / instructions that become the SKILL.md body.
+    这是 ``create_blueprint_job`` 的逆操作：拿一个用户已经建好的 cron job，产出一个
+    SKILL.md（带 ``metadata.hermes.blueprint`` 块），用户可以把它交给
+    ``hermes skills publish`` 来分享。``body`` 是自然语言的描述/说明，会成为 SKILL.md
+    的正文。
     """
     import yaml
 
     name = blueprint_name or job.get("name") or "shared-blueprint"
-    # Sanitize to a valid skill identifier.
+    # 净化为合法的技能标识符。
     name = "".join(c if (c.isalnum() or c in "-_") else "-" for c in str(name).lower())
     name = name.strip("-_") or "shared-blueprint"
 
@@ -300,7 +292,7 @@ def export_blueprint(job: Dict[str, Any], body: str, *, blueprint_name: Optional
 
 
 def _schedule_to_string(schedule: Any) -> str:
-    """Best-effort render of a parsed schedule dict back to a string."""
+    """尽力把一个已解析的 schedule dict 重新渲染回字符串。"""
     if isinstance(schedule, str):
         return schedule
     if isinstance(schedule, dict):
@@ -308,8 +300,8 @@ def _schedule_to_string(schedule: Any) -> str:
         if kind == "cron" and schedule.get("expr"):
             return str(schedule["expr"])
         if kind == "interval":
-            # parse_schedule stores interval periods as "minutes"; tolerate a
-            # legacy/foreign "seconds" form too.
+            # parse_schedule 把 interval 周期存为 "minutes"；同时也容忍遗留/外来的
+            # "seconds" 形式。
             if schedule.get("minutes"):
                 mins = int(schedule["minutes"])
                 if mins % 60 == 0:
@@ -322,4 +314,4 @@ def _schedule_to_string(schedule: Any) -> str:
                 if secs % 60 == 0:
                     return f"every {secs // 60}m"
                 return f"every {secs}s"
-    return "0 9 * * *"  # safe daily fallback
+    return "0 9 * * *"  # 安全的每日兜底

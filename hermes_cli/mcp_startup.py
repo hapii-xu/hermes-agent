@@ -1,4 +1,4 @@
-"""Shared CLI/TUI-safe helpers for background MCP discovery."""
+"""后台 MCP 发现的 CLI/TUI 安全辅助函数。"""
 
 from __future__ import annotations
 
@@ -11,20 +11,20 @@ _mcp_discovery_thread: Optional[threading.Thread] = None
 
 
 def _has_configured_mcp_servers() -> bool:
-    """Cheap config probe so non-MCP users avoid importing the MCP stack."""
+    """轻量级 config 探测，避免非 MCP 用户导入 MCP 栈。"""
     try:
         from hermes_cli.config import read_raw_config
 
         mcp_servers = (read_raw_config() or {}).get("mcp_servers")
         return isinstance(mcp_servers, dict) and len(mcp_servers) > 0
     except Exception:
-        # Be conservative: if config probing fails, try discovery in the
-        # background so startup still can't block.
+        # 保守策略：如果 config 探测失败，在后台尝试发现，
+        # 这样启动仍然不会阻塞。
         return True
 
 
 def start_background_mcp_discovery(*, logger, thread_name: str) -> None:
-    """Spawn one shared background MCP discovery thread for this process."""
+    """为此进程生成一个共享的后台 MCP 发现线程。"""
     global _mcp_discovery_started, _mcp_discovery_thread
 
     with _mcp_discovery_lock:
@@ -52,12 +52,12 @@ def start_background_mcp_discovery(*, logger, thread_name: str) -> None:
 
 
 def _resolve_discovery_timeout(explicit: "float | None") -> float:
-    """Resolve the MCP discovery wait bound: explicit arg > config > default.
+    """解析 MCP 发现等待超时：显式参数 > config > 默认值。
 
-    Reads ``mcp_discovery_timeout`` from config.yaml, defaulting to the value in
-    ``DEFAULT_CONFIG`` (single source of truth) when the key is absent. Kept lazy
-    and fail-safe — a missing/invalid value or a broken config falls back to a
-    short safe bound so startup can never hang or crash.
+    从 config.yaml 读取 ``mcp_discovery_timeout``，当键缺失时默认为
+    ``DEFAULT_CONFIG`` 中的值（单一真实来源）。保持惰性且安全——
+    缺失/无效值或损坏的 config 会回退到较短的安全边界，
+    这样启动永远不会挂起或崩溃。
     """
     if explicit is not None:
         return explicit
@@ -73,14 +73,14 @@ def _resolve_discovery_timeout(explicit: "float | None") -> float:
 
 
 def wait_for_mcp_discovery(timeout: "float | None" = None) -> None:
-    """Wait for background MCP discovery before the first tool snapshot.
+    """在第一次工具快照之前等待后台 MCP 发现完成。
 
-    ``thread.join(timeout)`` returns the INSTANT discovery completes, so this
-    only ever blocks for the real connect time of a still-pending server —
-    users with no MCP servers or fast servers pay ~0s.  The bound (from
-    ``mcp_discovery_timeout`` in config) just caps the wait so a dead server
-    can't freeze startup; servers that miss it are picked up by the automatic
-    late-binding refresh.
+    ``thread.join(timeout)`` 在发现完成的瞬间返回，所以这
+    只会阻塞仍在等待的服务器的实际连接时间——
+    没有 MCP 服务器或服务器响应快的用户等待约 0 秒。
+    边界（来自 config 中的 ``mcp_discovery_timeout``）只是限制等待时间，
+    这样挂掉的服务器不会冻结启动；错过边界的服务会被
+    自动后期绑定刷新捕获。
     """
     thread = _mcp_discovery_thread
     if thread is None or not thread.is_alive():

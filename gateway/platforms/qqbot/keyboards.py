@@ -1,30 +1,29 @@
-"""QQ Bot inline keyboards + approval / update-prompt senders.
+"""QQ Bot 内联键盘 + 审批 / 更新提示发送器。
 
-QQ Bot v2 supports attaching inline keyboards to outbound messages. When a
-user clicks a button, the platform dispatches an ``INTERACTION_CREATE``
-gateway event containing the button's ``data`` payload. The bot must ACK the
-interaction promptly via ``PUT /interactions/{id}`` or the user sees an
-error indicator on the button.
+QQ Bot v2 支持在出站消息中附加内联键盘。当用户点击按钮时，平台会派发
+一个包含按钮 ``data`` 载荷的 ``INTERACTION_CREATE`` 网关事件。Bot 必须
+通过 ``PUT /interactions/{id}`` 及时确认（ACK）该交互，否则用户将在
+按钮上看到错误指示图标。
 
-This module provides:
+本模块提供：
 
-- :class:`InlineKeyboard` + button dataclasses — serialized into the
-  ``keyboard`` field of the outbound message body.
-- :func:`build_approval_keyboard` — 3-button ✅ once / ⭐ always / ❌ deny
-  keyboard for tool-approval flows.
-- :func:`build_update_prompt_keyboard` — Yes/No keyboard for update confirms.
+- :class:`InlineKeyboard` + 按钮数据类 — 序列化为出站消息体中的
+  ``keyboard`` 字段。
+- :func:`build_approval_keyboard` — 用于工具审批流程的三按钮键盘：
+  ✅ 允许一次 / ⭐ 始终允许 / ❌ 拒绝。
+- :func:`build_update_prompt_keyboard` — 用于更新确认的是/否键盘。
 - :func:`parse_approval_button_data` / :func:`parse_update_prompt_button_data`
-  — decode the ``button_data`` payload from ``INTERACTION_CREATE``.
-- :class:`ApprovalRequest` + :class:`ApprovalSender` — high-level helper that
-  builds an approval message with keyboard and posts it to a c2c / group chat.
+  — 解码来自 ``INTERACTION_CREATE`` 的 ``button_data`` 载荷。
+- :class:`ApprovalRequest` + :class:`ApprovalSender` — 高层辅助类，
+  构建带键盘的审批消息并发送到 c2c / 群聊。
 
-``button_data`` formats::
+``button_data`` 格式::
 
     approve:<session_key>:<decision>      # decision = allow-once|allow-always|deny
     update_prompt:<answer>                # answer = y|n
 
-Ported from WideLee's qqbot-agent-sdk v1.2.2 (``approval.py`` + ``dto.py``
-keyboard types). Authorship preserved via Co-authored-by.
+移植自 WideLee 的 qqbot-agent-sdk v1.2.2（``approval.py`` + ``dto.py``
+键盘类型），通过 Co-authored-by 保留原作者信息。
 """
 
 from __future__ import annotations
@@ -36,27 +35,27 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# ── button_data prefixes + patterns ──────────────────────────────────
+# ── button_data 前缀与匹配模式 ──────────────────────────────────
 
 APPROVAL_BUTTON_PREFIX = "approve:"
 UPDATE_PROMPT_PREFIX = "update_prompt:"
 
-# Pattern: approve:<session_key>:<decision>
-# session_key may itself contain colons (e.g. agent:main:qqbot:c2c:OPENID),
-# so the session_key group is greedy but trails the decision.
+# 模式：approve:<session_key>:<decision>
+# session_key 本身可能包含冒号（如 agent:main:qqbot:c2c:OPENID），
+# 因此 session_key 分组为贪婪匹配，末尾为 decision。
 _APPROVAL_DATA_RE = re.compile(
     r"^approve:(.+):(allow-once|allow-always|deny)$"
 )
 
-# Pattern: update_prompt:y | update_prompt:n
+# 模式：update_prompt:y | update_prompt:n
 _UPDATE_PROMPT_RE = re.compile(r"^update_prompt:(y|n)$")
 
 
-# ── Keyboard dataclasses ─────────────────────────────────────────────
+# ── 键盘数据类 ─────────────────────────────────────────────
 
 @dataclass
 class KeyboardButtonPermission:
-    """Button permission metadata. ``type=2`` means all users can click."""
+    """按钮权限元数据。``type=2`` 表示所有用户均可点击。"""
     type: int = 2
 
     def to_dict(self) -> Dict[str, Any]:
@@ -65,14 +64,14 @@ class KeyboardButtonPermission:
 
 @dataclass
 class KeyboardButtonAction:
-    """What happens when the button is clicked.
+    """按钮被点击时触发的动作。
 
-    :param type: ``1`` (Callback — triggers ``INTERACTION_CREATE``) or
-        ``2`` (Link — opens a URL).
-    :param data: Payload delivered in ``data.resolved.button_data`` when
-        ``type=1``.
-    :param permission: :class:`KeyboardButtonPermission`.
-    :param click_limit: Max clicks per user (``1`` = single-use).
+    :param type: ``1``（回调 — 触发 ``INTERACTION_CREATE``）或
+        ``2``（链接 — 打开 URL）。
+    :param data: 当 ``type=1`` 时，在 ``data.resolved.button_data`` 中
+        传递的载荷。
+    :param permission: :class:`KeyboardButtonPermission`。
+    :param click_limit: 每位用户的最大点击次数（``1`` = 单次使用）。
     """
     type: int
     data: str
@@ -92,11 +91,11 @@ class KeyboardButtonAction:
 
 @dataclass
 class KeyboardButtonRenderData:
-    """Visual rendering of a button.
+    """按钮的视觉渲染数据。
 
-    :param label: Pre-click label.
-    :param visited_label: Post-click label (button stays greyed in place).
-    :param style: ``0`` = grey, ``1`` = blue.
+    :param label: 点击前显示的标签。
+    :param visited_label: 点击后显示的标签（按钮保持灰色原位）。
+    :param style: ``0`` = 灰色，``1`` = 蓝色。
     """
     label: str
     visited_label: str
@@ -112,10 +111,10 @@ class KeyboardButtonRenderData:
 
 @dataclass
 class KeyboardButton:
-    """One button in a keyboard.
+    """键盘中的单个按钮。
 
-    :param group_id: Buttons sharing a ``group_id`` are mutually exclusive —
-        clicking one greys the rest.
+    :param group_id: 共享同一 ``group_id`` 的按钮互斥 —
+        点击其中一个会使其余按钮变灰。
     """
     id: str
     render_data: KeyboardButtonRenderData
@@ -149,21 +148,21 @@ class KeyboardContent:
 
 @dataclass
 class InlineKeyboard:
-    """Top-level keyboard payload — goes into ``MessageToCreate.keyboard``."""
+    """顶层键盘载荷 — 填入 ``MessageToCreate.keyboard`` 字段。"""
     content: KeyboardContent = field(default_factory=KeyboardContent)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"content": self.content.to_dict()}
 
 
-# ── INTERACTION_CREATE parsing ───────────────────────────────────────
+# ── INTERACTION_CREATE 解析 ───────────────────────────────────────
 
 def parse_approval_button_data(button_data: str) -> Optional[tuple[str, str]]:
-    """Parse approval ``button_data`` into ``(session_key, decision)``.
+    """将审批 ``button_data`` 解析为 ``(session_key, decision)``。
 
-    :param button_data: Raw ``data.resolved.button_data`` from
-        ``INTERACTION_CREATE``.
-    :returns: ``(session_key, decision)`` or ``None`` if not an approval button.
+    :param button_data: 来自 ``INTERACTION_CREATE`` 的原始
+        ``data.resolved.button_data``。
+    :returns: ``(session_key, decision)`` 元组，若非审批按钮则返回 ``None``。
     """
     m = _APPROVAL_DATA_RE.match(button_data or "")
     if not m:
@@ -172,14 +171,14 @@ def parse_approval_button_data(button_data: str) -> Optional[tuple[str, str]]:
 
 
 def parse_update_prompt_button_data(button_data: str) -> Optional[str]:
-    """Parse update-prompt ``button_data`` into ``'y'`` or ``'n'``."""
+    """将更新提示 ``button_data`` 解析为 ``'y'`` 或 ``'n'``。"""
     m = _UPDATE_PROMPT_RE.match(button_data or "")
     if not m:
         return None
     return m.group(1)
 
 
-# ── Keyboard builders ────────────────────────────────────────────────
+# ── 键盘构建器 ────────────────────────────────────────────────
 
 def _make_callback_button(
     btn_id: str,
@@ -202,13 +201,13 @@ def _make_callback_button(
 
 
 def build_approval_keyboard(session_key: str) -> InlineKeyboard:
-    """Build the 3-button approval keyboard.
+    """构建三按钮审批键盘。
 
-    Layout: ``[✅ 允许一次] [⭐ 始终允许] [❌ 拒绝]`` — all three share
-    ``group_id='approval'`` so clicking one greys out the rest.
+    布局：``[✅ 允许一次] [⭐ 始终允许] [❌ 拒绝]`` — 三者共享
+    ``group_id='approval'``，点击其中一个会使其余按钮变灰。
 
-    :param session_key: Embedded into ``button_data`` so the decision
-        routes back to the right pending approval.
+    :param session_key: 嵌入 ``button_data``，以便决策能路由回正确的
+        待处理审批。
     """
     return InlineKeyboard(
         content=KeyboardContent(
@@ -245,7 +244,7 @@ def build_approval_keyboard(session_key: str) -> InlineKeyboard:
 
 
 def build_update_prompt_keyboard() -> InlineKeyboard:
-    """Build a Yes/No keyboard for update confirmation prompts."""
+    """构建用于更新确认提示的是/否键盘。"""
     return InlineKeyboard(
         content=KeyboardContent(
             rows=[
@@ -272,20 +271,20 @@ def build_update_prompt_keyboard() -> InlineKeyboard:
     )
 
 
-# ── ApprovalRequest + text builder ───────────────────────────────────
+# ── ApprovalRequest + 文本构建器 ───────────────────────────────────
 
 @dataclass
 class ApprovalRequest:
-    """Structured approval-request display data.
+    """结构化的审批请求展示数据。
 
-    :param session_key: Routes the decision back to the waiting caller.
-    :param title: Short title at the top.
-    :param description: Optional longer description.
-    :param command_preview: Command text (exec approvals).
-    :param cwd: Working directory (exec approvals).
-    :param tool_name: Tool name (plugin approvals).
-    :param severity: ``'critical' | 'info' | ''``.
-    :param timeout_sec: Seconds until the approval expires.
+    :param session_key: 将决策路由回等待中的调用方。
+    :param title: 顶部的简短标题。
+    :param description: 可选的详细描述。
+    :param command_preview: 命令文本（exec 审批）。
+    :param cwd: 工作目录（exec 审批）。
+    :param tool_name: 工具名称（插件审批）。
+    :param severity: ``'critical' | 'info' | ''``。
+    :param timeout_sec: 审批过期前的等待秒数。
     """
     session_key: str
     title: str
@@ -298,7 +297,7 @@ class ApprovalRequest:
 
 
 def build_approval_text(req: ApprovalRequest) -> str:
-    """Render an :class:`ApprovalRequest` into the message body (markdown)."""
+    """将 :class:`ApprovalRequest` 渲染为消息正文（markdown 格式）。"""
     if req.command_preview or req.cwd:
         return _build_exec_text(req)
     return _build_plugin_text(req)
@@ -340,18 +339,18 @@ def _build_plugin_text(req: ApprovalRequest) -> str:
 # ── ApprovalSender ───────────────────────────────────────────────────
 
 PostMessageFn = Callable[..., Awaitable[Dict[str, Any]]]
-"""Signature of an async POST to ``/v2/{users|groups}/{id}/messages``.
+"""向 ``/v2/{users|groups}/{id}/messages`` 发送异步 POST 的函数签名。
 
-Implementations accept a body dict and return the raw API response.
+实现接受一个 body 字典并返回原始 API 响应。
 """
 
 
 class ApprovalSender:
-    """Send an approval-request message with an inline keyboard.
+    """发送带有内联键盘的审批请求消息。
 
-    Decoupled from the adapter via callables so it can be unit-tested in
-    isolation. Pass the adapter's ``_send_message_with_keyboard`` helper
-    (or any equivalent) as ``post_message``.
+    通过可调用对象与适配器解耦，以便可以独立进行单元测试。
+    将适配器的 ``_send_message_with_keyboard`` 辅助方法
+    （或任意等价实现）作为 ``post_message`` 传入。
     """
 
     def __init__(
@@ -371,13 +370,13 @@ class ApprovalSender:
         req: ApprovalRequest,
         msg_id: Optional[str] = None,
     ) -> bool:
-        """Send an approval message to *chat_id*.
+        """向 *chat_id* 发送审批消息。
 
-        :param chat_type: ``'c2c'`` or ``'group'``.
-        :param chat_id: User openid or group openid.
-        :param req: :class:`ApprovalRequest`.
-        :param msg_id: Reply-to message id (required for passive messages).
-        :returns: ``True`` on success, ``False`` on failure.
+        :param chat_type: ``'c2c'`` 或 ``'group'``。
+        :param chat_id: 用户 openid 或群组 openid。
+        :param req: :class:`ApprovalRequest`。
+        :param msg_id: 回复的消息 id（被动消息必须提供）。
+        :returns: 成功返回 ``True``，失败返回 ``False``。
         """
         text = build_approval_text(req)
         keyboard = build_approval_keyboard(req.session_key)
@@ -411,25 +410,25 @@ class ApprovalSender:
             return False
 
 
-# ── INTERACTION_CREATE event shape ───────────────────────────────────
+# ── INTERACTION_CREATE 事件结构 ───────────────────────────────────
 
 @dataclass
 class InteractionEvent:
-    """Parsed ``INTERACTION_CREATE`` event payload.
+    """已解析的 ``INTERACTION_CREATE`` 事件载荷。
 
-    See https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/event-emit.html
+    参见 https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/event-emit.html
     """
     id: str = ""
-    """Interaction event id — required for the ``PUT /interactions/{id}`` ACK."""
+    """交互事件 id — ``PUT /interactions/{id}`` ACK 必须使用此值。"""
 
     type: int = 0
-    """Event type code (``11`` = message button)."""
+    """事件类型码（``11`` = 消息按钮）。"""
 
     chat_type: int = 0
-    """``0`` = guild, ``1`` = group, ``2`` = c2c."""
+    """``0`` = 频道，``1`` = 群组，``2`` = c2c。"""
 
     scene: str = ""
-    """``'guild'`` | ``'group'`` | ``'c2c'`` — human-readable scene."""
+    """``'guild'`` | ``'group'`` | ``'c2c'`` — 人类可读的场景标识。"""
 
     group_openid: str = ""
     group_member_openid: str = ""
@@ -443,7 +442,7 @@ class InteractionEvent:
 
     @property
     def operator_openid(self) -> str:
-        """Best available operator openid (group → member; c2c → user)."""
+        """可用的最佳操作者 openid（群组 → 成员；c2c → 用户）。"""
         return (
             self.group_member_openid
             or self.user_openid
@@ -452,7 +451,7 @@ class InteractionEvent:
 
 
 def parse_interaction_event(raw: Dict[str, Any]) -> InteractionEvent:
-    """Parse a raw ``INTERACTION_CREATE`` dispatch payload (``d``)."""
+    """解析原始 ``INTERACTION_CREATE`` 派发载荷（``d`` 字段）。"""
     data_raw = raw.get("data") or {}
     resolved = data_raw.get("resolved") or {}
     scene_code = int(raw.get("chat_type", 0) or 0)

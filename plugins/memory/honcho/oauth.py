@@ -1,13 +1,13 @@
-"""OAuth credential storage and refresh for the Honcho memory provider.
+"""Honcho memory provider 的 OAuth 凭据存储与刷新。
 
-An access token authenticates exactly like a scoped API key, so it is stored
-as the host's ``apiKey``; this module exchanges the refresh token before
-expiry to keep it live.
+access token 的认证方式与作用域 API key 完全一致，因此被存储为 host 的
+``apiKey``；本模块在 access token 过期前通过 refresh token 换取新 token，
+以保持其持续有效。
 
-Refresh tokens rotate with single-use reuse detection: a replayed stale token
-revokes the whole grant. So every refresh must persist the rotated token
-atomically and be serialized — and a failed refresh never raises into the
-agent (stale token stays; the fail-open path absorbs the eventual 401).
+refresh token 采用单次使用 + 重放检测机制：重放已用过的旧 token 会导致
+整个授权被撤销。因此每次刷新都必须原子性地持久化轮换后的新 token，且必
+须串行执行；刷新失败时不会向 agent 抛出异常（保留旧 token，由 fail-open
+路径吸收后续的 401 错误）。
 """
 
 from __future__ import annotations

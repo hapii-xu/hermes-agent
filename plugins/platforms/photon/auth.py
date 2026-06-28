@@ -1,37 +1,33 @@
 """
-Photon Dashboard API client + device-code login flow.
+Photon Dashboard API 客户端 + 设备码登录流程。
 
-This module is pure Python — it intentionally does not depend on
-``spectrum-ts``.  Every management-plane operation (login, find/create
-project, rotate the project secret, register a user, list the assigned
-iMessage line) talks to Photon's **Dashboard API** on a single host,
-exactly like the official Photon CLI (``photon-hq/cli``):
+本模块为纯 Python —— 有意不依赖 ``spectrum-ts``。所有管理面操作（登录、查找/创建
+项目、轮换项目密钥、注册用户、列出已分配的 iMessage 线路）都与官方 Photon CLI
+（``photon-hq/cli``）一样，通过同一主机上的 **Dashboard API** 进行：
 
     Dashboard API   https://app.photon.codes/api/...
-                    OAuth 2.0 device flow, Bearer access token
+                    OAuth 2.0 设备流程，Bearer 访问令牌
 
-A Photon project has a single identifier: the dashboard ``id`` *is* the
-Spectrum Cloud project id. They used to diverge (a separate
-``spectrumProjectId`` field), but the dashboard unified them — every
-project is created with matching ids and the pre-existing diverged rows
-were backfilled so ``project.id == spectrumProjectId`` everywhere
-(dashboard ENG-1582). Spectrum is always enabled and provisioned at
-create-time, so there is no enable/toggle step anymore.
+Photon 项目只有一个标识符：Dashboard 的 ``id`` *就是* Spectrum Cloud 项目 id。
+它们曾经不同（有一个独立的 ``spectrumProjectId`` 字段），但 Dashboard 已将其统一
+—— 每个项目创建时 id 一致，且早期不同的行已被回填，使得
+``project.id == spectrumProjectId`` 在所有地方成立（dashboard ENG-1582）。
+Spectrum 始终启用并在创建时预配，因此不再有启用/切换步骤。
 
-The ``spectrum-ts`` SDK (run by the Node sidecar) authenticates to Spectrum
-Cloud with ``(id, projectSecret)`` — the same ``id`` used in Dashboard API
-paths — which we persist as ``PHOTON_PROJECT_ID`` for the runtime.
+``spectrum-ts`` SDK（由 Node sidecar 运行）使用 ``(id, projectSecret)`` 向
+Spectrum Cloud 认证 —— 这与 Dashboard API 路径中使用的 ``id`` 相同 ——
+我们将其持久化为 ``PHOTON_PROJECT_ID`` 供运行时使用。
 
-Credential storage mirrors every other Hermes channel:
+凭据存储与其他所有 Hermes 通道一致：
 
-    * runtime SDK creds  -> ``~/.hermes/.env``  (``PHOTON_PROJECT_ID`` =
-      project id, ``PHOTON_PROJECT_SECRET``) via ``save_env_value``
-    * management metadata -> ``~/.hermes/auth.json`` under
-      ``credential_pool.photon`` (device token),
-      ``credential_pool.photon_project`` (dashboard id, spectrum id, name), and
-      ``credential_pool.photon_user`` (operator number + assigned text line)
+    * 运行时 SDK 凭据  -> ``~/.hermes/.env``（``PHOTON_PROJECT_ID`` =
+      项目 id，``PHOTON_PROJECT_SECRET``）通过 ``save_env_value``
+    * 管理元数据 -> ``~/.hermes/auth.json`` 中的
+      ``credential_pool.photon``（设备令牌）、
+      ``credential_pool.photon_project``（dashboard id、spectrum id、名称）以及
+      ``credential_pool.photon_user``（操作员号码 + 已分配的文本线路）
 
-Reference: https://github.com/photon-hq/cli and
+参考：https://github.com/photon-hq/cli 和
 https://photon.codes/docs/api-reference/device-login/request-device-+-user-code
 """
 from __future__ import annotations
@@ -48,45 +44,45 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import httpx
-except ImportError:  # pragma: no cover - httpx is a hermes dependency
+except ImportError:  # pragma: no cover - httpx 是 hermes 的依赖项
     httpx = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
 
 class PhotonDashboardAuthError(RuntimeError):
-    """Raised when Photon rejects a device-flow token for the dashboard API."""
+    """当 Photon 拒绝 Dashboard API 的设备流程令牌时抛出。"""
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 
-# Hosted Photon allowlists registered device clients on the device-code
-# endpoint — an unregistered client_id is rejected with
-# `400 {"error":"invalid_client"}`.  Use Photon's published CLI device
-# client (matches `CLI_CLIENT_ID` in photon-hq/cli) until the dashboard API
-# registers Hermes as its own client_id.
+# 托管的 Photon 允许列表在设备码端点上注册了设备客户端 ——
+# 未注册的 client_id 会被拒绝，返回
+# `400 {"error":"invalid_client"}`。在 Dashboard API 将 Hermes 注册为
+# 自己的 client_id 之前，使用 Photon 发布的 CLI 设备客户端
+# （与 photon-hq/cli 中的 `CLI_CLIENT_ID` 匹配）。
 DEFAULT_CLIENT_ID = "photon-cli"
 DEFAULT_SCOPE = "openid profile email"
 
 DEFAULT_DASHBOARD_HOST = "https://app.photon.codes"
 DEFAULT_SPECTRUM_HOST = "https://spectrum.photon.codes"
 
-# Default name of the project Hermes provisions for the operator.
+# Hermes 为操作员预配的项目的默认名称。
 DEFAULT_PROJECT_NAME = "Hermes Agent"
 
-# Polling defaults per RFC 8628.  Photon overrides via `interval` /
-# `expires_in` in the device-code response — those win.
+# 每个 RFC 8628 的轮询默认值。Photon 通过设备码响应中的
+# `interval` / `expires_in` 覆盖 —— 那些值优先。
 DEFAULT_POLL_INTERVAL = 5
-DEFAULT_POLL_TIMEOUT = 1800  # 30 min, matching the CLI's fallback
+DEFAULT_POLL_TIMEOUT = 1800  # 30 分钟，与 CLI 的回退值匹配
 
 E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
 
 
 # ---------------------------------------------------------------------------
-# auth.json helpers — share the file with the rest of hermes-agent.
+# auth.json 辅助函数 — 与 hermes-agent 的其他部分共享该文件。
 
 def _auth_json_path() -> Path:
-    """Resolve ``~/.hermes/auth.json`` honouring the active Hermes profile."""
+    """解析 ``~/.hermes/auth.json``，遵循当前活动的 Hermes 配置。"""
     try:
         from hermes_constants import get_hermes_home
         return Path(get_hermes_home()) / "auth.json"
@@ -120,14 +116,14 @@ def _save_auth(data: Dict[str, Any]) -> None:
 
 
 def load_photon_token() -> Optional[str]:
-    """Return the device-flow bearer token stored by ``login()`` or ``None``."""
+    """返回 ``login()`` 存储的设备流程 bearer 令牌，若不存在则返回 ``None``。"""
     auth = _load_auth()
     pool = auth.get("credential_pool", {}).get("photon") or []
     if isinstance(pool, list) and pool:
         token = pool[0].get("access_token") or pool[0].get("token")
         if token:
             return str(token)
-    # Backwards-compat shape: providers.photon.access_token
+    # 向后兼容格式：providers.photon.access_token
     legacy = auth.get("providers", {}).get("photon", {})
     if legacy.get("access_token"):
         return str(legacy["access_token"])

@@ -1,41 +1,41 @@
 # periodic-table
 
-Grid of categorized elements with consistent cell formatting.
+分类元素组成的网格，单元格格式统一。
 
-## Structure
+## 结构
 
-- Rectangular grid
-- Each cell is one element
-- Color-coded categories
-- Consistent cell format
-- Optional grouping gaps
+- 矩形网格
+- 每个单元格代表一个元素
+- 类别用颜色编码
+- 单元格格式一致
+- 可选的分组间隔
 
-## Best For
+## 最适用于
 
-- Categorized collections
-- Tool/resource catalogs
-- Skill matrices
-- Element collections
-- Reference guides
+- 分类集合
+- 工具/资源目录
+- 技能矩阵
+- 元素合集
+- 参考指南
 
-## Visual Elements
+## 视觉元素
 
-- Uniform cell sizes
-- Category colors
-- Symbol/abbreviation prominent
-- Small icon per cell
-- Category legend
+- 统一的单元格尺寸
+- 类别颜色
+- 符号/缩写突出
+- 每个单元格配小图标
+- 类别图例
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Cell: symbol, name, brief info
-- Category names in legend
-- Optional row/column headers
-- Footnotes for special cases
+- 标题置于顶部
+- 单元格内：符号、名称、简短信息
+- 图例中标注类别名称
+- 可选的行/列表头
+- 特殊情况配脚注
 
-## Recommended Pairings
+## 推荐搭配
 
-- `pop-art`: Vibrant element grids
-- `pixel-art`: Retro collection displays
-- `corporate-memphis`: Business tool catalogs
+- `pop-art`：鲜亮的元素网格
+- `pixel-art`：复古合集展示
+- `corporate-memphis`：商业工具目录

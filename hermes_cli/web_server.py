@@ -1,11 +1,10 @@
 """
-Hermes Agent — Web UI server.
+Hermes Agent — Web UI 服务器。
 
-Provides a FastAPI backend serving the Vite/React frontend and REST API
-endpoints for managing configuration, environment variables, and sessions.
+提供 FastAPI 后端，服务于 Vite/React 前端，以及用于管理配置、环境变量和会话的 REST API 端点。
 
-Usage:
-    python -m hermes_cli.main web          # Start on http://127.0.0.1:9119
+用法:
+    python -m hermes_cli.main web          # 启动于 http://127.0.0.1:9119
     python -m hermes_cli.main web --port 8080
 """
 
@@ -89,9 +88,9 @@ try:
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 except ImportError:
-    # First try lazy-installing the dashboard extras. Only the user actually
-    # running `hermes dashboard` needs fastapi+uvicorn; lazy install keeps
-    # them out of every other install path. After install, re-import.
+    # 首先尝试延迟安装 dashboard 扩展包。只有实际运行
+    # `hermes dashboard` 的用户才需要 fastapi+uvicorn；延迟安装可确保它们
+    # 不会出现在其他安装路径中。安装完成后重新导入。
     try:
         from tools.lazy_deps import ensure as _lazy_ensure
         _lazy_ensure("tool.dashboard", prompt=False)
@@ -113,30 +112,28 @@ WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.enviro
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Per-channel subscriber registry used by /api/pub (PTY-side gateway → dashboard)
-# and /api/events (dashboard → browser sidebar).  Keyed by an opaque channel id
-# the chat tab generates on mount; entries auto-evict when the last subscriber
-# drops AND the publisher has disconnected.
+# 每个频道的订阅者注册表，供 /api/pub（PTY 侧 gateway → dashboard）
+# 和 /api/events（dashboard → 浏览器侧边栏）使用。以一个不透明的 channel id
+# 为键（由聊天标签页在挂载时生成）；当最后一个订阅者断开且发布者也已
+# 断开连接时，条目会自动清除。
 #
-# State lives on app.state (not module-level globals) so that asyncio.Lock is
-# created on the running event loop during lifespan startup.  A module-level
-# asyncio.Lock() binds to whatever loop was active at import time, which breaks
-# when the same module is used across TestClient instances or uvicorn reloads.
+# 状态存储在 app.state 上（而非模块级全局变量），这样 asyncio.Lock 会在
+# lifespan 启动时绑定到正在运行的事件循环上创建。模块级的 asyncio.Lock()
+# 会绑定到导入时激活的任何循环上，当同一模块跨 TestClient 实例或
+# uvicorn 重载使用时会出问题。
 # ---------------------------------------------------------------------------
 
 def _start_desktop_cron_ticker(stop_event: "threading.Event", interval: int = 60) -> None:
-    """Tick the cron scheduler from inside the desktop dashboard backend.
+    """从桌面 dashboard 后端触发 cron 调度器。
 
-    The scheduler tick loop normally lives in ``hermes gateway run`` — but the
-    desktop app spawns a ``hermes dashboard`` backend, not a gateway, so a cron
-    a user creates in the app would never fire. We run the resolved cron
-    scheduler provider here (no live adapters; delivery falls back to the
-    per-platform send path).
+    调度器触发循环通常位于 ``hermes gateway run`` 中——但桌面应用生成的是
+    ``hermes dashboard`` 后端而非 gateway，因此用户在应用中创建的 cron
+    任务永远不会触发。我们在此运行已解析的 cron 调度器提供者
+    （没有活跃适配器；投递回退到每平台发送路径）。
 
-    Cross-process safe: the built-in provider's ``cron.scheduler.tick`` takes
-    the ``cron/.tick.lock`` file lock, so this never double-fires alongside a
-    real gateway on the same HERMES_HOME — whichever process grabs the lock
-    first wins the tick.
+    跨进程安全：内置提供者的 ``cron.scheduler.tick`` 会获取
+    ``cron/.tick.lock`` 文件锁，因此它绝不会与同一 HERMES_HOME 上的真实
+    gateway 同时触发——哪个进程先获得锁就赢得触发权。
     """
     from cron.scheduler_provider import resolve_cron_scheduler
 
@@ -165,23 +162,22 @@ def _resolve_restart_drain_timeout() -> float:
 async def _lifespan(app: "FastAPI"):
     app.state.event_channels = {}  # dict[str, set]
     app.state.event_lock = asyncio.Lock()
-    # Serializes chat-argv resolution so concurrent /api/pty connections
-    # don't trigger overlapping ``npm install`` / ``npm run build`` work.
-    # On app.state (not a module global) so the Lock binds to the running
-    # event loop during lifespan startup — see _get_event_state's docstring.
+    # 序列化 chat-argv 解析，使并发的 /api/pty 连接不会触发重叠的
+    # ``npm install`` / ``npm run build`` 工作。
+    # 放在 app.state 上（而非模块全局变量），以便 Lock 在 lifespan 启动时
+    # 绑定到正在运行的事件循环——参见 _get_event_state 的文档字符串。
     app.state.chat_argv_lock = asyncio.Lock()
 
-    # Fire hermes_cli.gateway import into a background thread so the event
-    # loop is not blocked and HERMES_DASHBOARD_READY fires without delay.
-    # On a cold Windows install the module chain triggers .pyc compilation
-    # and Defender real-time scans that can stall the event loop for 15-30s.
-    # Running in an executor means the cost is paid in a worker thread while
-    # the server socket is already open and accepting probes.
+    # 将 hermes_cli.gateway 导入放入后台线程，避免阻塞事件循环，
+    # 使 HERMES_DASHBOARD_READY 能立即触发。在冷启动的 Windows 安装中，
+    # 模块链会触发 .pyc 编译和 Defender 实时扫描，可能使事件循环
+    # 停滞 15-30 秒。在 executor 中运行意味着开销由工作线程承担，
+    # 而服务器套接字已经打开并接受探测。
     asyncio.get_event_loop().run_in_executor(None, _warm_gateway_module)
 
-    # Desktop-spawned backends (HERMES_DESKTOP=1) fire cron jobs themselves,
-    # since the app has no gateway running the scheduler. Server `hermes
-    # dashboard` is unaffected — it relies on its own gateway.
+    # 桌面启动的后端（HERMES_DESKTOP=1）自行触发 cron 任务，
+    # 因为应用没有运行调度器的 gateway。服务器 `hermes dashboard`
+    # 不受影响——它依赖自己的 gateway。
     cron_stop: "threading.Event | None" = None
     cron_thread: "threading.Thread | None" = None
     if os.getenv("HERMES_DESKTOP") == "1":
@@ -202,13 +198,12 @@ async def _lifespan(app: "FastAPI"):
 
 
 def _get_event_state(app: "FastAPI"):
-    """Return (event_channels, event_lock) from app.state.
+    """从 app.state 返回 (event_channels, event_lock)。
 
-    Lazily initialises the state if the lifespan hasn't run (e.g. when
-    TestClient is constructed without a ``with`` block).  The lifespan
-    path is preferred because it guarantees the Lock is created on the
-    correct event loop, but the lazy path lets existing non-``with``
-    TestClient usages keep working.
+    如果 lifespan 尚未运行则延迟初始化状态（例如当 TestClient 在没有
+    ``with`` 块的情况下构造时）。lifespan 路径是首选的，因为它保证
+    Lock 在正确的事件循环上创建，但延迟路径让现有的非 ``with``
+    TestClient 用法继续工作。
     """
     try:
         return app.state.event_channels, app.state.event_lock
@@ -219,11 +214,11 @@ def _get_event_state(app: "FastAPI"):
 
 
 def _get_chat_argv_lock(app: "FastAPI") -> asyncio.Lock:
-    """Return the chat-argv resolution lock from app.state.
+    """从 app.state 返回 chat-argv 解析锁。
 
-    Mirrors :func:`_get_event_state`: prefers the lifespan-initialised Lock
-    (created on the correct event loop) but lazily initialises it for
-    non-``with`` TestClient usages.
+    与 :func:`_get_event_state` 类似：首选 lifespan 初始化的 Lock
+    （在正确的事件循环上创建），但为非 ``with`` 的 TestClient 用法
+    延迟初始化。
     """
     try:
         return app.state.chat_argv_lock
@@ -234,38 +229,35 @@ def _get_chat_argv_lock(app: "FastAPI") -> asyncio.Lock:
 
 app = FastAPI(title="Hermes Agent", version=__version__, lifespan=_lifespan)
 
-# Memory-provider OAuth connect routes live in the memory layer, not here.
+# Memory provider 的 OAuth 连接路由位于 memory 层，而非此处。
 from hermes_cli.memory_oauth import router as _memory_oauth_router  # noqa: E402
 
 app.include_router(_memory_oauth_router)
 
 # ---------------------------------------------------------------------------
-# Session token for protecting sensitive endpoints (reveal).
-# The desktop shell mints the token and injects it via
-# HERMES_DASHBOARD_SESSION_TOKEN so its main process can authenticate the
-# /api calls it makes on the user's behalf; otherwise we generate one fresh
-# on every server start. Either way it dies when the process exits and is
-# injected into the SPA HTML so only the legitimate web UI can use it.
+# 用于保护敏感端点（reveal）的会话令牌。
+# 桌面外壳生成令牌并通过 HERMES_DASHBOARD_SESSION_TOKEN 注入，
+# 使其主进程可以验证代表用户发出的 /api 调用；否则我们在每次服务器
+# 启动时生成一个新令牌。无论哪种方式，令牌在进程退出时失效，并注入
+# 到 SPA HTML 中，因此只有合法的 Web UI 可以使用它。
 # ---------------------------------------------------------------------------
 _SESSION_TOKEN = os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN") or secrets.token_urlsafe(32)
 _SESSION_HEADER_NAME = "X-Hermes-Session-Token"
 
-# In-browser Chat tab (/chat, /api/pty, /api/ws, …).  Always enabled: the
-# desktop app and the dashboard's own Chat tab both drive the agent over the
-# `/api/ws` + `/api/pty` WebSockets, so the embedded-chat surface is an
-# unconditional part of the dashboard.  Kept as a module-level constant (rather
-# than inlining ``True`` at every gate) so the WS endpoints and the SPA token
-# injection share a single, testable seam.
+# 浏览器内聊天标签页（/chat, /api/pty, /api/ws, …）。始终启用：桌面应用
+# 和 dashboard 自己的聊天标签页都通过 `/api/ws` + `/api/pty` WebSocket
+# 驱动 agent，因此嵌入式聊天界面是 dashboard 的无条件组成部分。保留为模块级
+# 常量（而非在每个门控处内联 ``True``），以便 WebSocket 端点和 SPA token
+# 注入共享一个可测试的接缝。
 _DASHBOARD_EMBEDDED_CHAT_ENABLED = True
 
-# Simple rate limiter for the reveal endpoint
+# reveal 端点的简单速率限制器
 _reveal_timestamps: List[float] = []
 _REVEAL_MAX_PER_WINDOW = 5
 _REVEAL_WINDOW_SECONDS = 30
 
-# CORS: restrict to localhost origins only.  The web UI is intended to run
-# locally; binding to 0.0.0.0 with allow_origins=["*"] would let any website
-# read/modify config and secrets.
+# CORS：仅限制为 localhost 源。Web UI 旨在本地运行；绑定到 0.0.0.0 并设置
+# allow_origins=["*"] 会让任何网站读取/修改配置和密钥。
 
 app.add_middleware(
     CORSMiddleware,
@@ -275,17 +267,15 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Endpoints that do NOT require the session token.  Everything else under
-# /api/ is gated by the auth middleware below.
+# 不需要会话令牌的端点。/api/ 下的其他所有内容都由下面的身份验证中间件
+# 保护。
 #
-# This list is defined in ``hermes_cli.dashboard_auth.public_paths`` so the
-# OAuth gate middleware can honour the same allowlist — keeping the two
-# gates in lockstep avoids drift like the wildcard-subdomain regression
-# where ``/api/status`` was public under the legacy gate but 401'd under
-# the OAuth gate (breaking the portal's liveness probe).
+# 此列表定义在 ``hermes_cli.dashboard_auth.public_paths`` 中，以便 OAuth
+# 门控中间件可以遵循相同的允许列表——保持两个门控同步可避免像通配符
+# 子域名回归那样的漂移问题，该问题导致 ``/api/status`` 在旧门控下公开，
+# 但在 OAuth 门控下返回 401（破坏了门户的活性探测）。
 #
-# Keep the upstream list minimal — only truly non-sensitive, read-only
-# endpoints belong there.
+# 保持上游列表最小化——只有真正非敏感的只读端点才应该放在那里。
 # ---------------------------------------------------------------------------
 from hermes_cli.dashboard_auth.public_paths import (
     PUBLIC_API_PATHS as _PUBLIC_API_PATHS,
@@ -293,12 +283,11 @@ from hermes_cli.dashboard_auth.public_paths import (
 
 
 def _has_valid_session_token(request: Request) -> bool:
-    """True if the request carries a valid dashboard session token.
+    """如果请求携带有效的 dashboard 会话令牌则返回 True。
 
-    The dedicated session header avoids collisions with reverse proxies that
-    already use ``Authorization`` (for example Caddy ``basic_auth``). We still
-    accept the legacy Bearer path for backward compatibility with older
-    dashboard bundles.
+    专用会话头可避免与已使用 ``Authorization`` 的反向代理冲突
+    （例如 Caddy ``basic_auth``）。我们仍然接受旧版 Bearer 路径，
+    以便与较旧的 dashboard 包向后兼容。
     """
     session_header = request.headers.get(_SESSION_HEADER_NAME, "")
     if session_header and hmac.compare_digest(
@@ -312,9 +301,9 @@ def _has_valid_session_token(request: Request) -> bool:
     return hmac.compare_digest(auth.encode(), expected.encode())
 
 
-# Routes that may also authenticate via a ``?token=`` query param, for download
-# links opened by the OS shell or a new browser tab where the session header
-# can't be set. Kept narrow — same query-token tradeoff as the /api/pty WS.
+# 也可以通过 ``?token=`` 查询参数进行身份验证的路由，用于操作系统外壳
+# 或新浏览器标签页打开的下载链接（无法设置会话头的情况）。范围保持
+# 最小——与 /api/pty WebSocket 的查询令牌权衡相同。
 _QUERY_TOKEN_API_PATHS: frozenset[str] = frozenset({"/api/files/download"})
 
 
@@ -326,28 +315,25 @@ def _has_valid_query_token(request: Request, path: str) -> bool:
 
 
 def _require_token(request: Request) -> None:
-    """Authorize a sensitive endpoint, raising 401 if the caller isn't allowed.
+    """授权敏感端点，如果调用者未被允许则抛出 401。
 
-    Two auth schemes protect the dashboard, exactly one active per bind:
+    两种身份验证方案保护 dashboard，每次绑定只激活其中一种：
 
-    * **Loopback / ``--insecure`` mode** (``auth_required`` False): the
-      ephemeral ``_SESSION_TOKEN`` is injected into the SPA HTML and echoed
-      back via ``X-Hermes-Session-Token`` (or the legacy ``Bearer`` header).
-      Validate it here.
-    * **Gated / OAuth mode** (``auth_required`` True): ``_SESSION_TOKEN`` is
-      NOT injected (the SPA authenticates with a session cookie), so there is
-      no token to check. The ``gated_auth_middleware`` has already verified the
-      cookie before the request reached this handler — any non-public ``/api/``
-      route it lets through carries a verified ``request.state.session``. The
-      legacy ``auth_middleware`` likewise short-circuits in this mode. Requiring
-      the (absent) token here would 401 every cookie-authenticated request,
-      making plugin install/enable/disable and the other ``_require_token``
-      endpoints permanently unreachable behind the gate. Defer to the gate.
+    * **环回 / ``--insecure`` 模式**（``auth_required`` 为 False）：临时
+      ``_SESSION_TOKEN`` 被注入到 SPA HTML 中，并通过
+      ``X-Hermes-Session-Token``（或旧版 ``Bearer`` 头）回传。在此处验证。
+    * **门控 / OAuth 模式**（``auth_required`` 为 True）：``_SESSION_TOKEN``
+      不被注入（SPA 使用会话 cookie 进行身份验证），因此没有令牌可供检查。
+      ``gated_auth_middleware`` 在请求到达此处理程序之前已验证 cookie——
+      它放行的任何非公开 ``/api/`` 路由都携带已验证的
+      ``request.state.session``。旧版 ``auth_middleware`` 在此模式下同样
+      短路。要求（不存在的）令牌会使所有 cookie 身份验证的请求返回 401，
+      使插件安装/启用/禁用和其他 ``_require_token`` 端点在门控后永久无法
+      访问。交由门控处理。
     """
     if getattr(request.app.state, "auth_required", False):
-        # Gate is authoritative. It attaches ``request.state.session`` on
-        # success and 401s otherwise, so a request that reached us is already
-        # authenticated. Belt-and-braces: confirm the session is present.
+        # 门控是权威的。成功时附加 ``request.state.session``，否则返回 401，
+        # 因此到达我们的请求已经过身份验证。双重保险：确认 session 存在。
         if getattr(request.state, "session", None) is not None:
             return
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -355,75 +341,71 @@ def _require_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-# Accepted Host header values for loopback binds. DNS rebinding attacks
-# point a victim browser at an attacker-controlled hostname (evil.test)
-# which resolves to 127.0.0.1 after a TTL flip — bypassing same-origin
-# checks because the browser now considers evil.test and our dashboard
-# "same origin". Validating the Host header at the app layer rejects any
-# request whose Host isn't one we bound for. See GHSA-ppp5-vxwm-4cf7.
+# 环回绑定接受的有效 Host 头值。DNS 重绑定攻击将受害者浏览器指向攻击者
+# 控制的主机名（evil.test），该主机名在 TTL 翻转后解析为 127.0.0.1——绕过
+# 同源检查，因为浏览器现在认为 evil.test 和我们的 dashboard 是"同源"。
+# 在应用层验证 Host 头可拒绝任何 Host 不是我们绑定目标的请求。
+# 参见 GHSA-ppp5-vxwm-4cf7。
 _LOOPBACK_HOST_VALUES: frozenset = frozenset({
     "localhost", "127.0.0.1", "::1",
 })
 
 
 def should_require_auth(host: str, allow_public: bool = False) -> bool:
-    """Return True iff the dashboard auth gate must be active.
+    """当且仅当 dashboard 身份验证门控必须激活时返回 True。
 
-    Truth table:
-      host == loopback        → False (no auth — local-only, trusted operator)
-      host != loopback        → True  (gate engages — OAuth or password required)
+    真值表：
+      host == 环回        → False（无身份验证——仅本地，可信操作员）
+      host != 环回        → True  （门控启动——需要 OAuth 或密码）
 
-    "Loopback" is 127.0.0.1, localhost, ::1. RFC1918 / CGNAT / link-local are
-    deliberately treated as PUBLIC — a hostile device on the same LAN is exactly
-    the threat model the gate is designed for.
+    "环回"指 127.0.0.1、localhost、::1。RFC1918 / CGNAT / 链路本地地址
+    被故意视为 PUBLIC——同一 LAN 上的恶意设备正是门控设计要防范的威胁模型。
 
-    ``allow_public`` (the legacy ``--insecure`` escape hatch) NO LONGER disables
-    the gate. It is accepted for backward-compat with old launch scripts and
-    desktop shells but is ignored: a non-loopback bind ALWAYS requires an auth
-    provider (OAuth or the bundled password provider). This closes the
-    unauthenticated-public-dashboard hole behind the June 2026 ``hermes-0day``
-    MCP-persistence campaign, where ``--insecure --host 0.0.0.0`` left the
-    config/MCP/agent surface open to internet scanners.
+    ``allow_public``（旧版 ``--insecure`` 逃生舱）不再禁用门控。它被接受
+    是为了与旧版启动脚本和桌面外壳向后兼容，但会被忽略：非环回绑定始终
+    需要身份验证提供者（OAuth 或内置密码提供者）。这关闭了 2026 年 6 月
+    ``hermes-0day`` MCP 持久化攻击背后的未认证公开 dashboard 漏洞，
+    该攻击中 ``--insecure --host 0.0.0.0`` 使配置/MCP/agent 表面对
+    互联网扫描器开放。
     """
     return host not in _LOOPBACK_HOST_VALUES
 
 
 def _is_accepted_host(host_header: str, bound_host: str) -> bool:
-    """True if the Host header targets the interface we bound to.
+    """如果 Host 头指向我们绑定的接口则返回 True。
 
-    Accepts:
-    - Exact bound host (with or without port suffix)
-    - Loopback aliases when bound to loopback
-    - Any host when bound to 0.0.0.0 (explicit opt-in to non-loopback,
-      no protection possible at this layer)
+    接受：
+    - 精确的绑定主机（带或不带端口后缀）
+    - 绑定到环回时的环回别名
+    - 绑定到 0.0.0.0 时的任何主机（明确选择非环回，此层无法保护）
     """
     if not host_header:
         return False
-    # Strip port suffix. IPv6 addresses use bracket notation:
-    #   [::1]         — no port
-    #   [::1]:9119    — with port
-    # Plain hosts/v4:
+    # 去除端口后缀。IPv6 地址使用方括号表示法：
+    #   [::1]         — 无端口
+    #   [::1]:9119    — 带端口
+    # 普通主机/IPv4：
     #   localhost:9119
     #   127.0.0.1:9119
     h = host_header.strip()
     if h.startswith("["):
-        # IPv6 bracketed — port (if any) follows "]:"
+        # IPv6 方括号——端口（如果有）跟在 "]:" 后面
         close = h.find("]")
         if close != -1:
-            host_only = h[1:close]  # strip brackets
+            host_only = h[1:close]  # 去除方括号
         else:
             host_only = h.strip("[]")
     else:
         host_only = h.rsplit(":", 1)[0] if ":" in h else h
     host_only = host_only.lower()
 
-    # 0.0.0.0 bind means operator explicitly opted into all-interfaces
-    # (requires --insecure per web_server.start_server). No Host-layer
-    # defence can protect that mode; rely on operator network controls.
+    # 0.0.0.0 绑定意味着操作员明确选择了所有接口
+    #（根据 web_server.start_server 需要 --insecure）。没有 Host 层防御
+    # 可以保护该模式；依赖操作员的网络控制。
     if bound_host in {"0.0.0.0", "::"}:
         return True
 
-    # Loopback bind: accept the loopback names
+    # 环回绑定：接受环回名称
     bound_lc = bound_host.lower()
     if bound_lc in _LOOPBACK_HOST_VALUES:
         return host_only in _LOOPBACK_HOST_VALUES
@@ -434,18 +416,17 @@ def _is_accepted_host(host_header: str, bound_host: str) -> bool:
 
 @app.middleware("http")
 async def host_header_middleware(request: Request, call_next):
-    """Reject requests whose Host header doesn't match the bound interface.
+    """拒绝 Host 头与绑定接口不匹配的请求。
 
-    Defends against DNS rebinding: a victim browser on a localhost
-    dashboard is tricked into fetching from an attacker hostname that
-    TTL-flips to 127.0.0.1. CORS and same-origin checks don't help —
-    the browser now treats the attacker origin as same-origin with the
-    dashboard. Host-header validation at the app layer catches it.
+    防御 DNS 重绑定：受害者浏览器上的 localhost dashboard 被诱骗从攻击者
+    主机名获取数据，该主机名通过 TTL 翻转解析为 127.0.0.1。CORS 和同源
+    检查无济于事——浏览器现在将攻击者源视为与 dashboard 同源。应用层的
+    Host 头验证可以捕获此问题。
 
-    See GHSA-ppp5-vxwm-4cf7.
+    参见 GHSA-ppp5-vxwm-4cf7。
     """
-    # Store the bound host on app.state so this middleware can read it —
-    # set by start_server() at listen time.
+    # 将绑定的主机存储在 app.state 上，以便此中间件可以读取它——
+    # 由 start_server() 在监听时设置。
     bound_host = getattr(app.state, "bound_host", None)
     if bound_host:
         host_header = request.headers.get("host", "")
@@ -463,11 +444,11 @@ async def host_header_middleware(request: Request, call_next):
 
 
 # ---------------------------------------------------------------------------
-# Dashboard OAuth auth gate — engaged only when start_server flags the
-# bind as non-loopback-without-insecure.  No-op pass-through in loopback
-# mode so the legacy auth_middleware (below) handles those binds via
-# the injected ``_SESSION_TOKEN``.  Registered between host_header and
-# auth_middleware so the order is: host check → cookie auth → token auth.
+# Dashboard OAuth 身份验证门控——仅当 start_server 将绑定标记为
+# 非环回且未使用 insecure 模式时启用。在环回模式下为无操作直通，
+# 以便旧版 auth_middleware（下方）通过注入的 ``_SESSION_TOKEN`` 处理
+# 这些绑定。注册在 host_header 和 auth_middleware 之间，顺序为：
+# host 检查 → cookie 认证 → token 认证。
 # ---------------------------------------------------------------------------
 
 
@@ -479,10 +460,10 @@ async def _dashboard_auth_gate(request: Request, call_next):
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """Require the session token on all /api/ routes except the public list."""
-    # When the OAuth gate is active, cookie-based auth (gated_auth_middleware
-    # above) is authoritative.  The legacy _SESSION_TOKEN path is loopback-only
-    # and is skipped here so the gate's session attachment isn't overridden.
+    """在所有 /api/ 路由上要求会话令牌，公开列表除外。"""
+    # 当 OAuth 门控激活时，基于 cookie 的认证（上方的 gated_auth_middleware）
+    # 是权威的。旧版 _SESSION_TOKEN 路径仅限环回，此处跳过，以免覆盖门控的
+    # session 附加。
     if getattr(request.app.state, "auth_required", False):
         return await call_next(request)
     path = request.url.path
@@ -496,10 +477,10 @@ async def auth_middleware(request: Request, call_next):
 
 
 # ---------------------------------------------------------------------------
-# Config schema — auto-generated from DEFAULT_CONFIG
+# 配置 schema —— 从 DEFAULT_CONFIG 自动生成
 # ---------------------------------------------------------------------------
 
-# Manual overrides for fields that need select options or custom types
+# 需要 select 选项或自定义类型的字段的手动覆盖
 _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "model": {
         "type": "string",
@@ -529,8 +510,8 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "stt.provider": {
         "type": "select",
         "description": "Speech-to-text provider",
-        # "mistral" temporarily removed — mistralai PyPI package quarantined
-        # (malicious 2.4.6 release on 2026-05-12). Restore once available.
+        # "mistral" 暂时移除——mistralai PyPI 包已被隔离
+        #（2026-05-12 的恶意 2.4.6 版本）。可用后恢复。
         "options": ["local", "groq", "openai", "xai", "elevenlabs"],
     },
     "stt.elevenlabs.model_id": {
@@ -605,7 +586,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Categories with fewer fields get merged into "general" to avoid tab sprawl.
+# 字段较少的类别会合并到 "general" 中，以避免标签页过多。
 _CATEGORY_MERGE: Dict[str, str] = {
     "privacy": "security",
     "context": "agent",
@@ -620,21 +601,20 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "prompt_caching": "agent",
     "goals": "agent",
     "updates": "general",
-    # `onboarding.profile_build` is the only schema-surfaced onboarding field
-    # (`onboarding.seen` is an internal latch dict, not a user setting), so fold
-    # it into the agent tab rather than spawning a one-field orphan category.
+    # `onboarding.profile_build` 是唯一暴露给 schema 的 onboarding 字段
+    #（`onboarding.seen` 是内部锁存字典，不是用户设置），因此将其折叠
+    # 到 agent 标签页，而不是生成一个只有一个字段的孤立类别。
     "onboarding": "agent",
-    # Only `telegram.reactions` currently lives under telegram — fold it in
-    # with the other messaging-platform config (discord) so it isn't an
-    # orphan tab of one field.
+    # 目前只有 `telegram.reactions` 位于 telegram 下——将其与其他
+    # 消息平台配置（discord）折叠在一起，这样它就不会成为一个只有一个
+    # 字段的孤立标签页。
     "telegram": "discord",
-    # `computer_use.cua_telemetry` is the only schema-surfaced computer_use
-    # field — fold it into the agent tab rather than spawning a one-field
-    # orphan category.
+    # `computer_use.cua_telemetry` 是唯一暴露给 schema 的 computer_use
+    # 字段——将其折叠到 agent 标签页，而不是生成一个只有一个字段的孤立类别。
     "computer_use": "agent",
 }
 
-# Display order for tabs — unlisted categories sort alphabetically after these.
+# 标签页的显示顺序——未列出的类别在这些之后按字母顺序排序。
 _CATEGORY_ORDER = [
     "general", "agent", "terminal", "display", "delegation",
     "memory", "compression", "security", "browser", "voice",
@@ -643,7 +623,7 @@ _CATEGORY_ORDER = [
 
 
 def _infer_type(value: Any) -> str:
-    """Infer a UI field type from a Python value."""
+    """从 Python 值推断 UI 字段类型。"""
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, int):
@@ -661,17 +641,17 @@ def _build_schema_from_config(
     config: Dict[str, Any],
     prefix: str = "",
 ) -> Dict[str, Dict[str, Any]]:
-    """Walk DEFAULT_CONFIG and produce a flat dot-path → field schema dict."""
+    """遍历 DEFAULT_CONFIG 并生成扁平化的点路径 → 字段 schema 字典。"""
     schema: Dict[str, Dict[str, Any]] = {}
     for key, value in config.items():
         full_key = f"{prefix}.{key}" if prefix else key
 
-        # Skip internal / version keys
+        # 跳过内部/版本键
         if full_key in {"_config_version",}:
             continue
 
-        # Category is the first path component for nested keys, or "general"
-        # for top-level scalar fields (model, toolsets, timezone, etc.).
+        # 类别是嵌套键的第一个路径组件，或顶层标量字段
+        #（model, toolsets, timezone 等）的 "general"。
         if prefix:
             category = prefix.split(".")[0]
         elif isinstance(value, dict):
@@ -680,7 +660,7 @@ def _build_schema_from_config(
             category = "general"
 
         if isinstance(value, dict):
-            # Recurse into nested dicts
+            # 递归到嵌套字典
             schema.update(_build_schema_from_config(value, full_key))
         else:
             entry: Dict[str, Any] = {
@@ -688,10 +668,10 @@ def _build_schema_from_config(
                 "description": full_key.replace(".", " → ").replace("_", " ").title(),
                 "category": category,
             }
-            # Apply manual overrides
+            # 应用手动覆盖
             if full_key in _SCHEMA_OVERRIDES:
                 entry.update(_SCHEMA_OVERRIDES[full_key])
-            # Merge small categories
+            # 合并小类别
             entry["category"] = _CATEGORY_MERGE.get(entry["category"], entry["category"])
             schema[full_key] = entry
     return schema
@@ -699,9 +679,9 @@ def _build_schema_from_config(
 
 CONFIG_SCHEMA = _build_schema_from_config(DEFAULT_CONFIG)
 
-# Inject virtual fields that don't live in DEFAULT_CONFIG but are surfaced
-# by the normalize/denormalize cycle.  Insert model_context_length right after
-# the "model" key so it renders adjacent in the frontend.
+# 注入不存在于 DEFAULT_CONFIG 中但通过 normalize/denormalize 周期暴露的
+# 虚拟字段。将 model_context_length 插入到 "model" 键之后，使其在前端
+# 相邻渲染。
 _mcl_entry = _SCHEMA_OVERRIDES["model_context_length"]
 _ordered_schema: Dict[str, Dict[str, Any]] = {}
 for _k, _v in CONFIG_SCHEMA.items():
@@ -720,11 +700,10 @@ class EnvVarUpdate(BaseModel):
     key: str
     value: str
     profile: Optional[str] = None
-    # Optional bearer key for the connectivity probe of a custom/local endpoint
-    # (``key == "OPENAI_BASE_URL"``). Self-hosted endpoints that gate
-    # ``/v1/models`` behind auth otherwise look "reachable but empty"; sending
-    # the key lets the probe enumerate the served models. Ignored for the
-    # regular PUT /api/env path (which only reads key/value).
+    # 自定义/本地端点连接探测的可选 bearer 密钥
+    #（``key == "OPENAI_BASE_URL"``）。将 ``/v1/models`` 锁在认证后的
+    # 自托管端点否则看起来"可达但为空"；发送密钥可以让探测枚举所提供的
+    # 模型。对于常规 PUT /api/env 路径（仅读取键/值）忽略。
     api_key: str = ""
 
 

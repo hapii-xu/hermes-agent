@@ -1,21 +1,21 @@
-"""RetainDB memory plugin — MemoryProvider interface.
+"""RetainDB 记忆插件 — MemoryProvider 接口。
 
-Cross-session memory via RetainDB cloud API.
+通过 RetainDB 云端 API 实现跨会话记忆。
 
-Features:
-- Correct API routes for all operations
-- Durable SQLite write-behind queue (crash-safe, async ingest)
-- Semantic search + user profile retrieval
-- Context query with deduplication overlay
-- Dialectic synthesis (LLM-powered user understanding, prefetched each turn)
-- Agent self-model (persona + instructions from SOUL.md, prefetched each turn)
-- Shared file store tools (upload, list, read, ingest, delete)
-- Explicit memory tools (profile, search, context, remember, forget)
+功能：
+- 所有操作使用正确的 API 路由
+- 持久化 SQLite 写后队列（崩溃安全，异步摄取）
+- 语义搜索 + 用户画像检索
+- 带去重覆盖层的上下文查询
+- 辩证合成（LLM 驱动的用户理解，每轮预取）
+- Agent 自我模型（来自 SOUL.md 的人设 + 指令，每轮预取）
+- 共享文件存储工具（上传、列表、读取、摄取、删除）
+- 显式记忆工具（画像、搜索、上下文、记住、遗忘）
 
-Config (env vars or hermes config.yaml under retaindb:):
-  RETAINDB_API_KEY     — API key (required)
-  RETAINDB_BASE_URL    — API endpoint (default: https://api.retaindb.com)
-  RETAINDB_PROJECT     — Project identifier (optional — defaults to "default")
+配置（环境变量或 hermes config.yaml 中的 retaindb: 部分）：
+  RETAINDB_API_KEY     — API 密钥（必需）
+  RETAINDB_BASE_URL    — API 端点（默认：https://api.retaindb.com）
+  RETAINDB_PROJECT     — 项目标识符（可选 — 默认为 "default"）
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ _ASYNC_SHUTDOWN = object()
 
 
 # ---------------------------------------------------------------------------
-# Tool schemas
+# 工具模式定义
 # ---------------------------------------------------------------------------
 
 PROFILE_SCHEMA = {
@@ -173,7 +173,7 @@ FILE_DELETE_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
-# HTTP client
+# HTTP 客户端
 # ---------------------------------------------------------------------------
 
 class _Client:
@@ -214,7 +214,7 @@ class _Client:
             raise RuntimeError(f"RetainDB {method} {path} failed ({resp.status_code}): {msg or payload}")
         return payload
 
-    # ── Memory ────────────────────────────────────────────────────────────────
+    # ── 记忆 ────────────────────────────────────────────────────────────────
 
     def query_context(self, user_id: str, session_id: str, query: str, max_tokens: int = 1200) -> dict:
         return self.request("POST", "/v1/context/query", json_body={

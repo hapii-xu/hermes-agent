@@ -1,16 +1,16 @@
-# Polymarket API Endpoints Reference
+# Polymarket API 端点参考
 
-All endpoints are public REST (GET), return JSON, and need no authentication.
+所有端点均为公开 REST（GET），返回 JSON，且无需认证。
 
-## Gamma API — gamma-api.polymarket.com
+## Gamma API —— gamma-api.polymarket.com
 
-### Search Markets
+### 搜索市场
 
 ```
 GET /public-search?q=QUERY
 ```
 
-Response structure:
+响应结构：
 ```json
 {
   "events": [
@@ -35,93 +35,93 @@ Response structure:
 }
 ```
 
-### List Events
+### 列出事件
 
 ```
 GET /events?limit=N&active=true&closed=false&order=volume&ascending=false
 ```
 
-Parameters:
-- `limit` — max results (default varies)
-- `offset` — pagination offset
-- `active` — true/false
-- `closed` — true/false
-- `order` — sort field: `volume`, `createdAt`, `updatedAt`
-- `ascending` — true/false
-- `tag` — filter by tag slug
-- `slug` — get specific event by slug
+参数：
+- `limit` —— 最大结果数（默认值不固定）
+- `offset` —— 分页偏移
+- `active` —— true/false
+- `closed` —— true/false
+- `order` —— 排序字段：`volume`、`createdAt`、`updatedAt`
+- `ascending` —— true/false
+- `tag` —— 按标签 slug 过滤
+- `slug` —— 按 slug 获取指定事件
 
-Response: array of event objects. Each event includes a `markets` array.
+响应：事件对象数组。每个事件包含一个 `markets` 数组。
 
-Event fields: `id`, `title`, `slug`, `description`, `volume`, `liquidity`,
-`openInterest`, `active`, `closed`, `category`, `startDate`, `endDate`,
-`markets` (array of market objects).
+事件字段：`id`、`title`、`slug`、`description`、`volume`、`liquidity`、
+`openInterest`、`active`、`closed`、`category`、`startDate`、`endDate`、
+`markets`（市场对象数组）。
 
-### List Markets
+### 列出市场
 
 ```
 GET /markets?limit=N&active=true&closed=false&order=volume&ascending=false
 ```
 
-Same filter parameters as events, plus:
-- `slug` — get specific market by slug
+与事件的过滤参数相同，另加：
+- `slug` —— 按 slug 获取指定市场
 
-Market fields: `id`, `question`, `conditionId`, `slug`, `description`,
-`outcomes`, `outcomePrices`, `volume`, `liquidity`, `active`, `closed`,
-`marketType`, `clobTokenIds`, `endDate`, `category`, `createdAt`.
+市场字段：`id`、`question`、`conditionId`、`slug`、`description`、
+`outcomes`、`outcomePrices`、`volume`、`liquidity`、`active`、`closed`、
+`marketType`、`clobTokenIds`、`endDate`、`category`、`createdAt`。
 
-Important: `outcomePrices`, `outcomes`, and `clobTokenIds` are JSON strings
-(double-encoded). Parse with json.loads() in Python.
+重要：`outcomePrices`、`outcomes` 和 `clobTokenIds` 是 JSON 字符串
+（双重编码）。在 Python 中用 json.loads() 解析。
 
-### List Tags
+### 列出标签
 
 ```
 GET /tags
 ```
 
-Returns array of tag objects: `id`, `label`, `slug`.
-Use the `slug` value when filtering events/markets by tag.
+返回标签对象数组：`id`、`label`、`slug`。
+按标签过滤事件/市场时使用 `slug` 值。
 
 ---
 
-## CLOB API — clob.polymarket.com
+## CLOB API —— clob.polymarket.com
 
-All CLOB price endpoints use `token_id` from the market's `clobTokenIds` field.
-Index 0 = Yes outcome, Index 1 = No outcome.
+所有 CLOB 价格端点都使用市场的 `clobTokenIds` 字段中的 `token_id`。
+索引 0 = Yes 结果，索引 1 = No 结果。
 
-### Current Price
+### 当前价格
 
 ```
 GET /price?token_id=TOKEN_ID&side=buy
 ```
 
-Response: `{"price": "0.650"}`
+响应：`{"price": "0.650"}`
 
-The `side` parameter: `buy` or `sell`.
+`side` 参数：`buy` 或 `sell`。
 
-### Midpoint Price
+### 中间价
 
 ```
 GET /midpoint?token_id=TOKEN_ID
 ```
 
-Response: `{"mid": "0.645"}`
+响应：`{"mid": "0.645"}`
 
-### Spread
+### 价差
 
 ```
 GET /spread?token_id=TOKEN_ID
 ```
 
-Response: `{"spread": "0.02"}`
+响应：`{"spread": "0.02"}`
 
-### Orderbook
+### 订单簿
 
 ```
 GET /book?token_id=TOKEN_ID
 ```
 
-Response:
+响应：
 ```json
 {
   "market": "condition_id",
@@ -134,20 +134,20 @@ Response:
 }
 ```
 
-Bids and asks are sorted by price. Size is in shares (USDC-denominated).
+bids 和 asks 按价格排序。size 以份额为单位（USDC 计价）。
 
-### Price History
+### 价格历史
 
 ```
 GET /prices-history?market=CONDITION_ID&interval=INTERVAL&fidelity=N
 ```
 
-Parameters:
-- `market` — the conditionId (hex string with 0x prefix)
-- `interval` — time range: `all`, `1d`, `1w`, `1m`, `3m`, `6m`, `1y`
-- `fidelity` — number of data points to return
+参数：
+- `market` —— conditionId（带 0x 前缀的十六进制字符串）
+- `interval` —— 时间范围：`all`、`1d`、`1w`、`1m`、`3m`、`6m`、`1y`
+- `fidelity` —— 返回的数据点数量
 
-Response:
+响应：
 ```json
 {
   "history": [
@@ -157,17 +157,17 @@ Response:
 }
 ```
 
-`t` is Unix timestamp, `p` is price (probability).
+`t` 为 Unix 时间戳，`p` 为价格（概率）。
 
-Note: Very new markets may return empty history.
+注意：非常新的市场可能返回空的历史。
 
-### CLOB Markets List
+### CLOB 市场列表
 
 ```
 GET /markets?limit=N
 ```
 
-Response:
+响应：
 ```json
 {
   "data": [
@@ -190,19 +190,19 @@ Response:
 
 ---
 
-## Data API — data-api.polymarket.com
+## Data API —— data-api.polymarket.com
 
-### Recent Trades
+### 近期成交
 
 ```
 GET /trades?limit=N
 GET /trades?market=CONDITION_ID&limit=N
 ```
 
-Trade fields: `side` (BUY/SELL), `size`, `price`, `timestamp`,
-`title`, `slug`, `outcome`, `transactionHash`, `conditionId`.
+成交字段：`side`（BUY/SELL）、`size`、`price`、`timestamp`、
+`title`、`slug`、`outcome`、`transactionHash`、`conditionId`。
 
-### Open Interest
+### 未平仓量
 
 ```
 GET /oi?market=CONDITION_ID
@@ -210,11 +210,11 @@ GET /oi?market=CONDITION_ID
 
 ---
 
-## Field Cross-Reference
+## 字段交叉参考
 
-To go from a Gamma market to CLOB data:
+要从 Gamma 市场跳转到 CLOB 数据：
 
-1. Get market from Gamma: has `clobTokenIds` and `conditionId`
-2. Parse `clobTokenIds` (JSON string): `["YES_TOKEN", "NO_TOKEN"]`
-3. Use YES_TOKEN with `/price`, `/book`, `/midpoint`, `/spread`
-4. Use `conditionId` with `/prices-history` and Data API endpoints
+1. 从 Gamma 获取市场：含 `clobTokenIds` 和 `conditionId`
+2. 解析 `clobTokenIds`（JSON 字符串）：`["YES_TOKEN", "NO_TOKEN"]`
+3. 将 YES_TOKEN 用于 `/price`、`/book`、`/midpoint`、`/spread`
+4. 将 `conditionId` 用于 `/prices-history` 以及 Data API 端点

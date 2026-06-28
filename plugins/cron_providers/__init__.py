@@ -1,28 +1,28 @@
-"""Cron scheduler provider plugin discovery.
+"""Cron 调度器 provider 插件发现。
 
-Scans two directories for cron scheduler provider plugins:
+扫描两个目录以查找 cron 调度器 provider 插件：
 
-1. Bundled providers: ``plugins/cron_providers/<name>/`` (shipped with hermes-agent)
-2. User-installed providers: ``$HERMES_HOME/plugins/<name>/``
+1. 内置 provider：``plugins/cron_providers/<name>/``（随 hermes-agent 发布）
+2. 用户安装的 provider：``$HERMES_HOME/plugins/<name>/``
 
-Each subdirectory must contain ``__init__.py`` with a class implementing the
-``CronScheduler`` ABC (``cron/scheduler_provider.py``). On name collisions,
-bundled providers take precedence.
+每个子目录必须包含 ``__init__.py``，其中有一个实现
+``CronScheduler`` ABC（``cron/scheduler_provider.py``）的类。发生名称冲突时，
+内置 provider 优先。
 
-This is a near-verbatim clone of ``plugins/memory/__init__.py`` — the same
-discovery/loader machinery, retargeted at ``CronScheduler``. The built-in
-``InProcessCronScheduler`` is NOT discovered here: it is core (lives in
-``cron/scheduler_provider.py``) so the fallback can never be accidentally
-removed. Only NON-default providers (e.g. "chronos") live under this directory.
+这是 ``plugins/memory/__init__.py`` 的近乎逐字克隆 — 相同的
+发现/加载机制，重定向到 ``CronScheduler``。内置
+``InProcessCronScheduler`` 不在此处发现：它是核心（位于
+``cron/scheduler_provider.py``），因此永远不会被意外移除。
+只有非默认 provider（例如 "chronos"）位于此目录下。
 
-Only ONE provider can be active at a time, selected via ``cron.provider`` in
-config.yaml (empty = built-in). See ``cron.scheduler_provider.resolve_cron_scheduler``.
+同一时间只能激活一个 provider，通过 config.yaml 中的 ``cron.provider``
+选择（空 = 内置）。参见 ``cron.scheduler_provider.resolve_cron_scheduler``。
 
-Usage:
+用法:
     from plugins.cron_providers import discover_cron_schedulers, load_cron_scheduler
 
     available = discover_cron_schedulers()   # [(name, desc, available), ...]
-    provider = load_cron_scheduler("chronos")  # CronScheduler instance
+    provider = load_cron_scheduler("chronos")  # CronScheduler 实例
 """
 
 from __future__ import annotations
@@ -39,21 +39,19 @@ logger = logging.getLogger(__name__)
 
 _CRON_PLUGINS_DIR = Path(__file__).parent
 
-# Synthetic parent package for user-installed providers, so they don't
-# collide with bundled providers in sys.modules.
+# 用户安装 provider 的合成父包，避免与 sys.modules 中的内置 provider 冲突。
 _USER_NAMESPACE = "_hermes_user_cron"
 
 
 def _register_synthetic_package(name: str, search_locations: List[str]) -> None:
-    """Register an empty package shell in sys.modules.
+    """在 sys.modules 中注册一个空的包外壳。
 
-    User-installed providers import as ``_hermes_user_cron.<name>``, a dotted
-    name whose parents exist nowhere on disk. Unless those parents are present
-    in ``sys.modules``, any relative import inside the plugin
-    (``from . import config``) fails with
-    ``ModuleNotFoundError: No module named '_hermes_user_cron'`` — the same
-    reason the loader already registers ``plugins`` and ``plugins.cron_providers`` for
-    bundled providers.
+    用户安装的 provider 以 ``_hermes_user_cron.<name>`` 方式导入，这是一个
+    点分路径，其父包在磁盘上不存在。除非这些父包存在于
+    ``sys.modules`` 中，否则插件内的任何相对导入
+    （``from . import config``）都会失败，报错
+    ``ModuleNotFoundError: No module named '_hermes_user_cron'`` — 这也是加载器
+    已为内置 provider 注册 ``plugins`` 和 ``plugins.cron_providers`` 的原因。
     """
     if name in sys.modules:
         return
@@ -63,11 +61,11 @@ def _register_synthetic_package(name: str, search_locations: List[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Directory helpers
+# 目录辅助函数
 # ---------------------------------------------------------------------------
 
 def _get_user_plugins_dir() -> Optional[Path]:
-    """Return ``$HERMES_HOME/plugins/`` or None if unavailable."""
+    """返回 ``$HERMES_HOME/plugins/``，若不可用则返回 None。"""
     try:
         from hermes_constants import get_hermes_home
         d = get_hermes_home() / "plugins"
@@ -77,10 +75,10 @@ def _get_user_plugins_dir() -> Optional[Path]:
 
 
 def _is_cron_provider_dir(path: Path) -> bool:
-    """Heuristic: does *path* look like a cron scheduler provider plugin?
+    """启发式判断：*path* 是否像一个 cron 调度器 provider 插件？
 
-    Checks for ``register_cron_scheduler`` or ``CronScheduler`` in the
-    ``__init__.py`` source. Cheap text scan — no import needed.
+    检查 ``__init__.py`` 源码中是否包含 ``register_cron_scheduler`` 或 ``CronScheduler``。
+    低成本文本扫描 — 无需导入。
     """
     init_file = path / "__init__.py"
     if not init_file.exists():
@@ -93,15 +91,15 @@ def _is_cron_provider_dir(path: Path) -> bool:
 
 
 def _iter_provider_dirs() -> List[Tuple[str, Path]]:
-    """Yield ``(name, path)`` for all discovered provider directories.
+    """生成所有已发现 provider 目录的 ``(name, path)``。
 
-    Scans bundled first, then user-installed. Bundled takes precedence on
-    name collisions (first-seen wins via ``seen`` set).
+    先扫描内置，再扫描用户安装。发生名称冲突时内置优先
+    （通过 ``seen`` 集合实现先见者赢）。
     """
     seen: set = set()
     dirs: List[Tuple[str, Path]] = []
 
-    # 1. Bundled providers (plugins/cron_providers/<name>/)
+    # 1. 内置 provider（plugins/cron_providers/<name>/）
     if _CRON_PLUGINS_DIR.is_dir():
         for child in sorted(_CRON_PLUGINS_DIR.iterdir()):
             if not child.is_dir() or child.name.startswith(("_", ".")):
@@ -111,31 +109,31 @@ def _iter_provider_dirs() -> List[Tuple[str, Path]]:
             seen.add(child.name)
             dirs.append((child.name, child))
 
-    # 2. User-installed providers ($HERMES_HOME/plugins/<name>/)
+    # 2. 用户安装的 provider（$HERMES_HOME/plugins/<name>/）
     user_dir = _get_user_plugins_dir()
     if user_dir:
         for child in sorted(user_dir.iterdir()):
             if not child.is_dir() or child.name.startswith(("_", ".")):
                 continue
             if child.name in seen:
-                continue  # bundled takes precedence
+                continue  # 内置优先
             if not _is_cron_provider_dir(child):
-                continue  # skip non-cron plugins
+                continue  # 跳过非 cron 插件
             dirs.append((child.name, child))
 
     return dirs
 
 
 def find_provider_dir(name: str) -> Optional[Path]:
-    """Resolve a provider name to its directory.
+    """将 provider 名称解析为其目录路径。
 
-    Checks bundled first, then user-installed.
+    先检查内置，再检查用户安装。
     """
-    # Bundled
+    # 内置
     bundled = _CRON_PLUGINS_DIR / name
     if bundled.is_dir() and (bundled / "__init__.py").exists():
         return bundled
-    # User-installed
+    # 用户安装
     user_dir = _get_user_plugins_dir()
     if user_dir:
         user = user_dir / name
@@ -145,21 +143,20 @@ def find_provider_dir(name: str) -> Optional[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# 公共 API
 # ---------------------------------------------------------------------------
 
 def discover_cron_schedulers() -> List[Tuple[str, str, bool]]:
-    """Scan bundled and user-installed directories for available providers.
+    """扫描内置和用户安装的目录以查找可用 provider。
 
-    Returns list of (name, description, is_available) tuples. May be empty —
-    the built-in is core, not discovered here, so a fresh checkout with no
-    bundled non-default provider returns []. Bundled providers take precedence
-    on name collisions.
+    返回 (name, description, is_available) 元组列表。可能为空 —
+    内置 provider 是核心，不在此处发现，因此全新 checkout 且无
+    内置非默认 provider 时返回 []。发生名称冲突时内置优先。
     """
     results = []
 
     for name, child in _iter_provider_dirs():
-        # Read description from plugin.yaml if available
+        # 如果 plugin.yaml 可用则读取描述
         desc = ""
         yaml_file = child / "plugin.yaml"
         if yaml_file.exists():
@@ -171,7 +168,7 @@ def discover_cron_schedulers() -> List[Tuple[str, str, bool]]:
             except Exception:
                 pass
 
-        # Quick availability check — try loading and calling is_available()
+        # 快速可用性检查 — 尝试加载并调用 is_available()
         available = True
         try:
             provider = _load_provider_from_dir(child)
@@ -188,13 +185,12 @@ def discover_cron_schedulers() -> List[Tuple[str, str, bool]]:
 
 
 def load_cron_scheduler(name: str) -> Optional["CronScheduler"]:  # noqa: F821
-    """Load and return a CronScheduler instance by name.
+    """按名称加载并返回 CronScheduler 实例。
 
-    Checks both bundled (``plugins/cron_providers/<name>/``) and user-installed
-    (``$HERMES_HOME/plugins/<name>/``) directories. Bundled takes precedence
-    on name collisions.
+    同时检查内置（``plugins/cron_providers/<name>/``）和用户安装
+    （``$HERMES_HOME/plugins/<name>/``）目录。发生名称冲突时内置优先。
 
-    Returns None if the provider is not found or fails to load.
+    如果未找到 provider 或加载失败，返回 None。
     """
     provider_dir = find_provider_dir(name)
     if not provider_dir:
@@ -213,15 +209,14 @@ def load_cron_scheduler(name: str) -> Optional["CronScheduler"]:  # noqa: F821
 
 
 def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  # noqa: F821
-    """Import a provider module and extract the CronScheduler instance.
+    """导入 provider 模块并提取 CronScheduler 实例。
 
-    The module must have either:
-    - A register(ctx) function (plugin-style) — we simulate a ctx
-    - A top-level class that extends CronScheduler — we instantiate it
+    模块必须具备以下之一：
+    - register(ctx) 函数（插件风格）— 我们模拟一个 ctx
+    - 继承自 CronScheduler 的顶层类 — 我们对其进行实例化
     """
     name = provider_dir.name
-    # Use a separate namespace for user-installed plugins so they don't
-    # collide with bundled providers in sys.modules.
+    # 为用户安装的插件使用独立命名空间，避免与 sys.modules 中的内置 provider 冲突。
     _is_bundled = _CRON_PLUGINS_DIR in provider_dir.parents or provider_dir.parent == _CRON_PLUGINS_DIR
     module_name = f"plugins.cron_providers.{name}" if _is_bundled else f"{_USER_NAMESPACE}.{name}"
     init_file = provider_dir / "__init__.py"
@@ -229,13 +224,13 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
     if not init_file.exists():
         return None
 
-    # Check if already loaded. A synthetic package shell has no __file__;
-    # only reuse modules that were actually loaded from disk.
+    # 检查是否已加载。合成包外壳没有 __file__；
+    # 只复用实际从磁盘加载的模块。
     cached = sys.modules.get(module_name)
     if cached is not None and getattr(cached, "__file__", None):
         mod = cached
     else:
-        # Ensure the parent packages are registered (for relative imports)
+        # 确保父包已注册（用于相对导入）
         for parent in ("plugins", "plugins.cron_providers"):
             if parent not in sys.modules:
                 parent_path = Path(__file__).parent
@@ -255,12 +250,12 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
                         except Exception:
                             pass
 
-        # User-installed plugins need their synthetic parent registered the
-        # same way, or relative imports inside the plugin cannot resolve.
+        # 用户安装的插件也需要注册其合成父包，
+        # 否则插件内的相对导入无法解析。
         if not _is_bundled:
             _register_synthetic_package(_USER_NAMESPACE, [])
 
-        # Now load the provider module
+        # 现在加载 provider 模块
         spec = importlib.util.spec_from_file_location(
             module_name, str(init_file),
             submodule_search_locations=[str(provider_dir)]
@@ -272,8 +267,8 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
         sys.modules[module_name] = mod
         loaded_submodules = []
 
-        # Register submodules so relative imports work
-        # e.g., "from ._nas_client import NasCronClient" in the chronos plugin
+        # 注册子模块以使相对导入正常工作
+        # 例如，chronos 插件中的 "from ._nas_client import NasCronClient"
         for sub_file in provider_dir.glob("*.py"):
             if sub_file.name == "__init__.py":
                 continue
@@ -299,9 +294,8 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
             sys.modules.pop(module_name, None)
             return None
 
-        # Manual importlib loading bypasses the normal import machinery that
-        # binds child modules onto their parent packages. Restore that shape so
-        # later dotted imports and pytest monkeypatch paths resolve normally.
+        # 手动 importlib 加载绕过了将子模块绑定到父包的正常导入机制。
+        # 恢复该结构，使后续的点分导入和 pytest monkeypatch 路径能正常解析。
         parent_name, child_name = module_name.rsplit(".", 1)
         parent_mod = sys.modules.get(parent_name)
         if parent_mod is not None:
@@ -309,7 +303,7 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
         for sub_name, sub_mod in loaded_submodules:
             setattr(mod, sub_name, sub_mod)
 
-    # Try register(ctx) pattern first (how our plugins are written)
+    # 首先尝试 register(ctx) 模式（我们的插件编写方式）
     if hasattr(mod, "register"):
         collector = _ProviderCollector()
         try:
@@ -319,7 +313,7 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
         except Exception as e:
             logger.debug("register() failed for %s: %s", name, e)
 
-    # Fallback: find a CronScheduler subclass and instantiate it
+    # 回退：查找 CronScheduler 子类并实例化
     from cron.scheduler_provider import CronScheduler
     for attr_name in dir(mod):
         attr = getattr(mod, attr_name, None)
@@ -334,7 +328,7 @@ def _load_provider_from_dir(provider_dir: Path) -> Optional["CronScheduler"]:  #
 
 
 class _ProviderCollector:
-    """Fake plugin context that captures register_cron_scheduler calls."""
+    """假的插件上下文，用于捕获 register_cron_scheduler 调用。"""
 
     def __init__(self):
         self.provider = None
@@ -342,7 +336,7 @@ class _ProviderCollector:
     def register_cron_scheduler(self, provider):
         self.provider = provider
 
-    # No-op for other registration methods
+    # 对其他注册方法为空操作
     def register_tool(self, *args, **kwargs):
         pass
 

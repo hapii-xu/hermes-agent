@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: MyBrand
-description: One-sentence description of the visual identity.
+description: 用一句话描述该视觉身份。
 colors:
   primary: "#0F172A"
   secondary: "#64748B"
@@ -59,41 +59,34 @@ components:
 
 ## Overview
 
-Describe the voice and feel of the brand in one or two paragraphs. What mood
-does it evoke? What emotional response should a user have on first impression?
+用一到两段话描述品牌的声音和感觉。它唤起什么情绪？用户在第一印象时应该有什么样的情感反应？
 
 ## Colors
 
-- **Primary ({colors.primary}):** Core text, headlines, high-emphasis surfaces.
-- **Secondary ({colors.secondary}):** Supporting text, borders, metadata.
-- **Tertiary ({colors.tertiary}):** Interaction driver — buttons, links,
-  selected states. Use sparingly to preserve its signal.
-- **Neutral ({colors.neutral}):** Page background and surface fills.
+- **Primary ({colors.primary})：** 核心文本、标题、高强调表面。
+- **Secondary ({colors.secondary})：** 辅助文本、边框、元数据。
+- **Tertiary ({colors.tertiary})：** 交互驱动色 —— 按钮、链接、选中状态。谨慎使用以保持其信号价值。
+- **Neutral ({colors.neutral})：** 页面背景和表面填充。
 
 ## Typography
 
-Inter for everything. Weight and size carry hierarchy, not font family. Tight
-letter-spacing on display sizes; default tracking on body.
+全部使用 Inter。层次由字重和字号承载，而非字体系列。展示级字号使用紧凑字距；正文使用默认字距。
 
 ## Layout
 
-Spacing scale is a 4px baseline. Use `md` (16px) for intra-component gaps,
-`lg` (24px) for inter-component gaps, `xl` (48px) for section breaks.
+间距比例基于 4px 基线。组件内部间隙用 `md` (16px)，组件之间间隙用 `lg` (24px)，分节断点用 `xl` (48px)。
 
 ## Shapes
 
-Rounded corners are modest — `sm` on interactive elements, `md` on cards.
-`full` is reserved for avatars and pill badges.
+圆角适度 —— 交互元素用 `sm`，卡片用 `md`。`full` 保留给头像和药丸形徽章。
 
 ## Components
 
-- `button-primary` is the only high-emphasis action per screen.
-- `card` is the default surface for grouped content. No shadow by default.
+- `button-primary` 是每个屏幕上唯一的高强调操作。
+- `card` 是分组内容的默认表面。默认无阴影。
 
 ## Do's and Don'ts
 
-- **Do** use token references (`{colors.primary}`) instead of literal hex in
-  component definitions.
-- **Don't** introduce colors outside the palette — extend the palette first.
-- **Don't** nest component variants. `button-primary-hover` is a sibling,
-  not a child.
+- **要做** 在组件定义中使用令牌引用（`{colors.primary}`），而非字面十六进制值。
+- **不要做** 引入调色板之外的颜色 —— 先扩展调色板。
+- **不要做** 嵌套组件变体。`button-primary-hover` 是同级，而非子级。

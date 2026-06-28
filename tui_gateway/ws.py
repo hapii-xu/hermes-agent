@@ -1,17 +1,17 @@
-"""WebSocket transport for the tui_gateway JSON-RPC server.
+"""tui_gateway JSON-RPC 服务器的 WebSocket 传输。
 
-Reuses :func:`tui_gateway.server.dispatch` verbatim so every RPC method, every
-slash command, every approval/clarify/sudo flow, and every agent event flows
-through the same handlers whether the client is Ink over stdio or an iOS /
-web client over WebSocket.
+重用 :func:`tui_gateway.server.dispatch`，使每个 RPC 方法、每个
+斜杠命令、每个审批/澄清/sudo 流程，以及每个代理事件都通过
+相同的处理器，无论客户端是 stdio 上的 Ink 还是
+iOS / Web 客户端通过 WebSocket。
 
-Wire protocol
+线路协议
 -------------
-Identical to stdio: newline-delimited JSON-RPC in both directions. The server
-emits a ``gateway.ready`` event immediately after connection accept, then
-echoes responses/events for inbound requests. No framing differences.
+与 stdio 相同：双向都是换行分隔的 JSON-RPC。服务器
+在连接接受后立即发送 ``gateway.ready`` 事件，然后
+回应入站请求的响应/事件。没有帧格式差异。
 
-Mounting
+挂载方式
 --------
     from fastapi import WebSocket
     from tui_gateway.ws import handle_ws
@@ -34,34 +34,34 @@ from tui_gateway import server
 
 _log = logging.getLogger(__name__)
 
-# Max seconds a pool-dispatched handler will block waiting for the event loop
-# to flush a WS frame before we mark the transport dead. Protects handler
-# threads from a wedged socket.
+# 池调度的处理器在等待事件循环
+# 刷新 WS 帧时最多阻塞的秒数，超过后标记传输为死亡。
+# 保护处理器线程免受卡住的套接字影响。
 _WS_WRITE_TIMEOUT_S = 10.0
 _WS_LOG_PAYLOAD_PREVIEW = 240
 
-# Keep starlette optional at import time; handle_ws uses the real class when
-# it's available and falls back to a generic Exception sentinel otherwise.
+# 在导入时保持 starlette 为可选；handle_ws 在可用时使用真实类，
+# 否则回退到通用的 Exception 哨兵。
 try:
     from starlette.websockets import WebSocketDisconnect as _WebSocketDisconnect
-except ImportError:  # pragma: no cover - starlette is a required install path
+except ImportError:  # pragma: no cover - starlette 是必需的安装路径
     _WebSocketDisconnect = Exception  # type: ignore[assignment]
 
 
 class WSTransport:
-    """Per-connection WS transport.
+    """每个连接的 WS 传输。
 
-    ``write`` is safe to call from any thread *other than* the event loop
-    thread that owns the socket. Pool workers (the only real caller) run in
-    their own threads, so marshalling onto the loop via
-    :func:`asyncio.run_coroutine_threadsafe` + ``future.result()`` is correct
-    and deadlock-free there.
+    ``write`` 可以安全地从 *除了* 拥有套接字的事件循环
+    线程之外的任何线程调用。池工作器（唯一的实际调用者）
+    在各自的线程中运行，因此通过
+    :func:`asyncio.run_coroutine_threadsafe` + ``future.result()``
+    编组到循环上是正确且无死锁的。
 
-    When called from the loop thread itself (e.g. by ``handle_ws`` for an
-    inline response) the same call would deadlock: we'd schedule work onto
-    the loop we're currently blocking. We detect that case and fire-and-
-    forget instead. Callers that need to know when the bytes are on the wire
-    should use :meth:`write_async` from the loop thread.
+    当从循环线程本身调用时（例如 ``handle_ws`` 用于
+    内联响应），相同的调用会死锁：我们会将工作调度到
+    我们正在阻塞的循环上。我们检测这种情况并改为
+    即发即忘。需要知道字节何时到达线上的调用者
+    应从循环线程使用 :meth:`write_async`。
     """
 
     def __init__(
@@ -88,7 +88,7 @@ class WSTransport:
             on_loop = False
 
         if on_loop:
-            # Fire-and-forget — don't block the loop waiting on itself.
+            # 即发即忘 — 不要阻塞循环等待自身。
             self._loop.create_task(self._safe_send(line))
             return True
 
@@ -101,13 +101,13 @@ class WSTransport:
             fut.result(timeout=_WS_WRITE_TIMEOUT_S)
             return not self._closed
         except concurrent.futures.TimeoutError:  # builtin TimeoutError on 3.11+
-            # The event loop is stalled (GIL-heavy agent turn, delegation
-            # running N children), NOT the socket dead. The send coroutine is
-            # already scheduled and will flush once the loop breathes — latching
-            # _closed here permanently silenced live windows after one slow
-            # write (the "subagent window shows zero streaming" bug). Unblock
-            # the worker thread and keep the transport alive; _safe_send latches
-            # on a real socket error when the frame actually fails.
+            # 事件循环停滞了（GIL 密集的代理轮次、
+            # 委托运行 N 个子进程），而不是套接字死了。
+            # 发送协程已经调度，一旦循环恢复就会刷新 —
+            # 在此处锁定 _closed 会在一次慢写入后永久静默
+            # 活跃的窗口（"子代理窗口显示零流式传输" bug）。
+            # 解除工作线程的阻塞并保持传输活跃；
+            # _safe_send 在帧实际失败时会对真实套接字错误进行锁定。
             _log.warning(
                 "ws write slow (loop stalled >%ss) peer=%s — frame left in flight",
                 _WS_WRITE_TIMEOUT_S, self._peer,
@@ -122,7 +122,7 @@ class WSTransport:
             return False
 
     async def write_async(self, obj: dict) -> bool:
-        """Send from the owning event loop. Awaits until the frame is on the wire."""
+        """从拥有的事件循环发送。等待直到帧到达线上。"""
         if self._closed:
             return False
         await self._safe_send(json.dumps(obj, ensure_ascii=False))
@@ -143,7 +143,7 @@ class WSTransport:
 
 
 def _ws_peer_label(ws: Any) -> str:
-    """Return ``host:port`` when available, else a stable placeholder."""
+    """可用时返回 ``host:port``，否则返回稳定的占位符。"""
     client = getattr(ws, "client", None)
     if client is None:
         return "unknown"
@@ -153,12 +153,12 @@ def _ws_peer_label(ws: Any) -> str:
 
 
 def _disable_nagle(ws: Any) -> None:
-    """Disable Nagle so streamed JSON-RPC frames go out individually.
+    """禁用 Nagle 算法，使流式 JSON-RPC 帧单独发送。
 
-    Without it the kernel coalesces the small per-token frames, so a burst after
-    the model's think-pause lands on the client in one tick and no client-side
-    smoothing can recover the cadence. GUI/WS only; chat platforms don't hit
-    this path. Best-effort — skip silently if the socket isn't reachable.
+    否则内核会将每个小 token 帧合并，导致模型思考停顿后
+    的突发在一个 tick 内到达客户端，客户端侧的任何平滑
+    都无法恢复节奏。仅限 GUI/WS；聊天平台不会走此路径。
+    尽力而为 — 如果套接字不可达则静默跳过。
     """
     try:
         scope = getattr(ws, "scope", None) or {}
@@ -171,7 +171,7 @@ def _disable_nagle(ws: Any) -> None:
 
 
 async def handle_ws(ws: Any) -> None:
-    """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
+    """运行一个 WebSocket 会话。与 ``tui_gateway.entry`` 线路兼容。"""
     peer = _ws_peer_label(ws)
     transport: WSTransport | None = None
     messages = 0
@@ -183,8 +183,8 @@ async def handle_ws(ws: Any) -> None:
     try:
         await ws.accept()
         disconnect_reason = "connected"
-        # Push small streamed frames out immediately instead of letting Nagle
-        # batch them — keeps the live token cadence intact for GUI clients.
+        # 立即推送小的流式帧，而不是让 Nagle
+        # 批量发送 — 保持 GUI 客户端的实时 token 节奏。
         _disable_nagle(ws)
         _log.info("ws accepted peer=%s", peer)
 
@@ -251,11 +251,11 @@ async def handle_ws(ws: Any) -> None:
                     break
                 continue
 
-            # dispatch() may schedule long handlers on the pool; it returns
-            # None in that case and the worker writes the response itself via
-            # the transport we pass in (a separate thread, so transport.write
-            # is the safe path there). For inline handlers it returns the
-            # response dict, which we write here from the loop.
+            # dispatch() 可能在线程池上调度长时间运行的处理器；
+            # 在这种情况下返回 None，worker 通过我们传入的传输
+            # 自行写入响应（单独的线程，所以 transport.write
+            # 在那里走安全路径）。对于内联处理器，它返回
+            # 响应字典，我们从循环中在此处写入。
             req_id = req.get("id") if isinstance(req, dict) else None
             req_method = req.get("method") if isinstance(req, dict) else None
             try:
@@ -302,18 +302,18 @@ async def handle_ws(ws: Any) -> None:
         if transport is not None:
             transport.close()
 
-            # Reap sessions this transport owned (close_on_disconnect sidecar
-            # sessions) or detach the rest to the drop sentinel so later emits
-            # don't crash into a closed socket or fall through to desktop stdout
-            # logs. Detached sessions are handed to the grace-windowed WS-orphan
-            # reaper inside _close_sessions_for_transport (a quick reconnect /
-            # session.resume cancels it). This is the single WS-disconnect
-            # teardown path.
+            # 清理由此传输拥有的会话（close_on_disconnect 的 sidecar
+            # 会话）或将其与会话分离到 drop 哨兵，使后续的发送
+            # 不会崩溃到已关闭的套接字上或落入桌面 stdout
+            # 日志。分离的会话交给有限宽限窗口的 WS 孤儿
+            # 清道夫处理（在 _close_sessions_for_transport 中；
+            # 快速重连 / session.resume 可以取消它）。
+            # 这是唯一的 WS 断开拆除路径。
             #
-            # Offloaded: _close_session_by_id does a blocking worker.close()
-            # (terminate + waits) plus a synchronous DB write — inline that
-            # would freeze the uvicorn event loop for every other live
-            # connection.
+            # 已卸载：_close_session_by_id 执行阻塞的 worker.close()
+            # （终止 + 等待）加上同步 DB 写入 — 内联执行
+            # 会冻结 uvicorn 事件循环中所有其他活跃的
+            # 连接。
             try:
                 reaped_sessions, detached_sessions = await asyncio.to_thread(
                     server._close_sessions_for_transport,

@@ -1,16 +1,15 @@
-"""Gateway streaming consumer — bridges sync agent callbacks to async platform delivery.
+"""gateway 流式 consumer —— 在同步 agent 回调与异步平台投递之间搭桥。
 
-The agent fires stream_delta_callback(text) synchronously from its worker thread.
-GatewayStreamConsumer:
-  1. Receives deltas via on_delta() (thread-safe, sync)
-  2. Queues them to an asyncio task via queue.Queue
-  3. The async run() task buffers, rate-limits, and progressively edits
-     a single message on the target platform
+agent 在其工作线程中同步触发 stream_delta_callback(text)。
+GatewayStreamConsumer：
+  1. 通过 on_delta() 接收增量（线程安全、同步）
+  2. 通过 queue.Queue 把它们入队到一个 asyncio 任务
+  3. 异步 run() 任务负责缓冲、限速，并渐进式地编辑目标平台上的单条消息
 
-Design: Uses the edit transport (send initial message, then editMessageText).
-This is universally supported across Telegram, Discord, and Slack.
+设计：使用 edit 传输（先发送初始消息，再 editMessageText）。
+这在 Telegram、Discord 和 Slack 之间普遍受支持。
 
-Credit: jobless0x (#774, #1312), OutThisLife (#798), clicksingh (#697).
+致谢：jobless0x（#774、#1312）、OutThisLife（#798）、clicksingh（#697）。
 """
 
 from __future__ import annotations
@@ -35,69 +34,63 @@ from gateway.config import (
 
 logger = logging.getLogger("gateway.stream_consumer")
 
-# Sentinel to signal the stream is complete
+# 标记流已完成的哨兵
 _DONE = object()
 
-# Sentinel to signal a tool boundary — finalize current message and start a
-# new one so that subsequent text appears below tool progress messages.
+# 标记工具边界的哨兵 —— 完成当前消息并开始一条新消息，使后续文本出现在 tool
+# progress 消息的下方。
 _NEW_SEGMENT = object()
 
-# Queue marker for a completed assistant commentary message emitted between
-# API/tool iterations (for example: "I'll inspect the repo first.").
+# 队列标记：在 API/工具迭代之间发出的一条已完成 assistant commentary 消息
+#（例如："我先检查一下仓库。"）。
 _COMMENTARY = object()
 
 
 @dataclass
 class StreamConsumerConfig:
-    """Runtime config for a single stream consumer instance."""
+    """单个 stream consumer 实例的运行时配置。"""
     edit_interval: float = _DEFAULT_STREAMING_EDIT_INTERVAL
     buffer_threshold: int = _DEFAULT_STREAMING_BUFFER_THRESHOLD
     cursor: str = _DEFAULT_STREAMING_CURSOR
     buffer_only: bool = False
-    # When >0, the final edit for a streamed response is delivered as a
-    # fresh message if the original preview has been visible for at least
-    # this many seconds.  This makes the platform's visible timestamp
-    # reflect completion time instead of first-token time for long-running
-    # responses (e.g. reasoning models that stream slowly).  Ported from
-    # openclaw/openclaw#72038.  Default 0 = always edit in place (legacy
-    # behavior).  The gateway enables this selectively per-platform.
+    # 当 >0 时，如果原始 preview 已经可见至少这么多元秒，则流式响应的最终 edit 会作为
+    # 一条全新消息投递。这使平台的可见时间戳反映完成时间而非首个 token 的时间，适用于
+    # 长时间运行的响应（例如流式很慢的推理模型）。移植自 openclaw/openclaw#72038。
+    # 默认 0 = 总是就地编辑（旧行为）。gateway 会按平台选择性地启用此项。
     fresh_final_after_seconds: float = 0.0
-    # Streaming transport selection:
-    #   "auto"  — prefer native draft streaming (e.g. Telegram sendMessageDraft)
-    #             when the adapter + chat supports it; fall back to edit.
-    #   "draft" — explicitly request native draft streaming; fall back to
-    #             edit when unsupported.
-    #   "edit"  — progressive editMessageText (legacy/default behavior).
-    #   "off"   — handled by the gateway before the consumer is even built.
+    # 流式传输方式选择：
+    #   "auto"  — 当 adapter + chat 支持时优先使用原生 draft 流式（例如 Telegram
+    #             sendMessageDraft）；否则回退到 edit。
+    #   "draft" — 显式请求原生 draft 流式；不支持时回退到 edit。
+    #   "edit"  — 渐进式 editMessageText（旧/默认行为）。
+    #   "off"   — 由 gateway 在 consumer 构建之前就处理掉。
     transport: str = "edit"
-    # Hint for the consumer about the originating chat type (e.g. "dm",
-    # "group", "supergroup", "forum").  Used to gate native draft streaming,
-    # which is platform-specific (Telegram drafts are DM-only).
+    # 给 consumer 的来源 chat 类型提示（例如 "dm"、"group"、"supergroup"、"forum"）。
+    # 用于门控原生 draft 流式，该功能与平台相关（Telegram 的 draft 仅限 DM）。
     chat_type: str = ""
 
 
 class GatewayStreamConsumer:
-    """Async consumer that progressively edits a platform message with streamed tokens.
+    """异步 consumer，用流式 token 渐进式地编辑平台消息。
 
-    Usage::
+    用法::
 
         consumer = GatewayStreamConsumer(adapter, chat_id, config, metadata=metadata)
-        # Pass consumer.on_delta as stream_delta_callback to AIAgent
+        # 把 consumer.on_delta 作为 stream_delta_callback 传给 AIAgent
         agent = AIAgent(..., stream_delta_callback=consumer.on_delta)
-        # Start the consumer as an asyncio task
+        # 把 consumer 作为 asyncio 任务启动
         task = asyncio.create_task(consumer.run())
-        # ... run agent in thread pool ...
-        consumer.finish()  # signal completion
-        await task         # wait for final edit
+        # ... 在线程池中运行 agent ...
+        consumer.finish()  # 发出完成信号
+        await task         # 等待最终 edit
     """
 
-    # After this many consecutive flood-control failures, permanently disable
-    # progressive edits for the remainder of the stream.
+    # 连续发生这么多次 flood-control 失败后，在本次流的剩余部分永久禁用渐进式编辑。
     _MAX_FLOOD_STRIKES = 3
 
-    # Reasoning/thinking tags that models emit inline in content.
-    # Must stay in sync with cli.py _OPEN_TAGS/_CLOSE_TAGS and
-    # run_agent.py _strip_think_blocks() tag variants.
+    # 模型在内容中内联输出的推理/思考标签。
+    # 必须与 cli.py 的 _OPEN_TAGS/_CLOSE_TAGS 以及 run_agent.py 的
+    # _strip_think_blocks() 标签变体保持同步。
     _OPEN_THINK_TAGS = (
         "<REASONING_SCRATCHPAD>", "<think>", "<reasoning>",
         "<THINKING>", "<thinking>", "<thought>",
@@ -107,9 +100,9 @@ class GatewayStreamConsumer:
         "</THINKING>", "</thinking>", "</thought>",
     )
 
-    # Class-wide monotonic counter for native-streaming draft ids.  Telegram
-    # animates a draft when the same draft_id is reused across consecutive
-    # calls in the same chat, so we need a fresh non-zero id per response.
+    # 用于原生流式 draft id 的类级单调计数器。当同一个 draft_id 在同一个 chat 中
+    # 连续调用中被复用时，Telegram 会为该 draft 播放动画，因此每次响应都需要一个新的
+    # 非零 id。
     _draft_id_counter: int = 0
 
     def __init__(
@@ -126,80 +119,66 @@ class GatewayStreamConsumer:
         self.chat_id = chat_id
         self.cfg = config or StreamConsumerConfig()
         self.metadata = metadata
-        # Fired whenever a fresh content bubble is created on the platform
-        # (first-send of a new message, commentary, overflow chunk, or
-        # fallback continuation). The gateway uses this to linearize the
-        # tool-progress bubble: when content resumes after a tool batch,
-        # the next tool.started should open a NEW progress bubble below
-        # the content, not edit the old bubble above it.
-        # Called with no arguments. Exceptions are swallowed.
+        # 当平台上一条新的内容气泡被创建时触发（新消息首次发送、commentary、溢出
+        # 分块，或回退续接消息）。gateway 用它来线性化 tool-progress 气泡：当内容
+        # 在一批工具调用之后恢复时，下一个 tool.started 应当在内容*下方*打开一个
+        # 新的 progress 气泡，而不是编辑上方的旧气泡。
+        # 不带参数调用。异常会被吞掉。
         self._on_new_message = on_new_message
-        # Fired once when the stream transitions into its finalization path.
-        # Gateway callers use this to pause typing refreshes before a slow
-        # final rich-text edit (Telegram MarkdownV2 finalize, etc.).
+        # 当流进入其收尾路径时触发一次。gateway 调用方在缓慢的最终富文本 edit
+        #（Telegram MarkdownV2 finalize 等）之前用它暂停 typing 刷新。
         self._on_before_finalize = on_before_finalize
         self._initial_reply_to_id = initial_reply_to_id
         self._queue: queue.Queue = queue.Queue()
         self._accumulated = ""
         self._message_id: Optional[str] = None
-        # Wall-clock timestamp (time.monotonic) when ``_message_id`` was
-        # first assigned from a successful first-send.  Used by the
-        # fresh-final logic to detect long-lived previews whose edit
-        # timestamps would be stale by completion time.  Ported from
-        # openclaw/openclaw#72038.
+        # 首次成功 first-send 赋值 ``_message_id`` 时的墙上时钟时间戳
+        #（time.monotonic）。供 fresh-final 逻辑检测长生命周期的 preview —— 这些
+        # preview 的 edit 时间戳在完成时会过期。移植自 openclaw/openclaw#72038。
         self._message_created_ts: Optional[float] = None
-        # Every real preview message id the consumer has put on screen during
-        # this response (first send + any continuation messages from oversized
-        # edits/sends).  The fresh-final path deletes all of them when it
-        # re-delivers the completed answer as a single (rich) message, so a
-        # reply that was split across the platform's edit limit while streaming
-        # doesn't leave stale fragments above the final message.
+        # 本次响应期间 consumer 在屏幕上显示的每一个真实 preview 消息 id（首次发送
+        # + 任何来自超大 edit/send 的续接消息）。fresh-final 路径在把完整答案作为单条
+        #（富文本）消息重新投递时会删除所有这些 id，这样流式过程中因超出平台 edit 上限
+        # 而被拆分的回复就不会在最终消息上方留下过期片段。
         self._preview_message_ids: "set[str]" = set()
         self._already_sent = False
-        self._edit_supported = True  # Disabled when progressive edits are no longer usable
+        self._edit_supported = True  # 当渐进式 edit 不再可用时禁用
         self._last_edit_time = 0.0
-        self._last_sent_text = ""   # Track last-sent text to skip redundant edits
-        # True when the most recent _send_or_edit split-and-delivered across
-        # continuation messages (the adapter adopted a new message id).
+        self._last_sent_text = ""   # 记录上次发送的文本以跳过冗余 edit
+        # 当最近一次 _send_or_edit 拆分并跨续接消息投递时（adapter 采纳了新的消息 id）为 True。
         self._last_edit_overflowed = False
         self._fallback_final_send = False
         self._fallback_prefix = ""
-        # True when fallback is sending only the missing tail after a partial
-        # Telegram overflow delivery.  In that case the already-visible prefix
-        # is intentional content, not a stale preview to delete.
+        # 当 fallback 只是在 Telegram 部分溢出投递后补发缺失的尾部时为 True。此时已可见
+        # 的前缀是有意保留的内容，而不是要删除的过期 preview。
         self._fallback_preserve_partial_messages = False
-        self._flood_strikes = 0         # Consecutive flood-control edit failures
-        self._current_edit_interval = self.cfg.edit_interval  # Adaptive backoff
+        self._flood_strikes = 0         # 连续的 flood-control edit 失败次数
+        self._current_edit_interval = self.cfg.edit_interval  # 自适应退避
         self._final_response_sent = False
-        # Set when the final response content was sent to the user via
-        # streaming, even if the final edit (cursor removal etc.)
-        # subsequently failed.
+        # 当最终响应内容已通过流式发送给用户时设置，即使随后的最终 edit（移除光标等）
+        # 失败也是如此。
         self._final_content_delivered = False
-        # Cache adapter lifecycle capability: only platforms that need an
-        # explicit finalize call (e.g. DingTalk AI Cards) force us to make
-        # a redundant final edit.  Everyone else keeps the fast path.
-        # Use ``is True`` (not ``bool(...)``) so MagicMock attribute access
-        # in tests doesn't incorrectly enable this path.
+        # 缓存 adapter 的生命周期能力：只有需要显式 finalize 调用的平台（例如 DingTalk
+        # AI Cards）才会迫使我们做一次冗余的最终 edit。其他平台保持快速路径。
+        # 使用 ``is True``（而非 ``bool(...)``）以便测试中的 MagicMock 属性访问
+        # 不会错误地启用此路径。
         self._adapter_requires_finalize: bool = (
             getattr(adapter, "REQUIRES_EDIT_FINALIZE", False) is True
         )
 
-        # Think-block filter state (mirrors CLI's _stream_delta tag suppression)
+        # think-block 过滤状态（对应 CLI 的 _stream_delta 标签抑制逻辑）
         self._in_think_block = False
         self._think_buffer = ""
 
-        # Native draft-streaming state.  Resolved at the start of run() based
-        # on cfg.transport, cfg.chat_type, and the adapter's
-        # supports_draft_streaming() probe.  When True, the consumer emits
-        # animated draft frames via adapter.send_draft instead of progressive
-        # edits via adapter.edit_message.  The final answer still goes
-        # through the normal first-send path so the user gets a real message
-        # in their chat history (drafts have no message_id).
+        # 原生 draft 流式状态。在 run() 开始时根据 cfg.transport、cfg.chat_type 和
+        # adapter 的 supports_draft_streaming() 探测结果解析。当为 True 时，consumer
+        # 通过 adapter.send_draft 发送动画 draft 帧，而不是通过 adapter.edit_message
+        # 做渐进式 edit。最终答案仍通过常规的 first-send 路径投递，这样用户聊天历史
+        # 里会有一条真实消息（draft 没有 message_id）。
         self._use_draft_streaming = False
         self._draft_id: Optional[int] = None
-        # Cumulative draft-frame failure count for this consumer.  After the
-        # first failure we permanently disable drafts for the remainder of
-        # this response and route through edit-based for graceful degradation.
+        # 本 consumer 的累计 draft 帧失败计数。首次失败后我们会在本次响应的剩余部分
+        # 永久禁用 draft，并通过 edit 路径优雅降级。
         self._draft_failures = 0
         self._before_finalize_notified = False
 
@@ -209,16 +188,15 @@ class GatewayStreamConsumer:
         final: bool = False,
         expect_edits: bool = False,
     ) -> dict | None:
-        """Return per-send metadata for stream-created messages.
+        """返回流式创建消息的 per-send metadata。
 
-        Mattermost treats notify-worthy sends as user-visible final content
-        when deciding whether a broken thread root may fall back flat.  Preview
-        and progress sends keep their original metadata and remain thread-strict.
+        Mattermost 在决定一个损坏的 thread 根是否可以扁平回退时，会把值得通知的
+        send 视为用户可见的最终内容。preview 和 progress 的 send 保留其原始 metadata
+        并保持 thread 严格性。
 
-        ``expect_edits`` preserves the upstream Telegram streaming contract:
-        preview messages that may be edited later must stay on the editable
-        legacy send path, while fresh/fallback final sends can still use richer
-        final-message delivery.
+        ``expect_edits`` 保留了上游 Telegram 的流式契约：后续可能被 edit 的 preview
+        消息必须留在可编辑的旧 send 路径上，而全新的/回退的最终 send 仍可使用更丰富
+        的最终消息投递方式。
         """
         meta = dict(self.metadata) if self.metadata else {}
         if expect_edits:
@@ -229,27 +207,26 @@ class GatewayStreamConsumer:
 
     @property
     def already_sent(self) -> bool:
-        """True if at least one message was sent or edited during the run."""
+        """本次运行期间是否至少发送或编辑过一条消息。"""
         return self._already_sent
 
     @property
     def final_response_sent(self) -> bool:
-        """True when the stream consumer delivered the final assistant reply."""
+        """stream consumer 是否已投递最终的 assistant 回复。"""
         return self._final_response_sent
 
     @property
     def message_id(self) -> str | None:
-        """The Discord/chat message ID of the last-sent or edited message."""
+        """最后发送或编辑的消息的 Discord/chat 消息 ID。"""
         return self._message_id
 
     @property
     def final_content_delivered(self) -> bool:
-        """True when the final response content reached the user, even if
-        the subsequent cosmetic edit (cursor removal) failed."""
+        """最终响应内容是否已到达用户，即使随后的装饰性 edit（移除光标）失败。"""
         return self._final_content_delivered
 
     async def _notify_before_finalize(self) -> None:
-        """Run the pre-finalize hook exactly once, swallowing hook errors."""
+        """仅运行一次 pre-finalize 钩子，吞掉钩子抛出的错误。"""
         if self._before_finalize_notified:
             return
         self._before_finalize_notified = True
@@ -269,14 +246,14 @@ class GatewayStreamConsumer:
         content: str,
         finalize: bool = False,
     ):
-        """Edit via the adapter, passing routing metadata when supported."""
+        """通过 adapter 执行 edit，在支持时传入路由 metadata。"""
         kwargs = {
             "chat_id": self.chat_id,
             "message_id": message_id,
             "content": content,
         }
-        # Keep the long-standing stream-consumer contract: concrete adapters
-        # must accept finalize= even when it is False (guarded by tests).
+        # 保留 stream-consumer 长期以来的契约：具体 adapter 必须接受 finalize=
+        #（即使为 False，由测试守护）。
         kwargs["finalize"] = finalize
 
         if self.metadata:
@@ -292,16 +269,16 @@ class GatewayStreamConsumer:
         return await self.adapter.edit_message(**kwargs)
 
     def on_segment_break(self) -> None:
-        """Finalize the current stream segment and start a fresh message."""
+        """完成当前流式分段并开始一条新消息。"""
         self._queue.put(_NEW_SEGMENT)
 
     def on_commentary(self, text: str) -> None:
-        """Queue a completed interim assistant commentary message."""
+        """把一条已完成的过渡性 assistant commentary 消息入队。"""
         if text:
             self._queue.put((_COMMENTARY, text))
 
     def _notify_new_message(self) -> None:
-        """Fire the on_new_message callback, swallowing any errors."""
+        """触发 on_new_message 回调，吞掉任何错误。"""
         cb = self._on_new_message
         if cb is None:
             return
@@ -320,29 +297,26 @@ class GatewayStreamConsumer:
         self._fallback_final_send = False
         self._fallback_prefix = ""
         self._fallback_preserve_partial_messages = False
-        # #29346: a tool/segment boundary means what we delivered was an interim
-        # preamble, not the final answer — clear the flags so a premature setter
-        # can't fool the gateway. Safe: got_done returns before any reset, and
-        # run.py reads these only after the consumer task exits.
+        # #29346：工具/分段边界意味着我们此前投递的是过渡性前言，而不是最终答案 ——
+        # 清除这些 flag，以防某个过早的 setter 欺骗 gateway。安全：got_done 在任何 reset
+        # 之前返回，而 run.py 仅在 consumer 任务退出后才读取这些值。
         self._final_response_sent = False
         self._final_content_delivered = False
-        # Native draft streaming: bump the draft_id so the next text segment
-        # animates as a fresh preview below the tool-progress bubbles, not
-        # over the prior segment's already-finalized draft.  This is how
-        # we avoid the "inter-tool-call text leak" failure mode openclaw
-        # documented in their issue #32535 — each text block becomes its
-        # own visible message via the finalize, then a new draft animates
-        # for the next one.
+        # 原生 draft 流式：递增 draft_id，使下一段文本作为全新的 preview 在
+        # tool-progress 气泡下方播放动画，而不是覆盖上一段已完成的 draft。这正是我们
+        # 避免 openclaw 在其 issue #32535 中记录的"工具调用之间的文本泄漏"失败模式
+        # 的方式 —— 每个文本块通过 finalize 成为一条可见消息，然后下一段再以一个新
+        # draft 播放动画。
         if self._use_draft_streaming:
             type(self)._draft_id_counter += 1
             self._draft_id = type(self)._draft_id_counter
 
     def on_delta(self, text: str) -> None:
-        """Thread-safe callback — called from the agent's worker thread.
+        """线程安全的回调 —— 从 agent 的工作线程中调用。
 
-        When *text* is ``None``, signals a tool boundary: the current message
-        is finalized and subsequent text will be sent as a new message so it
-        appears below any tool-progress messages the gateway sent in between.
+        当 *text* 为 ``None`` 时，表示一个工具边界：当前消息会被完成，后续文本将
+        作为一条新消息发送，使其出现在 gateway 在其间发送的任何 tool-progress 消息
+        下方。
         """
         if text:
             self._queue.put(text)
@@ -350,31 +324,29 @@ class GatewayStreamConsumer:
             self.on_segment_break()
 
     def finish(self) -> None:
-        """Signal that the stream is complete."""
+        """发出流已完成的信号。"""
         self._queue.put(_DONE)
 
-    # ── Think-block filtering ────────────────────────────────────────
-    # Models like MiniMax emit inline <think>...</think> blocks in their
-    # content.  The CLI's _stream_delta suppresses these via a state
-    # machine; we do the same here so gateway users never see raw
-    # reasoning tags.  The agent also strips them from the final
-    # response (run_agent.py _strip_think_blocks), but the stream
-    # consumer sends intermediate edits before that stripping happens.
+    # ── think-block 过滤 ─────────────────────────────────────────────
+    # 像 MiniMax 这样的模型会在其内容中内联输出 <think>...</think> 块。CLI 的
+    # _stream_delta 通过一个状态机来抑制它们；我们在这里做同样的事，使 gateway
+    # 用户永远不会看到原始推理标签。agent 也会从最终响应中剥离它们
+    #（run_agent.py 的 _strip_think_blocks），但 stream consumer 在剥离发生之前
+    # 就发送了中间 edit。
 
     def _filter_and_accumulate(self, text: str) -> None:
-        """Add a text delta to the accumulated buffer, suppressing think blocks.
+        """把一个文本增量加入已累积的缓冲区，抑制 think block。
 
-        Uses a state machine that tracks whether we are inside a
-        reasoning/thinking block.  Text inside such blocks is silently
-        discarded.  Partial tags at buffer boundaries are held back in
-        ``_think_buffer`` until enough characters arrive to decide.
+        使用一个状态机来跟踪我们是否处于一个推理/思考块内部。此类块内部的文本会被
+        静默丢弃。缓冲区边界处的不完整标签会暂存在 ``_think_buffer`` 中，直到足够的
+        字符到达可以做出判断。
         """
         buf = self._think_buffer + text
         self._think_buffer = ""
 
         while buf:
             if self._in_think_block:
-                # Look for the earliest closing tag
+                # 寻找最早的闭合标签
                 best_idx = -1
                 best_len = 0
                 for tag in self._CLOSE_THINK_TAGS:
@@ -384,20 +356,18 @@ class GatewayStreamConsumer:
                         best_len = len(tag)
 
                 if best_len:
-                    # Found closing tag — discard block, process remainder
+                    # 找到闭合标签 —— 丢弃块，处理剩余部分
                     self._in_think_block = False
                     buf = buf[best_idx + best_len:]
                 else:
-                    # No closing tag yet — hold tail that could be a
-                    # partial closing tag prefix, discard the rest.
+                    # 尚无闭合标签 —— 暂存可能是不完整闭合标签前缀的尾部，丢弃其余部分。
                     max_tag = max(len(t) for t in self._CLOSE_THINK_TAGS)
                     self._think_buffer = buf[-max_tag:] if len(buf) > max_tag else buf
                     return
             else:
-                # Look for earliest opening tag at a block boundary
-                # (start of text / preceded by newline + optional whitespace).
-                # This prevents false positives when models *mention* tags
-                # in prose (e.g. "the <think> tag is used for…").
+                # 在块边界处（文本开头 / 前面是换行 + 可选空白）寻找最早的开始标签。
+                # 这可以避免模型在散文中*提及*标签时（例如 "the <think> tag is used for…"）
+                # 出现误判。
                 best_idx = -1
                 best_len = 0
                 for tag in self._OPEN_THINK_TAGS:
@@ -406,7 +376,7 @@ class GatewayStreamConsumer:
                         idx = buf.find(tag, search_start)
                         if idx == -1:
                             break
-                        # Block-boundary check (mirrors cli.py logic)
+                        # 块边界检查（对应 cli.py 的逻辑）
                         if idx == 0:
                             is_boundary = (
                                 not self._accumulated
@@ -427,16 +397,16 @@ class GatewayStreamConsumer:
                         if is_boundary and (best_idx == -1 or idx < best_idx):
                             best_idx = idx
                             best_len = len(tag)
-                            break  # first boundary hit for this tag is enough
+                            break  # 该标签的第一次边界命中就足够了
                         search_start = idx + 1
 
                 if best_len:
-                    # Emit text before the tag, enter think block
+                    # 输出标签之前的文本，进入 think block
                     self._accumulated += buf[:best_idx]
                     self._in_think_block = True
                     buf = buf[best_idx + best_len:]
                 else:
-                    # No opening tag — check for a partial tag at the tail
+                    # 没有开始标签 —— 检查尾部是否有不完整的标签
                     held_back = 0
                     for tag in self._OPEN_THINK_TAGS:
                         for i in range(1, len(tag)):
@@ -450,38 +420,35 @@ class GatewayStreamConsumer:
                     return
 
     def _flush_think_buffer(self) -> None:
-        """Flush any held-back partial-tag buffer into accumulated text.
+        """把暂存的不完整标签缓冲区刷入已累积文本。
 
-        Called when the stream ends (got_done) so that partial text that
-        was held back waiting for a possible opening tag is not lost.
+        在流结束（got_done）时调用，使此前为等待可能的开始标签而暂存的不完整文本
+        不会丢失。
         """
         if self._think_buffer and not self._in_think_block:
             self._accumulated += self._think_buffer
             self._think_buffer = ""
 
     async def run(self) -> None:
-        """Async task that drains the queue and edits the platform message."""
-        # Platform message length limit — leave room for cursor + formatting.
-        # Use the adapter's length function (e.g. utf16_len for Telegram) so
-        # overflow detection matches what the platform actually enforces.
-        # Gate on isinstance(BasePlatformAdapter) so test MagicMocks (whose
-        # auto-attributes return mock objects, not callables) fall back to len.
+        """排空队列并编辑平台消息的异步任务。"""
+        # 平台消息长度上限 —— 给光标 + 格式化留出空间。
+        # 使用 adapter 的长度函数（例如 Telegram 的 utf16_len），使溢出检测与平台
+        # 实际强制执行的规则一致。用 isinstance(BasePlatformAdapter) 做门控，使测试
+        # 用的 MagicMock（其自动属性返回 mock 对象而非可调用对象）回退到 len。
         _len_fn: "Callable[[str], int]" = (
             self.adapter.message_len_fn
             if isinstance(self.adapter, _BasePlatformAdapter)
             else len
         )
-        # Rich-capable adapters (Telegram rich messages) raise this above the
-        # legacy per-message limit so a reply that fits one rich send/draft
-        # isn't fragmented at 4096 while streaming.  See _raw_message_limit.
+        # 具备富文本能力的 adapter（Telegram 富文本消息）会把这个值抬高到旧的每条
+        # 消息上限之上，使一条能放进一次富文本 send/draft 的回复在流式过程中不会在
+        # 4096 处被拆分。参见 _raw_message_limit。
         _raw_limit = self._raw_message_limit()
         _safe_limit = max(500, _raw_limit - _len_fn(self.cfg.cursor) - 100)
 
-        # Resolve native draft streaming once per run.  When enabled the
-        # consumer routes mid-stream frames through adapter.send_draft and
-        # leaves _message_id=None so the existing got_done path delivers the
-        # final answer as a regular sendMessage (drafts have no message_id
-        # to edit).
+        # 每次 run 解析一次原生 draft 流式。启用后，consumer 把流中段的帧通过
+        # adapter.send_draft 路由，并保持 _message_id=None，使现有的 got_done 路径
+        # 以一次常规 sendMessage 投递最终答案（draft 没有可 edit 的 message_id）。
         self._use_draft_streaming = self._resolve_draft_streaming()
         if self._use_draft_streaming:
             type(self)._draft_id_counter += 1
@@ -493,7 +460,7 @@ class GatewayStreamConsumer:
 
         try:
             while True:
-                # Drain all available items from the queue
+                # 从队列中排空所有可用项
                 got_done = False
                 got_segment_break = False
                 commentary_text = None
@@ -513,13 +480,12 @@ class GatewayStreamConsumer:
                     except queue.Empty:
                         break
 
-                # Flush any held-back partial-tag buffer on stream end
-                # so trailing text that was waiting for a potential open
-                # tag is not lost.
+                # 在流结束时刷出暂存的不完整标签缓冲区，使此前等待可能开始标签
+                # 的尾部文本不会丢失。
                 if got_done:
                     self._flush_think_buffer()
 
-                # Decide whether to flush an edit
+                # 决定是否刷新一次 edit
                 now = time.monotonic()
                 elapsed = now - self._last_edit_time
                 should_edit = (
@@ -531,26 +497,23 @@ class GatewayStreamConsumer:
                     should_edit = should_edit or (
                         (elapsed >= self._current_edit_interval
                             and self._accumulated)
-                        # buffer_threshold is intentionally codepoint-based:
-                        # it's a debounce heuristic ("send updates roughly
-                        # every N visible characters"), not a platform-limit
-                        # check. _len_fn is reserved for overflow detection.
+                        # buffer_threshold 刻意按 codepoint 计算：它是一个去抖
+                        # 启发式（"大约每 N 个可见字符发送一次更新"），而不是平台
+                        # 上限检查。_len_fn 留给溢出检测使用。
                         or len(self._accumulated) >= self.cfg.buffer_threshold
                     )
 
                 current_update_visible = False
                 if should_edit and self._accumulated:
-                    # Split overflow: if accumulated text exceeds the platform
-                    # limit, split into properly sized chunks.
+                    # 拆分溢出：如果累积文本超出平台上限，把它拆成大小合适的块。
                     if (
                         _len_fn(self._accumulated) > _safe_limit
                         and self._message_id is None
                     ):
-                        # No existing message to edit (first message or after a
-                        # segment break).  Use truncate_message — the same
-                        # helper the non-streaming path uses — to split with
-                        # proper word/code-fence boundaries and chunk
-                        # indicators like "(1/2)".
+                        # 没有可 edit 的现有消息（首条消息或分段中断之后）。使用
+                        # truncate_message —— 即非流式路径使用的同一个辅助函数 —— 按
+                        # 正确的单词/代码围栏边界拆分，并加上类似 "(1/2)" 的分块
+                        # 标记。
                         chunks = self.adapter.truncate_message(
                             self._accumulated, _safe_limit, len_fn=_len_fn,
                         )
@@ -568,10 +531,10 @@ class GatewayStreamConsumer:
                         self._last_sent_text = ""
                         self._last_edit_time = time.monotonic()
                         if got_done:
-                            # Only claim final delivery if THESE chunks actually
-                            # landed.  ``_already_sent`` may be True from prior
-                            # tool-progress edits or fallback-mode promotion (#10748)
-                            # — that doesn't mean the final answer reached the user.
+                            # 只有当这些块确实落地时才声明最终投递成功。
+                            # ``_already_sent`` 可能因之前的 tool-progress edit 或
+                            # fallback 模式提升（#10748）而为 True —— 这并不意味着最终
+                            # 答案已到达用户。
                             self._final_response_sent = chunks_delivered
                             if chunks_delivered:
                                 self._final_content_delivered = True
@@ -582,8 +545,7 @@ class GatewayStreamConsumer:
                             self._fallback_prefix = ""
                         continue
 
-                    # Existing message: edit it with the first chunk, then
-                    # start a new message for the overflow remainder.
+                    # 已有消息：用第一块 edit 它，然后为新溢出余下部分开一条新消息。
                     while (
                         _len_fn(self._accumulated) > _safe_limit
                         and self._message_id is not None
@@ -596,25 +558,22 @@ class GatewayStreamConsumer:
                         if split_at < _safe_limit // 2:
                             split_at = _safe_limit
                         chunk = self._accumulated[:split_at]
-                        # finalize=True so the adapter applies platform-specific
-                        # rich-text markup (e.g. Telegram MarkdownV2). This
-                        # sealed chunk will never be edited again — _message_id
-                        # is reset to None right below — so it must receive its
-                        # final formatting pass now, or early split messages
-                        # render raw markdown while only the last chunk renders.
-                        # is_turn_final=False: this is the first of several split
-                        # messages, NOT the turn-final answer, so the fresh-final
-                        # path (opt-in fresh_final_after_seconds) must not mark
-                        # the turn delivered on it (#29346 semantics).
+                        # finalize=True 以便 adapter 应用平台相关的富文本标记
+                        #（例如 Telegram MarkdownV2）。这个封存的块永不会再被 edit ——
+                        # _message_id 在下面立即被重置为 None —— 因此它现在必须完成其
+                        # 最终格式化，否则早期拆分消息会渲染成原始 markdown，而只有最后
+                        # 一块能正确渲染。
+                        # is_turn_final=False：这是多条拆分消息中的第一条，而不是
+                        # turn 最终答案，所以 fresh-final 路径（可选的
+                        # fresh_final_after_seconds）不得把 turn 标记为已投递（#29346
+                        # 语义）。
                         ok = await self._send_or_edit(
                             chunk, finalize=True, is_turn_final=False,
                         )
                         if self._fallback_final_send or not ok:
-                            # Edit failed (or backed off due to flood control)
-                            # while attempting to split an oversized message.
-                            # Keep the full accumulated text intact so the
-                            # fallback final-send path can deliver the remaining
-                            # continuation without dropping content.
+                            # 在尝试拆分超大消息时 edit 失败（或因 flood control 退避）。
+                            # 保留完整的累积文本，使 fallback 最终发送路径能投递剩余的
+                            # 续接内容而不丢内容。
                             break
                         self._accumulated = self._accumulated[split_at:].lstrip("\n")
                         self._message_id = None
@@ -624,17 +583,15 @@ class GatewayStreamConsumer:
                     if not got_done and not got_segment_break and commentary_text is None:
                         display_text += self.cfg.cursor
 
-                    # Segment break: finalize the current message so platforms
-                    # that need explicit closure (e.g. DingTalk AI Cards) don't
-                    # leave the previous segment stuck in a loading state when
-                    # the next segment (tool progress, next chunk) creates a
-                    # new message below it.  got_done has its own finalize
-                    # path below so we don't finalize here for it.
+                    # 分段中断：完成当前消息，使需要显式收尾的平台（例如 DingTalk AI
+                    # Cards）在下一段（tool progress、下一个块）在其下方创建新消息时，
+                    # 不会让上一段停留在加载状态。got_done 有自己的收尾路径，因此此处
+                    # 不为它做 finalize。
                     current_update_visible = await self._send_or_edit(
                         display_text,
                         finalize=(got_done or got_segment_break),
-                        # A segment-break finalize closes a preamble, not the
-                        # turn-final answer — only got_done marks delivered (#29346).
+                        # 分段中断的 finalize 关闭的是一个前言，而不是 turn 最终答案
+                        # —— 只有 got_done 才标记为已投递（#29346）。
                         is_turn_final=got_done,
                     )
                     self._last_edit_time = time.monotonic()
@@ -642,20 +599,16 @@ class GatewayStreamConsumer:
                 if got_done:
                     if self._accumulated or self._message_id is not None or self._already_sent:
                         await self._notify_before_finalize()
-                    # Final edit without cursor. If progressive editing failed
-                    # mid-stream, send a single continuation/fallback message
-                    # here instead of letting the base gateway path send the
-                    # full response again.
+                    # 不带光标的最终 edit。如果流式过程中渐进式 edit 失败，则在此发送一条
+                    # 续接/回退消息，而不是让基类 gateway 路径再次发送完整响应。
                     if self._accumulated:
                         if self._fallback_final_send:
                             await self._send_fallback_final(self._accumulated)
                         elif self._final_response_sent:
-                            # A finalize=True tick above already delivered the
-                            # final answer via the adapter's fresh-final path
-                            # (_try_fresh_final sent a fresh rich message and
-                            # deleted the preview).  Running a second finalize
-                            # edit here would duplicate the message / re-delete,
-                            # so just record delivery and stop.
+                            # 上面的某次 finalize=True tick 已经通过 adapter 的
+                            # fresh-final 路径投递了最终答案（_try_fresh_final 发送了一条
+                            # 新的富文本消息并删除了 preview）。在此再跑一次 finalize
+                            # edit 会重复消息/重复删除，因此只记录投递并停止。
                             self._final_content_delivered = True
                         elif (
                             current_update_visible
@@ -664,35 +617,26 @@ class GatewayStreamConsumer:
                                 or self._last_edit_overflowed
                             )
                         ):
-                            # Mid-stream edit above already delivered the
-                            # final accumulated content.  Skip the redundant
-                            # final edit for adapters that don't need an
-                            # explicit finalize signal, and for any adapter
-                            # when that edit split-and-delivered across
-                            # continuations: the split edit carried
-                            # finalize=True itself, and re-finalizing with
-                            # the full text would overflow-split again into
-                            # the adopted continuation, duplicating chunks
-                            # on screen.
+                            # 上面的流中 edit 已经投递了最终累积内容。对于不需要显式
+                            # finalize 信号的 adapter，以及当该 edit 跨续接消息拆分投递时
+                            # 的任何 adapter，跳过冗余的最终 edit：拆分 edit 本身已携带
+                            # finalize=True，用完整文本再次 finalize 会再次溢出拆分进被
+                            # 采纳的续接消息，导致屏幕上出现重复分块。
                             self._final_response_sent = True
                             self._final_content_delivered = True
                         elif self._message_id:
-                            # Either the mid-stream edit didn't run (no
-                            # visible update this tick) OR the adapter needs
-                            # explicit finalize=True to close the stream.
+                            # 或者流中 edit 没运行（本次 tick 没有可见更新），或者 adapter
+                            # 需要显式 finalize=True 来关闭流。
                             self._final_response_sent = await self._send_or_edit(
                                 self._accumulated, finalize=True,
                             )
                             if self._final_response_sent:
                                 self._final_content_delivered = True
                             elif self._fallback_final_send:
-                                # The final edit attempt itself may be the one
-                                # that exhausts flood-control strikes and
-                                # promotes the consumer into fallback mode.  Do
-                                # not return to the gateway with a full-response
-                                # fallback still pending; send only the unsent
-                                # tail here so the normal gateway send path does
-                                # not duplicate the visible prefix.
+                                # 最终 edit 尝试本身可能就是耗尽 flood-control 次数并把
+                                # consumer 提升为 fallback 模式的那一次。不要在仍待处理的
+                                # 完整响应 fallback 状态下返回给 gateway；在此只发送未发送
+                                # 的尾部，使常规 gateway 发送路径不会重复可见前缀。
                                 await self._send_fallback_final(self._accumulated)
                         elif not self._already_sent:
                             self._final_response_sent = await self._send_or_edit(self._accumulated)
@@ -706,29 +650,22 @@ class GatewayStreamConsumer:
                     self._last_edit_time = time.monotonic()
                     self._reset_segment_state()
 
-                # Tool boundary: reset message state so the next text chunk
-                # creates a fresh message below any tool-progress messages.
+                # 工具边界：重置消息状态，使下一个文本块在任何 tool-progress 消息下方
+                # 创建一条新消息。
                 #
-                # Exception: when _message_id is "__no_edit__" the platform
-                # never returned a real message ID (e.g. Signal, webhook with
-                # github_comment delivery).  Resetting to None would re-enter
-                # the "first send" path on every tool boundary and post one
-                # platform message per tool call — that is what caused 155
-                # comments under a single PR.  Instead, preserve the sentinel
-                # so the full continuation is delivered once via
-                # _send_fallback_final.
-                # (When editing fails mid-stream due to flood control the id is
-                # a real string like "msg_1", not "__no_edit__", so that case
-                # still resets and creates a fresh segment as intended.)
+                # 例外：当 _message_id 为 "__no_edit__" 时，平台从不返回真实的消息 ID
+                #（例如 Signal、使用 github_comment 投递的 webhook）。把它重置为 None 会在
+                # 每个工具边界重新进入"首次发送"路径，并为每个工具调用发送一条平台消息
+                # —— 这正是导致一个 PR 下出现 155 条评论的原因。相反，保留该哨兵，使完整
+                # 续接内容通过 _send_fallback_final 投递一次。
+                #（当 edit 因 flood control 在流中失败时，id 是 "msg_1" 这样的真实
+                # 字符串，而非 "__no_edit__"，因此该情况仍会重置并按预期创建新分段。）
                 if got_segment_break:
-                    # If the segment-break edit failed to deliver the
-                    # accumulated content (flood control that has not yet
-                    # promoted to fallback mode, or fallback mode itself),
-                    # _accumulated still holds pre-boundary text the user
-                    # never saw. Flush that tail as a continuation message
-                    # before the reset below wipes _accumulated — otherwise
-                    # text generated before the tool boundary is silently
-                    # dropped (issue #8124).
+                    # 如果分段中断的 edit 未能投递累积内容（尚未提升为 fallback 模式的
+                    # flood control，或 fallback 模式本身），_accumulated 仍持有用户从未
+                    # 看到的边界前文本。在下面的 reset 抹除 _accumulated 之前，把该尾部作
+                    # 为续接消息刷出 —— 否则工具边界之前生成的文本会被静默丢弃
+                    #（issue #8124）。
                     if (
                         self._accumulated
                         and not current_update_visible
@@ -738,16 +675,14 @@ class GatewayStreamConsumer:
                         await self._flush_segment_tail_on_edit_failure()
                     self._reset_segment_state(preserve_no_edit=True)
 
-                await asyncio.sleep(0.05)  # Small yield to not busy-loop
+                await asyncio.sleep(0.05)  # 小让步，避免忙循环
 
         except asyncio.CancelledError:
-            # Best-effort final edit on cancellation.  finalize=True so
-            # REQUIRES_EDIT_FINALIZE platforms (Telegram) apply final
-            # formatting — a plain edit here would leave the entire reply
-            # rendered as a raw streaming preview while the success flags
-            # below suppress the gateway's formatted re-send.
-            # is_turn_final=False keeps _try_fresh_final from setting
-            # _final_response_sent itself; this handler owns the flags.
+            # 取消时尽力做最终 edit。finalize=True 使 REQUIRES_EDIT_FINALIZE 平台
+            #（Telegram）应用最终格式化 —— 此处一次普通 edit 会让整条回复以原始流式
+            # preview 形式渲染，而下面的成功 flag 又会抑制 gateway 的格式化重发。
+            # is_turn_final=False 阻止 _try_fresh_final 自行设置
+            # _final_response_sent；本 handler 拥有这些 flag。
             _best_effort_ok = False
             if self._accumulated and self._message_id:
                 try:
@@ -758,45 +693,38 @@ class GatewayStreamConsumer:
                     )
                 except Exception:
                     pass
-            # Only confirm final delivery if the best-effort send above
-            # actually succeeded OR if the final response was already
-            # confirmed before we were cancelled.  Previously this
-            # promoted any partial send (already_sent=True) to
-            # final_response_sent — which suppressed the gateway's
-            # fallback send even when only intermediate text (e.g.
-            # "Let me search…") had been delivered, not the real answer.
+            # 只有当上面的尽力发送确实成功了，或者在被取消之前最终响应已被确认时，才
+            # 确认最终投递。此前这会把任何部分发送（already_sent=True）提升为
+            # final_response_sent —— 这会抑制 gateway 的 fallback 发送，即使只投递了
+            # 中间文本（例如 "让我搜索一下…"）而非真正的答案。
             if _best_effort_ok and not self._final_response_sent:
                 self._final_response_sent = True
                 self._final_content_delivered = True
         except Exception as e:
             logger.error("Stream consumer error: %s", e)
 
-    # Strip MEDIA:<path> tags before display. Uses the shared anchored
-    # MEDIA_TAG_CLEANUP_RE from gateway/platforms/base.py — only tags whose
-    # path ends in a deliverable extension are removed, so an unknown-extension
-    # path stays visible instead of being silently dropped (issue #34517).
-    # Streaming and non-streaming paths share the same regex, so a tag is
-    # treated identically whichever path delivered the text.
+    # 在显示前剥离 MEDIA:<path> 标签。使用 gateway/platforms/base.py 中共享的带锚点
+    # MEDIA_TAG_CLEANUP_RE —— 只移除路径以可投递扩展名结尾的标签，使未知扩展名的
+    # 路径保持可见，而不是被静默丢弃（issue #34517）。
+    # 流式与非流式路径共用同一个 regex，因此无论由哪条路径投递文本，标签的处理都一致。
     _MEDIA_RE = MEDIA_TAG_CLEANUP_RE
 
     @staticmethod
     def _clean_for_display(text: str) -> str:
-        """Strip MEDIA: directives and internal markers from text before display.
+        """在显示前从文本中剥离 MEDIA: 指令和内部标记。
 
-        The streaming path delivers raw text chunks that may include
-        ``MEDIA:<path>`` tags and ``[[audio_as_voice]]`` directives meant for
-        the platform adapter's post-processing.  The actual media files are
-        delivered separately via ``_deliver_media_from_response()`` after the
-        stream finishes — we just need to hide the raw directives from the
-        user.
+        流式路径投递的原始文本块可能包含 ``MEDIA:<path>`` 标签和
+        ``[[audio_as_voice]]`` 指令，它们是供平台 adapter 后处理的。实际的媒体文件
+        会在流结束后通过 ``_deliver_media_from_response()`` 单独投递 —— 我们只需
+        对用户隐藏这些原始指令。
         """
         if "MEDIA:" not in text and "[[audio_as_voice]]" not in text:
             return text
         cleaned = text.replace("[[audio_as_voice]]", "")
         cleaned = GatewayStreamConsumer._MEDIA_RE.sub("", cleaned)
-        # Collapse excessive blank lines left behind by removed tags
+        # 折叠因移除标签而留下的过多空行
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-        # Strip trailing whitespace/newlines but preserve leading content
+        # 去除尾部空白/换行，但保留开头内容
         return cleaned.rstrip()
 
     async def _send_new_chunk(
@@ -806,9 +734,9 @@ class GatewayStreamConsumer:
         *,
         final: bool = False,
     ) -> Optional[str]:
-        """Send a new message chunk, optionally threaded to a previous message.
+        """发送一个新消息块，可选地 thread 到上一条消息。
 
-        Returns the message_id so callers can thread subsequent chunks.
+        返回 message_id，以便调用方对后续块做 thread。
         """
         text = self._clean_for_display(text)
         if not text.strip():
@@ -825,8 +753,8 @@ class GatewayStreamConsumer:
                 self._track_preview_ids_from_result(result)
                 self._already_sent = True
                 self._last_sent_text = text
-                # Fresh content bubble — close off any stale tool bubble
-                # above so the next tool starts a new bubble below.
+                # 全新内容气泡 —— 关闭上方任何过期 tool 气泡，使下一个工具在下方
+                # 开启新气泡。
                 self._notify_new_message()
                 return str(result.message_id)
             else:
@@ -837,14 +765,14 @@ class GatewayStreamConsumer:
             return reply_to_id
 
     def _visible_prefix(self) -> str:
-        """Return the visible text already shown in the streamed message."""
+        """返回流式消息中已显示的可见文本。"""
         prefix = self._last_sent_text or ""
         if self.cfg.cursor and prefix.endswith(self.cfg.cursor):
             prefix = prefix[:-len(self.cfg.cursor)]
         return self._clean_for_display(prefix)
 
     def _continuation_text(self, final_text: str) -> str:
-        """Return only the part of final_text the user has not already seen."""
+        """返回 final_text 中用户尚未看到的那些部分。"""
         prefix = self._fallback_prefix or self._visible_prefix()
         if prefix and final_text.startswith(prefix):
             return final_text[len(prefix):].lstrip()
@@ -855,7 +783,7 @@ class GatewayStreamConsumer:
         text: str, limit: int,
         len_fn: "Callable[[str], int]" = len,
     ) -> list[str]:
-        """Split text into reasonably sized chunks for fallback sends."""
+        """把文本拆分成大小合理的块，供 fallback 发送使用。"""
         if len_fn(text) <= limit:
             return [text]
         chunks: list[str] = []
@@ -872,30 +800,27 @@ class GatewayStreamConsumer:
         return chunks
 
     async def _send_fallback_final(self, text: str) -> None:
-        """Send the final continuation after streaming edits stop working.
+        """在流式 edit 失效后发送最终续接内容。
 
-        Retries each chunk once on flood-control failures with a short delay.
+        对每个块在 flood-control 失败时以较短延迟重试一次。
         """
         final_text = self._clean_for_display(text)
         continuation = self._continuation_text(final_text)
         self._fallback_final_send = False
         if not continuation.strip():
-            # Nothing new to send — the visible partial already matches final text.
-            # BUT: if final_text itself has meaningful content (e.g. a timeout
-            # message after a long tool call), the prefix-based continuation
-            # calculation may wrongly conclude "already shown" because the
-            # streamed prefix was from a *previous* segment (before the tool
-            # boundary).  In that case, send the full final_text as-is (#10807).
+            # 没有新内容可发 —— 可见的部分已与最终文本匹配。
+            # 但是：如果 final_text 本身有有意义的内容（例如长工具调用后的超时
+            # 消息），基于前缀的续接计算可能错误地判定"已显示"，因为流式前缀
+            # 来自*上一个*分段（工具边界之前）。此时，原样发送完整 final_text
+            #（#10807）。
             if final_text.strip() and final_text != self._visible_prefix():
                 continuation = final_text
             else:
-                # Defence-in-depth for #7183: the last edit may still show the
-                # cursor character because fallback mode was entered after an
-                # edit failure left it stuck.  Try one final edit to strip it
-                # so the message doesn't freeze with a visible ▉.  Best-effort
-                # — if this edit also fails (flood control still active),
-                # _try_strip_cursor has already been called on fallback entry
-                # and the adaptive-backoff retries will have had their shot.
+                # 针对 #7183 的纵深防御：最后一次 edit 可能仍显示光标字符，因为
+                # fallback 模式是在一次 edit 失败留下卡住光标后进入的。尝试一次最终
+                # edit 把它剥掉，使消息不会冻结在可见的 ▉ 上。尽力而为 —— 如果此 edit
+                # 也失败（flood control 仍激活），进入 fallback 时已调用过
+                # _try_strip_cursor，自适应退避重试也已轮过。
                 if (
                     self._message_id
                     and self._last_sent_text
@@ -926,12 +851,12 @@ class GatewayStreamConsumer:
         safe_limit = max(500, raw_limit - 100)
         chunks = self._split_text_chunks(continuation, safe_limit, len_fn=_len_fn)
 
-        stale_message_id = self._message_id  # partial message to clean up
+        stale_message_id = self._message_id  # 待清理的部分消息
         last_message_id: Optional[str] = None
         last_successful_chunk = ""
         sent_any_chunk = False
         for chunk in chunks:
-            # Try sending with one retry on flood-control errors.
+            # 尝试发送，在 flood-control 错误时重试一次。
             result = None
             for attempt in range(2):
                 result = await self.adapter.send(
@@ -947,23 +872,20 @@ class GatewayStreamConsumer:
                     )
                     await asyncio.sleep(3.0)
                 else:
-                    break  # non-flood error or second attempt failed
+                    break  # 非 flood 错误，或第二次尝试失败
 
             if not result or not result.success:
                 if sent_any_chunk:
-                    # Some continuation text already reached the user, but not
-                    # the full response. Do NOT set _final_response_sent — the
-                    # base gateway final-send path should still deliver the
-                    # complete response so the user gets the full answer.
-                    # Suppress only _already_sent to avoid a duplicate send
-                    # of the same partial content.
+                    # 部分续接文本已到达用户，但不是完整响应。不要设置
+                    # _final_response_sent —— 基类 gateway 的最终发送路径仍应投递完整
+                    # 响应，让用户拿到完整答案。仅抑制 _already_sent 以避免对同一部分
+                    # 内容重复发送。
                     self._already_sent = True
                     self._message_id = last_message_id
                     self._last_sent_text = last_successful_chunk
                     self._fallback_prefix = ""
                     return
-                # No fallback chunk reached the user — allow the normal gateway
-                # final-send path to try one more time.
+                # 没有任何 fallback 块到达用户 —— 允许常规 gateway 最终发送路径再试一次。
                 self._already_sent = False
                 self._message_id = None
                 self._last_sent_text = ""
@@ -972,20 +894,16 @@ class GatewayStreamConsumer:
             sent_any_chunk = True
             last_successful_chunk = chunk
             last_message_id = result.message_id or last_message_id
-            # Each fallback chunk is a fresh platform message — notify
-            # so any stale tool-progress bubble gets closed off.
+            # 每个 fallback 块都是一条全新的平台消息 —— 发通知，使任何过期的
+            # tool-progress 气泡被关闭。
             self._notify_new_message()
 
-        # Remove the frozen partial message so the user only sees the
-        # complete fallback response.  ONLY safe when the fallback re-sent
-        # the FULL final text (continuation == final_text).  When the
-        # prefix-based dedup above sent only the missing TAIL, the partial
-        # message IS the head of the answer — deleting it leaves the user
-        # with only the last part of the response (the "Gemini sent only
-        # the second half" symptom).  Best-effort — if the platform doesn't
-        # implement ``delete_message``, the delete fails (flood control still
-        # active, bot lacks permission, message too old to delete), the
-        # partial remains but at least the full answer was delivered.
+        # 移除冻结的部分消息，使用户只看到完整的 fallback 响应。仅当 fallback
+        # 重新发送的是完整最终文本（continuation == final_text）时才安全。当上面基于
+        # 前缀的去重只发送了缺失的尾部时，部分消息就是答案的头部 —— 删除它会让用户
+        # 只看到响应的最后部分（即"Gemini 只发送了后半段"症状）。尽力而为 —— 如果平台
+        # 没有实现 ``delete_message``、删除失败（flood control 仍激活、bot 缺少权限、
+        # 消息太旧无法删除），部分消息会保留，但至少完整答案已投递。
         if (
             stale_message_id
             and stale_message_id != last_message_id
@@ -1011,34 +929,32 @@ class GatewayStreamConsumer:
         self._fallback_preserve_partial_messages = False
 
     def _is_flood_error(self, result) -> bool:
-        """Check if a SendResult failure is due to flood control / rate limiting."""
+        """检查一次 SendResult 失败是否由 flood control / rate limiting 导致。"""
         err = getattr(result, "error", "") or ""
         err_lower = err.lower()
         return "flood" in err_lower or "retry after" in err_lower or "rate" in err_lower
 
     def _resolve_draft_streaming(self) -> bool:
-        """Decide whether this run should use native draft streaming.
+        """决定本次 run 是否应使用原生 draft 流式。
 
-        Honors ``cfg.transport``:
-          * ``"edit"``  → never use drafts (legacy progressive-edit path).
-          * ``"draft"`` → require draft support; gracefully fall back to edit
-            when the adapter declines.  Logs the downgrade at debug.
-          * ``"auto"``  → use drafts when the adapter supports them for this
-            chat type; otherwise edit.
+        遵循 ``cfg.transport``：
+          * ``"edit"``  → 从不使用 draft（旧的渐进式 edit 路径）。
+          * ``"draft"`` → 要求 draft 支持；adapter 拒绝时优雅回退到 edit。降级以
+            debug 级别记录。
+          * ``"auto"``  → 当 adapter 对此 chat 类型支持 draft 时使用；否则 edit。
 
-        Adapter eligibility is checked via
-        :meth:`BasePlatformAdapter.supports_draft_streaming`, which considers
-        the chat type (e.g. Telegram drafts are DM-only) and platform-version
-        gates (e.g. python-telegram-bot 22.6+).
+        adapter 资格通过 :meth:`BasePlatformAdapter.supports_draft_streaming` 检查，
+        该方法会考虑 chat 类型（例如 Telegram 的 draft 仅限 DM）和平台版本门控
+        （例如 python-telegram-bot 22.6+）。
         """
         transport = (self.cfg.transport or "edit").lower()
         if transport == "edit":
             return False
-        # "off" is filtered upstream by the gateway; treat as edit defensively.
+        # "off" 由 gateway 在上游过滤；此处防御性地按 edit 处理。
         if transport == "off":
             return False
-        # Test adapters are MagicMocks that don't subclass BasePlatformAdapter;
-        # default them to edit so existing test behaviour is preserved.
+        # 测试 adapter 是 MagicMock，不是 BasePlatformAdapter 的子类；默认按 edit
+        # 处理，以保留现有测试行为。
         if not isinstance(self.adapter, _BasePlatformAdapter):
             return False
         try:
@@ -1060,17 +976,15 @@ class GatewayStreamConsumer:
         return True
 
     async def _send_draft_frame(self, text: str) -> bool:
-        """Emit a single animated draft frame for the current accumulated text.
+        """为当前累积文本发出一帧动画 draft。
 
-        Returns True when the frame landed.  On any failure, permanently
-        disables drafts for the remainder of this run so subsequent frames
-        flow through the edit-based path (which can adapt with flood-control
-        backoff, etc.).  Drafts have no message_id and clear naturally on
-        the client when the response finalizes via a regular sendMessage.
+        成功落地时返回 True。任何失败都会在本次 run 的剩余部分永久禁用 draft，
+        使后续帧走基于 edit 的路径（可随 flood-control 退避等自适应）。draft 没有
+        message_id，当响应通过一次常规 sendMessage 收尾时，客户端会自然清除它。
         """
         if self._draft_id is None:
-            # Defensive: should never happen — _use_draft_streaming gate is
-            # set in tandem with _draft_id in run().  Disable to be safe.
+            # 防御性处理：不应发生 —— _use_draft_streaming 门控与 _draft_id 在
+            # run() 中是配套设置的。为安全起见禁用。
             self._use_draft_streaming = False
             return False
         try:
@@ -1095,22 +1009,19 @@ class GatewayStreamConsumer:
             self._draft_failures += 1
             self._use_draft_streaming = False
             return False
-        # Frame delivered.  Track text for parity with edit-based no-op skip.
+        # 帧已投递。记录文本，以便与基于 edit 的 no-op 跳过保持一致。
         self._last_sent_text = text
         return True
 
     async def _flush_segment_tail_on_edit_failure(self) -> None:
-        """Deliver un-sent tail content before a segment-break reset.
+        """在分段中断 reset 之前投递尚未发送的尾部内容。
 
-        When an edit fails (flood control, transport error) and a tool
-        boundary arrives before the next retry, ``_accumulated`` holds text
-        that was generated but never shown to the user. Without this flush,
-        the segment reset would discard that tail and leave a frozen cursor
-        in the partial message.
+        当一次 edit 失败（flood control、传输错误）且下一次重试之前到达了工具
+        边界时，``_accumulated`` 持有已生成但从未展示给用户的文本。若不在此刷出，
+        分段 reset 会丢弃该尾部，并在部分消息中留下冻结的光标。
 
-        Sends the tail that sits after the last successfully-delivered
-        prefix as a new message, and best-effort strips the stuck cursor
-        from the previous partial message.
+        把位于上次成功投递前缀之后的尾部作为新消息发送，并尽力从上一条部分消息中
+        剥除卡住的光标。
         """
         if not self._fallback_final_send:
             await self._try_strip_cursor()
@@ -1133,10 +1044,9 @@ class GatewayStreamConsumer:
             logger.error("Segment-break tail flush error: %s", e)
 
     async def _try_strip_cursor(self) -> None:
-        """Best-effort edit to remove the cursor from the last visible message.
+        """尽力做一次 edit，从最后一条可见消息中移除光标。
 
-        Called when entering fallback mode so the user doesn't see a stuck
-        cursor (▉) in the partial message.
+        在进入 fallback 模式时调用，使用户不会在部分消息中看到卡住的光标（▉）。
         """
         if not self._message_id or self._message_id == "__no_edit__":
             return
@@ -1150,10 +1060,10 @@ class GatewayStreamConsumer:
             )
             self._last_sent_text = prefix
         except Exception:
-            pass  # best-effort — don't let this block the fallback path
+            pass  # 尽力而为 —— 不要让此操作阻塞 fallback 路径
 
     async def _send_commentary(self, text: str) -> bool:
-        """Send a completed interim assistant commentary message."""
+        """发送一条已完成的过渡性 assistant commentary 消息。"""
         text = self._clean_for_display(text)
         if not text.strip():
             return False
@@ -1163,15 +1073,13 @@ class GatewayStreamConsumer:
                 content=text,
                 metadata=self.metadata,
             )
-            # Note: do NOT set _already_sent = True here.
-            # Commentary messages are interim status updates (e.g. "Using browser
-            # tool..."), not the final response. Setting already_sent would cause
-            # the final response to be incorrectly suppressed when there are
-            # multiple tool calls. See: https://github.com/NousResearch/hermes-agent/issues/10454
+            # 注意：此处不要设置 _already_sent = True。
+            # commentary 消息是过渡性状态更新（例如 "正在使用 browser 工具..."），不是
+            # 最终响应。设置 already_sent 会在有多次工具调用时错误地抑制最终响应。参见：
+            # https://github.com/NousResearch/hermes-agent/issues/10454
             if result.success:
-                # Commentary counts as fresh content — close off any
-                # stale tool bubble above it so the next tool starts a
-                # new bubble below.
+                # commentary 算作全新内容 —— 关闭其上方任何过期 tool 气泡，使下一个
+                # 工具在下方开启新气泡。
                 self._notify_new_message()
             return result.success
         except Exception as e:
@@ -1179,16 +1087,15 @@ class GatewayStreamConsumer:
             return False
 
     def _should_send_fresh_final(self) -> bool:
-        """Return True when a long-lived preview should be replaced with a
-        fresh final message instead of an edit.
+        """当一个长生命周期的 preview 应被替换为一条全新最终消息而非 edit 时返回
+        True。
 
-        Conditions:
-        - Fresh-final is enabled (``fresh_final_after_seconds > 0``).
-        - We have a real preview message id (not the ``__no_edit__`` sentinel
-          and not ``None``).
-        - The preview has been visible for at least the configured threshold.
+        条件：
+        - 已启用 fresh-final（``fresh_final_after_seconds > 0``）。
+        - 持有一个真实 preview 消息 id（不是 ``__no_edit__`` 哨兵，也不是 ``None``）。
+        - preview 已可见至少配置的阈值时长。
 
-        Ported from openclaw/openclaw#72038.
+        移植自 openclaw/openclaw#72038。
         """
         threshold = getattr(self.cfg, "fresh_final_after_seconds", 0.0) or 0.0
         if threshold <= 0:
@@ -1201,18 +1108,17 @@ class GatewayStreamConsumer:
         return age >= threshold
 
     def _raw_message_limit(self) -> int:
-        """Per-message length budget (in the adapter's ``message_len_fn`` units)
-        before the consumer splits an overflowing reply.
+        """每条消息的长度预算（以 adapter 的 ``message_len_fn`` 单位计），consumer
+        会在此处拆分一条溢出的回复。
 
-        Adapters with a richer send/draft path (e.g. Telegram rich messages)
-        can raise this above ``MAX_MESSAGE_LENGTH`` via
-        ``streaming_overflow_limit`` so a reply that fits one rich message isn't
-        fragmented at the legacy edit limit.  Falls back to
-        ``MAX_MESSAGE_LENGTH`` (4096 default) for everyone else.
+        具备更丰富 send/draft 路径的 adapter（例如 Telegram 富文本消息）可以通过
+        ``streaming_overflow_limit`` 把该值抬到 ``MAX_MESSAGE_LENGTH`` 之上，使一条
+        能放进一条富文本消息的回复不会在旧的 edit 上限处被拆分。其他情况回退到
+        ``MAX_MESSAGE_LENGTH``（默认 4096）。
         """
         base = getattr(self.adapter, "MAX_MESSAGE_LENGTH", 4096)
-        # isinstance gate: MagicMock adapters return mock objects (truthy, not
-        # ints) for arbitrary attribute access — keep them on the base limit.
+        # isinstance 门控：MagicMock adapter 对任意属性访问返回 mock 对象（truthy，
+        # 不是 int）—— 让它们保持在基础上限。
         if isinstance(self.adapter, _BasePlatformAdapter):
             try:
                 cap = self.adapter.streaming_overflow_limit()
@@ -1224,14 +1130,14 @@ class GatewayStreamConsumer:
         return base
 
     def _track_preview_id(self, message_id: Optional[str]) -> None:
-        """Record a real preview message id for fresh-final cleanup."""
+        """记录一个真实 preview 消息 id，供 fresh-final 清理使用。"""
         if message_id and message_id != "__no_edit__":
             self._preview_message_ids.add(str(message_id))
 
     def _track_preview_ids_from_result(self, result: Any) -> None:
-        """Record every message id a send/edit result exposes: the primary id
-        plus any continuation ids from an oversized split
-        (``continuation_message_ids`` or ``raw_response['message_ids']``)."""
+        """记录一次 send/edit 结果暴露的每一个消息 id：主 id，以及任何来自超大
+        拆分的续接 id（``continuation_message_ids`` 或
+        ``raw_response['message_ids']``）。"""
         self._track_preview_id(getattr(result, "message_id", None))
         for mid in (getattr(result, "continuation_message_ids", None) or ()):
             self._track_preview_id(mid)
@@ -1241,14 +1147,13 @@ class GatewayStreamConsumer:
                 self._track_preview_id(mid)
 
     def _adapter_prefers_fresh_final(self, text: str) -> bool:
-        """Return True when the adapter would rather finalize a streamed reply
-        by sending a fresh message and deleting the preview than by editing the
-        preview in place — e.g. Telegram, whose ``sendRichMessage`` send path
-        currently renders richer markdown than Hermes' MarkdownV2 edit path.
+        """当 adapter 更倾向于通过发送一条新消息并删除 preview 来收尾一条流式回复，
+        而不是就地编辑 preview 时返回 True —— 例如 Telegram，其
+        ``sendRichMessage`` 发送路径目前渲染的 markdown 比 Hermes 的 MarkdownV2
+        edit 路径更丰富。
 
-        Returns False when there is no real preview to replace (no message id,
-        or the ``__no_edit__`` sentinel), when the adapter doesn't expose the
-        hook, or on any error (the consumer then keeps the edit-in-place path).
+        当没有真实 preview 可替换（没有消息 id，或 ``__no_edit__`` 哨兵）、adapter
+        没有暴露该钩子、或发生任何错误时返回 False（consumer 随后保持就地编辑路径）。
         """
         if not self._message_id or self._message_id == "__no_edit__":
             return False
@@ -1259,34 +1164,31 @@ class GatewayStreamConsumer:
             try:
                 result = fn(text, metadata=self.metadata)
             except TypeError:
-                # Adapter / test double whose hook doesn't accept the metadata
-                # keyword — fall back to the positional-only form.
+                # adapter / 测试替身的钩子不接受 metadata 关键字 —— 回退到仅位置参数
+                # 的形式。
                 result = fn(text)
         except Exception as e:
             logger.debug("prefers_fresh_final_streaming check failed: %s", e)
             return False
-        # ``is True`` (not ``bool(...)``) so a MagicMock adapter's auto-child
-        # method — truthy by default in tests — does not wrongly enable the
-        # fresh-final path.  Mirrors the REQUIRES_EDIT_FINALIZE gate in __init__.
+        # ``is True``（而非 ``bool(...)``）以便测试中 MagicMock adapter 的自动子方法
+        # —— 默认 truthy —— 不会错误地启用 fresh-final 路径。对应 __init__ 中的
+        # REQUIRES_EDIT_FINALIZE 门控。
         return result is True
 
     async def _try_fresh_final(self, text: str, *, is_turn_final: bool = True) -> bool:
-        """Send ``text`` as a brand-new message (best-effort delete the old
-        preview) so the platform's visible timestamp reflects completion
-        time.  Returns True on successful delivery, False on any failure so
-        the caller falls back to the normal edit path.
+        """把 ``text`` 作为一条全新消息发送（尽力删除旧 preview），使平台的可见
+        时间戳反映完成时间。投递成功返回 True，任何失败返回 False，以便调用方回退
+        到常规 edit 路径。
 
-        ``is_turn_final`` is False when finalizing an interim segment at a tool
-        boundary (a preamble) rather than the turn-final answer; the
-        final-delivery flag is then left unset so the gateway still delivers the
-        real answer from the next API call (#29346).
+        ``is_turn_final`` 为 False 时表示在工具边界处收尾的是过渡分段（前言），
+        而非 turn 最终答案；此时不设置最终投递 flag，使 gateway 仍从下一次 API 调用
+        投递真实答案（#29346）。
 
-        Ported from openclaw/openclaw#72038.
+        移植自 openclaw/openclaw#72038。
         """
-        # Every preview message the user has seen for this response: the
-        # current one plus any continuation fragments tracked while streaming
-        # (an oversized reply split across the platform's edit limit).  All of
-        # them are replaced by the single fresh message below.
+        # 用户在本次响应中看到的每一条 preview 消息：当前这条加上流式过程中记录
+        # 的任何续接片段（一条超出平台 edit 上限被拆分的回复）。它们全部被下面
+        # 那条新消息所取代。
         stale_ids = set(self._preview_message_ids)
         if self._message_id and self._message_id != "__no_edit__":
             stale_ids.add(self._message_id)
@@ -1301,16 +1203,12 @@ class GatewayStreamConsumer:
             return False
         if not getattr(result, "success", False):
             return False
-        # Adopt the new message id as the current message so subsequent
-        # callers (e.g. overflow split loops, finalize retries) see a
-        # consistent state.
+        # 把新消息 id 采纳为当前消息，使后续调用方（例如溢出拆分循环、finalize 重试）
+        # 看到一致的状态。
         new_message_id = getattr(result, "message_id", None)
-        # Successful fresh send — try to delete the stale preview(s) so the
-        # user doesn't see the old edit-stuck message(s) underneath.  Cleanup
-        # is best-effort; platforms that don't implement ``delete_message``
-        # just leave the preview behind (still an acceptable outcome — the
-        # visible final timestamp is the important part).  Never delete the
-        # message we just sent.
+        # 成功的全新发送 —— 尽量删除过期 preview，使用户不会在下方看到旧的、edit 卡住
+        # 的消息。清理是尽力而为；未实现 ``delete_message`` 的平台会保留 preview
+        #（仍是可接受的结果 —— 可见的最终时间戳才是关键）。绝不删除我们刚发出的消息。
         delete_fn = getattr(self.adapter, "delete_message", None)
         if delete_fn is not None:
             for stale_id in stale_ids:
@@ -1328,9 +1226,8 @@ class GatewayStreamConsumer:
             self._message_id = new_message_id
             self._message_created_ts = time.monotonic()
         else:
-            # Send succeeded but platform didn't return an id — treat the
-            # delivery as final-only and fall back to "__no_edit__" so we
-            # don't try to edit something we can't address.
+            # 发送成功但平台未返回 id —— 把投递视为 final-only 并回退到
+            # "__no_edit__"，以免我们尝试去 edit 一个无法寻址的消息。
             self._message_id = "__no_edit__"
             self._message_created_ts = None
         self._already_sent = True
@@ -1342,120 +1239,97 @@ class GatewayStreamConsumer:
     async def _send_or_edit(
         self, text: str, *, finalize: bool = False, is_turn_final: bool = True,
     ) -> bool:
-        """Send or edit the streaming message.
+        """发送或编辑流式消息。
 
-        Returns True if the text was successfully delivered (sent or edited),
-        False otherwise.  Callers like the overflow split loop use this to
-        decide whether to advance past the delivered chunk.
+        文本成功投递（发送或编辑）时返回 True，否则返回 False。溢出拆分循环之类的
+        调用方用它来决定是否推进过已投递的块。
 
-        ``finalize`` is True when this is the last edit in a streaming
-        sequence.
+        ``finalize`` 为 True 时表示这是流式序列中的最后一次 edit。
         """
-        # Strip MEDIA: directives so they don't appear as visible text.
-        # Media files are delivered as native attachments after the stream
-        # finishes (via _deliver_media_from_response in gateway/run.py).
+        # 剥离 MEDIA: 指令，使其不作为可见文本出现。
+        # 媒体文件在流结束后作为原生附件投递（通过 gateway/run.py 的
+        # _deliver_media_from_response）。
         text = self._clean_for_display(text)
-        # A bare streaming cursor is not meaningful user-visible content and
-        # can render as a stray tofu/white-box message on some clients.
+        # 一个光秃秃的流式光标不是有意义的用户可见内容，在某些客户端上可能渲染成
+        # 杂乱的豆腐块/白块消息。
         visible_without_cursor = text
         if self.cfg.cursor:
             visible_without_cursor = visible_without_cursor.replace(self.cfg.cursor, "")
         _visible_stripped = visible_without_cursor.strip()
         if not _visible_stripped:
-            return True  # cursor-only / whitespace-only update
+            return True  # 仅含光标 / 仅空白的更新
         if not text.strip():
-            return True  # nothing to send is "success"
-        # Guard: do not create a brand-new standalone message when the only
-        # visible content is a handful of characters alongside the streaming
-        # cursor.  During rapid tool-calling the model often emits 1-2 tokens
-        # before switching to tool calls; the resulting "X ▉" message risks
-        # leaving the cursor permanently visible if the follow-up edit (to
-        # strip the cursor on segment break) is rate-limited by the platform.
-        # This was reported on Telegram, Matrix, and other clients where the
-        # ▉ block character renders as a visible white box ("tofu").
-        # Existing messages (edits) are unaffected — only first sends gated.
+            return True  # 没有可发送内容即为"成功"
+        # 守卫：当唯一可见内容是流式光标旁的少数几个字符时，不要创建一条全新的独立
+        # 消息。在快速工具调用期间，模型常在切换到工具调用之前输出 1-2 个 token；
+        # 由此产生的 "X ▉" 消息，如果后续 edit（在分段中断时剥离光标）被平台限速，
+        # 就会让光标永久可见。这在 Telegram、Matrix 以及其他把 ▉ 块字符渲染成可见
+        # 白块（"豆腐"）的客户端上都被报告过。
+        # 已有消息（edit）不受影响 —— 仅对首次发送做门控。
         _MIN_NEW_MSG_CHARS = 4
         if (self._message_id is None
                 and self.cfg.cursor
                 and self.cfg.cursor in text
                 and len(_visible_stripped) < _MIN_NEW_MSG_CHARS):
-            return True  # too short for a standalone message — accumulate more
+            return True  # 对独立消息而言太短 —— 继续累积
 
-        # Native draft streaming: route mid-stream frames through send_draft.
-        # The final answer is delivered via the regular sendMessage path
-        # below — drafts have no message_id so we can't finalize them
-        # in-place; the regular sendMessage clears the draft naturally on
-        # the client and gives the user a real message in their history.
-        # Skip when:
-        #   * finalize=True (this is the final answer; needs to be a real message)
-        #   * an edit path is already established (message_id is set, e.g. after
-        #     a tool-boundary segment break where the prior text was finalized
-        #     as a real sendMessage and the next text segment continues editing
-        #     that one — staying on edit-based for that segment is correct).
+        # 原生 draft 流式：把流中段的帧通过 send_draft 路由。最终答案通过下面的常规
+        # sendMessage 路径投递 —— draft 没有 message_id，无法就地 finalize；常规
+        # sendMessage 会自然清除客户端上的 draft，并在用户历史中留下一条真实消息。
+        # 跳过条件：
+        #   * finalize=True（这是最终答案；需要是一条真实消息）
+        #   * 已建立 edit 路径（message_id 已设置，例如在工具边界分段中断之后，此前
+        #     的文本已作为真实 sendMessage 收尾，而下一段文本继续编辑那条 —— 此分段
+        #     留在基于 edit 的路径上是正确的）。
         if (
             self._use_draft_streaming
             and not finalize
             and self._message_id is None
         ):
-            # No-op skip: identical to the last frame we sent.
+            # No-op 跳过：与上次发送的帧相同。
             if text == self._last_sent_text:
                 return True
             ok = await self._send_draft_frame(text)
             if ok:
-                # Drafts mark "we put something on screen" but DO NOT set
-                # _already_sent — that flag gates the gateway's fallback
-                # final-send path and we still need that to fire so the
-                # user gets a real message (drafts have no message_id).
+                # draft 标记"我们已在屏幕上放了东西"，但不设置 _already_sent ——
+                # 该 flag 门控 gateway 的 fallback 最终发送路径，我们仍需要它触发，
+                # 以便用户得到一条真实消息（draft 没有 message_id）。
                 return True
-            # Failure already disabled drafts for this run; fall through to
-            # the regular edit/send path below.
+            # 失败已为本 run 禁用 draft；落到下面常规 edit/send 路径。
         self._last_edit_overflowed = False
         try:
             if self._message_id is not None:
                 if self._edit_supported:
-                    # Skip if text is identical to what we last sent.
-                    # Exception: adapters that require an explicit finalize
-                    # call (REQUIRES_EDIT_FINALIZE) must still receive the
-                    # finalize=True edit even when content is unchanged, so
-                    # their streaming UI can transition out of the in-
-                    # progress state.  Everyone else short-circuits.
+                    # 若文本与上次发送的相同则跳过。
+                    # 例外：需要显式 finalize 调用的 adapter（REQUIRES_EDIT_FINALIZE）
+                    # 即使内容未变也必须收到 finalize=True 的 edit，使其流式 UI 能从
+                    # 进行中状态转换出来。其他 adapter 直接短路。
                     if text == self._last_sent_text and not (
                         finalize and self._adapter_requires_finalize
                     ):
                         return True
-                    # Fresh-final for long-lived previews: when finalizing
-                    # the last edit in a streaming sequence, if the
-                    # original preview has been visible for at least
-                    # ``fresh_final_after_seconds``, send the completed
-                    # reply as a fresh message so the platform's visible
-                    # timestamp reflects completion time instead of the
-                    # preview creation time.  Best-effort cleanup of the
-                    # old preview follows.  Ported from
-                    # openclaw/openclaw#72038.  Gated by config so the
-                    # legacy edit-in-place path stays the default.
+                    # 针对长生命周期 preview 的 fresh-final：当收尾流式序列的最后
+                    # 一次 edit 时，如果原始 preview 已可见至少
+                    # ``fresh_final_after_seconds``，则把完整回复作为一条新消息发送，
+                    # 使平台的可见时间戳反映完成时间而非 preview 创建时间。旧 preview
+                    # 的清理是尽力而为。移植自 openclaw/openclaw#72038。由 config 门控，
+                    # 使旧的就地编辑路径保持为默认。
                     #
-                    # Adapters can also opt in regardless of the time threshold
-                    # via prefers_fresh_final_streaming (e.g. Telegram, whose
-                    # send path renders richer markdown than its edit path):
-                    # finalizing through edit would visibly downgrade a rich
-                    # preview, so re-deliver as a fresh message + delete the
-                    # preview instead.
+                    # adapter 也可以无视时间阈值，通过 prefers_fresh_final_streaming
+                    # 主动选择（例如 Telegram，其 send 路径渲染的 markdown 比其 edit
+                    # 路径更丰富）：通过 edit 收尾会明显降级一个富文本 preview，因此改
+                    # 为作为新消息重新投递 + 删除 preview。
                     #
-                    # When the adapter exposes prefers_fresh_final_streaming
-                    # and explicitly returns False, the time-based threshold
-                    # must NOT override that decision.  On Telegram the
-                    # fresh-final path sends a Rich Message (sendRichMessage)
-                    # that overlaps with the legacy MarkdownV2 preview already
-                    # visible from streaming — both remain on screen because
-                    # the old message is only best-effort deleted.  Adapters
-                    # without the hook still get the time-based fresh-final.
-                    # (#47048)
-                    # Check the *class* for the hook so MagicMock adapters
-                    # (which auto-create attributes on access) are not
-                    # falsely detected as having it.  Also check instance
-                    # __dict__ for test doubles that explicitly assign the
-                    # attribute (e.g. adapter.prefers_fresh_final_streaming
-                    # = MagicMock(return_value=False)).
+                    # 当 adapter 暴露 prefers_fresh_final_streaming 并显式返回 False 时，
+                    # 基于时间的阈值不得覆盖该决定。在 Telegram 上，fresh-final 路径
+                    # 发送一条 Rich Message（sendRichMessage），与流式过程中已可见的
+                    # 旧 MarkdownV2 preview 重叠 —— 因为旧消息只是尽力删除，两条都会留
+                    # 在屏幕上。没有该钩子的 adapter 仍走基于时间的 fresh-final。
+                    #（#47048）
+                    # 检查 *类* 是否有该钩子，以免 MagicMock adapter（访问时自动创建
+                    # 属性）被误判为拥有它。同时检查实例 __dict__，以覆盖显式赋值该
+                    # 属性的测试替身（例如 adapter.prefers_fresh_final_streaming =
+                    # MagicMock(return_value=False)）。
                     _has_prefers_hook = (
                         hasattr(type(self.adapter),
                                 "prefers_fresh_final_streaming")
@@ -1477,7 +1351,7 @@ class GatewayStreamConsumer:
                         )
                     ):
                         return True
-                    # Edit existing message
+                    # 编辑现有消息
                     result = await self._edit_message(
                         message_id=self._message_id,
                         content=text,
@@ -1485,20 +1359,17 @@ class GatewayStreamConsumer:
                     )
                     if result.success:
                         self._already_sent = True
-                        # Record any continuation fragments an oversized edit
-                        # split off, so fresh-final can clean them all up.
+                        # 记录一次超大 edit 拆出的任何续接片段，以便 fresh-final 能
+                        # 把它们全部清理掉。
                         self._track_preview_ids_from_result(result)
-                        # Adapter may have split-and-delivered an oversized
-                        # edit across the original message + N continuations.
-                        # When that happens, ``message_id`` is the LAST visible
-                        # continuation and ``_last_sent_text`` no longer reflects
-                        # the on-screen content (the new message only holds the
-                        # final chunk's text), so subsequent edits must target
-                        # the new id and skip-if-same comparisons must reset.
-                        # Fire on_new_message so tool-progress bubbles linearize
-                        # below the new continuation, not the original.
-                        # ``getattr`` with default keeps backwards compat with
-                        # SimpleNamespace mocks in tests that pre-date the field.
+                        # adapter 可能把一次超大 edit 拆分并投递到原消息 + N 条续接
+                        # 消息上。此时 ``message_id`` 是最后一条可见续接，而
+                        # ``_last_sent_text`` 不再反映屏幕内容（新消息只持有最后一块
+                        # 的文本），因此后续 edit 必须针对新 id，并且"相同则跳过"的
+                        # 比较必须重置。触发 on_new_message，使 tool-progress 气泡
+                        # 线性排列在新续接下方，而非原消息下方。
+                        # ``getattr`` 带默认值，以保留对该字段出现之前测试中
+                        # SimpleNamespace mock 的向后兼容。
                         _continuation_ids = getattr(result, "continuation_message_ids", ()) or ()
                         if (
                             _continuation_ids
@@ -1512,7 +1383,7 @@ class GatewayStreamConsumer:
                             self._notify_new_message()
                         else:
                             self._last_sent_text = text
-                        # Successful edit — reset flood strike counter
+                        # 成功的 edit —— 重置 flood strike 计数器
                         self._flood_strikes = 0
                         return True
                     else:
@@ -1523,22 +1394,17 @@ class GatewayStreamConsumer:
                             and self._last_sent_text.endswith(self.cfg.cursor)
                             and self._visible_prefix() == text
                         ):
-                            # The final clean-up edit failed, but the complete
-                            # answer is already visible from the last streaming
-                            # frame (usually with only the cursor still stuck on
-                            # screen).  Mark the content delivered so the
-                            # gateway suppresses its normal full final send;
-                            # otherwise users see the same long answer twice
-                            # when Telegram/Discord rate-limit this cosmetic
-                            # final edit (#36965, #25349).
+                            # 最终的清理 edit 失败，但完整答案已从上一帧流式内容
+                            # 可见（通常只残留卡住的光标）。标记内容已投递，使
+                            # gateway 抑制其常规的完整最终发送；否则当
+                            # Telegram/Discord 对此装饰性最终 edit 限速时，用户会
+                            # 两次看到同一条长答案（#36965、#25349）。
                             self._final_content_delivered = True
                         raw_response = getattr(result, "raw_response", None)
                         if isinstance(raw_response, dict) and raw_response.get("partial_overflow"):
-                            # Telegram edited/sent one or more overflow chunks,
-                            # but not the complete response.  Preserve the
-                            # visible prefix so the got_done fallback sends the
-                            # missing tail instead of marking a clipped topic
-                            # reply as final delivery.
+                            # Telegram 编辑/发送了一个或多个溢出块，但不是完整响应。
+                            # 保留可见前缀，使 got_done fallback 发送缺失的尾部，而不是
+                            # 把一条被截断的 topic 回复标记为最终投递。
                             self._message_id = str(
                                 raw_response.get("last_message_id")
                                 or result.message_id
@@ -1561,10 +1427,9 @@ class GatewayStreamConsumer:
                                 self._notify_new_message()
                             return False
 
-                        # Edit failed.  If this looks like flood control / rate
-                        # limiting, use adaptive backoff: double the edit interval
-                        # and retry on the next cycle.  Only permanently disable
-                        # edits after _MAX_FLOOD_STRIKES consecutive failures.
+                        # edit 失败。如果看起来像 flood control / rate limiting，则
+                        # 使用自适应退避：把 edit 间隔翻倍并在下一轮重试。只有在连续
+                        # 失败 _MAX_FLOOD_STRIKES 次之后才永久禁用 edit。
                         if self._is_flood_error(result):
                             self._flood_strikes += 1
                             self._current_edit_interval = min(
@@ -1578,15 +1443,13 @@ class GatewayStreamConsumer:
                                 self._current_edit_interval,
                             )
                             if self._flood_strikes < self._MAX_FLOOD_STRIKES:
-                                # Don't disable edits yet — just slow down.
-                                # Update _last_edit_time so the next edit
-                                # respects the new interval.
+                                # 先不要禁用 edit —— 只是放慢。
+                                # 更新 _last_edit_time，使下一次 edit 遵守新间隔。
                                 self._last_edit_time = time.monotonic()
                                 return False
 
-                        # Non-flood error OR flood strikes exhausted: enter
-                        # fallback mode — send only the missing tail once the
-                        # final response is available.
+                        # 非 flood 错误，或 flood 次数耗尽：进入 fallback 模式 ——
+                        # 一旦最终响应可用，只发送缺失的尾部。
                         logger.debug(
                             "Edit failed (strikes=%d), entering fallback mode",
                             self._flood_strikes,
@@ -1595,17 +1458,17 @@ class GatewayStreamConsumer:
                         self._fallback_final_send = True
                         self._edit_supported = False
                         self._already_sent = True
-                        # Best-effort: strip the cursor from the last visible
-                        # message so the user doesn't see a stuck ▉.
+                        # 尽力而为：从最后一条可见消息中剥离光标，使用户不会看到
+                        # 卡住的 ▉。
                         await self._try_strip_cursor()
                         return False
                 else:
-                    # Editing not supported — skip intermediate updates.
-                    # The final response will be sent by the fallback path.
+                    # 不支持编辑 —— 跳过中间更新。
+                    # 最终响应会由 fallback 路径发送。
                     return False
             else:
-                # First message — send new, threaded to the original user message
-                # so it lands in the correct topic/thread.
+                # 首条消息 —— 发送新消息，thread 到原始用户消息，使其落在正确的
+                # topic/thread 中。
                 result = await self.adapter.send(
                     chat_id=self.chat_id,
                     content=text,
@@ -1618,12 +1481,11 @@ class GatewayStreamConsumer:
                 if result.success:
                     if result.message_id:
                         self._message_id = result.message_id
-                        # Track when the preview first became visible to
-                        # the user so fresh-final logic can detect stale
-                        # preview timestamps on long-running responses.
+                        # 记录 preview 首次对用户可见的时间，以便 fresh-final 逻辑
+                        # 在长时运行响应上检测过期的 preview 时间戳。
                         self._message_created_ts = time.monotonic()
-                        # Record this (and any continuation fragments from an
-                        # oversized first send) for fresh-final cleanup.
+                        # 记录这条（以及任何来自超大首次发送的续接片段），供
+                        # fresh-final 清理。
                         self._track_preview_ids_from_result(result)
                     else:
                         self._edit_supported = False
@@ -1632,18 +1494,16 @@ class GatewayStreamConsumer:
                     if not result.message_id:
                         self._fallback_prefix = self._visible_prefix()
                         self._fallback_final_send = True
-                        # Sentinel prevents re-entering the first-send path on
-                        # every delta/tool boundary when platforms accept a
-                        # message but do not return an editable message id.
+                        # 该哨兵防止在平台接受消息但不返回可编辑消息 id 时，每个
+                        # delta/工具边界都重新进入首次发送路径。
                         self._message_id = "__no_edit__"
-                    # Notify the gateway that a fresh content bubble was
-                    # created so any accumulated tool-progress bubble above
-                    # gets closed off — the next tool fires into a new
-                    # bubble below, preserving chronological order.
+                    # 通知 gateway 创建了全新的内容气泡，使上方任何累积的
+                    # tool-progress 气泡被关闭 —— 下一个工具在下方的新气泡中触发，
+                    # 保持时间顺序。
                     self._notify_new_message()
                     return True
                 else:
-                    # Initial send failed — disable streaming for this session
+                    # 初始发送失败 —— 为本次会话禁用流式
                     self._edit_supported = False
                     return False
         except Exception as e:

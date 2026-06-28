@@ -1,25 +1,23 @@
-"""``hermes dashboard register`` — register a self-hosted dashboard OAuth client.
+"""``hermes dashboard register`` — 注册自托管 dashboard OAuth 客户端。
 
-Automates what a user otherwise does by hand: open the Nous Portal
-``/local-dashboards`` page in a browser, click "register", copy the
-resulting ``agent:{id}`` OAuth client ID, and paste it into ``~/.hermes/.env``
-as ``HERMES_DASHBOARD_OAUTH_CLIENT_ID``.
+自动化用户原本需要手动完成的操作：在浏览器中打开 Nous Portal
+的 ``/local-dashboards`` 页面，点击"register"，复制生成的
+``agent:{id}`` OAuth 客户端 ID，然后将其粘贴到 ``~/.hermes/.env``
+中作为 ``HERMES_DASHBOARD_OAUTH_CLIENT_ID``。
 
-This command:
-  1. Resolves a fresh Nous Portal access token from the existing login
-     (``~/.hermes/auth.json``), refreshing it if needed. Fails fast with a
-     "run `hermes setup`" hint when the user isn't logged in.
-  2. POSTs to ``{portal}/api/oauth/self-hosted-client`` with that bearer
-     token, which creates a SELF_HOSTED agent client owned by the caller's
-     org and returns the fully-formed ``agent:{id}`` client_id.
-  3. Writes ``HERMES_DASHBOARD_OAUTH_CLIENT_ID`` and (if absent)
-     ``HERMES_DASHBOARD_PORTAL_URL`` into ``~/.hermes/.env`` idempotently.
-  4. Prints a post-register hint explaining that the OAuth gate only engages
-     on a non-loopback bind.
+此命令的执行流程：
+  1. 从现有登录（``~/.hermes/auth.json``）解析一个新的 Nous Portal
+     access token，必要时进行刷新。如果用户未登录，则快速失败并
+     提示"运行 `hermes setup`"。
+  2. 使用该 bearer token 向 ``{portal}/api/oauth/self-hosted-client``
+     发送 POST 请求，创建一个由调用者所在 org 拥有的 SELF_HOSTED
+     agent 客户端，并返回完整的 ``agent:{id}`` client_id。
+  3. 以幂等方式将 ``HERMES_DASHBOARD_OAUTH_CLIENT_ID`` 和
+     （如果缺失）``HERMES_DASHBOARD_PORTAL_URL`` 写入 ``~/.hermes/.env``。
+  4. 打印注册后的提示信息，说明 OAuth 门控仅在非 loopback 绑定时生效。
 
-The portal endpoint is the NAS half of this feature (POST
-/api/oauth/self-hosted-client). The ``agent:`` prefix is applied server-side,
-so this client never needs to know the namespace convention.
+Portal 端点是此功能的 NAS 部分（POST /api/oauth/self-hosted-client）。
+``agent:`` 前缀由服务端添加，因此此客户端无需了解命名空间约定。
 """
 
 from __future__ import annotations
@@ -33,10 +31,9 @@ import urllib.request
 from typing import Optional
 
 
-# Docker-style name generator. Same vibe as Docker's adjective_surname, but
-# adjective_noun with a space-free underscore join so it drops cleanly into a
-# label field. There is NO uniqueness constraint on the portal side (the row
-# id is the key), so collisions are harmless and we don't retry.
+# Docker 风格的名称生成器。与 Docker 的 adjective_surname 类似，但使用
+# adjective_noun 加无空格下划线连接，便于直接放入 label 字段。Portal 端
+# 没有唯一性约束（行 id 是主键），因此碰撞无害，无需重试。
 _NAME_ADJECTIVES = (
     "amber", "bold", "brave", "bright", "calm", "clever", "cosmic", "crisp",
     "dreamy", "eager", "electric", "fancy", "gentle", "golden", "happy",
@@ -52,29 +49,28 @@ _NAME_NOUNS = (
     "heron", "ibex", "jaguar", "kestrel", "lantern", "lynx", "meadow", "nebula",
     "ocelot", "orchid", "otter", "panther", "petrel", "quasar", "raven", "reef",
     "sparrow", "summit", "tundra", "vortex", "walrus", "willow", "yarrow",
-    # A couple of scientist surnames in the Docker spirit.
+    # 几个 Docker 风格的科学家姓氏。
     "kepler", "tesla", "curie", "hopper", "turing", "lovelace",
 )
 
 
 def _generate_dashboard_name() -> str:
-    """Return a human-readable ``adjective_noun`` name (Docker-style)."""
+    """返回一个人类可读的 ``adjective_noun`` 名称（Docker 风格）。"""
     return f"{random.choice(_NAME_ADJECTIVES)}_{random.choice(_NAME_NOUNS)}"
 
 
 def _resolve_portal_base_url(override: Optional[str] = None) -> str:
-    """Resolve the portal base URL for the registration request.
+    """解析注册请求的 portal base URL。
 
-    Precedence:
-      1. ``override`` — explicit ``--portal-url`` flag or
-         ``HERMES_DASHBOARD_PORTAL_URL`` env (used for testing against a
-         preview/staging portal). NOTE: the access token must be valid at
-         this portal — it's minted by whatever portal you logged into, so an
-         override only works if the token's issuer matches (e.g. you logged
-         into the same staging/preview portal).
-      2. The ``portal_base_url`` stored on the Nous login — this is the
-         portal that issued the token, so it's the correct default target.
-      3. The production default.
+    优先级：
+      1. ``override`` — 显式的 ``--portal-url`` 标志或
+         ``HERMES_DASHBOARD_PORTAL_URL`` 环境变量（用于针对预览/预发布
+         portal 进行测试）。注意：access token 必须在此 portal 上有效 —
+         它由你登录的 portal 签发，因此只有当 token 的签发方匹配时
+         override 才有效（例如你登录了同一个预发布/预览 portal）。
+      2. Nous 登录中存储的 ``portal_base_url`` — 这是签发 token 的
+         portal，因此是正确的默认目标。
+      3. 生产环境默认值。
     """
     if isinstance(override, str) and override.strip():
         return override.rstrip("/")
@@ -99,22 +95,19 @@ def _register_self_hosted_client(
     existing_client_id: Optional[str] = None,
     timeout: float = 15.0,
 ) -> dict:
-    """POST to the portal's self-hosted-client endpoint and return the JSON body.
+    """向 portal 的 self-hosted-client 端点发送 POST 请求并返回 JSON body。
 
-    When ``existing_client_id`` is provided (the client_id this install
-    persisted on a prior run), it is sent so the portal updates that existing
-    dashboard record in place instead of minting a duplicate — this is what
-    makes re-running ``hermes dashboard register`` idempotent. The portal
-    falls back to creating a fresh client if the id no longer resolves to a row
-    in the caller's org (stale/deleted), so passing it is always safe.
+    当提供了 ``existing_client_id``（此安装在之前运行中持久化的 client_id）
+    时，会将其发送出去，以便 portal 原地更新该现有 dashboard 记录，而不是
+    创建重复记录 — 这正是使 ``hermes dashboard register`` 幂等的原因。
+    如果该 id 在调用者 org 中不再对应有效记录（已过期/已删除），portal
+    会回退到创建新客户端，因此传递它始终是安全的。
 
-    ``name`` may be ``None`` on the idempotent update path (re-run without an
-    explicit ``--name``): omitting it tells the portal to keep the name it
-    already stored rather than overwriting it. It is required on the create
-    path; the caller guarantees a value there.
+    在幂等更新路径（重新运行且未显式指定 ``--name``）上，``name`` 可能为
+    ``None``：省略它会告诉 portal 保留已存储的名称而不是覆盖。在创建路径
+    上它是必需的；调用方保证在那里提供值。
 
-    Raises RuntimeError with a user-facing message on any non-2xx response or
-    transport failure.
+    对任何非 2xx 响应或传输失败，抛出带有用户可见消息的 RuntimeError。
     """
     url = f"{portal_base_url.rstrip('/')}/api/oauth/self-hosted-client"
     body: dict[str, str] = {}
@@ -141,7 +134,7 @@ def _register_self_hosted_client(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
-        # The endpoint returns structured JSON errors ({error, error_description}).
+        # 端点返回结构化 JSON 错误（{error, error_description}）。
         detail = ""
         try:
             err_body = json.loads(exc.read().decode())
@@ -184,7 +177,7 @@ def _print_post_register_hint(
     wrote_portal_url: bool,
     public_url: str = "",
 ) -> None:
-    """Print the success summary + the gate-engagement caveat."""
+    """打印成功摘要和门控生效提示。"""
     from hermes_cli.config import get_env_path
 
     env_path = get_env_path()
@@ -204,7 +197,7 @@ def _print_post_register_hint(
     )
     print()
     if custom_redirect_uri:
-        # Derive the host the user registered so the example matches it.
+        # 推导用户注册的主机名，使示例与其匹配。
         try:
             from urllib.parse import urlparse
 
@@ -228,14 +221,13 @@ def _print_post_register_hint(
 
 
 def cmd_dashboard_register(args) -> None:
-    """Register a self-hosted dashboard OAuth client with Nous Portal."""
+    """在 Nous Portal 注册自托管 dashboard OAuth 客户端。"""
     from hermes_cli.auth import AuthError, resolve_nous_access_token
     from hermes_cli.config import get_env_value, is_managed, save_env_value
 
-    # Managed (Docker/hosted) installs get their dashboard OAuth client_id
-    # stamped in by the orchestrator (NAS sets HERMES_DASHBOARD_OAUTH_CLIENT_ID
-    # via buildContainerEnvVars). Registering from inside such a container is a
-    # mistake — and save_env_value refuses to write anyway.
+    # 托管（Docker/hosted）安装的 dashboard OAuth client_id 由编排器注入
+    # （NAS 通过 buildContainerEnvVars 设置 HERMES_DASHBOARD_OAUTH_CLIENT_ID）。
+    # 从此类容器内注册是错误的 — 而且 save_env_value 无论如何都会拒绝写入。
     if is_managed():
         print(
             "✗ `hermes dashboard register` is not available in a managed/hosted "
@@ -244,8 +236,8 @@ def cmd_dashboard_register(args) -> None:
         )
         sys.exit(1)
 
-    # 1. Resolve a fresh Nous access token (refreshes if near expiry). Fail fast
-    #    with a setup hint when the user isn't logged in.
+    # 1. 解析一个新的 Nous access token（临近过期时自动刷新）。
+    #    如果用户未登录，则快速失败并提示 setup。
     try:
         access_token = resolve_nous_access_token()
     except AuthError as exc:
@@ -259,15 +251,14 @@ def cmd_dashboard_register(args) -> None:
         print(f"✗ Could not resolve a Nous Portal access token: {exc}")
         sys.exit(1)
 
-    # Portal override: explicit --portal-url flag wins, else the
-    # HERMES_DASHBOARD_PORTAL_URL env var, else the stored login's portal.
+    # Portal override：显式的 --portal-url 标志优先，其次是
+    # HERMES_DASHBOARD_PORTAL_URL 环境变量，最后是存储的登录 portal。
     #
-    # We track whether a custom URL was *explicitly supplied* (flag or env)
-    # separately from the resolved value. An explicit custom URL is an
-    # intentional choice the user wants to persist (and update in place if it
-    # already exists in .env); a portal merely inferred from the stored login
-    # keeps the older, more conservative write-only-if-absent behaviour so we
-    # don't clutter .env for the common production case.
+    # 我们分别跟踪自定义 URL 是否被*显式提供*（标志或环境变量）与
+    # 解析后的值。显式的自定义 URL 是用户想要持久化的有意选择（如果
+    # .env 中已存在则原地更新）；而从存储的登录信息推断出的 portal
+    # 则保留较旧的、仅在缺失时写入的保守行为，避免在常见生产场景中
+    # 污染 .env 文件。
     portal_override = getattr(args, "portal_url", None) or os.environ.get(
         "HERMES_DASHBOARD_PORTAL_URL"
     )
@@ -276,12 +267,11 @@ def cmd_dashboard_register(args) -> None:
     )
     portal_base_url = _resolve_portal_base_url(portal_override)
 
-    # Idempotency: if this install already registered a dashboard, we hold its
-    # client_id locally (HERMES_DASHBOARD_OAUTH_CLIENT_ID). Re-send it so the
-    # portal UPDATES that existing record instead of creating a duplicate. No
-    # stored client_id -> this is a first registration -> create a fresh one
-    # (the original behavior). This mirrors the portal's rule: no client id =
-    # new dashboard; client id present = the stable key of the row to modify.
+    # 幂等性：如果此安装已经注册过 dashboard，我们会在本地保留其
+    # client_id（HERMES_DASHBOARD_OAUTH_CLIENT_ID）。重新发送它以便
+    # portal 更新该现有记录而不是创建重复记录。没有存储的 client_id
+    # -> 这是首次注册 -> 创建新的（原始行为）。这镜像了 portal 的规则：
+    # 无 client id = 新 dashboard；有 client id = 要修改的记录的稳定键。
     existing_client_id = None
     try:
         existing_client_id = get_env_value("HERMES_DASHBOARD_OAUTH_CLIENT_ID")
@@ -293,10 +283,9 @@ def cmd_dashboard_register(args) -> None:
         existing_client_id = None
 
     explicit_name = getattr(args, "name", None)
-    # Auto-generate a random name ONLY for a first registration. On a re-run
-    # (we hold a client_id) without an explicit --name, keep the name the
-    # portal already stored rather than churning it to a new random value
-    # every time — so leave `name` unset and let the portal preserve it.
+    # 仅在首次注册时自动生成随机名称。在重新运行时（我们持有 client_id）
+    # 且未显式指定 --name 时，保留 portal 已存储的名称，而不是每次都
+    # 生成新的随机值 — 因此保持 `name` 未设置，让 portal 保留它。
     if explicit_name:
         name = explicit_name
     elif existing_client_id:
@@ -305,7 +294,7 @@ def cmd_dashboard_register(args) -> None:
         name = _generate_dashboard_name()
     custom_redirect_uri = getattr(args, "redirect_uri", None)
 
-    # 2. Register with the portal.
+    # 2. 向 portal 注册。
     try:
         result = _register_self_hosted_client(
             access_token=access_token,
@@ -321,8 +310,7 @@ def cmd_dashboard_register(args) -> None:
     client_id = str(result["client_id"])
     registered_name = str(result.get("name") or name or "")
 
-    # Distinguish create vs update for the user: the portal echoes back the
-    # same client_id we sent when it updated in place.
+    # 区分创建与更新：portal 在原地更新时会回传相同的 client_id。
     updated_existing = bool(
         existing_client_id and client_id == existing_client_id
     )
@@ -331,7 +319,7 @@ def cmd_dashboard_register(args) -> None:
     else:
         print(f'✓ Registered dashboard "{registered_name}"')
 
-    # 3. Write env vars idempotently. Always set the client_id.
+    # 3. 幂等地写入环境变量。始终设置 client_id。
     try:
         save_env_value("HERMES_DASHBOARD_OAUTH_CLIENT_ID", client_id)
     except Exception as exc:
@@ -339,18 +327,16 @@ def cmd_dashboard_register(args) -> None:
         print(f"  Set it manually:  HERMES_DASHBOARD_OAUTH_CLIENT_ID={client_id}")
         sys.exit(1)
 
-    # Persist the portal URL. Two cases:
-    #   a) The user explicitly supplied a custom portal (--portal-url flag or
-    #      HERMES_DASHBOARD_PORTAL_URL env). That's an intentional choice we
-    #      always persist so it survives across sessions — overwriting any
-    #      existing entry in place (save_env_value updates a matching key
-    #      rather than appending a duplicate). This is true even when it equals
-    #      the production default: the user asked for it explicitly.
-    #   b) No custom portal was supplied. Keep the older conservative behaviour:
-    #      only write a portal inferred from the stored login when it isn't
-    #      already configured AND differs from the production default, so we
-    #      don't clutter .env for the common production case and don't alter an
-    #      existing entry unexpectedly.
+    # 持久化 portal URL。两种情况：
+    #   a) 用户显式提供了自定义 portal（--portal-url 标志或
+    #      HERMES_DASHBOARD_PORTAL_URL 环境变量）。这是一个有意选择，
+    #      我们总是持久化它以便跨会话保留 — 原地覆盖任何现有条目
+    #      （save_env_value 更新匹配的键而不是追加重复项）。即使值
+    #      等于生产环境默认值也是如此：是用户显式请求的。
+    #   b) 未提供自定义 portal。保留较旧的保守行为：仅当尚未配置
+    #      且与生产环境默认值不同时，才写入从存储的登录信息推断
+    #      出的 portal，避免在常见生产场景中污染 .env 文件，也
+    #      避免意外更改现有条目。
     wrote_portal_url = False
     default_portal = "https://portal.nousresearch.com"
     existing_portal = None
@@ -371,26 +357,24 @@ def cmd_dashboard_register(args) -> None:
             save_env_value("HERMES_DASHBOARD_PORTAL_URL", portal_base_url)
             wrote_portal_url = True
         except Exception:
-            # Non-fatal: the client_id is the load-bearing value.
+            # 非致命错误：client_id 才是关键值。
             pass
 
-    # Persist the dashboard public URL derived from the OAuth redirect URI.
+    # 持久化从 OAuth redirect URI 派生的 dashboard public URL。
     #
-    # --redirect-uri is the full public HTTPS callback the user registered with
-    # the portal, e.g. https://hermes.example.com/auth/callback. At serve time
-    # the dashboard auth layer (dashboard_auth/routes._redirect_uri) reconstructs
-    # that same callback by taking HERMES_DASHBOARD_PUBLIC_URL and appending
-    # "/auth/callback" verbatim. So the value the runtime actually consumes is
-    # the ORIGIN (scheme://host[:port]), not the full callback path — persisting
-    # the raw redirect URI would double up the path. We derive the origin from
-    # the supplied redirect URI and persist it as HERMES_DASHBOARD_PUBLIC_URL so
-    # the operator doesn't have to re-supply it and the public-URL override is
-    # actually wired (the gate engages and the callback round-trips correctly).
+    # --redirect-uri 是用户在 portal 注册的完整公共 HTTPS 回调地址，
+    # 例如 https://hermes.example.com/auth/callback。在服务端，dashboard
+    # auth 层（dashboard_auth/routes._redirect_uri）通过取
+    # HERMES_DASHBOARD_PUBLIC_URL 并追加 "/auth/callback" 来重建相同的
+    # 回调。因此运行时实际消费的值是 ORIGIN（scheme://host[:port]），
+    # 而非完整的回调路径 — 持久化原始 redirect URI 会导致路径重复。
+    # 我们从提供的 redirect URI 推导出 origin 并持久化为
+    # HERMES_DASHBOARD_PUBLIC_URL，这样运维人员无需重复提供，且
+    # public-URL override 能正确连接（门控生效且回调能正确往返）。
     #
-    # Like the portal URL, an explicitly supplied value is always written
-    # (updating an existing entry in place rather than appending a duplicate),
-    # a no-op when it already matches, and never written on a localhost-only
-    # install (no --redirect-uri).
+    # 与 portal URL 类似，显式提供的值总是被写入（原地更新现有条目
+    # 而非追加重复项），已匹配时为 no-op，且永远不会在仅 localhost
+    # 安装时写入（无 --redirect-uri）。
     wrote_public_url = False
     public_url = ""
     if custom_redirect_uri:
@@ -414,10 +398,10 @@ def cmd_dashboard_register(args) -> None:
                 save_env_value("HERMES_DASHBOARD_PUBLIC_URL", public_url)
                 wrote_public_url = True
             except Exception:
-                # Non-fatal: the client_id is the load-bearing value.
+                # 非致命错误：client_id 才是关键值。
                 pass
 
-    # 4. Hint.
+    # 4. 提示信息。
     _print_post_register_hint(
         client_id=client_id,
         portal_base_url=portal_base_url,

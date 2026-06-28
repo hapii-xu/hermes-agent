@@ -1,8 +1,7 @@
-"""Shared helper classes for gateway platform adapters.
+"""网关平台适配器的公共辅助类。
 
-Extracts common patterns that were duplicated across 5-7 adapters:
-message deduplication, text batch aggregation, markdown stripping,
-and thread participation tracking.
+提取了在 5-7 个适配器中重复出现的通用模式：
+消息去重、文本批量聚合、Markdown 去除以及线程参与跟踪。
 """
 
 import asyncio
@@ -21,21 +20,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ─── Message Deduplication ────────────────────────────────────────────────────
+# ─── 消息去重 ─────────────────────────────────────────────────────────────────
 
 
 class MessageDeduplicator:
-    """TTL-based message deduplication cache.
+    """基于 TTL 的消息去重缓存。
 
-    Replaces the identical ``_seen_messages`` / ``_is_duplicate()`` pattern
-    previously duplicated in discord, slack, dingtalk, wecom, weixin,
-    mattermost, and feishu adapters.
+    替代了之前在 discord、slack、dingtalk、wecom、weixin、
+    mattermost 和 feishu 适配器中重复的 ``_seen_messages`` / ``_is_duplicate()`` 模式。
 
-    Usage::
+    用法::
 
         self._dedup = MessageDeduplicator()
 
-        # In message handler:
+        # 在消息处理器中：
         if self._dedup.is_duplicate(msg_id):
             return
     """
@@ -46,23 +44,22 @@ class MessageDeduplicator:
         self._ttl = ttl_seconds
 
     def is_duplicate(self, msg_id: str) -> bool:
-        """Return True if *msg_id* was already seen within the TTL window."""
+        """如果 *msg_id* 在 TTL 窗口内已被处理过则返回 True。"""
         if not msg_id:
             return False
         now = time.time()
         if msg_id in self._seen:
             if now - self._seen[msg_id] < self._ttl:
                 return True
-            # Entry has expired — remove it and treat as new
+            # 条目已过期——删除并视为新消息
             del self._seen[msg_id]
         self._seen[msg_id] = now
         if len(self._seen) > self._max_size:
             cutoff = now - self._ttl
             self._seen = {k: v for k, v in self._seen.items() if v > cutoff}
             if len(self._seen) > self._max_size:
-                # TTL pruning alone does not cap the cache when every entry is
-                # still fresh. Keep the newest entries so the helper's
-                # max_size bound is enforced under sustained traffic.
+                # 当所有条目仍然新鲜时，仅靠 TTL 清理无法限制缓存大小。
+                # 保留最新条目，以便在持续流量下强制执行辅助器的 max_size 限制。
                 newest = sorted(
                     self._seen.items(),
                     key=lambda item: item[1],
@@ -71,20 +68,20 @@ class MessageDeduplicator:
         return False
 
     def clear(self):
-        """Clear all tracked messages."""
+        """清除所有已跟踪的消息。"""
         self._seen.clear()
 
 
-# ─── Text Batch Aggregation ──────────────────────────────────────────────────
+# ─── 文本批量聚合 ─────────────────────────────────────────────────────────────
 
 
 class TextBatchAggregator:
-    """Aggregates rapid-fire text events into single messages.
+    """将快速连发的文本事件聚合为单条消息。
 
-    Replaces the ``_enqueue_text_event`` / ``_flush_text_batch`` pattern
-    previously duplicated in telegram, discord, matrix, wecom, and feishu.
+    替代了之前在 telegram、discord、matrix、wecom 和 feishu 中
+    重复的 ``_enqueue_text_event`` / ``_flush_text_batch`` 模式。
 
-    Usage::
+    用法::
 
         self._text_batcher = TextBatchAggregator(
             handler=self._message_handler,
@@ -92,7 +89,7 @@ class TextBatchAggregator:
             split_threshold=1900,
         )
 
-        # In message dispatch:
+        # 在消息分发处：
         if msg_type == MessageType.TEXT and self._text_batcher.is_enabled():
             self._text_batcher.enqueue(event, session_key)
             return
@@ -114,11 +111,11 @@ class TextBatchAggregator:
         self._pending_tasks: Dict[str, asyncio.Task] = {}
 
     def is_enabled(self) -> bool:
-        """Return True if batching is active (delay > 0)."""
+        """如果批处理激活（delay > 0）则返回 True。"""
         return self._batch_delay > 0
 
     def enqueue(self, event: "MessageEvent", key: str) -> None:
-        """Add *event* to the pending batch for *key*."""
+        """将 *event* 添加到 *key* 的待处理批次中。"""
         chunk_len = len(event.text or "")
         existing = self._pending.get(key)
         if not existing:
@@ -128,19 +125,19 @@ class TextBatchAggregator:
             existing.text = f"{existing.text}\n{event.text}"
             existing._last_chunk_len = chunk_len  # type: ignore[attr-defined]
 
-        # Cancel prior flush timer, start a new one
+        # 取消之前的刷新计时器，启动新的
         prior = self._pending_tasks.get(key)
         if prior and not prior.done():
             prior.cancel()
         self._pending_tasks[key] = asyncio.create_task(self._flush(key))
 
     async def _flush(self, key: str) -> None:
-        """Wait then dispatch the batched event for *key*."""
+        """等待后分发 *key* 的批处理事件。"""
         current_task = self._pending_tasks.get(key)
         pending = self._pending.get(key)
         last_len = getattr(pending, "_last_chunk_len", 0) if pending else 0
 
-        # Use longer delay when the last chunk looks like a split message
+        # 当最后一块看起来像是被拆分的消息时使用更长的延迟
         delay = self._split_delay if last_len >= self._split_threshold else self._batch_delay
         await asyncio.sleep(delay)
 
@@ -155,7 +152,7 @@ class TextBatchAggregator:
             self._pending_tasks.pop(key, None)
 
     def cancel_all(self) -> None:
-        """Cancel all pending flush tasks."""
+        """取消所有待处理的刷新任务。"""
         for task in self._pending_tasks.values():
             if not task.done():
                 task.cancel()
@@ -163,9 +160,9 @@ class TextBatchAggregator:
         self._pending.clear()
 
 
-# ─── Markdown Stripping ──────────────────────────────────────────────────────
+# ─── Markdown 去除 ────────────────────────────────────────────────────────────
 
-# Pre-compiled regexes for performance
+# 预编译正则表达式以提升性能
 _RE_BOLD = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 _RE_ITALIC_STAR = re.compile(r"\*(.+?)\*", re.DOTALL)
 _RE_BOLD_UNDER = re.compile(r"\b__(?![\s_])(.+?)(?<![\s_])__\b", re.DOTALL)
@@ -178,10 +175,10 @@ _RE_MULTI_NEWLINE = re.compile(r"\n{3,}")
 
 
 def strip_markdown(text: str) -> str:
-    """Strip markdown formatting for plain-text platforms (SMS, iMessage, etc.).
+    """剥除纯文本平台（SMS、iMessage 等）的 Markdown 格式。
 
-    Replaces the identical ``_strip_markdown()`` functions previously
-    duplicated in sms.py, bluebubbles.py, and feishu.py.
+    替代了之前在 sms.py、bluebubbles.py 和 feishu.py 中
+    重复的 ``_strip_markdown()`` 函数。
     """
     text = _RE_BOLD.sub(r"\1", text)
     text = _RE_ITALIC_STAR.sub(r"\1", text)
@@ -195,25 +192,24 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
-# ─── Thread Participation Tracking ───────────────────────────────────────────
+# ─── 线程参与跟踪 ─────────────────────────────────────────────────────────────
 
 
 class ThreadParticipationTracker:
-    """Persistent tracking of threads the bot has participated in.
+    """持久跟踪机器人参与的线程。
 
-    Replaces the identical ``_load/_save_participated_threads`` +
-    ``_mark_thread_participated`` pattern previously duplicated in
-    discord.py and matrix.py.
+    替代了之前在 discord.py 和 matrix.py 中重复的
+    ``_load/_save_participated_threads`` + ``_mark_thread_participated`` 模式。
 
-    Usage::
+    用法::
 
         self._threads = ThreadParticipationTracker("discord")
 
-        # Check membership:
+        # 检查成员资格：
         if thread_id in self._threads:
             ...
 
-        # Mark participation:
+        # 标记参与：
         self._threads.mark(thread_id)
     """
 
@@ -250,7 +246,7 @@ class ThreadParticipationTracker:
         atomic_json_write(path, thread_list, indent=None)
 
     def mark(self, thread_id: str) -> None:
-        """Mark *thread_id* as participated and persist."""
+        """将 *thread_id* 标记为已参与并持久化。"""
         if thread_id not in self._threads:
             self._threads[thread_id] = None
             self._save()
@@ -262,14 +258,13 @@ class ThreadParticipationTracker:
         self._threads.clear()
 
 
-# ─── Phone Number Redaction ──────────────────────────────────────────────────
+# ─── 电话号码脱敏 ────────────────────────────────────────────────────────────
 
 
 def redact_phone(phone: str) -> str:
-    """Redact a phone number for logging, preserving country code and last 4.
+    """对电话号码脱敏以用于日志，保留国家代码和后 4 位。
 
-    Replaces the identical ``_redact_phone()`` functions in signal.py,
-    sms.py, and bluebubbles.py.
+    替代了 signal.py、sms.py 和 bluebubbles.py 中相同的 ``_redact_phone()`` 函数。
     """
     if not phone:
         return "<none>"

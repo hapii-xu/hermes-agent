@@ -1,3 +1,3 @@
 ---
-description: Note taking skills, to save information, assist with research, and collab on multi-session planning and information sharing.
+description: 笔记类技能，用于保存信息、辅助研究，并在多会话规划与信息共享中协作。
 ---

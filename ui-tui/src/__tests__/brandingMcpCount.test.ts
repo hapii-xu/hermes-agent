@@ -8,14 +8,14 @@ import { SessionPanel } from '../components/branding.js'
 import { DEFAULT_THEME } from '../theme.js'
 import type { McpServerStatus, SessionInfo } from '../types.js'
 
-// Invariant under test: the TUI banner's MCP headline counts *connected*
-// servers, never configured-but-disabled ones. This mirrors the classic CLI
-// banner (`mcp_connected = sum(1 for s in mcp_status if s["connected"])` in
-// hermes_cli/banner.py) and the "connected" label on the MCP collapse toggle.
+// 测试中的不变量：TUI banner 的 MCP 标题计数只统计 *已连接* 的
+// server，不包括已配置但禁用的。这反映了经典 CLI
+// banner（hermes_cli/banner.py 中的 `mcp_connected = sum(1 for s in mcp_status if s["connected"])`）
+// 以及 MCP 折叠切换按钮上的 "connected" 标签。
 //
-// Regression: branding.tsx used the raw `info.mcp_servers.length`, so a
-// disabled `linear` server alongside a connected `nous-support` server made
-// the TUI report "2 MCP" while the classic CLI correctly reported "1 MCP".
+// 回归问题：branding.tsx 曾使用原始的 `info.mcp_servers.length`，因此
+// 一个禁用的 `linear` server 加上一个已连接的 `nous-support` server 会导致
+// TUI 报告 "2 MCP"，而经典 CLI 正确报告 "1 MCP"。
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -63,7 +63,7 @@ async function renderFooter(info: SessionInfo): Promise<string> {
   try {
     await delay(20)
 
-    // Strip ANSI so we can assert on the rendered text content.
+    // 去除 ANSI 以便对渲染的文本内容进行断言。
     // eslint-disable-next-line no-control-regex
     return streams.capture().replace(/\u001b\[[0-9;]*m/g, '')
   } finally {
@@ -81,7 +81,7 @@ describe('branding MCP headline count', () => {
       ])
     )
 
-    // One connected server → "1 MCP", never "2 MCP".
+    // 一个已连接的 server → "1 MCP"，而非 "2 MCP"。
     expect(frame).toContain('1 MCP')
     expect(frame).not.toContain('2 MCP')
   })
@@ -91,7 +91,7 @@ describe('branding MCP headline count', () => {
       baseInfo([mcp({ connected: false, disabled: true, name: 'linear', status: 'disabled' })])
     )
 
-    // Matches the classic CLI, which only appends "· N MCP" when N > 0.
+    // 与经典 CLI 一致，仅在 N > 0 时追加 "· N MCP"。
     expect(frame).not.toContain('MCP servers')
     expect(frame).not.toMatch(/\d MCP\b/)
   })

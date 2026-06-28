@@ -1,16 +1,16 @@
 """
-Timezone-aware clock for Hermes.
+Hermes 的时区感知时钟。
 
-Provides a single ``now()`` helper that returns a timezone-aware datetime
-based on the user's configured IANA timezone (e.g. ``Asia/Kolkata``).
+提供单个 ``now()`` 辅助函数，根据用户配置的 IANA 时区（例如 ``Asia/Kolkata``）
+返回带时区信息的 datetime 对象。
 
-Resolution order:
-  1. ``HERMES_TIMEZONE`` environment variable
-  2. ``timezone`` key in ``~/.hermes/config.yaml``
-  3. Falls back to the server's local time (``datetime.now().astimezone()``)
+解析顺序：
+  1. ``HERMES_TIMEZONE`` 环境变量
+  2. ``~/.hermes/config.yaml`` 中的 ``timezone`` 键
+  3. 回退到服务器本地时间（``datetime.now().astimezone()``）
 
-Invalid timezone values log a warning and fall back safely — Hermes never
-crashes due to a bad timezone string.
+无效的时区值会记录一条警告并安全回退 —— Hermes 不会因为
+错误的时区字符串而崩溃。
 """
 
 import logging
@@ -24,36 +24,36 @@ logger = logging.getLogger(__name__)
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
-    # Python 3.8 fallback (shouldn't be needed — Hermes requires 3.9+)
+    # Python 3.8 回退方案（通常不需要 —— Hermes 要求 3.9+）
     from backports.zoneinfo import ZoneInfo  # type: ignore[no-redef]
 
-# Cached state — resolved once, reused on every call.
-# Call reset_cache() to force re-resolution (e.g. after config changes).
+# 缓存状态 —— 解析一次后，每次调用复用。
+# 调用 reset_cache() 可强制重新解析（例如配置更改后）。
 _cached_tz: Optional[ZoneInfo] = None
 _cached_tz_name: Optional[str] = None
 _cache_resolved: bool = False
 
 
 def _resolve_timezone_name() -> str:
-    """Read the configured IANA timezone string (or empty string).
+    """读取已配置的 IANA 时区字符串（或空字符串）。
 
-    This does file I/O when falling through to config.yaml, so callers
-    should cache the result rather than calling on every ``now()``.
+    当回退到读取 config.yaml 时会执行文件 I/O，因此调用方
+    应缓存结果，而不是在每次调用 ``now()`` 时都重新读取。
     """
-    # 1. Environment variable (highest priority — set by Supervisor, etc.)
+    # 1. 环境变量（最高优先级 —— 由 Supervisor 等设置）
     tz_env = os.getenv("HERMES_TIMEZONE", "").strip()
     if tz_env:
         return tz_env
 
-    # 2. config.yaml ``timezone`` key
+    # 2. config.yaml 中的 ``timezone`` 键
     try:
         import yaml
         config_path = get_config_path()
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
-            # Managed scope: an administrator can pin ``timezone`` too. Overlay
-            # via the shared helper (fail-open) since this reads config.yaml directly.
+            # 托管作用域：管理员也可以固定 ``timezone``。
+            # 通过共享辅助函数进行叠加（失败时开放），因为此处直接读取 config.yaml。
             try:
                 from hermes_cli import managed_scope
                 cfg = managed_scope.apply_managed_overlay(cfg)

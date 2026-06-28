@@ -1,308 +1,308 @@
-# Design System: Uber
+# 设计系统：Uber
 
 
-> **Hermes Agent — Implementation Notes**
+> **Hermes Agent — 实现说明**
 >
-> The original site uses proprietary fonts. For self-contained HTML output, use these CDN substitutes:
-> - **Primary:** `DM Sans` | **Mono:** `system monospace stack`
-> - **Font stack (CSS):** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
-> - **Mono stack (CSS):** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
+> 原始站点使用专有字体。对于自包含的 HTML 输出，请使用以下 CDN 替代字体：
+> - **主要字体：** `DM Sans` | **等宽字体：** `system monospace stack`
+> - **字体栈（CSS）：** `font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;`
+> - **等宽字体栈（CSS）：** `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`
 > ```html
 > <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
 > ```
-> Use `write_file` to create HTML, serve via `generative-widgets` skill (cloudflared tunnel).
-> Verify visual accuracy with `browser_vision` after generating.
+> 使用 `write_file` 创建 HTML，通过 `generative-widgets` 技能（cloudflared tunnel）提供服务。
+> 生成后使用 `browser_vision` 验证视觉准确性。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
-Uber's design language is a masterclass in confident minimalism -- a black-and-white universe where every pixel serves a purpose and nothing decorates without earning its place. The entire experience is built on a stark duality: jet black (`#000000`) and pure white (`#ffffff`), with virtually no mid-tone grays diluting the message. This isn't the sterile minimalism of a startup that hasn't finished designing -- it's the deliberate restraint of a brand so established it can afford to whisper.
+Uber 的设计语言是自信极简主义的典范 —— 一个黑白宇宙，每个像素都各有其用，没有任何东西在不挣得位置的情况下做装饰。整个体验建立在一个鲜明的二元对立上：乌黑（`#000000`）和纯白（`#ffffff`），几乎没有中间灰色调稀释信息。这不是那种还没完成设计的初创公司式的冷冰冰极简 —— 而是一个如此成熟的品牌刻意克制，以至于它可以负担得起低声细语。
 
-The signature typeface, UberMove, is a proprietary geometric sans-serif with a distinctly square, engineered quality. Headlines in UberMove Bold at 52px carry the weight of a billboard -- authoritative, direct, unapologetic. The companion face UberMoveText handles body copy and buttons with a slightly softer, more readable character at medium weight (500). Together, they create a typographic system that feels like a transit map: clear, efficient, built for scanning at speed.
+标志性字体 UberMove 是一种专有的几何无衬线字体，带有明显的方形、工程化质感。UberMove Bold 在 52px 下的标题承载着广告牌般的分量 —— 权威、直接、不容置疑。配套的 UberMoveText 以略柔和、更可读的特性在中等字重（500）下处理正文和按钮。两者共同创造出一个感觉像交通地图的字体系统：清晰、高效、为快速扫视而建。
 
-What makes Uber's design truly distinctive is its use of full-bleed photography and illustration paired with pill-shaped interactive elements (999px border-radius). Navigation chips, CTA buttons, and category selectors all share this capsule shape, creating a tactile, thumb-friendly interface language that's unmistakably Uber. The illustrations -- warm, slightly stylized scenes of drivers, riders, and cityscapes -- inject humanity into what could otherwise be a cold, monochrome system. The site alternates between white content sections and a full-black footer, with card-based layouts using the gentlest possible shadows (rgba(0,0,0,0.12-0.16)) to create subtle lift without breaking the flat aesthetic.
+让 Uber 设计真正与众不同的是它对全出血摄影和插图的运用，配以胶囊形的交互元素（999px 圆角）。导航芯片、CTA 按钮和分类选择器都共享这种胶囊形状，创造出一种触觉的、拇指友好的界面语言， unmistakably Uber。插图 —— 温暖、略带风格化的司机、乘客和城市场景 —— 为原本可能冷冰冰的单色系统注入了人情味。站点在白色内容区块和全黑页脚之间交替，使用卡片式布局配以最温柔的阴影（rgba(0,0,0,0.12-0.16)），在不破坏扁平美学的情况下创造微妙的抬升。
 
-**Key Characteristics:**
-- Pure black-and-white foundation with virtually no mid-tone grays in the UI chrome
-- UberMove (headlines) + UberMoveText (body/UI) -- proprietary geometric sans-serif family
-- Pill-shaped everything: buttons, chips, nav items all use 999px border-radius
-- Warm, human illustrations contrasting the stark monochrome interface
-- Card-based layout with whisper-soft shadows (0.12-0.16 opacity)
-- 8px spacing grid with compact, information-dense layouts
-- Bold photography integrated as full-bleed hero backgrounds
-- Black footer anchoring the page with a dark, high-contrast environment
+**关键特征：**
+- 纯黑白基础，UI 装饰中几乎没有中间灰色调
+- UberMove（标题）+ UberMoveText（正文/UI）—— 专有的几何无衬线字体家族
+- 处处胶囊形：按钮、芯片、导航项都使用 999px 圆角
+- 温暖、人性化插图，与鲜明的单色界面形成对比
+- 卡片式布局，配轻语般柔和的阴影（0.12-0.16 透明度）
+- 8px 间距网格，配紧凑、信息密集的布局
+- 粗体摄影作为全出血英雄背景集成
+- 黑色页脚以深色、高对比度环境锚定页面
 
-## 2. Color Palette & Roles
+## 2. 色彩调色板与角色
 
-### Primary
-- **Uber Black** (`#000000`): The defining brand color -- used for primary buttons, headlines, navigation text, and the footer. Not "near-black" or "off-black," but true, uncompromising black.
-- **Pure White** (`#ffffff`): The primary surface color and inverse text. Used for page backgrounds, card surfaces, and text on black elements.
+### 主色
+- **Uber Black**（`#000000`）：定义性的品牌色 —— 用于主要按钮、标题、导航文字和页脚。不是"近黑"或"偏黑"，而是真正的、不妥协的黑色。
+- **Pure White**（`#ffffff`）：主要表面色和反相文字。用于页面背景、卡片表面，以及黑色元素上的文字。
 
-### Interactive & Button States
-- **Hover Gray** (`#e2e2e2`): White button hover state -- a clean, cool light gray that provides clear feedback without warmth.
-- **Hover Light** (`#f3f3f3`): Subtle hover for elevated white buttons -- barely-there gray for gentle interaction feedback.
-- **Chip Gray** (`#efefef`): Background for secondary/filter buttons and navigation chips -- a neutral, ultra-light gray.
+### 交互与按钮状态
+- **Hover Gray**（`#e2e2e2`）：白色按钮的悬停状态 —— 一种干净、冷的浅灰，提供清晰反馈而不带暖意。
+- **Hover Light**（`#f3f3f3`）：凸起白色按钮的微妙悬停 —— 几乎不可见的灰色，用于温和的交互反馈。
+- **Chip Gray**（`#efefef`）：次要/过滤按钮和导航芯片的背景 —— 一种中性的、超浅灰色。
 
-### Text & Content
-- **Body Gray** (`#4b4b4b`): Secondary text and footer links -- a true mid-gray with no warm or cool bias.
-- **Muted Gray** (`#afafaf`): Tertiary text, de-emphasized footer links, and placeholder content.
+### 文字与内容
+- **Body Gray**（`#4b4b4b`）：次要文字和页脚链接 —— 一种真正的中灰，没有暖或冷的偏向。
+- **Muted Gray**（`#afafaf`）：三级文字、弱化的页脚链接和占位符内容。
 
-### Borders & Separation
-- **Border Black** (`#000000`): Thin 1px borders for structural containment -- used sparingly on dividers and form containers.
+### 边框与分隔
+- **Border Black**（`#000000`）：用于结构性围合的薄 1px 边框 —— 谨慎地用于分隔符和表单容器。
 
-### Shadows & Depth
-- **Shadow Light** (`rgba(0, 0, 0, 0.12)`): Standard card elevation -- a featherweight lift for content cards.
-- **Shadow Medium** (`rgba(0, 0, 0, 0.16)`): Slightly stronger elevation for floating action buttons and overlays.
-- **Button Press** (`rgba(0, 0, 0, 0.08)`): Inset shadow for active/pressed states on secondary buttons.
+### 阴影与深度
+- **Shadow Light**（`rgba(0, 0, 0, 0.12)`）：标准卡片凸起 —— 内容卡片的轻量级抬升。
+- **Shadow Medium**（`rgba(0, 0, 0, 0.16)`）：浮动操作按钮和覆盖层的略强凸起。
+- **Button Press**（`rgba(0, 0, 0, 0.08)`）：次要按钮激活/按下状态的内嵌阴影。
 
-### Link States
-- **Default Link Blue** (`#0000ee`): Standard browser blue for text links with underline -- used in body content.
-- **Link White** (`#ffffff`): Links on dark surfaces -- used in footer and dark sections.
-- **Link Black** (`#000000`): Links on light surfaces with underline decoration.
+### 链接状态
+- **Default Link Blue**（`#0000ee`）：带下划线文字链接的标准浏览器蓝 —— 用于正文内容。
+- **Link White**（`#ffffff`）：深色表面上的链接 —— 用于页脚和深色区块。
+- **Link Black**（`#000000`）：浅色表面上带下划线装饰的链接。
 
-### Gradient System
-- Uber's design is **entirely gradient-free**. The black/white duality and flat color blocks create all visual hierarchy. No gradients appear anywhere in the system -- every surface is a solid color, every transition is a hard edge or a shadow.
+### 渐变系统
+- Uber 的设计**完全没有渐变**。黑白二元对立和扁平色块创造了所有视觉层级。系统中任何地方都没有渐变 —— 每个表面都是纯色，每个过渡都是硬边缘或阴影。
 
-## 3. Typography Rules
+## 3. 字体排版规则
 
-### Font Family
-- **Headline / Display**: `UberMove`, with fallbacks: `UberMoveText, system-ui, Helvetica Neue, Helvetica, Arial, sans-serif`
-- **Body / UI**: `UberMoveText`, with fallbacks: `system-ui, Helvetica Neue, Helvetica, Arial, sans-serif`
+### 字体族
+- **标题 / 展示**：`UberMove`，回退字体：`UberMoveText, system-ui, Helvetica Neue, Helvetica, Arial, sans-serif`
+- **正文 / UI**：`UberMoveText`，回退字体：`system-ui, Helvetica Neue, Helvetica, Arial, sans-serif`
 
-*Note: UberMove and UberMoveText are proprietary typefaces. For external implementations, use `system-ui` or Inter as the closest available substitute. The geometric, square-proportioned character of UberMove can be approximated with Inter or DM Sans.*
+*注意：UberMove 和 UberMoveText 是专有字体。对于外部实现，使用 `system-ui` 或 Inter 作为最接近的可用替代。UberMove 的几何、方形比例特性可以用 Inter 或 DM Sans 近似。*
 
-### Hierarchy
+### 层级
 
-| Role | Font | Size | Weight | Line Height | Notes |
+| 角色 | 字体 | 字号 | 字重 | 行高 | 说明 |
 |------|------|------|--------|-------------|-------|
-| Display / Hero | UberMove | 52px (3.25rem) | 700 | 1.23 (tight) | Maximum impact, billboard presence |
-| Section Heading | UberMove | 36px (2.25rem) | 700 | 1.22 (tight) | Major section anchors |
-| Card Title | UberMove | 32px (2rem) | 700 | 1.25 (tight) | Card and feature headings |
-| Sub-heading | UberMove | 24px (1.5rem) | 700 | 1.33 | Secondary section headers |
-| Small Heading | UberMove | 20px (1.25rem) | 700 | 1.40 | Compact headings, list titles |
-| Nav / UI Large | UberMoveText | 18px (1.13rem) | 500 | 1.33 | Navigation links, prominent UI text |
-| Body / Button | UberMoveText | 16px (1rem) | 400-500 | 1.25-1.50 | Standard body text, button labels |
-| Caption | UberMoveText | 14px (0.88rem) | 400-500 | 1.14-1.43 | Metadata, descriptions, small links |
-| Micro | UberMoveText | 12px (0.75rem) | 400 | 1.67 (relaxed) | Fine print, legal text |
+| 展示 / 英雄 | UberMove | 52px (3.25rem) | 700 | 1.23（紧凑） | 最大冲击力，广告牌般的存在感 |
+| 区块标题 | UberMove | 36px (2.25rem) | 700 | 1.22（紧凑） | 主要区块锚点 |
+| 卡片标题 | UberMove | 32px (2rem) | 700 | 1.25（紧凑） | 卡片和功能标题 |
+| 副标题 | UberMove | 24px (1.5rem) | 700 | 1.33 | 次要区块标题 |
+| 小标题 | UberMove | 20px (1.25rem) | 700 | 1.40 | 紧凑标题、列表标题 |
+| 导航 / 大 UI | UberMoveText | 18px (1.13rem) | 500 | 1.33 | 导航链接、突出 UI 文字 |
+| 正文 / 按钮 | UberMoveText | 16px (1rem) | 400-500 | 1.25-1.50 | 标准正文、按钮标签 |
+| 说明 | UberMoveText | 14px (0.88rem) | 400-500 | 1.14-1.43 | 元数据、描述、小链接 |
+| 微字 | UberMoveText | 12px (0.75rem) | 400 | 1.67（宽松） | 附属细则、法律文字 |
 
-### Principles
-- **Bold headlines, medium body**: UberMove headings are exclusively weight 700 (bold) -- every headline hits with billboard force. UberMoveText body and UI text uses 400-500, creating a clear visual hierarchy through weight contrast.
-- **Tight heading line-heights**: All headlines use line-heights between 1.22-1.40 -- compact and punchy, designed for scanning rather than reading.
-- **Functional typography**: There is no decorative type treatment anywhere. No letter-spacing, no text-transform, no ornamental sizing. Every text element serves a direct communication purpose.
-- **Two fonts, strict roles**: UberMove is exclusively for headings. UberMoveText is exclusively for body, buttons, links, and UI. The boundary is never crossed.
+### 原则
+- **粗体标题，中等正文**：UberMove 标题全部使用字重 700（粗）—— 每个标题都以广告牌般的力量击中。UberMoveText 正文和 UI 文字使用 400-500，通过字重对比创造出清晰的视觉层级。
+- **紧凑的标题行高**：所有标题使用 1.22-1.40 之间的行高 —— 紧凑有力，为扫视而非阅读而设计。
+- **功能性字体排版**：任何地方都没有装饰性的字体处理。没有字间距、没有 text-transform、没有装饰性尺寸。每个文字元素都服务于直接的沟通目的。
+- **两种字体，严格角色**：UberMove 专用于标题。UberMoveText 专用于正文、按钮、链接和 UI。边界从不跨越。
 
-## 4. Component Stylings
+## 4. 组件样式
 
-### Buttons
+### 按钮
 
-**Primary Black (CTA)**
-- Background: Uber Black (`#000000`)
-- Text: Pure White (`#ffffff`)
-- Padding: 10px 12px
-- Radius: 999px (full pill)
-- Outline: none
-- Focus: inset ring `rgb(255,255,255) 0px 0px 0px 2px`
-- The primary action button -- bold, high-contrast, unmissable
+**主要黑色（CTA）**
+- 背景：Uber Black（`#000000`）
+- 文字：Pure White（`#ffffff`）
+- 内边距：10px 12px
+- 圆角：999px（完整胶囊）
+- 轮廓：无
+- 聚焦：内嵌环 `rgb(255,255,255) 0px 0px 0px 2px`
+- 主要操作按钮 —— 粗体、高对比度、不容错过
 
-**Secondary White**
-- Background: Pure White (`#ffffff`)
-- Text: Uber Black (`#000000`)
-- Padding: 10px 12px
-- Radius: 999px (full pill)
-- Hover: background shifts to Hover Gray (`#e2e2e2`)
-- Focus: background shifts to Hover Gray, inset ring appears
-- Used on dark surfaces or as a secondary action alongside Primary Black
+**次要白色**
+- 背景：Pure White（`#ffffff`）
+- 文字：Uber Black（`#000000`）
+- 内边距：10px 12px
+- 圆角：999px（完整胶囊）
+- 悬停：背景变为 Hover Gray（`#e2e2e2`）
+- 聚焦：背景变为 Hover Gray，出现内嵌环
+- 用于深色表面，或作为主要黑色旁边的次要操作
 
-**Chip / Filter**
-- Background: Chip Gray (`#efefef`)
-- Text: Uber Black (`#000000`)
-- Padding: 14px 16px
-- Radius: 999px (full pill)
-- Active: inset shadow `rgba(0,0,0,0.08)`
-- Navigation chips, category selectors, filter toggles
+**芯片 / 过滤器**
+- 背景：Chip Gray（`#efefef`）
+- 文字：Uber Black（`#000000`）
+- 内边距：14px 16px
+- 圆角：999px（完整胶囊）
+- 激活：内嵌阴影 `rgba(0,0,0,0.08)`
+- 导航芯片、分类选择器、过滤切换
 
-**Floating Action**
-- Background: Pure White (`#ffffff`)
-- Text: Uber Black (`#000000`)
-- Padding: 14px
-- Radius: 999px (full pill)
-- Shadow: `rgba(0,0,0,0.16) 0px 2px 8px 0px`
-- Transform: `translateY(2px)` slight offset
-- Hover: background shifts to `#f3f3f3`
-- Map controls, scroll-to-top, floating CTAs
+**浮动操作**
+- 背景：Pure White（`#ffffff`）
+- 文字：Uber Black（`#000000`）
+- 内边距：14px
+- 圆角：999px（完整胶囊）
+- 阴影：`rgba(0,0,0,0.16) 0px 2px 8px 0px`
+- 变换：`translateY(2px)` 轻微偏移
+- 悬停：背景变为 `#f3f3f3`
+- 地图控件、回顶、浮动 CTA
 
-### Cards & Containers
-- Background: Pure White (`#ffffff`) on white pages; no distinct card background differentiation
-- Border: none by default -- cards are defined by shadow, not stroke
-- Radius: 8px for standard content cards; 12px for featured/promoted cards
-- Shadow: `rgba(0,0,0,0.12) 0px 4px 16px 0px` for standard lift
-- Cards are content-dense with minimal internal padding
-- Image-led cards use full-bleed imagery with text overlay or below
+### 卡片与容器
+- 背景：白色页面上用 Pure White（`#ffffff`）；无明显的卡片背景区分
+- 边框：默认无 —— 卡片由阴影定义，而非描边
+- 圆角：标准内容卡片 8px；特色/推广卡片 12px
+- 阴影：`rgba(0,0,0,0.12) 0px 4px 16px 0px` 用于标准抬升
+- 卡片内容密集，内部内边距最小
+- 图片主导的卡片使用全出血图片，文字覆盖在上或下方
 
-### Inputs & Forms
-- Text: Uber Black (`#000000`)
-- Background: Pure White (`#ffffff`)
-- Border: 1px solid Black (`#000000`) -- the only place visible borders appear prominently
-- Radius: 8px
-- Padding: standard comfortable spacing
-- Focus: no extracted custom focus state -- relies on standard browser focus ring
+### 输入与表单
+- 文字：Uber Black（`#000000`）
+- 背景：Pure White（`#ffffff`）
+- 边框：1px solid Black（`#000000`）—— 可见边框唯一明显出现的地方
+- 圆角：8px
+- 内边距：标准舒适间距
+- 聚焦：无提取的自定义聚焦状态 —— 依赖标准浏览器聚焦环
 
-### Navigation
-- Sticky top navigation with white background
-- Logo: Uber wordmark/icon at 24x24px in black
-- Links: UberMoveText at 14-18px, weight 500, in Uber Black
-- Pill-shaped nav chips with Chip Gray (`#efefef`) background for category navigation ("Ride", "Drive", "Business", "Uber Eats")
-- Menu toggle: circular button with 50% border-radius
-- Mobile: hamburger menu pattern
+### 导航
+- 顶部固定导航，白色背景
+- Logo：黑色的 Uber 字标/图标，24x24px
+- 链接：UberMoveText 14-18px，字重 500，Uber Black
+- 胶囊形导航芯片，配 Chip Gray（`#efefef`）背景，用于分类导航（"Ride"、"Drive"、"Business"、"Uber Eats"）
+- 菜单切换：50% 圆角的圆形按钮
+- 移动端：汉堡菜单模式
 
-### Image Treatment
-- Warm, hand-illustrated scenes (not photographs for feature sections)
-- Illustration style: slightly stylized people, warm color palette within illustrations, contemporary vibe
-- Hero sections use bold photography or illustration as full-width backgrounds
-- QR codes for app download CTAs
-- All imagery uses standard 8px or 12px border-radius when contained in cards
+### 图片处理
+- 温暖、手绘风格的场景（功能区不用照片）
+- 插图风格：略带风格化的人物，插图内温暖调色板，当代氛围
+- 英雄区使用粗体摄影或插图作为全宽背景
+- 应用下载 CTA 的二维码
+- 所有图片在卡片中时使用标准 8px 或 12px 圆角
 
-### Distinctive Components
+### 特色组件
 
-**Category Pill Navigation**
-- Horizontal row of pill-shaped buttons for top-level navigation ("Ride", "Drive", "Business", "Uber Eats", "About")
-- Each pill: Chip Gray background, black text, 999px radius
-- Active state indicated by black background with white text (inversion)
+**分类胶囊导航**
+- 顶层导航的水平胶囊按钮行（"Ride"、"Drive"、"Business"、"Uber Eats"、"About"）
+- 每个胶囊：Chip Gray 背景，黑色文字，999px 圆角
+- 激活状态由黑色背景白色文字（反相）指示
 
-**Hero with Dual Action**
-- Split hero: text/CTA on left, map/illustration on right
-- Two input fields side by side for pickup/destination
-- "See prices" CTA button in black pill
+**双操作英雄区**
+- 分屏英雄：左侧文字/CTA，右侧地图/插图
+- 两个并排的输入字段，用于上车/目的地
+- 黑色胶囊的"See prices" CTA 按钮
 
-**Plan-Ahead Cards**
-- Cards promoting features like "Uber Reserve" and trip planning
-- Illustration-heavy with warm, human-centric imagery
-- Black CTA buttons with white text at bottom
+**计划卡片**
+- 推广"Uber Reserve"和行程规划等功能的卡片
+- 插图密集，配温暖、以人为本的图片
+- 底部黑色 CTA 按钮，白色文字
 
-## 5. Layout Principles
+## 5. 布局原则
 
-### Spacing System
-- Base unit: 8px
-- Scale: 4px, 6px, 8px, 10px, 12px, 14px, 16px, 18px, 20px, 24px, 32px
-- Button padding: 10px 12px (compact) or 14px 16px (comfortable)
-- Card internal padding: approximately 24-32px
-- Section vertical spacing: generous but efficient -- approximately 64-96px between major sections
+### 间距系统
+- 基本单位：8px
+- 刻度：4px、6px、8px、10px、12px、14px、16px、18px、20px、24px、32px
+- 按钮内边距：10px 12px（紧凑）或 14px 16px（舒适）
+- 卡片内部内边距：约 24-32px
+- 区块纵向间距：慷慨但高效 —— 主要区块之间约 64-96px
 
-### Grid & Container
-- Max container width: approximately 1136px, centered
-- Hero: split layout with text left, visual right
-- Feature sections: 2-column card grids or full-width single-column
-- Footer: multi-column link grid on black background
-- Full-width sections extending to viewport edges
+### 网格与容器
+- 最大容器宽度：约 1136px，居中
+- 英雄区：分屏布局，左侧文字，右侧视觉
+- 功能区：2 列卡片网格或全宽单列
+- 页脚：黑色背景上的多列链接网格
+- 全宽区块延伸到视口边缘
 
-### Whitespace Philosophy
-- **Efficient, not airy**: Uber's whitespace is functional -- enough to separate, never enough to feel empty. This is transit-system spacing: compact, clear, purpose-driven.
-- **Content-dense cards**: Cards pack information tightly with minimal internal spacing, relying on shadow and radius to define boundaries.
-- **Section breathing room**: Major sections get generous vertical spacing, but within sections, elements are closely grouped.
+### 留白哲学
+- **高效，不通透**：Uber 的留白是功能性的 —— 足够分隔，但从不显得空旷。这是交通系统式的间距：紧凑、清晰、目标驱动。
+- **内容密集卡片**：卡片紧密打包信息，内部间距最小，依赖阴影和圆角定义边界。
+- **区块呼吸空间**：主要区块获得慷慨的纵向间距，但区块内部，元素紧密分组。
 
-### Border Radius Scale
-- Sharp (0px): No square corners used in interactive elements
-- Standard (8px): Content cards, input fields, listboxes
-- Comfortable (12px): Featured cards, larger containers, link cards
-- Full Pill (999px): All buttons, chips, navigation items, pills
-- Circle (50%): Avatar images, icon containers, circular controls
+### 圆角刻度
+- 锐利（0px）：交互元素不使用方角
+- 标准（8px）：内容卡片、输入字段、列表框
+- 舒适（12px）：特色卡片、较大容器、链接卡片
+- 完整胶囊（999px）：所有按钮、芯片、导航项、药丸
+- 圆形（50%）：头像图片、图标容器、圆形控件
 
-## 6. Depth & Elevation
+## 6. 深度与凸起
 
-| Level | Treatment | Use |
+| 层级 | 处理方式 | 用途 |
 |-------|-----------|-----|
-| Flat (Level 0) | No shadow, solid background | Page background, inline content, text sections |
-| Subtle (Level 1) | `rgba(0,0,0,0.12) 0px 4px 16px` | Standard content cards, feature blocks |
-| Medium (Level 2) | `rgba(0,0,0,0.16) 0px 4px 16px` | Elevated cards, overlay elements |
-| Floating (Level 3) | `rgba(0,0,0,0.16) 0px 2px 8px` + translateY(2px) | Floating action buttons, map controls |
-| Pressed (Level 4) | `rgba(0,0,0,0.08) inset` (999px spread) | Active/pressed button states |
-| Focus Ring | `rgb(255,255,255) 0px 0px 0px 2px inset` | Keyboard focus indicators |
+| 平面（Level 0） | 无阴影，纯色背景 | 页面背景、行内内容、文字区块 |
+| 微妙（Level 1） | `rgba(0,0,0,0.12) 0px 4px 16px` | 标准内容卡片、功能块 |
+| 中等（Level 2） | `rgba(0,0,0,0.16) 0px 4px 16px` | 凸起的卡片、覆盖层元素 |
+| 浮动（Level 3） | `rgba(0,0,0,0.16) 0px 2px 8px` + translateY(2px) | 浮动操作按钮、地图控件 |
+| 按下（Level 4） | `rgba(0,0,0,0.08) inset`（999px 扩散） | 激活/按下的按钮状态 |
+| 聚焦环 | `rgb(255,255,255) 0px 0px 0px 2px inset` | 键盘聚焦指示器 |
 
-**Shadow Philosophy**: Uber uses shadow purely as a structural tool, never decoratively. Shadows are always black at very low opacity (0.08-0.16), creating the bare minimum lift needed to separate content layers. The blur radii are moderate (8-16px) -- enough to feel natural but never dramatic. There are no colored shadows, no layered shadow stacks, and no ambient glow effects. Depth is communicated more through the black/white section contrast than through shadow elevation.
+**阴影哲学**：Uber 把阴影纯粹用作结构性工具，从不作装饰。阴影总是黑色的，透明度极低（0.08-0.16），创造出分隔内容层所需的最小抬升。模糊半径适中（8-16px）—— 足以感觉自然但从不戏剧化。没有彩色阴影、没有分层阴影栈、没有环境光晕效果。深度更多通过黑白区块对比而非阴影凸起来传达。
 
-## 7. Do's and Don'ts
+## 7. 宜与忌
 
-### Do
-- Use true black (`#000000`) and pure white (`#ffffff`) as the primary palette -- the stark contrast IS Uber
-- Use 999px border-radius for all buttons, chips, and pill-shaped navigation elements
-- Keep all headings in UberMove Bold (700) for billboard-level impact
-- Use whisper-soft shadows (0.12-0.16 opacity) for card elevation -- barely visible
-- Maintain the compact, information-dense layout style -- Uber prioritizes efficiency over airiness
-- Use warm, human-centric illustrations to soften the monochrome interface
-- Apply 8px radius for content cards and 12px for featured containers
-- Use UberMoveText at weight 500 for navigation and prominent UI text
-- Pair black primary buttons with white secondary buttons for dual-action layouts
+### 宜
+- 使用真正的黑色（`#000000`）和纯白（`#ffffff`）作为主要调色板 —— 鲜明对比就是 Uber
+- 所有按钮、芯片和胶囊形导航元素使用 999px 圆角
+- 所有标题保持 UberMove Bold（700），获得广告牌级冲击力
+- 卡片凸起使用轻语般柔和的阴影（0.12-0.16 透明度）—— 几乎不可见
+- 保持紧凑、信息密集的布局风格 —— Uber 优先考虑效率而非通透
+- 使用温暖、以人为本的插图柔化单色界面
+- 内容卡片应用 8px 圆角，特色容器 12px
+- 导航和突出 UI 文字使用 UberMoveText 字重 500
+- 黑色主要按钮配白色次要按钮，形成平衡的双操作布局
 
-### Don't
-- Don't introduce color into the UI chrome -- Uber's interface is strictly black, white, and gray
-- Don't use rounded corners less than 999px on buttons -- the full-pill shape is a core identity element
-- Don't apply heavy shadows or drop shadows with high opacity -- depth is whisper-subtle
-- Don't use serif fonts anywhere -- Uber's typography is exclusively geometric sans-serif
-- Don't create airy, spacious layouts with excessive whitespace -- Uber's density is intentional
-- Don't use gradients or color overlays -- every surface is a flat, solid color
-- Don't mix UberMove into body text or UberMoveText into headlines -- the hierarchy is strict
-- Don't use decorative borders -- borders are functional (inputs, dividers) or absent entirely
-- Don't soften the black/white contrast with off-whites or near-blacks -- the duality is deliberate
+### 忌
+- 不要在 UI 装饰中引入色彩 —— Uber 的界面严格为黑、白、灰
+- 不要在按钮上使用小于 999px 的圆角 —— 完整胶囊形是核心身份元素
+- 不要应用沉重阴影或高透明度的投影 —— 深度是轻语般微妙的
+- 不要在任何地方使用衬线字体 —— Uber 的字体排版专属于几何无衬线
+- 不要创建带过多留白的通透、宽敞布局 —— Uber 的密度是刻意的
+- 不要使用渐变或色彩覆盖 —— 每个表面都是扁平的纯色
+- 不要把 UberMove 混入正文，或 UberMoveText 混入标题 —— 层级是严格的
+- 不要使用装饰性边框 —— 边框是功能性的（输入、分隔符）或完全缺失
+- 不要用灰白或近黑柔化黑白对比 —— 二元对立是刻意的
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
-### Breakpoints
-| Name | Width | Key Changes |
+### 断点
+| 名称 | 宽度 | 关键变化 |
 |------|-------|-------------|
-| Mobile Small | 320px | Minimum layout, single column, stacked inputs, compact typography |
-| Mobile | 600px | Standard mobile, stacked layout, hamburger nav |
-| Tablet Small | 768px | Two-column grids begin, expanded card layouts |
-| Tablet | 1119px | Full tablet layout, side-by-side hero content |
-| Desktop Small | 1120px | Desktop grid activates, horizontal nav pills |
-| Desktop | 1136px | Full desktop layout, maximum container width, split hero |
+| 小型移动端 | 320px | 最小布局、单列、堆叠输入、紧凑字体 |
+| 移动端 | 600px | 标准移动端、堆叠布局、汉堡导航 |
+| 小型平板 | 768px | 开始 2 列网格、展开卡片布局 |
+| 平板 | 1119px | 完整平板布局、并排英雄内容 |
+| 小型桌面 | 1120px | 桌面网格激活、水平导航胶囊 |
+| 桌面 | 1136px | 完整桌面布局、最大容器宽度、分屏英雄 |
 
-### Touch Targets
-- All pill buttons: minimum 44px height (10-14px vertical padding + line-height)
-- Navigation chips: generous 14px 16px padding for comfortable thumb tapping
-- Circular controls (menu, close): 50% radius ensures large, easy-to-hit targets
-- Card surfaces serve as full-area touch targets on mobile
+### 触摸目标
+- 所有胶囊按钮：最小 44px 高度（10-14px 纵向内边距 + 行高）
+- 导航芯片：慷慨的 14px 16px 内边距，便于拇指点击
+- 圆形控件（菜单、关闭）：50% 圆角确保大型、易击中的目标
+- 卡片表面在移动端作为全区域触摸目标
 
-### Collapsing Strategy
-- **Navigation**: Horizontal pill nav collapses to hamburger menu with circular toggle
-- **Hero**: Split layout (text + map/visual) stacks to single column -- text above, visual below
-- **Input fields**: Side-by-side pickup/destination inputs stack vertically
-- **Feature cards**: 2-column grid collapses to full-width stacked cards
-- **Headings**: 52px display scales down through 36px, 32px, 24px, 20px
-- **Footer**: Multi-column link grid collapses to accordion or stacked single column
-- **Category pills**: Horizontal scroll with overflow on smaller screens
+### 折叠策略
+- **导航**：水平胶囊导航折叠为带圆形切换的汉堡菜单
+- **英雄区**：分屏布局（文字 + 地图/视觉）堆叠为单列 —— 文字在上，视觉在下
+- **输入字段**：并排的上车/目的地输入垂直堆叠
+- **功能卡片**：2 列网格折叠为全宽堆叠卡片
+- **标题**：52px 展示通过 36px、32px、24px、20px 缩小
+- **页脚**：多列链接网格折叠为手风琴或堆叠单列
+- **分类胶囊**：在较小屏幕上带溢出的水平滚动
 
-### Image Behavior
-- Illustrations scale proportionally within their containers
-- Hero imagery maintains aspect ratio, may crop on smaller screens
-- QR code sections hide on mobile (app download shifts to direct store links)
-- Card imagery maintains 8-12px border radius at all sizes
+### 图片行为
+- 插图在容器内按比例缩放
+- 英雄图片保持纵横比，在较小屏幕上可能裁剪
+- 二维码区块在移动端隐藏（应用下载转为直接商店链接）
+- 卡片图片在所有尺寸下保持 8-12px 圆角
 
-## 9. Agent Prompt Guide
+## 9. Agent 提示指南
 
-### Quick Color Reference
-- Primary Button: "Uber Black (#000000)"
-- Page Background: "Pure White (#ffffff)"
-- Button Text (on black): "Pure White (#ffffff)"
-- Button Text (on white): "Uber Black (#000000)"
-- Secondary Text: "Body Gray (#4b4b4b)"
-- Tertiary Text: "Muted Gray (#afafaf)"
-- Chip Background: "Chip Gray (#efefef)"
-- Hover State: "Hover Gray (#e2e2e2)"
-- Card Shadow: "rgba(0,0,0,0.12) 0px 4px 16px"
-- Footer Background: "Uber Black (#000000)"
+### 快速颜色参考
+- 主要按钮："Uber Black (#000000)"
+- 页面背景："Pure White (#ffffff)"
+- 按钮文字（黑底）："Pure White (#ffffff)"
+- 按钮文字（白底）："Uber Black (#000000)"
+- 次要文字："Body Gray (#4b4b4b)"
+- 三级文字："Muted Gray (#afafaf)"
+- 芯片背景："Chip Gray (#efefef)"
+- 悬停状态："Hover Gray (#e2e2e2)"
+- 卡片阴影："rgba(0,0,0,0.12) 0px 4px 16px"
+- 页脚背景："Uber Black (#000000)"
 
-### Example Component Prompts
-- "Create a hero section on Pure White (#ffffff) with a headline at 52px UberMove Bold (700), line-height 1.23. Use Uber Black (#000000) text. Add a subtitle in Body Gray (#4b4b4b) at 16px UberMoveText weight 400 with 1.50 line-height. Place an Uber Black (#000000) pill CTA button with Pure White text, 999px radius, padding 10px 12px."
-- "Design a category navigation bar with horizontal pill buttons. Each pill: Chip Gray (#efefef) background, Uber Black (#000000) text, 14px 16px padding, 999px border-radius. Active pill inverts to Uber Black background with Pure White text. Use UberMoveText at 14px weight 500."
-- "Build a feature card on Pure White (#ffffff) with 8px border-radius and shadow rgba(0,0,0,0.12) 0px 4px 16px. Title in UberMove at 24px weight 700, description in Body Gray (#4b4b4b) at 16px UberMoveText. Add a black pill CTA button at the bottom."
-- "Create a dark footer on Uber Black (#000000) with Pure White (#ffffff) heading text in UberMove at 20px weight 700. Footer links in Muted Gray (#afafaf) at 14px UberMoveText. Links hover to Pure White. Multi-column grid layout."
-- "Design a floating action button with Pure White (#ffffff) background, 999px radius, 14px padding, and shadow rgba(0,0,0,0.16) 0px 2px 8px. Hover shifts background to #f3f3f3. Use for scroll-to-top or map controls."
+### 组件提示示例
+- "在 Pure White（#ffffff）上创建一个英雄区块，标题 52px UberMove Bold（700），行高 1.23。使用 Uber Black（#000000）文字。添加 16px UberMoveText 字重 400 的副标题，Body Gray（#4b4b4b），行高 1.50。放置一个 Uber Black（#000000）胶囊 CTA 按钮，Pure White 文字，999px 圆角，内边距 10px 12px。"
+- "设计一个分类导航栏，配水平胶囊按钮。每个胶囊：Chip Gray（#efefef）背景，Uber Black（#000000）文字，14px 16px 内边距，999px 圆角。激活胶囊反相为 Uber Black 背景配 Pure White 文字。使用 UberMoveText 14px 字重 500。"
+- "在 Pure White（#ffffff）上构建一个功能卡片，8px 圆角，阴影 rgba(0,0,0,0.12) 0px 4px 16px。标题用 UberMove 24px 字重 700，描述用 Body Gray（#4b4b4b）16px UberMoveText。底部添加黑色胶囊 CTA 按钮。"
+- "在 Uber Black（#000000）上创建一个深色页脚，标题文字用 UberMove 20px 字重 700 的 Pure White（#ffffff）。页脚链接用 Muted Gray（#afafaf）14px UberMoveText。链接悬停变 Pure White。多列网格布局。"
+- "设计一个浮动操作按钮，Pure White（#ffffff）背景，999px 圆角，14px 内边距，阴影 rgba(0,0,0,0.16) 0px 2px 8px。悬停时背景变为 #f3f3f3。用于回顶或地图控件。"
 
-### Iteration Guide
-1. Focus on ONE component at a time
-2. Reference the strict black/white palette -- "use Uber Black (#000000)" not "make it dark"
-3. Always specify 999px radius for buttons and pills -- this is non-negotiable for the Uber identity
-4. Describe the font family explicitly -- "UberMove Bold for the heading, UberMoveText Medium for the label"
-5. For shadows, use "whisper shadow (rgba(0,0,0,0.12) 0px 4px 16px)" -- never heavy drop shadows
-6. Keep layouts compact and information-dense -- Uber is efficient, not airy
-7. Illustrations should be warm and human -- describe "stylized people in warm tones" not abstract shapes
-8. Pair black CTAs with white secondaries for balanced dual-action layouts
+### 迭代指南
+1. 每次专注于一个组件
+2. 引用严格的黑白调色板 —— "使用 Uber Black (#000000)"，而不是"把它弄暗"
+3. 按钮和胶囊总是指定 999px 圆角 —— 这对 Uber 身份不可妥协
+4. 明确描述字体族 —— "标题用 UberMove Bold，标签用 UberMoveText Medium"
+5. 对于阴影，使用"轻语阴影（rgba(0,0,0,0.12) 0px 4px 16px）"—— 绝不用沉重的投影
+6. 保持布局紧凑和信息密集 —— Uber 是高效的，不通透
+7. 插图应温暖而人性化 —— 描述"温暖色调中的风格化人物"，而非抽象形状
+8. 黑色 CTA 配白色次要按钮，形成平衡的双操作布局

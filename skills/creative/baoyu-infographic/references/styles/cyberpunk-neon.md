@@ -1,29 +1,29 @@
 # cyberpunk-neon
 
-Neon glow on dark backgrounds, futuristic aesthetic
+深色背景上的霓虹光效，未来感美学
 
-## Color Palette
+## 配色
 
-- Primary: Neon pink (#FF00FF), cyan (#00FFFF), electric blue
-- Background: Deep black (#0A0A0A), dark purple gradients
-- Accents: Neon glow effects, chrome reflections
+- 主色：霓虹粉 (#FF00FF)、青色 (#00FFFF)、电光蓝
+- 背景：深黑 (#0A0A0A)、深紫渐变
+- 点缀：霓虹辉光效果、铬合金反射
 
-## Visual Elements
+## 视觉元素
 
-- Glowing neon outlines
-- Dark atmospheric backgrounds
-- Digital glitch effects
-- Circuit patterns
-- Holographic elements
-- Rain and reflections
+- 发光霓虹描边
+- 深暗的氛围背景
+- 数字故障效果
+- 电路图案
+- 全息元素
+- 雨水与反射
 
-## Typography
+## 字体排印
 
-- Glowing neon text
-- Digital/tech fonts
-- Flickering effects
-- Outlined glow letters
+- 发光霓虹文字
+- 数字/科技字体
+- 闪烁效果
+- 描边辉光字母
 
-## Best For
+## 最适用于
 
-Tech futures, gaming content, digital culture, futuristic concepts, night aesthetics
+科技未来、游戏内容、数字文化、未来感概念、夜景美学

@@ -1,30 +1,28 @@
-"""Kanban tools — structured tool-call surface for worker + orchestrator agents.
+"""Kanban 工具 —— 面向 worker 与 orchestrator agent 的结构化工具调用接口。
 
-These tools are registered into the model's schema when the agent is
-running under the dispatcher (env var ``HERMES_KANBAN_TASK`` set) or when
-the active profile explicitly enables the ``kanban`` toolset for
-orchestrator work. A normal ``hermes chat`` session still sees **zero**
-kanban tools in its schema unless configured.
+当 agent 在 dispatcher 下运行（设置了环境变量 ``HERMES_KANBAN_TASK``），
+或当前 profile 显式为 orchestrator 工作启用了 ``kanban`` 工具集时，
+这些工具会被注册到模型的 schema 中。普通的 ``hermes chat`` 会话在未配置时，
+其 schema 中仍然看不到**任何** kanban 工具。
 
-Why tools instead of just shelling out to ``hermes kanban``?
+为什么用工具，而不是直接 shell 调用 ``hermes kanban``？
 
-1. **Backend portability.** A worker whose terminal tool points at Docker
-   / Modal / Singularity / SSH would run ``hermes kanban complete …``
-   inside the container, where ``hermes`` isn't installed and the DB
-   isn't mounted. Tools run in the agent's Python process, so they
-   always reach ``~/.hermes/kanban.db`` regardless of terminal backend.
+1. **后端可移植性。** 一个 worker 的终端工具如果指向
+   Docker / Modal / Singularity / SSH，它会在容器内执行
+   ``hermes kanban complete …``，而容器里既没装 ``hermes``，也没挂载数据库。
+   工具运行在 agent 的 Python 进程里，所以无论终端后端是什么，
+   都能稳定访问到 ``~/.hermes/kanban.db``。
 
-2. **No shell-quoting footguns.** Passing ``--metadata '{"x": [...]}'``
-   through shlex+argparse is fragile. Structured tool args skip it.
+2. **避免 shell 引号转义的坑。** 通过 shlex + argparse 传递
+   ``--metadata '{"x": [...]}'`` 非常脆弱。结构化的工具参数可以完全绕开。
 
-3. **Better errors.** Tool-call failures return structured JSON the
-   model can reason about, not stderr strings it has to parse.
+3. **更好的错误反馈。** 工具调用失败时返回的是结构化的 JSON，
+   便于模型推理，而不是它还得去解析的 stderr 字符串。
 
-Humans continue to use the CLI (``hermes kanban …``), the dashboard
-(``hermes dashboard``), and the slash command (``/kanban …``) — all
-three bypass the agent entirely. The tools are for dispatcher-spawned
-worker handoffs and for configured orchestrator profiles that route work
-through the board.
+人类仍然继续使用 CLI（``hermes kanban …``）、仪表盘
+（``hermes dashboard``）和斜杠命令（``/kanban …``）—— 这三者都完全绕开
+agent。这些工具是给 dispatcher 派生的 worker 交接、以及配置好的、
+通过看板路由工作的 orchestrator profile 使用的。
 """
 from __future__ import annotations
 
@@ -41,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Gating
+# 门控（Gating）
 # ---------------------------------------------------------------------------
 
 KANBAN_LIST_DEFAULT_LIMIT = 50
@@ -49,9 +47,8 @@ KANBAN_LIST_MAX_LIMIT = 200
 
 
 def _profile_has_kanban_toolset() -> bool:
-    # Uses load_config() which has mtime-based caching, so this adds
-    # negligible overhead. The check_fn results are further TTL-cached
-    # (~30s) by the tool registry.
+    # 使用 load_config()，它有基于 mtime 的缓存，所以这里开销可以忽略。
+    # check_fn 的结果还会被工具注册表做 TTL 缓存（约 30 秒）。
     try:
         from hermes_cli.config import load_config
         cfg = load_config()
@@ -62,16 +59,16 @@ def _profile_has_kanban_toolset() -> bool:
 
 
 def _check_kanban_mode() -> bool:
-    """Task-lifecycle tools are available when:
+    """任务生命周期工具在以下情况下可用：
 
-    1. ``HERMES_KANBAN_TASK`` is set (dispatcher-spawned worker), OR
-    2. The current profile has ``kanban`` in its toolsets config
-       (orchestrator profiles like techlead that route work via Kanban).
+    1. 设置了 ``HERMES_KANBAN_TASK``（dispatcher 派生的 worker），或者
+    2. 当前 profile 的 toolsets 配置里包含 ``kanban``
+       （例如 techlead 这类通过 Kanban 路由工作的 orchestrator profile）。
 
-    Humans running ``hermes chat`` without the kanban toolset see zero
-    kanban tools. Workers spawned by the kanban dispatcher (gateway-
-    embedded by default) and orchestrator profiles with the kanban
-    toolset enabled see the Kanban lifecycle tool surface.
+    未启用 kanban 工具集而运行 ``hermes chat`` 的人类用户看不到任何
+    kanban 工具。由 kanban dispatcher（默认内嵌在 gateway 中）派生的 worker，
+    以及启用了 kanban 工具集的 orchestrator profile，能看到 Kanban 生命周期
+    工具接口。
     """
     if os.environ.get("HERMES_KANBAN_TASK"):
         return True
@@ -79,13 +76,11 @@ def _check_kanban_mode() -> bool:
 
 
 def _check_kanban_orchestrator_mode() -> bool:
-    """Board-routing tools (kanban_list, kanban_unblock) are intentionally
-    hidden from task workers.
+    """看板路由工具（kanban_list、kanban_unblock）被刻意对任务 worker 隐藏。
 
-    Dispatcher-spawned workers should close their own task via the
-    lifecycle tools (complete/block/heartbeat), not enumerate or unblock
-    board state. Profiles that explicitly opt into the kanban toolset
-    and are NOT scoped to a single task are the orchestrator surface.
+    dispatcher 派生的 worker 应该通过生命周期工具（complete/block/heartbeat）
+    关闭自己的任务，而不是枚举或解除阻塞看板状态。显式启用 kanban 工具集
+    且**不**限定在单个任务上的 profile，才是 orchestrator 接口。
     """
     if os.environ.get("HERMES_KANBAN_TASK"):
         return False
@@ -93,11 +88,11 @@ def _check_kanban_orchestrator_mode() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers
+# 共享辅助函数
 # ---------------------------------------------------------------------------
 
 def _default_task_id(arg: Optional[str]) -> Optional[str]:
-    """Resolve ``task_id`` arg or fall back to the env var the dispatcher set."""
+    """解析 ``task_id`` 参数，否则回退到 dispatcher 设置的环境变量。"""
     if arg:
         return arg
     env_tid = os.environ.get("HERMES_KANBAN_TASK")
@@ -105,7 +100,7 @@ def _default_task_id(arg: Optional[str]) -> Optional[str]:
 
 
 def _worker_run_id(task_id: str) -> Optional[int]:
-    """Return this worker's dispatcher run id when it is scoped to task_id."""
+    """当本 worker 限定在 task_id 时，返回它的 dispatcher run id。"""
     if os.environ.get("HERMES_KANBAN_TASK") != task_id:
         return None
     raw = os.environ.get("HERMES_KANBAN_RUN_ID")
@@ -120,7 +115,7 @@ def _worker_run_id(task_id: str) -> Optional[int]:
 def _stamp_worker_session_metadata(
     task_id: str, metadata: Optional[dict]
 ) -> Optional[dict]:
-    """Add trusted worker session id metadata for this worker's own task."""
+    """为本 worker 自己的任务添加可信的 worker session id 元数据。"""
     if os.environ.get("HERMES_KANBAN_TASK") != task_id:
         return metadata
     session_id = os.environ.get("HERMES_SESSION_ID")
@@ -132,27 +127,25 @@ def _stamp_worker_session_metadata(
 
 
 def _enforce_worker_task_ownership(tid: str) -> Optional[str]:
-    """Reject worker-driven destructive calls on foreign task IDs.
+    """拒绝 worker 对其它任务 ID 发起的破坏性调用。
 
-    A process spawned by the dispatcher has ``HERMES_KANBAN_TASK`` set
-    to its own task id. Tools like ``kanban_complete`` / ``kanban_block``
-    / ``kanban_heartbeat`` mutate run-lifecycle state, so a buggy or
-    prompt-injected worker that passed an explicit ``task_id`` for some
-    other task could corrupt sibling or cross-tenant runs (see #19534).
+    dispatcher 派生的进程会把 ``HERMES_KANBAN_TASK`` 设置为它自己的
+    task id。``kanban_complete`` / ``kanban_block`` / ``kanban_heartbeat``
+    这类工具会改变运行生命周期的状态，所以一个有 bug 或被提示词注入的 worker，
+    如果传入属于其它任务的显式 ``task_id``，可能会破坏兄弟任务或跨租户的运行
+    （参见 #19534）。
 
-    Orchestrator profiles (kanban toolset enabled but **no**
-    ``HERMES_KANBAN_TASK`` in env) aren't subject to this check — their
-    job is routing, and they sometimes legitimately close out child
-    tasks or reopen blocked ones. Workers are narrowly scoped to their
-    one task.
+    Orchestrator profile（启用了 kanban 工具集但环境里**没有**
+    ``HERMES_KANBAN_TASK``）不受此检查约束 —— 它们的工作就是路由，
+    有时合理地需要关闭子任务或重新打开被阻塞的任务。而 worker 只被严格限定
+    在自己的那一个任务里。
 
-    Returns ``None`` when the call is allowed, or a tool-error string
-    when it must be rejected. Callers should ``return`` the error
-    verbatim.
+    当调用被允许时返回 ``None``；当必须拒绝时返回一个工具错误字符串。
+    调用方应当原样 ``return`` 这个错误。
     """
     env_tid = os.environ.get("HERMES_KANBAN_TASK")
     if not env_tid:
-        # Orchestrator or CLI context — no task-scope restriction.
+        # Orchestrator 或 CLI 上下文 —— 没有任务范围的限制。
         return None
     if tid != env_tid:
         return tool_error(
@@ -164,65 +157,63 @@ def _enforce_worker_task_ownership(tid: str) -> Optional[str]:
 
 
 def _connect(board: Optional[str] = None):
-    """Import + connect lazily so the module imports cleanly in non-kanban
-    contexts (e.g. test rigs that import every tool module).
+    """延迟导入 + 连接，这样在非 kanban 上下文下（例如导入每个工具模块的
+    测试环境）模块本身仍能干净地导入。
 
-    When ``board`` is provided it's forwarded to :func:`kb.connect`, which
-    routes the connection to that board's sqlite file. ``None`` (the
-    default) preserves the legacy resolution chain
-    (``HERMES_KANBAN_DB`` → ``HERMES_KANBAN_BOARD`` env → current symlink
-    → ``default``). Per-tool ``board`` lets a Telegram-side agent override
-    the env-pinned active board without restarting Hermes.
+    当传入 ``board`` 时，会被转发给 :func:`kb.connect`，由它把连接路由到
+    该看板对应的 sqlite 文件。``None``（默认值）会保留旧的解析链
+    （``HERMES_KANBAN_DB`` → ``HERMES_KANBAN_BOARD`` 环境变量 → current 符号链接
+    → ``default``）。每个工具单独传 ``board``，可以让 Telegram 侧的 agent
+    覆盖由环境变量固定的当前看板，而无需重启 Hermes。
     """
     from hermes_cli import kanban_db as kb
     return kb, kb.connect(board=board)
 
 
 # ---------------------------------------------------------------------------
-# Runtime-activity → board-heartbeat bridge (#31752)
+# 运行时活动 → 看板心跳桥接（#31752）
 # ---------------------------------------------------------------------------
-# When the agent ticks ``_touch_activity`` during normal work (between
-# tool calls, mid-stream chunks, etc.), we want the kanban board's
-# ``last_heartbeat_at`` columns to reflect that liveness so the dispatcher
-# watchdog (which reads ``tasks.last_heartbeat_at``, not the agent's
-# in-process timestamp) doesn't reclaim an actively-running worker as
-# stale. The model is not required to call the explicit ``kanban_heartbeat``
-# tool for this to work — that tool stays available for workers that want
-# to attach a note or pre-emptively extend a claim across a known-long op.
+# 当 agent 在正常工作过程中触发 ``_touch_activity``（在工具调用之间、
+# 流式输出的中途 chunk 等时机）时，我们希望看板的 ``last_heartbeat_at``
+# 列能反映出这种存活状态，这样 dispatcher 的看门狗（它读取的是
+# ``tasks.last_heartbeat_at``，而不是 agent 进程内的内存时间戳）就不会
+# 把一个正在运行中的 worker 误判为陈旧而回收。模型**不必**为了这套机制
+# 去显式调用 ``kanban_heartbeat`` 工具 —— 该工具仍然保留，供那些想附带
+# 一段备注、或在某个已知很长的操作前预先延长占用的 worker 使用。
 #
-# Constraints:
-#   - Best-effort: never raise. The agent loop must not care if the bridge
-#     fails (board missing, DB locked, etc.).
-#   - Rate-limited to one DB write per 60s per-process; runtime activity
-#     can tick on every chunk/tool result and we don't need that resolution.
-#   - No-op outside dispatcher-spawned worker context (no ``HERMES_KANBAN_TASK``).
-#   - No durable note on these auto-heartbeats; that's reserved for the
-#     explicit tool which carries a model-supplied note.
+# 约束：
+#   - 尽力而为：绝不抛异常。即使桥接失败（看板缺失、DB 被锁等），
+#     agent 主循环也不该受影响。
+#   - 每进程每 60 秒最多写一次 DB，做速率限制；运行时活动可能在每个
+#     chunk / 工具结果上都触发，但我们并不需要那么高的分辨率。
+#   - 在 dispatcher 派生的 worker 上下文之外（没有 ``HERMES_KANBAN_TASK``）
+#     直接 no-op。
+#   - 这些自动心跳不会留下持久化备注；那是显式工具的专属能力，
+#     它会带上模型提供的备注。
 
 _AUTO_HEARTBEAT_MIN_INTERVAL_SECONDS = 60.0
 _auto_heartbeat_last_attempt: float = 0.0
 
 
 def heartbeat_current_worker_from_env() -> bool:
-    """Best-effort: extend the kanban claim + bump board heartbeat for the
-    current dispatcher-spawned worker, using identity from env vars.
+    """尽力而为：用环境变量中的身份信息，为当前 dispatcher 派生的 worker
+    延长 kanban 占用并刷新看板心跳。
 
-    Returns True if a write was attempted (whether or not it succeeded);
-    False if the call was skipped (not a kanban worker, rate-limited, or
-    swallowed exception). The boolean is informational — callers should
-    not branch on it.
+    如果尝试了写操作就返回 True（无论成功与否）；如果调用被跳过
+    （不是 kanban worker、被速率限制、或异常被吞掉）则返回 False。
+    这个布尔值只是供参考 —— 调用方不应当据此分支判断。
 
-    Identity comes from:
-      * ``HERMES_KANBAN_TASK`` — task id (required; absence means no-op)
-      * ``HERMES_KANBAN_RUN_ID`` — pins the run row so we don't heartbeat
-        a stale run that may have already been reclaimed
-      * ``HERMES_KANBAN_CLAIM_LOCK`` — claim lock for ``heartbeat_claim``;
-        falls back to the default ``_claimer_id()`` for locally-driven
-        workers that never went through the dispatcher path
+    身份信息来自：
+      * ``HERMES_KANBAN_TASK`` —— task id（必需；缺失则 no-op）
+      * ``HERMES_KANBAN_RUN_ID`` —— 钉住对应的 run 行，避免给一个
+        可能已经被回收的陈旧 run 发心跳
+      * ``HERMES_KANBAN_CLAIM_LOCK`` —— 给 ``heartbeat_claim`` 用的占用锁；
+        对于从未走过 dispatcher 路径的本地驱动 worker，回退到默认的
+        ``_claimer_id()``
 
-    Rate-limited via the module-level ``_auto_heartbeat_last_attempt``
-    timestamp (monotonic clock); not thread-safe in the strict sense, but
-    the worst case is one extra DB write per race, which is harmless.
+    通过模块级的 ``_auto_heartbeat_last_attempt`` 时间戳（单调时钟）做
+    速率限制；严格意义上并不是线程安全的，但最坏情况也只是一次竞争
+    多写一次 DB，无害。
     """
     global _auto_heartbeat_last_attempt
     tid = os.environ.get("HERMES_KANBAN_TASK")
@@ -267,7 +258,7 @@ def _ok(**fields: Any) -> str:
 
 
 def _normalize_profile(value: Any) -> Optional[str]:
-    """Normalize CLI-compatible assignee sentinels for the tool surface."""
+    """把 CLI 风格的 assignee 哨兵值规范化，用于工具接口。"""
     if value is None:
         return None
     text = str(value).strip()
@@ -291,13 +282,13 @@ def _parse_bool_arg(args: dict, name: str, *, default: bool = False):
 
 
 def _require_orchestrator_tool(tool_name: str) -> Optional[str]:
-    """Belt-and-suspenders runtime guard for orchestrator-only handlers.
+    """给 orchestrator 专属处理器加一道双保险的运行时守卫。
 
-    The check_fn (`_check_kanban_orchestrator_mode`) keeps these tools
-    out of the worker schema entirely, but in case a stale registration
-    or test harness routes a worker to one of them anyway, return a
-    structured tool_error so the model gets a clear refusal instead of
-    silently mutating board state from a worker context.
+    check_fn（``_check_kanban_orchestrator_mode``）已经把这些工具
+    完全排除在 worker 的 schema 之外，但万一某个陈旧的注册或测试装置
+    把一个 worker 路由到了其中某个工具，这里会返回一个结构化的
+    tool_error，让模型收到清晰的拒绝，而不是在 worker 上下文里悄悄地
+    改动看板状态。
     """
     if os.environ.get("HERMES_KANBAN_TASK"):
         return tool_error(
@@ -309,7 +300,7 @@ def _require_orchestrator_tool(tool_name: str) -> Optional[str]:
 
 
 def _task_summary_dict(kb, conn, task) -> dict[str, Any]:
-    """Compact task shape for board-listing tools."""
+    """给看板列表类工具用的紧凑任务结构。"""
     parents = kb.parent_ids(conn, task.id)
     children = kb.child_ids(conn, task.id)
     return {
@@ -335,12 +326,12 @@ def _task_summary_dict(kb, conn, task) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Handlers
+# 处理函数（Handlers）
 # ---------------------------------------------------------------------------
 
 def _handle_show(args: dict, **kw) -> str:
-    """Read a task's full state: task row, parents, children, comments,
-    runs (attempt history), and the last N events."""
+    """读取一个任务的完整状态：任务行、父任务、子任务、评论、
+    runs（尝试历史）以及最近 N 条事件。"""
     tid = _default_task_id(args.get("task_id"))
     if not tid:
         return tool_error(
@@ -395,19 +386,18 @@ def _handle_show(args: dict, **kw) -> str:
                 "events": [
                     {"kind": e.kind, "payload": e.payload,
                      "created_at": e.created_at, "run_id": e.run_id}
-                    for e in events[-50:]   # cap; full log via CLI
+                    for e in events[-50:]   # 上限；完整日志请走 CLI
                 ],
                 "runs": [_run_dict(r) for r in runs],
-                # Also surface the worker's own context block so the
-                # agent can include it directly if it wants. This is
-                # the same string build_worker_context returns to the
-                # dispatcher at spawn time.
+                # 同时把 worker 自己的上下文块也带出来，这样 agent
+                # 想用的话可以直接放进自己的推理里。这和 build_worker_context
+                # 在 spawn 时返回给 dispatcher 的字符串是同一个。
                 "worker_context": kb.build_worker_context(conn, tid),
             })
         finally:
             conn.close()
     except ValueError as e:
-        # Invalid board slug surfaces as ValueError from _normalize_board_slug.
+        # 无效的 board slug 会从 _normalize_board_slug 抛出 ValueError。
         return tool_error(f"kanban_show: {e}")
     except Exception as e:
         logger.exception("kanban_show failed")
@@ -415,7 +405,7 @@ def _handle_show(args: dict, **kw) -> str:
 
 
 def _handle_list(args: dict, **kw) -> str:
-    """List task summaries with the same core filters as the CLI."""
+    """列出任务摘要，筛选条件和 CLI 的核心筛选器一致。"""
     guard = _require_orchestrator_tool("kanban_list")
     if guard:
         return guard
@@ -440,11 +430,11 @@ def _handle_list(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
-            # Match CLI list: dependencies that cleared since the last
-            # dispatcher tick should be visible to orchestrators immediately.
+            # 与 CLI 列表保持一致：自上次 dispatcher tick 以来已经清空的依赖，
+            # 应当立刻对 orchestrator 可见。
             promoted = kb.recompute_ready(conn)
-            # Fetch one extra row so model-facing output can report that
-            # a bounded listing was truncated without dumping the board.
+            # 多取一行，这样面向模型的输出就能报告本次有界列表被截断了，
+            # 而不必把整个看板倒出来。
             rows = kb.list_tasks(
                 conn,
                 assignee=assignee,
@@ -476,7 +466,7 @@ def _handle_list(args: dict, **kw) -> str:
 
 
 def _handle_complete(args: dict, **kw) -> str:
-    """Mark the current task done with a structured handoff."""
+    """把当前任务标记为完成，并附带结构化的交接信息。"""
     tid = _default_task_id(args.get("task_id"))
     if not tid:
         return tool_error(
@@ -503,20 +493,20 @@ def _handle_complete(args: dict, **kw) -> str:
     artifacts = args.get("artifacts")
     if created_cards is not None:
         if isinstance(created_cards, str):
-            # Accept a single id as a string for convenience.
+            # 为了方便，也接受把单个 id 作为字符串传入。
             created_cards = [created_cards]
         if not isinstance(created_cards, (list, tuple)):
             return tool_error(
                 f"created_cards must be a list of task ids, got "
                 f"{type(created_cards).__name__}"
             )
-        # Normalise: strings only, stripped, non-empty.
+        # 规范化：只保留字符串、去掉首尾空白、非空。
         created_cards = [
             str(c).strip() for c in created_cards if str(c).strip()
         ]
     if artifacts is not None:
         if isinstance(artifacts, str):
-            # Accept a single path as a string for convenience.
+            # 为了方便，也接受把单个路径作为字符串传入。
             artifacts = [artifacts]
         if not isinstance(artifacts, (list, tuple)):
             return tool_error(
@@ -526,11 +516,10 @@ def _handle_complete(args: dict, **kw) -> str:
         artifacts = [
             str(p).strip() for p in artifacts if str(p).strip()
         ]
-        # Carry the artifact list inside metadata so it rides the
-        # existing completed-event payload without a schema change at
-        # the DB layer.  The gateway notifier reads payload['artifacts']
-        # off the completion event and uploads each path as a native
-        # attachment.
+        # 把 artifact 列表放进 metadata 里，这样它就能搭着既有的
+        # completed-event payload 一起走，DB 层无需改 schema。
+        # gateway 的通知器会从完成事件里读 payload['artifacts']，
+        # 把每个路径作为原生附件上传。
         if artifacts:
             if metadata is None:
                 metadata = {}
@@ -539,8 +528,7 @@ def _handle_complete(args: dict, **kw) -> str:
                     f"metadata must be an object/dict, got "
                     f"{type(metadata).__name__}"
                 )
-            # Don't overwrite an existing metadata.artifacts the worker
-            # passed manually — merge instead.
+            # 不要覆盖 worker 手动传入的 metadata.artifacts —— 改为合并。
             existing = metadata.get("artifacts")
             if isinstance(existing, (list, tuple)):
                 merged: list[str] = []
@@ -574,16 +562,15 @@ def _handle_complete(args: dict, **kw) -> str:
                     expected_run_id=_worker_run_id(tid),
                 )
             except kb.HallucinatedCardsError as hall_err:
-                # Structured rejection — surface the phantom ids so the
-                # worker can retry with a corrected list or drop the
-                # field. Audit event already landed in the DB.
+                # 结构化拒绝 —— 把那些不存在的 id 暴露出来，让 worker
+                # 可以用修正后的列表重试，或者干脆丢掉这个字段。
+                # 审计事件这时已经写进 DB 了。
                 #
-                # The task itself was NOT mutated (the gate runs before
-                # the write txn), so the worker can simply call
-                # kanban_complete again. Spell that out — without it the
-                # model often interprets a tool_error as a terminal
-                # failure and either blocks or crashes the run instead
-                # of retrying. See #22923.
+                # 任务本身**并没有**被改动（这道闸门是在写事务之前跑的），
+                # 所以 worker 只要重新调一次 kanban_complete 就行。
+                # 这里要把话讲清楚 —— 否则模型常常把 tool_error 当成
+                # 终态失败，要么 block、要么让 run 崩掉，而不是去重试。
+                # 参见 #22923。
                 return tool_error(
                     f"kanban_complete blocked: the following created_cards "
                     f"do not exist or were not created by this worker: "
@@ -609,7 +596,7 @@ def _handle_complete(args: dict, **kw) -> str:
 
 
 def _handle_block(args: dict, **kw) -> str:
-    """Transition the task to blocked with a reason a human will read."""
+    """把任务转成 blocked 状态，并附上一段人类会读到的理由。"""
     tid = _default_task_id(args.get("task_id"))
     if not tid:
         return tool_error(
@@ -648,14 +635,14 @@ def _handle_block(args: dict, **kw) -> str:
 
 
 def _handle_heartbeat(args: dict, **kw) -> str:
-    """Signal that the worker is still alive during a long operation.
+    """在长时间运行的操作中，发出「本 worker 仍然存活」的信号。
 
-    Extends the claim TTL via ``heartbeat_claim`` AND records a heartbeat
-    event via ``heartbeat_worker``. Without the ``heartbeat_claim`` half,
-    a diligent worker that loops this tool while a single tool call
-    blocks the agent for >DEFAULT_CLAIM_TTL_SECONDS still gets reclaimed
-    by ``release_stale_claims`` — which is exactly the trap that
-    ``heartbeat_claim``'s docstring warns against.
+    通过 ``heartbeat_claim`` 延长占用的 TTL，**并且**通过
+    ``heartbeat_worker`` 记录一次心跳事件。如果没有 ``heartbeat_claim``
+    这一半，一个勤快的 worker 即使在循环调用本工具，只要某一次工具调用
+    把 agent 阻塞了超过 DEFAULT_CLAIM_TTL_SECONDS，它仍然会被
+    ``release_stale_claims`` 回收 —— 这正是 ``heartbeat_claim`` 的
+    docstring 里警告过的那个陷阱。
     """
     tid = _default_task_id(args.get("task_id"))
     if not tid:
@@ -670,11 +657,11 @@ def _handle_heartbeat(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
-            # Extend the claim TTL first. The dispatcher pins
-            # HERMES_KANBAN_CLAIM_LOCK in the worker env at spawn time
-            # (see _default_spawn in kanban_db.py); falling back to the
-            # default _claimer_id() covers locally-driven workers that
-            # never went through the dispatcher path.
+            # 先延长占用的 TTL。dispatcher 在 spawn 时会把
+            # HERMES_KANBAN_CLAIM_LOCK 钉进 worker 的环境变量里
+            # （见 kanban_db.py 里的 _default_spawn）；回退到默认的
+            # _claimer_id() 则覆盖了那些从未走过 dispatcher 路径的
+            # 本地驱动 worker。
             claim_lock = os.environ.get("HERMES_KANBAN_CLAIM_LOCK")
             kb.heartbeat_claim(conn, tid, claimer=claim_lock)
 
@@ -699,7 +686,7 @@ def _handle_heartbeat(args: dict, **kw) -> str:
 
 
 def _handle_comment(args: dict, **kw) -> str:
-    """Append a comment to a task's thread."""
+    """往一个任务的讨论串里追加一条评论。"""
     tid = args.get("task_id")
     if not tid:
         return tool_error(
@@ -710,15 +697,14 @@ def _handle_comment(args: dict, **kw) -> str:
     if not body or not str(body).strip():
         return tool_error("body is required")
     body = redact_sensitive_text(str(body), force=True)
-    # Author is intentionally derived from the worker's own runtime
-    # identity, NOT from caller-supplied args. Comments are injected
-    # into the next worker's system prompt by ``build_worker_context``
-    # as ``**{author}** (timestamp): {body}`` — accepting an
-    # ``args["author"]`` override let a worker forge a comment from
-    # an authoritative-looking name like ``hermes-system`` and poison
-    # the future-worker context with what reads as a system directive.
-    # Cross-task commenting itself remains unrestricted (see #19713) —
-    # comments are the deliberate handoff channel between tasks.
+    # author 刻意取自 worker 自己的运行时身份，而**不是**来自调用方传入的
+    # 参数。评论会被 ``build_worker_context`` 注入到下一个 worker 的
+    # system prompt 里，格式是 ``**{author}** (timestamp): {body}`` ——
+    # 如果接受 ``args["author"]`` 覆盖，一个 worker 就能伪造一条看起来
+    # 来自 ``hermes-system`` 这种权威名字的评论，从而把一段读起来像
+    # 系统指令的内容投毒到后续 worker 的上下文里。
+    # 跨任务评论本身不受限制（参见 #19713）—— 评论本来就是任务之间
+    # 专门的交接通道。
     author = os.environ.get("HERMES_PROFILE") or "worker"
     board = args.get("board")
     try:
@@ -736,10 +722,9 @@ def _handle_comment(args: dict, **kw) -> str:
 
 
 def _handle_create(args: dict, **kw) -> str:
-    """Create a child task. Orchestrator workers use this to fan out.
+    """创建一个子任务。orchestrator worker 用它来做 fan-out（分派）。
 
-    ``parents`` can be a list of task ids; dependency-gated promotion
-    works as usual.
+    ``parents`` 可以是一组 task id；依赖门控的晋升逻辑照常生效。
     """
     title = args.get("title")
     if not title or not str(title).strip():
@@ -753,18 +738,19 @@ def _handle_create(args: dict, **kw) -> str:
     body = args.get("body")
     parents = args.get("parents") or []
     tenant = args.get("tenant") or os.environ.get("HERMES_TENANT")
-    # Stamp the originating session id when the agent loop runs under
-    # ACP (which sets HERMES_SESSION_ID before invoking tools). NULL on
-    # CLI / dashboard paths and on legacy hosts that don't set the env.
+    # 当 agent 主循环跑在 ACP 下时（ACP 在调用工具之前会设置
+    # HERMES_SESSION_ID），把发起方的 session id 盖到任务上。在
+    # CLI / dashboard 路径、以及没设置该环境变量的旧主机上为 NULL。
     session_id = args.get("session_id") or os.environ.get("HERMES_SESSION_ID")
     priority = args.get("priority")
-    # Resolve workspace. If the caller passed one explicitly, honor it.
-    # Otherwise, a dispatcher-spawned worker (HERMES_KANBAN_TASK set)
-    # inherits its own running task's workspace, so a worker editing a
-    # dir:/worktree project that spawns a follow-up child keeps the child
-    # in that project instead of a throwaway scratch dir. Orchestrators
-    # (kanban toolset, no HERMES_KANBAN_TASK) and CLI/dashboard callers
-    # fall back to scratch as before. Explicit None path stays None.
+    # 解析工作区。如果调用方显式传了一个，就尊重它。
+    # 否则，dispatcher 派生的 worker（设置了 HERMES_KANBAN_TASK）
+    # 会继承自己当前运行任务的工作区 —— 这样一个正在编辑
+    # dir:/worktree 项目、并派生后续子任务的 worker，就能让子任务
+    # 留在这个项目里，而不是落进一个一次性的 scratch 目录。
+    # Orchestrator（启用了 kanban 工具集、但没有 HERMES_KANBAN_TASK）
+    # 以及 CLI / dashboard 调用方，则像以前一样回退到 scratch。
+    # 显式传 None 的路径仍然保持 None。
     workspace_kind = args.get("workspace_kind")
     workspace_path = args.get("workspace_path")
     _inherit_workspace = workspace_kind is None and workspace_path is None
@@ -778,7 +764,7 @@ def _handle_create(args: dict, **kw) -> str:
     initial_status = args.get("initial_status") or "running"
     skills = args.get("skills")
     if isinstance(skills, str):
-        # Accept a single skill name as a string for convenience.
+        # 为了方便，也接受把单个 skill 名作为字符串传入。
         skills = [skills]
     if skills is not None and not isinstance(skills, (list, tuple)):
         return tool_error(
@@ -798,8 +784,8 @@ def _handle_create(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
-            # Inherit the spawning worker's own task workspace when the
-            # caller didn't specify one (see resolution note above).
+            # 当调用方没指定工作区时，继承发起 worker 自己任务的工作区
+            # （见上面的解析说明）。
             if _inherit_workspace:
                 _self_tid = os.environ.get("HERMES_KANBAN_TASK")
                 if _self_tid:
@@ -849,50 +835,44 @@ def _handle_create(args: dict, **kw) -> str:
 
 
 def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
-    """Auto-subscribe the calling session to task completion / block events.
+    """自动把当前调用方会话订阅到任务的完成 / 阻塞事件上。
 
-    Returns True if a subscription row was written, False otherwise (no
-    session context, config gate disabled, or best-effort failure). The
-    caller surfaces this in the ``subscribed`` field of the kanban_create
-    response so an orchestrator can decide whether to fall back to an
-    explicit ``kanban_notify-subscribe`` or to polling.
+    如果写入了一行订阅记录就返回 True，否则返回 False（没有会话上下文、
+    配置开关关闭、或尽力而为失败）。调用方会把结果放在 kanban_create
+    响应的 ``subscribed`` 字段里，让 orchestrator 据此决定是否要回退到
+    显式的 ``kanban_notify-subscribe`` 或者改用轮询。
 
-    Gated by ``kanban.auto_subscribe_on_create`` in config.yaml (default
-    True). Disable to mirror pre-feature behaviour, e.g. when the
-    originating user/chat opted out via the per-platform notification
-    toggle (see ``hermes dashboard``).
+    由 config.yaml 里的 ``kanban.auto_subscribe_on_create`` 控制
+    （默认 True）。关闭它可以复刻该功能出现前的旧行为，例如当发起
+    用户 / 会话通过某个平台级的通知开关主动退出时（见 ``hermes dashboard``）。
 
-    Subscription paths:
+    订阅路径：
 
-    - **Gateway** (telegram/discord/slack/etc): ``HERMES_SESSION_PLATFORM``
-      and ``HERMES_SESSION_CHAT_ID`` are set in ContextVars by the
-      messaging gateway before agent dispatch. The notification poller
-      already keys off these, so we just register a row.
+    - **Gateway**（telegram / discord / slack 等）：消息网关在派发 agent
+      之前，会把 ``HERMES_SESSION_PLATFORM`` 和 ``HERMES_SESSION_CHAT_ID``
+      设置到 ContextVars 里。通知轮询器本来就以这两个值为键，所以我们
+      只需要登记一行记录。
 
-    - **TUI** (herm desktop / herm TUI): the platform/chat_id ContextVars
-      are intentionally cleared (TUI is a single-channel local UI, not
-      a multi-tenant chat surface), but the agent subprocess inherits
-      ``HERMES_SESSION_KEY`` from the parent session. We subscribe with
-      ``platform="tui"`` and ``chat_id=<key>``; the TUI notification
-      poller (``tui_gateway/server.py``) reads ``kanban_notify_subs``
-      for these rows and posts the completion message into the running
-      session.
+    - **TUI**（herm desktop / herm TUI）：platform / chat_id 这两个
+      ContextVars 会被刻意清空（TUI 是单通道的本地 UI，不是多租户聊天
+      界面），但 agent 子进程会从父会话继承 ``HERMES_SESSION_KEY``。
+      我们用 ``platform="tui"``、``chat_id=<key>`` 来订阅；TUI 的通知
+      轮询器（``tui_gateway/server.py``）会读取这些行对应的
+      ``kanban_notify_subs``，把完成消息投递到正在运行的会话里。
 
-    - **CLI / cron / test / unattached**: no persistent delivery channel,
-      no-op.
+    - **CLI / cron / test / 未挂载**：没有持久的投递通道，no-op。
 
-    Failure mode: any exception inside the function is logged at WARNING
-    with the offending exception + diagnostic env vars and swallowed.
-    We never want a notification bookkeeping failure to fail the
-    kanban_create that the agent is mid-conversation about.
+    失败处理：函数内部发生的任何异常都会以 WARNING 级别记录（带上
+    异常对象 + 用于诊断的环境变量），然后被吞掉。我们绝不想让一个
+    通知记账的失败，连累 agent 正在对话中发起的这次 kanban_create。
     """
     try:
         cfg = load_config()
         if not cfg_get(cfg, "kanban", "auto_subscribe_on_create", default=True):
             return False
     except Exception:
-        # If config can't load we still default to True — this is the
-        # user-friendly behaviour that mirrors the pre-gate implementation.
+        # 如果配置加载失败，仍然默认为 True —— 这是对开关引入前
+        # 实现行为的友好兼容。
         pass
 
     platform = ""
@@ -902,32 +882,29 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
         platform = get_session_env("HERMES_SESSION_PLATFORM", "")
         chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "")
         if not platform or not chat_id:
-            # TUI / desktop fallback: platform/chat_id ContextVars are
-            # cleared for TUI sessions, but the parent process exports
-            # HERMES_SESSION_KEY into the subprocess env. Treat that
-            # as a "tui" subscription so the TUI notification poller
-            # (tui_gateway/server.py) can pick it up.
+            # TUI / desktop 回退路径：TUI 会话里 platform / chat_id 这两个
+            # ContextVars 是被清空的，但父进程会把 HERMES_SESSION_KEY
+            # 导出到子进程的环境变量里。我们把它当作一次 "tui" 订阅，
+            # 这样 TUI 的通知轮询器（tui_gateway/server.py）就能取到它。
             #
-            # HERMES_SESSION_ID is intentionally NOT a fallback here:
-            # it is set by ACP / the agent subprocess for telemetry
-            # regardless of whether the parent is a TUI or a CLI, so
-            # treating it as a notification target would auto-subscribe
-            # every CLI invocation, which is exactly the over-eager
-            # behaviour that got #19718 reverted upstream. The TUI
-            # poller keys on HERMES_SESSION_KEY.
+            # 这里刻意**不**把 HERMES_SESSION_ID 当作回退：它是 ACP /
+            # agent 子进程为了遥测而设置的，跟父进程是 TUI 还是 CLI
+            # 无关 —— 如果把它当作通知目标，就会把每一次 CLI 调用都
+            # 自动订阅上，这正是上游 #19718 被回退的那种过于热情的行为。
+            # TUI 轮询器是以 HERMES_SESSION_KEY 为键的。
             session_key = (
                 get_session_env("HERMES_SESSION_KEY", "")
                 or os.environ.get("HERMES_SESSION_KEY", "")
             )
             if not session_key:
-                return False  # CLI / cron / test — no persistent channel
+                return False  # CLI / cron / test —— 没有持久通道
             platform = "tui"
             chat_id = session_key
         thread_id = get_session_env("HERMES_SESSION_THREAD_ID", "") or None
         user_id = get_session_env("HERMES_SESSION_USER_ID", "") or None
         notifier_profile = os.environ.get("HERMES_PROFILE")
 
-        # Lazy-import to keep the module-level dependency light
+        # 延迟导入，保持模块级的依赖尽量轻
         from hermes_cli import kanban_db as _kb
         _kb.add_notify_sub(
             conn, task_id=task_id,
@@ -945,7 +922,7 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
 
 
 def _handle_unblock(args: dict, **kw) -> str:
-    """Transition a blocked task back to ready."""
+    """把一个 blocked 状态的任务转回 ready。"""
     guard = _require_orchestrator_tool("kanban_unblock")
     if guard:
         return guard
@@ -973,7 +950,7 @@ def _handle_unblock(args: dict, **kw) -> str:
 
 
 def _handle_link(args: dict, **kw) -> str:
-    """Add a parent→child dependency edge after the fact."""
+    """事后补一条 parent→child 的依赖边。"""
     parent_id = args.get("parent_id")
     child_id = args.get("child_id")
     if not parent_id or not child_id:
@@ -987,7 +964,7 @@ def _handle_link(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        # Covers cycle + self-parent rejections
+        # 涵盖环依赖 + 自引用父任务的拒绝情况
         return tool_error(f"kanban_link: {e}")
     except Exception as e:
         logger.exception("kanban_link failed")
@@ -995,7 +972,7 @@ def _handle_link(args: dict, **kw) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Schemas
+# Schema 定义
 # ---------------------------------------------------------------------------
 
 _DESC_TASK_ID_DEFAULT = (
@@ -1014,10 +991,9 @@ _DESC_BOARD = (
 
 
 def _board_schema_prop() -> dict[str, str]:
-    """Schema fragment for the optional ``board`` parameter.
+    """可选参数 ``board`` 的 schema 片段。
 
-    Centralised so a future tweak to the description / validation hint
-    only has to land in one place.
+    集中放在一起，这样将来对描述 / 校验提示的调整只需要改一个地方。
     """
     return {"type": "string", "description": _DESC_BOARD}
 
@@ -1459,7 +1435,7 @@ KANBAN_LINK_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# 注册
 # ---------------------------------------------------------------------------
 
 registry.register(

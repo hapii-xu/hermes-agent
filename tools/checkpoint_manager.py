@@ -1,51 +1,47 @@
 """
-Checkpoint Manager — Transparent filesystem snapshots via a single shared
-shadow git store.
+检查点管理器 —— 通过单一共享的影子 git 仓库实现透明的文件系统快照。
 
-Creates automatic snapshots of working directories before file-mutating
-operations (``write_file``, ``patch``, ``terminal`` with destructive flags),
-triggered once per conversation turn.  Provides rollback to any previous
-checkpoint.
+在执行会改动文件的操作（``write_file``、``patch``、带破坏性参数的
+``terminal``）之前，自动为工作目录创建快照，每个会话轮次触发一次。
+支持回滚到任意一个历史检查点。
 
-This is NOT a tool — the LLM never sees it.  It's transparent infrastructure
-controlled by the ``checkpoints`` config flag or ``--checkpoints`` CLI flag.
+它不是一个工具 —— LLM 永远看不到它。它是受 ``checkpoints`` 配置项或
+``--checkpoints`` CLI 标志控制的透明基础设施。
 
-Storage layout (single shared store, git objects deduplicated across projects)
+存储布局（单一共享仓库，git 对象在项目之间去重）
 -----------------------------------------------------------------------------
 
     ~/.hermes/checkpoints/
-        store/                          — single bare-ish git repo
-            HEAD, config, objects/      — standard git internals (shared)
-            refs/hermes/<hash16>        — per-project branch tip
-            indexes/<hash16>            — per-project git index
+        store/                          — 单一的类裸仓库
+            HEAD, config, objects/      — 标准 git 内部结构（共享）
+            refs/hermes/<hash16>        — 每个项目的分支 tip
+            indexes/<hash16>            — 每个项目的 git index
             projects/<hash16>.json      — {workdir, created_at, last_touch}
-            info/exclude                — default excludes (shared)
-        .last_prune                     — auto-prune idempotency marker
-        legacy-<timestamp>/             — archived pre-v2 per-project shadow
-                                          repos (auto-migrated on first init)
+            info/exclude                — 默认排除规则（共享）
+        .last_prune                     — 自动清理的幂等标记
+        legacy-<timestamp>/             — 归档的 v2 之前各项目独立影子
+                                          仓库（首次初始化时自动迁移）
 
-Why a single store?
+为什么用单一仓库？
 -------------------
 
-The pre-v2 design kept a full shadow repo per working directory.  Each one
-re-stored most of the project's files under its own ``objects/`` tree, with
-zero sharing across worktrees of the same project.  A single user with a
-dozen worktrees of the same repo burned ~40 MB each (~500 MB total) storing
-the same blobs over and over.  A single shared store lets git's content-
-addressable object DB deduplicate across projects and across turns, so adding
-a new worktree costs near-zero.
+v2 之前的设计为每个工作目录保留一个完整的影子仓库。每个仓库都会在
+各自的 ``objects/`` 树下重新存储项目的大部分文件，同一项目的多个
+worktree 之间毫无共享。一个用户对同一个 repo 开十几个 worktree，
+每个都烧掉约 40 MB（总共约 500 MB），反复存储同样的 blob。单一共享
+仓库让 git 基于内容寻址的对象库能在项目和轮次之间去重，于是新增一个
+worktree 的成本接近于零。
 
-The shadow store uses ``GIT_DIR`` + ``GIT_WORK_TREE`` + ``GIT_INDEX_FILE``
-so no git state leaks into the user's project directory.
+影子仓库使用 ``GIT_DIR`` + ``GIT_WORK_TREE`` + ``GIT_INDEX_FILE``，
+确保不会有任何 git 状态泄漏到用户的项目目录里。
 
-Auto-maintenance
-----------------
+自动维护
+--------
 
-Shadow state accumulates over time.  ``prune_checkpoints`` deletes refs whose
-recorded working directory no longer exists (orphan) or whose last touch is
-older than ``retention_days`` (stale), then runs ``git gc --prune=now`` to
-reclaim object storage.  A size-cap pass drops the oldest checkpoints per
-project until total store size is under ``max_total_size_mb``.
+影子状态会随时间累积。``prune_checkpoints`` 会删除其记录的工作目录
+已不存在（孤儿）或其最后触碰时间早于 ``retention_days``（陈旧）的
+引用，然后运行 ``git gc --prune=now`` 回收对象存储。容量上限这一步
+会逐个项目丢弃最旧的检查点，直到仓库总大小低于 ``max_total_size_mb``。
 """
 
 import hashlib
@@ -65,12 +61,12 @@ from utils import env_int
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 CHECKPOINT_BASE = get_hermes_home() / "checkpoints"
 
-# Single shared store directory under CHECKPOINT_BASE.
+# CHECKPOINT_BASE 下的单一共享仓库目录。
 _STORE_DIRNAME = "store"
 _REFS_PREFIX = "refs/hermes"
 _INDEXES_DIRNAME = "indexes"
@@ -78,7 +74,7 @@ _PROJECTS_DIRNAME = "projects"
 _LEGACY_PREFIX = "legacy-"
 
 DEFAULT_EXCLUDES = [
-    # Dependency / build output
+    # 依赖 / 构建产物
     "node_modules/",
     "dist/",
     "build/",
@@ -86,7 +82,7 @@ DEFAULT_EXCLUDES = [
     "out/",
     ".next/",
     ".nuxt/",
-    # Caches
+    # 缓存
     "__pycache__/",
     "*.pyc",
     "*.pyo",
@@ -96,17 +92,17 @@ DEFAULT_EXCLUDES = [
     ".ruff_cache/",
     "coverage/",
     ".coverage",
-    # Virtualenvs
+    # 虚拟环境
     ".venv/",
     "venv/",
     "env/",
-    # VCS
+    # 版本控制（VCS）
     ".git/",
     ".hg/",
     ".svn/",
-    # Worktrees (Hermes convention — don't recursively snapshot siblings)
+    # Worktree（Hermes 约定 —— 不递归快照同级 worktree）
     ".worktrees/",
-    # Native / compiled binaries
+    # 原生 / 编译产物
     "*.so",
     "*.dylib",
     "*.dll",
@@ -116,7 +112,7 @@ DEFAULT_EXCLUDES = [
     "*.class",
     "*.exe",
     "*.obj",
-    # Media / large binaries
+    # 媒体 / 大体积二进制
     "*.mp4",
     "*.mov",
     "*.mkv",
@@ -128,38 +124,38 @@ DEFAULT_EXCLUDES = [
     "*.7z",
     "*.rar",
     "*.iso",
-    # Secrets
+    # 密钥
     ".env",
     ".env.*",
     ".env.local",
     ".env.*.local",
-    # OS junk
+    # 系统垃圾文件
     ".DS_Store",
     "Thumbs.db",
-    # Logs
+    # 日志
     "*.log",
 ]
 
-# Git subprocess timeout (seconds).
+# git 子进程超时（秒）。
 _GIT_TIMEOUT: int = max(10, min(60, env_int("HERMES_CHECKPOINT_TIMEOUT", 30)))
 
-# Max files to snapshot — skip huge directories to avoid slowdowns.
+# 快照文件数上限 —— 跳过过大的目录以避免拖慢。
 _MAX_FILES = 50_000
 
-# Valid git commit hash pattern: 4–40 hex chars (short or full SHA-1/SHA-256).
+# 合法的 git commit hash 模式：4–64 位十六进制字符（短或完整 SHA-1/SHA-256）。
 _COMMIT_HASH_RE = re.compile(r'^[0-9a-fA-F]{4,64}$')
 
 
 # ---------------------------------------------------------------------------
-# Input validation helpers
+# 输入校验辅助函数
 # ---------------------------------------------------------------------------
 
 def _validate_commit_hash(commit_hash: str) -> Optional[str]:
-    """Validate a commit hash to prevent git argument injection.
+    """校验 commit hash，以防止 git 参数注入。
 
-    Returns an error string if invalid, None if valid.
-    Values starting with '-' would be interpreted as git flags
-    (e.g., '--patch', '-p') instead of revision specifiers.
+    无效时返回错误字符串，有效时返回 None。
+    以「-」开头的取值会被 git 当作标志（例如「--patch」、「-p」），
+    而不是版本指定符。
     """
     if not commit_hash or not commit_hash.strip():
         return "Empty commit hash"
@@ -171,9 +167,9 @@ def _validate_commit_hash(commit_hash: str) -> Optional[str]:
 
 
 def _validate_file_path(file_path: str, working_dir: str) -> Optional[str]:
-    """Validate a file path to prevent path traversal outside the working directory.
+    """校验文件路径，以防止通过路径穿越逃出工作目录。
 
-    Returns an error string if invalid, None if valid.
+    无效时返回错误字符串，有效时返回 None。
     """
     if not file_path or not file_path.strip():
         return "Empty file path"
@@ -189,32 +185,31 @@ def _validate_file_path(file_path: str, working_dir: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Path / hash helpers
+# 路径 / 哈希辅助函数
 # ---------------------------------------------------------------------------
 
 def _normalize_path(path_value: str) -> Path:
-    """Return a canonical absolute path for checkpoint operations."""
+    """返回检查点操作所用的规范化绝对路径。"""
     return Path(path_value).expanduser().resolve()
 
 
 def _project_hash(working_dir: str) -> str:
-    """Deterministic per-project hash: sha256(abs_path)[:16]."""
+    """确定性的项目级哈希：sha256(abs_path)[:16]。"""
     abs_path = str(_normalize_path(working_dir))
     return hashlib.sha256(abs_path.encode()).hexdigest()[:16]
 
 
 def _store_path(base: Optional[Path] = None) -> Path:
-    """Return the single shared shadow store path."""
+    """返回单一共享影子仓库的路径。"""
     return (base or CHECKPOINT_BASE) / _STORE_DIRNAME
 
 
-def _shadow_repo_path(working_dir: str) -> Path:  # pragma: no cover — kept for BC
-    """Return the shared store path.
+def _shadow_repo_path(working_dir: str) -> Path:  # pragma: no cover —— 为向后兼容保留
+    """返回共享仓库的路径。
 
-    Retained for backward-compatibility with callers / tests that imported
-    this helper.  Under v2 the shadow git storage is shared across all
-    projects — per-project isolation lives in refs and indexes, not in
-    separate repo directories.
+    为导入过此辅助函数的调用方/测试保留，用于向后兼容。在 v2 下，影子
+    git 存储是跨所有项目共享的 —— 项目级隔离体现在 refs 和 index 里，
+    而不是在各自独立的仓库目录里。
     """
     return _store_path()
 
@@ -232,7 +227,7 @@ def _project_meta_path(store: Path, dir_hash: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Git env
+# Git 环境变量
 # ---------------------------------------------------------------------------
 
 def _git_env(
@@ -240,21 +235,20 @@ def _git_env(
     working_dir: str,
     index_file: Optional[Path] = None,
 ) -> dict:
-    """Build env dict that redirects git to the shared store.
+    """构造一个把 git 重定向到共享仓库的环境变量字典。
 
-    The shared store is internal Hermes infrastructure — it must NOT inherit
-    the user's global or system git config.  User-level settings like
-    ``commit.gpgsign = true``, signing hooks, or credential helpers would
-    either break background snapshots or, worse, spawn interactive prompts
-    (pinentry GUI windows) mid-session every time a file is written.
+    共享仓库是 Hermes 的内部基础设施 —— 它绝不能继承用户的全局或
+    系统 git 配置。用户级的设置（比如 ``commit.gpgsign = true``、签名
+    钩子、凭据助手）要么会破坏后台快照，要么更糟 —— 每写一个文件就
+    在会话中途弹出交互式提示（pinentry 的 GUI 窗口）。
 
-    Isolation strategy:
-    * ``GIT_CONFIG_GLOBAL=<os.devnull>`` — ignore ``~/.gitconfig`` (git 2.32+).
-    * ``GIT_CONFIG_SYSTEM=<os.devnull>`` — ignore ``/etc/gitconfig`` (git 2.32+).
-    * ``GIT_CONFIG_NOSYSTEM=1`` — legacy belt-and-suspenders for older git.
+    隔离策略：
+    * ``GIT_CONFIG_GLOBAL=<os.devnull>`` —— 忽略 ``~/.gitconfig``（git 2.32+）。
+    * ``GIT_CONFIG_SYSTEM=<os.devnull>`` —— 忽略 ``/etc/gitconfig``（git 2.32+）。
+    * ``GIT_CONFIG_NOSYSTEM=1`` —— 针对更老 git 的双保险。
 
-    ``index_file``, if given, forces git to use a per-project index under
-    ``store/indexes/<hash>`` so projects don't race on a shared index.
+    若给定 ``index_file``，则强制 git 使用位于 ``store/indexes/<hash>``
+    的项目级 index，避免多个项目在共享 index 上争用。
     """
     normalized_working_dir = _normalize_path(working_dir)
     env = os.environ.copy()
@@ -273,14 +267,13 @@ def _git_env(
 
 
 def _repair_bare_repo_dirs(store: Path) -> None:
-    """Recreate refs/ and branches/ dirs that ``git gc`` may have removed.
+    """重建可能被 ``git gc`` 删除的 refs/ 和 branches/ 目录。
 
-    ``git gc --prune=now`` on a bare repo with only packed refs can remove
-    the empty ``refs/heads/`` directory.  Git 2.34+ requires ``refs/`` (and
-    some versions require ``branches/``) to exist even when all refs are
-    packed in ``packed-refs``.  Without them, ``git add -A`` returns
-    ``fatal: not a git repository`` and all checkpoint operations fail
-    silently.
+    在一个只有 packed refs 的裸仓库上执行 ``git gc --prune=now``，可能
+    会删掉空的 ``refs/heads/`` 目录。Git 2.34+ 要求即使所有 ref 都打包
+    在 ``packed-refs`` 里，``refs/``（部分版本还要求 ``branches/``）也
+    必须存在。少了它们，``git add -A`` 会返回
+    ``fatal: not a git repository``，所有检查点操作都会静默失败。
     """
     for subdir in ("refs/heads", "branches"):
         path = store / subdir
@@ -302,11 +295,11 @@ def _run_git(
     allowed_returncodes: Optional[Set[int]] = None,
     index_file: Optional[Path] = None,
 ) -> Tuple[bool, str, str]:
-    """Run a git command against the shared store.  Returns (ok, stdout, stderr).
+    """针对共享仓库运行一条 git 命令。返回 (ok, stdout, stderr)。
 
-    ``allowed_returncodes`` suppresses error logging for known/expected non-zero
-    exits while preserving the normal ``ok = (returncode == 0)`` contract.
-    Example: ``git diff --cached --quiet`` returns 1 when changes exist.
+    ``allowed_returncodes`` 用于对已知/预期的非零退出码抑制错误日志，
+    同时仍保持正常的 ``ok = (returncode == 0)`` 约定。
+    例如：``git diff --cached --quiet`` 在存在改动时返回 1。
     """
     normalized_working_dir = _normalize_path(working_dir)
     if not normalized_working_dir.exists():
@@ -358,33 +351,32 @@ def _run_git(
 
 
 # ---------------------------------------------------------------------------
-# Store initialisation + legacy migration
+# 仓库初始化 + 旧版迁移
 # ---------------------------------------------------------------------------
 
 def _migrate_legacy_store(base: Path) -> Optional[Path]:
-    """Move pre-v2 per-project shadow repos into a ``legacy-<ts>/`` dir.
+    """把 v2 之前各项目独立的影子仓库挪进一个 ``legacy-<ts>/`` 目录。
 
-    The pre-v2 layout had one shadow git repo per working directory directly
-    under ``CHECKPOINT_BASE``.  The v2 layout wants a single ``store/`` dir.
-    Rather than delete the old data (users might want to recover), rename
-    everything except our own v2 entries into ``legacy-<timestamp>/``.  The
-    legacy dir is subject to the same retention sweep and can be manually
-    cleared with ``hermes checkpoints clear-legacy``.
+    v2 之前的布局是：每个工作目录在 ``CHECKPOINT_BASE`` 下直接对应一个
+    影子 git 仓库。v2 布局则希望只有一个 ``store/`` 目录。这里不直接
+    删除旧数据（用户可能想恢复），而是把除我们自身 v2 条目之外的所有
+    内容重命名进 ``legacy-<timestamp>/``。该 legacy 目录会接受同样的
+    保留期清理，也可以用 ``hermes checkpoints clear-legacy`` 手动清空。
 
-    Returns the legacy-archive path, or None if nothing to migrate.
+    返回 legacy 归档路径；若无可迁移内容，则返回 None。
     """
     if not base.exists():
         return None
     store = _store_path(base)
     legacy_root: Optional[Path] = None
-    # Reserved top-level entries managed by v2.
+    # 由 v2 管理的保留顶层条目。
     reserved = {_STORE_DIRNAME, _PRUNE_MARKER_NAME}
     for child in list(base.iterdir()):
         name = child.name
         if name in reserved or name.startswith(_LEGACY_PREFIX):
             continue
-        # Candidate: pre-v2 shadow repo (has HEAD) OR stray dir.  Either way
-        # we archive it so v2 starts clean.
+        # 候选项：v2 之前的影子仓库（含 HEAD）或游离目录。无论哪种，
+        # 都先归档，让 v2 从干净状态开始。
         if legacy_root is None:
             stamp = time.strftime("%Y%m%d-%H%M%S")
             legacy_root = base / f"{_LEGACY_PREFIX}{stamp}"
@@ -398,7 +390,7 @@ def _migrate_legacy_store(base: Path) -> Optional[Path]:
             shutil.move(str(child), str(dest))
         except OSError as exc:
             logger.warning("Could not archive legacy checkpoint %s: %s", child, exc)
-    # If the store still hasn't been created, create it here.
+    # 如果仓库此时仍未创建，则在这里创建它。
     _ = store
     if legacy_root is not None:
         logger.info(
@@ -410,20 +402,19 @@ def _migrate_legacy_store(base: Path) -> Optional[Path]:
 
 
 def _init_store(store: Path, working_dir: str) -> Optional[str]:
-    """Initialise the shared shadow store if needed.  Returns error or None.
+    """按需初始化共享影子仓库。返回错误或 None。
 
-    Also performs one-time migration of pre-v2 per-directory shadow repos
-    into ``legacy-<timestamp>/``.
+    同时执行一次性的旧版迁移，把 v2 之前各目录独立的影子仓库搬进
+    ``legacy-<timestamp>/``。
     """
     base = store.parent
-    # One-time legacy migration before we create the store.
+    # 在创建仓库之前做一次性的旧版迁移。
     if not store.exists():
         try:
             base.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             return f"Could not create checkpoint base: {exc}"
-        # Only migrate if the base dir has pre-existing content that isn't
-        # our own v2 layout.
+        # 仅当 base 目录里有非我们 v2 布局的既有内容时才迁移。
         _migrate_legacy_store(base)
 
     if (store / "HEAD").exists():
@@ -433,14 +424,14 @@ def _init_store(store: Path, working_dir: str) -> Optional[str]:
     (store / _INDEXES_DIRNAME).mkdir(exist_ok=True)
     (store / _PROJECTS_DIRNAME).mkdir(exist_ok=True)
 
-    # ``git init --bare`` rejects GIT_WORK_TREE, so we can't use _run_git
-    # here (which always sets GIT_DIR + GIT_WORK_TREE).  Use a raw
-    # subprocess with just the config-isolation env vars.
+    # ``git init --bare`` 会拒绝 GIT_WORK_TREE，所以这里不能用 _run_git
+    #（后者总是会同时设置 GIT_DIR + GIT_WORK_TREE）。改用裸 subprocess，
+    # 只带配置隔离的环境变量。
     init_env = os.environ.copy()
     init_env["GIT_CONFIG_GLOBAL"] = os.devnull
     init_env["GIT_CONFIG_SYSTEM"] = os.devnull
     init_env["GIT_CONFIG_NOSYSTEM"] = "1"
-    # Drop any inherited GIT_* that would interfere.
+    # 丢弃任何会干扰的、继承来的 GIT_*。
     for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_NAMESPACE",
               "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
         init_env.pop(k, None)
@@ -456,9 +447,9 @@ def _init_store(store: Path, working_dir: str) -> Optional[str]:
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         return f"Shadow store init failed: {exc}"
 
-    # Per-store config (isolated by env vars above, but belt-and-suspenders).
-    # Use the base dir as the working_dir for config commands — it always
-    # exists since we just created the store inside it.
+    # 仓库级配置（上面已用环境变量隔离，这里再加一层双保险）。
+    # 配置命令用 base 目录作为 working_dir —— 它一定存在，因为我们
+    # 刚刚在其中创建了仓库。
     cfg_wd = str(base)
     _run_git(["config", "user.email", "hermes@local"], store, cfg_wd)
     _run_git(["config", "user.name", "Hermes Checkpoint"], store, cfg_wd)
@@ -477,7 +468,7 @@ def _init_store(store: Path, working_dir: str) -> Optional[str]:
 
 
 def _register_project(store: Path, working_dir: str) -> None:
-    """Create or update ``projects/<hash>.json`` with workdir + timestamps."""
+    """创建或更新 ``projects/<hash>.json``，写入 workdir + 时间戳。"""
     dir_hash = _project_hash(working_dir)
     meta_path = _project_meta_path(store, dir_hash)
     now = time.time()
@@ -498,7 +489,7 @@ def _register_project(store: Path, working_dir: str) -> None:
 
 
 def _touch_project(store: Path, working_dir: str) -> None:
-    """Update last_touch for a project, preserving created_at."""
+    """更新某个项目的 last_touch，同时保留 created_at。"""
     dir_hash = _project_hash(working_dir)
     meta_path = _project_meta_path(store, dir_hash)
     if not meta_path.exists():
@@ -520,7 +511,7 @@ def _touch_project(store: Path, working_dir: str) -> None:
 
 
 def _list_projects(store: Path) -> List[Dict]:
-    """Return all registered projects under the store."""
+    """返回该仓库下所有已注册的项目。"""
     projects_dir = store / _PROJECTS_DIRNAME
     if not projects_dir.exists():
         return []
@@ -539,7 +530,7 @@ def _list_projects(store: Path) -> List[Dict]:
 
 
 def _dir_file_count(path: str) -> int:
-    """Quick file count estimate (stops early if over _MAX_FILES)."""
+    """快速估算文件数（一旦超过 _MAX_FILES 就提前停止）。"""
     count = 0
     try:
         for _ in Path(path).rglob("*"):
@@ -552,7 +543,7 @@ def _dir_file_count(path: str) -> int:
 
 
 def _dir_size_bytes(path: Path) -> int:
-    """Best-effort recursive size in bytes.  Returns 0 on error."""
+    """尽力而为地递归统计字节数。出错时返回 0。"""
     total = 0
     try:
         for p in path.rglob("*"):
@@ -566,25 +557,23 @@ def _dir_size_bytes(path: Path) -> int:
     return total
 
 
-# Backwards-compatibility shim — some tests import ``_init_shadow_repo`` and
-# look for ``HEAD``/``info/exclude``/``HERMES_WORKDIR``.  In v2 we also write
-# those markers, but inside the shared store + under ``projects/<hash>.json``.
-# The shim initialises the store and registers the project so the old
-# surface keeps roughly the same shape.
+# 向后兼容垫片 —— 部分测试会导入 ``_init_shadow_repo``，并检查
+# ``HEAD``/``info/exclude``/``HERMES_WORKDIR``。在 v2 中我们同样会写
+# 这些标记，但放在共享仓库内部、且额外写入 ``projects/<hash>.json``。
+# 这个垫片会初始化仓库并注册项目，使旧接口大致保持原来的形态。
 def _init_shadow_repo(shadow_repo: Path, working_dir: str) -> Optional[str]:
-    """Backwards-compatible initialiser.
+    """向后兼容的初始化器。
 
-    In v1 ``shadow_repo`` was a per-project dir; in v2 it's the shared
-    ``store/`` path (or a test path that we respect).  We initialise the
-    store at ``shadow_repo``, create per-project markers, and return None
-    on success.
+    在 v1 中，``shadow_repo`` 是每个项目各一个的目录；在 v2 中，它是
+    共享的 ``store/`` 路径（或一个我们尊重的测试路径）。我们在
+    ``shadow_repo`` 处初始化仓库、创建项目级标记，成功时返回 None。
     """
     err = _init_store(shadow_repo, working_dir)
     if err:
         return err
     _register_project(shadow_repo, working_dir)
-    # Compat marker for tests that look at HERMES_WORKDIR
-    # (write in addition to the JSON metadata).
+    # 给那些检查 HERMES_WORKDIR 的测试用的兼容标记
+    #（在 JSON 元数据之外额外写入）。
     try:
         (shadow_repo / "HERMES_WORKDIR").write_text(
             str(_normalize_path(working_dir)) + "\n", encoding="utf-8"
@@ -599,25 +588,25 @@ def _init_shadow_repo(shadow_repo: Path, working_dir: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 class CheckpointManager:
-    """Manages automatic filesystem checkpoints.
+    """管理自动的文件系统检查点。
 
-    Designed to be owned by AIAgent.  Call ``new_turn()`` at the start of
-    each conversation turn and ``ensure_checkpoint(dir, reason)`` before
-    any file-mutating tool call.  The manager deduplicates so at most one
-    snapshot is taken per directory per turn.
+    设计为由 AIAgent 持有。在每个会话轮次开始时调用 ``new_turn()``，
+    在任何会改动文件的工具调用之前调用
+    ``ensure_checkpoint(dir, reason)``。本管理器会做去重，确保每个目录
+    每个轮次最多只拍一次快照。
 
-    Parameters
+    参数
     ----------
     enabled : bool
-        Master switch (from config / CLI flag).
+        总开关（取自配置 / CLI 标志）。
     max_snapshots : int
-        Keep at most this many checkpoints per directory.
+        每个目录最多保留多少个检查点。
     max_total_size_mb : int
-        Hard ceiling on total store size.  Oldest checkpoints per project
-        are dropped when the store exceeds this after a commit.
+        仓库总大小的硬上限。当 commit 后仓库超出该上限时，会逐个项目
+        丢弃最旧的检查点。
     max_file_size_mb : int
-        Skip adding any single file larger than this to a checkpoint.
-        (Implemented via ``.gitignore`` excludes + a post-stage size check.)
+        超过该大小的单个文件不会加入检查点。
+        （通过 ``.gitignore`` 排除 + 入库后的大小检查来实现。）
     """
 
     def __init__(
@@ -632,25 +621,25 @@ class CheckpointManager:
         self.max_total_size_mb = max(0, int(max_total_size_mb))
         self.max_file_size_mb = max(0, int(max_file_size_mb))
         self._checkpointed_dirs: Set[str] = set()
-        self._git_available: Optional[bool] = None  # lazy probe
+        self._git_available: Optional[bool] = None  # 惰性探测
 
     # ------------------------------------------------------------------
-    # Turn lifecycle
+    # 轮次生命周期
     # ------------------------------------------------------------------
 
     def new_turn(self) -> None:
-        """Reset per-turn dedup.  Call at the start of each agent iteration."""
+        """重置轮次级去重。在每个 agent 迭代开始时调用。"""
         self._checkpointed_dirs.clear()
 
     # ------------------------------------------------------------------
-    # Public API
+    # 公共 API
     # ------------------------------------------------------------------
 
     def ensure_checkpoint(self, working_dir: str, reason: str = "auto") -> bool:
-        """Take a checkpoint if enabled and not already done this turn.
+        """若已启用且本轮次尚未做过检查点，则拍一个检查点。
 
-        Returns True if a checkpoint was taken, False otherwise.
-        Never raises — all errors are silently logged.
+        若已拍了检查点返回 True，否则返回 False。
+        永不抛异常 —— 所有错误都静默记录日志。
         """
         if not self.enabled:
             return False
@@ -664,7 +653,7 @@ class CheckpointManager:
 
         abs_dir = str(_normalize_path(working_dir))
 
-        # Skip root, home, and other overly broad directories
+        # 跳过根目录、家目录以及其他过于宽泛的目录
         if abs_dir in {"/", str(Path.home())}:
             logger.debug("Checkpoint skipped: directory too broad (%s)", abs_dir)
             return False
@@ -681,7 +670,7 @@ class CheckpointManager:
             return False
 
     def list_checkpoints(self, working_dir: str) -> List[Dict]:
-        """List available checkpoints for a directory (most recent first)."""
+        """列出某个目录可用的检查点（最新的在前）。"""
         abs_dir = str(_normalize_path(working_dir))
         store = _store_path(CHECKPOINT_BASE)
 
@@ -723,7 +712,7 @@ class CheckpointManager:
 
     @staticmethod
     def _parse_shortstat(stat_line: str, entry: Dict) -> None:
-        """Parse git --shortstat output into entry dict."""
+        """把 git --shortstat 的输出解析进 entry 字典。"""
         m = re.search(r'(\d+) file', stat_line)
         if m:
             entry["files_changed"] = int(m.group(1))
@@ -735,7 +724,7 @@ class CheckpointManager:
             entry["deletions"] = int(m.group(1))
 
     def diff(self, working_dir: str, commit_hash: str) -> Dict:
-        """Show diff between a checkpoint and the current working tree."""
+        """展示某个检查点与当前工作树之间的 diff。"""
         hash_err = _validate_commit_hash(commit_hash)
         if hash_err:
             return {"success": False, "error": hash_err}
@@ -755,7 +744,7 @@ class CheckpointManager:
         dir_hash = _project_hash(abs_dir)
         index_file = _index_path(store, dir_hash)
 
-        # Stage current state into the per-project index to compare.
+        # 把当前状态暂存到项目级 index，以便对比。
         _run_git(["add", "-A"], store, abs_dir,
                  timeout=_GIT_TIMEOUT * 2, index_file=index_file)
 
@@ -768,8 +757,8 @@ class CheckpointManager:
             store, abs_dir, index_file=index_file,
         )
 
-        # Reset staged tree back to the project's last checkpoint so the
-        # index doesn't drift out of sync with the ref.
+        # 把暂存树重置回项目上一个检查点，避免 index 与 ref 之间
+        # 产生不同步。
         ref = _ref_name(dir_hash)
         _run_git(["read-tree", ref], store, abs_dir,
                  index_file=index_file,
@@ -785,7 +774,7 @@ class CheckpointManager:
         }
 
     def restore(self, working_dir: str, commit_hash: str, file_path: str = None) -> Dict:
-        """Restore files to a checkpoint state."""
+        """把文件恢复到某个检查点的状态。"""
         hash_err = _validate_commit_hash(commit_hash)
         if hash_err:
             return {"success": False, "error": hash_err}
@@ -809,7 +798,7 @@ class CheckpointManager:
             return {"success": False, "error": f"Checkpoint '{commit_hash}' not found",
                     "debug": err or None}
 
-        # Take a pre-rollback snapshot so you can undo the undo.
+        # 先拍一个回滚前的快照，这样就可以撤销这次撤销。
         self._take(abs_dir, f"pre-rollback snapshot (restoring to {commit_hash[:8]})")
 
         dir_hash = _project_hash(abs_dir)
@@ -842,7 +831,7 @@ class CheckpointManager:
         return result
 
     def get_working_dir_for_path(self, file_path: str) -> str:
-        """Resolve a file path to its working directory for checkpointing."""
+        """把一个文件路径解析为其所属的、用于建立检查点的工作目录。"""
         path = _normalize_path(file_path)
         if path.is_dir():
             candidate = path
@@ -860,11 +849,11 @@ class CheckpointManager:
         return str(candidate)
 
     # ------------------------------------------------------------------
-    # Internal
+    # 内部实现
     # ------------------------------------------------------------------
 
     def _take(self, working_dir: str, reason: str) -> bool:
-        """Take a snapshot.  Returns True on success."""
+        """拍一个快照。成功返回 True。"""
         store = _store_path(CHECKPOINT_BASE)
 
         err = _init_store(store, working_dir)
@@ -874,7 +863,7 @@ class CheckpointManager:
 
         _touch_project(store, working_dir)
 
-        # Quick size guard — don't try to snapshot enormous directories
+        # 快速体积守卫 —— 不要试图快照过大的目录
         if _dir_file_count(working_dir) > _MAX_FILES:
             logger.debug("Checkpoint skipped: >%d files in %s", _MAX_FILES, working_dir)
             return False
@@ -883,11 +872,11 @@ class CheckpointManager:
         index_file = _index_path(store, dir_hash)
         ref = _ref_name(dir_hash)
 
-        # Seed the per-project index from the last checkpoint, if any, so the
-        # diff/commit machinery sees only changes since then.  On first call,
-        # clear the index so ``git add -A`` produces a clean tree.
+        # 用上一个检查点（若有）来填充项目级 index，这样 diff/commit
+        # 流程只会看到自那以后的改动。首次调用时，清空 index，使
+        # ``git add -A`` 生成一棵干净的树。
         if index_file.exists():
-            # Reset index to current ref tip to avoid accumulating stale paths.
+            # 把 index 重置到当前 ref tip，避免累积出陈旧的路径。
             ok_ref, ref_commit, _ = _run_git(
                 ["rev-parse", "--verify", ref + "^{commit}"],
                 store, working_dir,
@@ -906,13 +895,12 @@ class CheckpointManager:
                 except OSError:
                     pass
         else:
-            # First snapshot for this project.
+            # 本项目的首次快照。
             index_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Stage with per-project index.  Include a per-stage file-size filter
-        # via ``core.bigFileThreshold`` is not what we want — instead, we
-        # rely on the exclude file for broad patterns and post-stage prune
-        # any path whose size exceeds max_file_size_mb.
+        # 用项目级 index 暂存。我们「不」想用 ``core.bigFileThreshold``
+        # 这种按文件大小过滤的暂存机制 —— 取而代之的是：依靠 exclude
+        # 文件处理大类模式，并在入库后剔除任何超过 max_file_size_mb 的路径。
         ok, _, err = _run_git(
             ["add", "-A"], store, working_dir,
             timeout=_GIT_TIMEOUT * 2, index_file=index_file,
@@ -924,9 +912,9 @@ class CheckpointManager:
         if self.max_file_size_mb > 0:
             self._drop_oversize_from_index(store, working_dir, index_file)
 
-        # Compare against the current ref tip (not HEAD — HEAD points to a
-        # branch that doesn't exist on a bare store, so ``diff --cached``
-        # against HEAD would always show "new file" for every staged path).
+        # 与当前 ref tip 对比（而不是 HEAD —— 在裸仓库上 HEAD 指向一个
+        # 不存在的分支，所以拿 HEAD 做 ``diff --cached`` 会把每个暂存
+        # 路径都显示成「new file」）。
         ok_ref, ref_commit, _ = _run_git(
             ["rev-parse", "--verify", ref + "^{commit}"],
             store, working_dir,
@@ -945,7 +933,7 @@ class CheckpointManager:
                 logger.debug("Checkpoint skipped: no changes in %s", working_dir)
                 return False
         else:
-            # No ref yet — skip only if the index is empty.
+            # 还没有 ref —— 仅当 index 为空时才跳过。
             ok_ls, ls_out, _ = _run_git(
                 ["ls-files", "--cached"],
                 store, working_dir,
@@ -955,7 +943,7 @@ class CheckpointManager:
                 logger.debug("Checkpoint skipped: empty tree in %s", working_dir)
                 return False
 
-        # Write tree from per-project index.
+        # 从项目级 index 写出树。
         ok_tree, tree_sha, err = _run_git(
             ["write-tree"], store, working_dir,
             index_file=index_file,
@@ -964,7 +952,7 @@ class CheckpointManager:
             logger.debug("Checkpoint write-tree failed: %s", err)
             return False
 
-        # Build commit (parent = current ref tip, if any).
+        # 构造 commit（父提交 = 当前 ref tip，若存在）。
         commit_args = ["commit-tree", tree_sha, "-m", reason, "--no-gpg-sign"]
         if has_ref:
             commit_args = ["commit-tree", tree_sha, "-p", ref_commit, "-m", reason, "--no-gpg-sign"]
@@ -976,7 +964,7 @@ class CheckpointManager:
             logger.debug("Checkpoint commit-tree failed: %s", err)
             return False
 
-        # Update the per-project ref.
+        # 更新项目级 ref。
         update_args = ["update-ref", ref, new_sha]
         if has_ref:
             update_args = ["update-ref", ref, new_sha, ref_commit]
@@ -989,10 +977,10 @@ class CheckpointManager:
 
         logger.debug("Checkpoint taken in %s: %s (%s)", working_dir, reason, new_sha[:8])
 
-        # Real pruning — drop old commits beyond max_snapshots.
+        # 真正的清理 —— 丢弃超过 max_snapshots 的旧 commit。
         self._prune(store, working_dir, ref)
 
-        # Enforce global size cap.
+        # 执行全局容量上限。
         self._enforce_size_cap(store)
 
         return True
@@ -1000,10 +988,10 @@ class CheckpointManager:
     def _drop_oversize_from_index(
         self, store: Path, working_dir: str, index_file: Path,
     ) -> None:
-        """Remove any staged file larger than ``max_file_size_mb`` from the index.
+        """从 index 中移除任何大于 ``max_file_size_mb`` 的已暂存文件。
 
-        Lets the agent keep snapshotting source code while refusing to
-        swallow generated assets (datasets, model weights, logs, videos).
+        让 agent 继续为源代码建立快照，同时拒绝吞下生成的资源
+        （数据集、模型权重、日志、视频）。
         """
         cap = self.max_file_size_mb * 1024 * 1024
         if cap <= 0:
@@ -1014,8 +1002,8 @@ class CheckpointManager:
         )
         if not ok or not stdout:
             return
-        # ls-files -z output is NUL-separated. _run_git strips trailing
-        # whitespace but that leaves NULs alone; rebuild list.
+        # ls-files -z 的输出以 NUL 分隔。_run_git 会去除末尾空白，
+        # 但不会动 NUL；这里重建列表。
         paths = [p for p in stdout.split("\x00") if p]
         abs_workdir = _normalize_path(working_dir)
         oversize: List[str] = []
@@ -1032,8 +1020,8 @@ class CheckpointManager:
             "Checkpoint: dropping %d oversize file(s) (>%d MB) from index",
             len(oversize), self.max_file_size_mb,
         )
-        # Use --pathspec-from-file for safety with many paths.
-        # Chunk into manageable batches.
+        # 为安全起见用 --pathspec-from-file（路径多时）。
+        # 切成可控的小批次。
         BATCH = 200
         for i in range(0, len(oversize), BATCH):
             chunk = oversize[i:i + BATCH]
@@ -1044,13 +1032,12 @@ class CheckpointManager:
             )
 
     def _prune(self, store: Path, working_dir: str, ref: str) -> None:
-        """Keep only the last ``max_snapshots`` commits on the per-project ref.
+        """只保留项目级 ref 上最近 ``max_snapshots`` 个 commit。
 
-        v1's ``_prune`` was documented as a no-op (``git``'s pack mechanism
-        was supposed to handle it, but only the log view was limited — loose
-        objects accumulated forever).  v2 actually rewrites the ref to drop
-        commits older than ``max_snapshots`` and then runs ``git gc`` on the
-        store so unreachable objects are reclaimed.
+        v1 的 ``_prune`` 文档里说它是空操作（本应由 ``git`` 的打包机制来
+        处理，但实际只限制了日志视图 —— 松散对象会一直累积）。v2 则真正
+        会重写 ref，丢弃早于 ``max_snapshots`` 的 commit，然后对仓库运行
+        ``git gc``，回收不可达对象。
         """
         ok, stdout, _ = _run_git(
             ["rev-list", "--count", ref], store, working_dir,
@@ -1065,7 +1052,7 @@ class CheckpointManager:
         if count <= self.max_snapshots:
             return
 
-        # Collect commits oldest → newest, take last N.
+        # 收集 commit（从最旧到最新），取最后 N 个。
         ok_list, list_out, _ = _run_git(
             ["rev-list", "--reverse", ref], store, working_dir,
         )
@@ -1074,7 +1061,7 @@ class CheckpointManager:
         commits = list_out.splitlines()
         keep = commits[-self.max_snapshots:]
 
-        # Rebuild a linear chain off keep[0]'s tree.
+        # 基于 keep[0] 的树重建一条线性链。
         new_parent: Optional[str] = None
         for sha in keep:
             ok_tree, tree_sha, _ = _run_git(
@@ -1099,7 +1086,7 @@ class CheckpointManager:
             return
         _run_git(["update-ref", ref, new_parent], store, working_dir)
 
-        # Reclaim objects from the dropped commits.
+        # 回收被丢弃 commit 的对象。
         _run_git(
             ["reflog", "expire", "--expire=now", "--all"],
             store, working_dir,
@@ -1111,8 +1098,8 @@ class CheckpointManager:
         _repair_bare_repo_dirs(store)
 
     def _enforce_size_cap(self, store: Path) -> None:
-        """If total store size exceeds ``max_total_size_mb``, drop oldest
-        checkpoints across ALL projects until under the cap.
+        """当仓库总大小超过 ``max_total_size_mb`` 时，跨「所有」项目
+        丢弃最旧的检查点，直到低于上限。
         """
         if self.max_total_size_mb <= 0:
             return
@@ -1125,7 +1112,7 @@ class CheckpointManager:
             self.max_total_size_mb, size // (1024 * 1024),
         )
 
-        # Collect (commit_time, ref, sha) across all per-project refs.
+        # 跨所有项目级 ref 收集 (commit_time, ref, sha)。
         ok, stdout, _ = _run_git(
             ["for-each-ref", "--format=%(refname)", _REFS_PREFIX],
             store, str(store.parent),
@@ -1136,8 +1123,8 @@ class CheckpointManager:
         refs = [r for r in stdout.splitlines() if r.strip()]
 
         any_dropped = False
-        # Round-robin-drop oldest commit per ref until under cap.
-        for _ in range(20):  # hard upper bound to avoid pathological loops
+        # 轮流从每个 ref 丢弃最旧的 commit，直到低于上限。
+        for _ in range(20):  # 硬上限，避免病态循环
             size = _dir_size_bytes(store)
             if size <= cap_bytes:
                 break
@@ -1151,14 +1138,14 @@ class CheckpointManager:
                 except ValueError:
                     count = 0
                 if count <= 1:
-                    continue  # keep at least one snapshot per project
+                    continue  # 每个项目至少保留一个快照
                 ok_list, list_out, _ = _run_git(
                     ["rev-list", "--reverse", ref], store, str(store.parent),
                 )
                 if not ok_list or not list_out:
                     continue
                 commits = list_out.splitlines()
-                keep = commits[1:]  # drop oldest
+                keep = commits[1:]  # 丢弃最旧的
                 new_parent: Optional[str] = None
                 fail = False
                 for sha in keep:
@@ -1200,7 +1187,7 @@ class CheckpointManager:
 
 
 def format_checkpoint_list(checkpoints: List[Dict], directory: str) -> str:
-    """Format checkpoint list for display to user."""
+    """把检查点列表格式化为给用户展示的文本。"""
     if not checkpoints:
         return f"No checkpoints found for {directory}"
 
@@ -1229,18 +1216,17 @@ def format_checkpoint_list(checkpoints: List[Dict], directory: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Auto-maintenance
+# 自动维护
 # ---------------------------------------------------------------------------
 #
-# v2 rewrite.  The sweep now operates on per-project refs inside the shared
-# store rather than per-project shadow repos.  Legacy-archive dirs
-# (``legacy-<ts>/``) are swept with the same retention policy.
+# v2 重写。清理现在针对共享仓库内的项目级 ref 进行，而非针对各项目独立
+# 的影子仓库。旧版归档目录（``legacy-<ts>/``）也按相同的保留策略清理。
 
 _PRUNE_MARKER_NAME = ".last_prune"
 
 
 def _delete_ref(store: Path, ref: str) -> bool:
-    """Delete a ref from the store.  Returns True on success."""
+    """从仓库删除一个 ref。成功返回 True。"""
     ok, _, _ = _run_git(
         ["update-ref", "-d", ref], store, str(store.parent),
         allowed_returncodes={128},
@@ -1254,25 +1240,23 @@ def prune_checkpoints(
     checkpoint_base: Optional[Path] = None,
     max_total_size_mb: int = 0,
 ) -> Dict[str, int]:
-    """Delete stale/orphan checkpoints and reclaim store space.
+    """删除陈旧/孤儿的检查点，并回收仓库空间。
 
-    A project entry is deleted when either:
+    当满足以下任一条件时，删除某个项目条目：
 
-    * ``delete_orphans=True`` and its ``workdir`` no longer exists on disk
-      (the original project was deleted / moved); OR
-    * its ``last_touch`` is older than ``retention_days`` days.
+    * ``delete_orphans=True`` 且其 ``workdir`` 在磁盘上已不存在
+      （原项目被删除/移动）；或
+    * 其 ``last_touch`` 早于 ``retention_days`` 天。
 
-    Additionally, if ``max_total_size_mb > 0`` and the store exceeds that
-    after orphan/stale pruning, the oldest commit per remaining project is
-    dropped until the store is under the cap.
+    此外，若 ``max_total_size_mb > 0`` 且在孤儿/陈旧清理后仓库仍超出该
+    上限，会逐个剩余项目丢弃最旧的 commit，直到仓库低于上限。
 
-    Legacy-archive dirs (``legacy-*``) older than ``retention_days`` are
-    also deleted.
+    早于 ``retention_days`` 的旧版归档目录（``legacy-*``）也会被删除。
 
-    Returns a dict with counts ``{"scanned", "deleted_orphan",
-    "deleted_stale", "errors", "bytes_freed"}``.
+    返回一个计数字典：``{"scanned", "deleted_orphan",
+    "deleted_stale", "errors", "bytes_freed"}``。
 
-    Never raises — maintenance must never block interactive startup.
+    永不抛异常 —— 维护工作绝不能阻塞交互式启动。
     """
     base = checkpoint_base or CHECKPOINT_BASE
     result = {
@@ -1287,10 +1271,10 @@ def prune_checkpoints(
 
     size_before = _dir_size_bytes(base)
 
-    # --- Legacy pre-v2 per-project shadow repos (kept directly under base) ---
-    # Pre-v2 layout: ``base/<hash>/HEAD`` etc.  We treat these exactly as the
-    # v1 pruner did so behaviour is unchanged for anyone still on that layout
-    # or sitting on a mid-migration system.
+    # --- v2 之前、直接放在 base 下的各项目独立影子仓库 ---
+    # v2 之前的布局：``base/<hash>/HEAD`` 等。这里完全照搬 v1 清理器
+    # 的处理方式，使任何仍在该布局下、或正处于迁移中途的系统的行为
+    # 保持不变。
     cutoff = 0.0
     if retention_days > 0:
         cutoff = time.time() - retention_days * 86400
@@ -1301,7 +1285,7 @@ def prune_checkpoints(
         if child.name == _STORE_DIRNAME:
             continue
         if child.name.startswith(_LEGACY_PREFIX):
-            # Legacy archive: prune by dir mtime using same retention rule.
+            # 旧版归档：按目录 mtime 用同样的保留规则清理。
             if retention_days <= 0:
                 continue
             try:
@@ -1319,7 +1303,7 @@ def prune_checkpoints(
                 result["errors"] += 1
                 logger.warning("Failed to delete legacy archive %s: %s", child, exc)
             continue
-        # Only count as a pre-v2 shadow repo if it has a HEAD.
+        # 只有含 HEAD 的才算是 v2 之前的影子仓库。
         if not (child / "HEAD").exists():
             continue
         result["scanned"] += 1
@@ -1361,7 +1345,7 @@ def prune_checkpoints(
             result["errors"] += 1
             logger.warning("Failed to prune checkpoint repo %s: %s", child.name, exc)
 
-    # --- v2 shared store: per-project ref pruning via metadata ---
+    # --- v2 共享仓库：通过元数据对项目级 ref 做清理 ---
     store = _store_path(base)
     if (store / "HEAD").exists():
         for meta in _list_projects(store):
@@ -1381,7 +1365,7 @@ def prune_checkpoints(
                 continue
             ref = _ref_name(dir_hash)
             _delete_ref(store, ref)
-            # Drop per-project index and metadata.
+            # 删除项目级 index 和元数据。
             try:
                 idx = _index_path(store, dir_hash)
                 if idx.exists():
@@ -1399,7 +1383,7 @@ def prune_checkpoints(
             else:
                 result["deleted_stale"] += 1
 
-        # GC the store to reclaim unreachable objects from dropped refs.
+        # 对仓库做 GC，回收被丢弃 ref 留下的不可达对象。
         _run_git(
             ["reflog", "expire", "--expire=now", "--all"],
             store, str(base),
@@ -1410,7 +1394,7 @@ def prune_checkpoints(
         )
         _repair_bare_repo_dirs(store)
 
-        # Size-cap pass across remaining projects.
+        # 对剩余项目执行容量上限这一步。
         if max_total_size_mb > 0:
             cap_bytes = max_total_size_mb * 1024 * 1024
             for _i in range(20):
@@ -1496,13 +1480,13 @@ def maybe_auto_prune_checkpoints(
     checkpoint_base: Optional[Path] = None,
     max_total_size_mb: int = 0,
 ) -> Dict[str, object]:
-    """Idempotent wrapper around ``prune_checkpoints`` for startup hooks.
+    """为启动钩子准备的 ``prune_checkpoints`` 幂等封装。
 
-    Writes ``CHECKPOINT_BASE/.last_prune`` on completion so subsequent
-    calls within ``min_interval_hours`` short-circuit.
+    完成后会写入 ``CHECKPOINT_BASE/.last_prune``，使得在
+    ``min_interval_hours`` 内的后续调用直接短路跳过。
 
-    Returns ``{"skipped": bool, "result": prune_checkpoints-dict,
-    "error": optional str}``.
+    返回 ``{"skipped": bool, "result": prune_checkpoints 的字典,
+    "error": 可选字符串}``。
     """
     base = checkpoint_base or CHECKPOINT_BASE
     out: Dict[str, object] = {"skipped": False}
@@ -1524,7 +1508,7 @@ def maybe_auto_prune_checkpoints(
                     out["skipped"] = True
                     return out
             except (OSError, ValueError):
-                pass  # corrupt marker — treat as no prior run
+                pass  # 标记文件损坏 —— 视作从未运行过
 
         result = prune_checkpoints(
             retention_days=retention_days,
@@ -1557,11 +1541,11 @@ def maybe_auto_prune_checkpoints(
 
 
 # ---------------------------------------------------------------------------
-# Public helpers for `hermes checkpoints` CLI
+# 供 `hermes checkpoints` CLI 使用的公共辅助函数
 # ---------------------------------------------------------------------------
 
 def store_status(checkpoint_base: Optional[Path] = None) -> Dict:
-    """Return a summary of the shadow store.
+    """返回影子仓库的概览。
 
     ``{"base": path, "store_size_bytes": N, "legacy_size_bytes": N,
        "total_size_bytes": N, "project_count": N, "projects": [...],
@@ -1628,9 +1612,9 @@ def store_status(checkpoint_base: Optional[Path] = None) -> Dict:
 
 
 def clear_all(checkpoint_base: Optional[Path] = None) -> Dict[str, int]:
-    """Nuke the entire checkpoint base (store + legacy).  Irreversible.
+    """核平整个检查点 base（仓库 + legacy）。不可逆。
 
-    Returns ``{"bytes_freed": N, "deleted": bool}``.
+    返回 ``{"bytes_freed": N, "deleted": bool}``。
     """
     base = checkpoint_base or CHECKPOINT_BASE
     out = {"bytes_freed": 0, "deleted": False}
@@ -1647,9 +1631,9 @@ def clear_all(checkpoint_base: Optional[Path] = None) -> Dict[str, int]:
 
 
 def clear_legacy(checkpoint_base: Optional[Path] = None) -> Dict[str, int]:
-    """Delete all ``legacy-*`` archive directories.
+    """删除所有 ``legacy-*`` 归档目录。
 
-    Returns ``{"bytes_freed": N, "deleted": count}``.
+    返回 ``{"bytes_freed": N, "deleted": count}``。
     """
     base = checkpoint_base or CHECKPOINT_BASE
     out = {"bytes_freed": 0, "deleted": 0}

@@ -1,71 +1,60 @@
-"""SQLite-backed Kanban board for multi-profile, multi-project collaboration.
+"""基于 SQLite 的看板系统，支持多 profile、多项目协作。
 
-In a fresh install the board lives at ``<root>/kanban.db`` where
-``<root>`` is the **shared Hermes root** (the parent of any active
-profile). Profiles intentionally collapse onto a shared board: it IS
-the cross-profile coordination primitive. A worker spawned with
-``hermes -p <profile>`` joins the same board as the dispatcher that
-claimed the task. The same applies to ``<root>/kanban/workspaces/`` and
-``<root>/kanban/logs/``.
+全新安装时，看板位于 ``<root>/kanban.db``，其中 ``<root>`` 是 **共享的
+Hermes 根目录**（任何活动 profile 的父目录）。Profile 有意折叠到共享看板上：
+它就是跨 profile 协调的基础设施。使用 ``hermes -p <profile>`` 启动的 worker
+与认领该任务的 dispatcher 加入同一个看板。``<root>/kanban/workspaces/`` 和
+``<root>/kanban/logs/`` 同理。
 
-**Multiple boards (projects):** users can create additional boards to
-separate unrelated streams of work (e.g. one per project / repo / domain).
-Each board is a directory under ``<root>/kanban/boards/<slug>/`` with
-its own ``kanban.db``, ``workspaces/``, and ``logs/``. All boards share
-the profile's Hermes home but are otherwise isolated: a worker spawned
-for a task on board ``atm10-server`` sees only that board's tasks,
-cannot enumerate other boards, and its dispatcher ticks don't touch
-other boards' DBs.
+**多看板（项目）：** 用户可以创建额外的看板来分离不相关的工作流（例如每个项目/
+仓库/域一个看板）。每个看板是 ``<root>/kanban/boards/<slug>/`` 下的一个目录，
+包含自己的 ``kanban.db``、``workspaces/`` 和 ``logs/``。所有看板共享 profile
+的 Hermes home，但其他方面完全隔离：在 ``atm10-server`` 看板上为任务启动的
+worker 只能看到该看板的任务，无法枚举其他看板，其 dispatcher tick 也不会触及
+其他看板的数据库。
 
-The first (and for single-project users, only) board is ``default``.
-For back-compat its on-disk DB is ``<root>/kanban.db`` (not
-``boards/default/kanban.db``), so installs that predate the boards
-feature keep working with zero migration. See :func:`kanban_db_path`.
+第一个（也是单项目用户唯一的）看板是 ``default``。为了向后兼容，其磁盘上的数据库
+位于 ``<root>/kanban.db``（而非 ``boards/default/kanban.db``），因此早于看板功能
+的安装可以零迁移继续工作。参见 :func:`kanban_db_path`。
 
-Board resolution order (highest precedence first, all optional):
+看板解析顺序（优先级从高到低，均可选）：
 
-* ``board=`` argument passed directly to :func:`connect` / :func:`init_db`
-  (explicit — used by the CLI ``--board`` flag and the dashboard
-  ``?board=...`` query param).
-* ``HERMES_KANBAN_BOARD`` env var (used by the dispatcher to pin workers
-  to the board their task lives on — workers cannot see other boards).
-* ``HERMES_KANBAN_DB`` env var (pins the DB file path directly — legacy
-  override still honoured; highest precedence when the file path itself
-  is what the caller wants to force).
-* ``<root>/kanban/current`` — a one-line text file holding the slug of
-  the "currently selected" board. Written by ``hermes kanban boards
-  switch <slug>``. When absent, the active board is ``default``.
+* 直接传递给 :func:`connect` / :func:`init_db` 的 ``board=`` 参数
+  （显式指定——CLI 的 ``--board`` 标志和 dashboard 的 ``?board=...``
+  查询参数使用）。
+* ``HERMES_KANBAN_BOARD`` 环境变量（dispatcher 使用，将 worker 固定到
+  其任务所在的看板——worker 无法看到其他看板）。
+* ``HERMES_KANBAN_DB`` 环境变量（直接固定数据库文件路径——旧版覆盖，
+  仍然支持；当调用者想要强制指定文件路径时优先级最高）。
+* ``<root>/kanban/current``——一个单行文本文件，包含"当前选中"看板的
+  slug。由 ``hermes kanban boards switch <slug>`` 写入。缺失时，活动
+  看板为 ``default``。
 
-In standard installs ``<root>`` is ``~/.hermes``. In Docker / custom
-deployments where ``HERMES_HOME`` points outside ``~/.hermes`` (e.g.
-``/opt/hermes``), ``<root>`` is ``HERMES_HOME``. Legacy env-var
-overrides still work:
+在标准安装中，``<root>`` 是 ``~/.hermes``。在 Docker/自定义部署中，
+``HERMES_HOME`` 指向 ``~/.hermes`` 之外（例如 ``/opt/hermes``），``<root>``
+是 ``HERMES_HOME``。旧版环境变量覆盖仍然有效：
 
-* ``HERMES_KANBAN_DB`` — pin the database file path directly.
-* ``HERMES_KANBAN_WORKSPACES_ROOT`` — pin the workspaces root directly.
-* ``HERMES_KANBAN_HOME`` — pin the umbrella root that anchors kanban
-  paths. Useful for tests and unusual deployments.
+* ``HERMES_KANBAN_DB``——直接固定数据库文件路径。
+* ``HERMES_KANBAN_WORKSPACES_ROOT``——直接固定工作区根目录。
+* ``HERMES_KANBAN_HOME``——固定锚定看板路径的伞形根目录。对测试和
+  不寻常的部署很有用。
 
-The dispatcher injects ``HERMES_KANBAN_DB``,
-``HERMES_KANBAN_WORKSPACES_ROOT``, and ``HERMES_KANBAN_BOARD`` into
-worker subprocess env so workers converge on the exact DB the
-dispatcher used to claim their task — even under unusual symlink or
-Docker layouts.
+Dispatcher 将 ``HERMES_KANBAN_DB``、``HERMES_KANBAN_WORKSPACES_ROOT``
+和 ``HERMES_KANBAN_BOARD`` 注入 worker 子进程环境，使 worker 汇聚到
+dispatcher 用于认领其任务的确切数据库——即使在异常的符号链接或 Docker
+布局下也是如此。
 
-Schema is intentionally small: tasks, task_links, task_comments,
-task_events.  The ``workspace_kind`` field decouples coordination from git
-worktrees so that research / ops / digital-twin workloads work alongside
-coding workloads.  See ``docs/hermes-kanban-v1-spec.pdf`` for the full
-design specification.
+Schema 有意保持精简：tasks、task_links、task_comments、task_events。
+``workspace_kind`` 字段将协调与 git worktree 解耦，使研究/运维/数字孪生
+工作负载与编码工作负载并排工作。完整的设计规范参见
+``docs/hermes-kanban-v1-spec.pdf``。
 
-Concurrency strategy: WAL mode + ``BEGIN IMMEDIATE`` for write
-transactions + compare-and-swap (CAS) updates on ``tasks.status`` and
-``tasks.claim_lock``.  SQLite serializes writers via its WAL lock, so at
-most one claimer can win any given task.  Losers observe zero affected
-rows and move on -- no retry loops, no distributed-lock machinery.
-The CAS coordination is **per-board** — each board is a separate DB,
-so multi-board installs get the same atomicity guarantees without any
-new locking.
+并发策略：WAL 模式 + 写事务使用 ``BEGIN IMMEDIATE`` + 对 ``tasks.status``
+和 ``tasks.claim_lock`` 使用 CAS（compare-and-swap）更新。SQLite 通过其
+WAL 锁序列化写入者，因此最多只有一个认领者可以赢得任何给定的任务。失败者
+观察到零受影响行并继续——没有重试循环，没有分布式锁机制。CAS 协调是
+**每看板** 的——每个看板是独立的数据库，因此多看板安装获得相同的原子性
+保证，无需任何新的锁。
 """
 
 from __future__ import annotations
@@ -94,7 +83,7 @@ _log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 VALID_STATUSES = {"triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done", "archived"}
@@ -105,17 +94,15 @@ _IS_WINDOWS = sys.platform == "win32"
 
 
 def _fire_kanban_lifecycle_hook(event: str, task_id: str, **fields: Any) -> None:
-    """Fire a kanban lifecycle plugin hook, fully best-effort.
+    """触发一个看板生命周期插件钩子，完全尽力而为。
 
-    Called by the claim/complete/block transitions AFTER their write txn has
-    committed, so plugin code never runs while a SQLite write lock is held and
-    always observes durable board state. Any failure (plugins unavailable,
-    a plugin raising, import error) is swallowed — a misbehaving observer must
-    never break a board state transition.
+    由 claim/complete/block 转换在其写事务提交后调用，因此插件代码永远不会
+    在持有 SQLite 写锁时运行，并且始终观察到持久的看板状态。任何失败（插件
+    不可用、插件抛出异常、导入错误）都会被吞掉——行为异常的观察者绝不能破坏
+    看板状态转换。
 
-    ``profile_name`` is resolved from the active HERMES_HOME so dispatcher- and
-    worker-side hooks both carry the right profile without the caller plumbing
-    it through.
+    ``profile_name`` 从活动的 HERMES_HOME 解析，因此 dispatcher 侧和 worker
+    侧的钩子都携带正确的 profile，而无需调用者手动传递。
     """
     try:
         from hermes_cli.plugins import invoke_hook
@@ -129,42 +116,36 @@ def _fire_kanban_lifecycle_hook(event: str, task_id: str, **fields: Any) -> None
         _log.debug("kanban lifecycle hook %s failed: %s", event, exc)
 
 
-# A running task's claim is valid for 15 minutes by default; after that the
-# next dispatcher tick reclaims it. Workers that outlive this window should
-# call ``heartbeat_claim(task_id)`` periodically. In practice most kanban
-# workloads either finish within 15m, set a longer claim explicitly, or use
-# ``HERMES_KANBAN_CLAIM_TTL_SECONDS`` to raise the default claim window for
-# long single-call MCP workflows.
+# 运行中的任务的认领默认有效期为 15 分钟；超过此时间后，下一个 dispatcher
+# tick 将重新认领它。超过此窗口的 worker 应定期调用
+# ``heartbeat_claim(task_id)``。实际上，大多数看板工作负载要么在 15 分钟内
+# 完成，要么显式设置更长的认领时间，要么使用 ``HERMES_KANBAN_CLAIM_TTL_SECONDS``
+# 为长时间单次调用的 MCP 工作流提高默认认领窗口。
 DEFAULT_CLAIM_TTL_SECONDS = 15 * 60
 
-# If a worker's PID is still alive but its ``last_heartbeat_at`` is
-# older than this when ``release_stale_claims`` runs, treat the worker
-# as wedged and reclaim regardless of PID liveness (#29747 gap 3).
-# This catches the logic-loop case where the process is technically
-# running but not making observable progress.  ``_touch_activity``
-# bridges chunk-level liveness into ``last_heartbeat_at`` via #31752,
-# so any genuinely active worker keeps its heartbeat fresh as a side
-# effect of normal API traffic.
+# 如果 worker 的 PID 仍然存活，但在 ``release_stale_claims`` 运行时其
+# ``last_heartbeat_at`` 已超过此时间，则将 worker 视为卡住并重新认领，
+# 而不管 PID 是否存活（#29747 gap 3）。这捕获了逻辑循环情况，即进程在技术上
+# 正在运行但没有取得可观察的进展。``_touch_activity`` 通过 #31752 将块级
+# 活跃度桥接到 ``last_heartbeat_at``，因此任何真正活跃的 worker 都会作为
+# 正常 API 流量的副作用保持其心跳新鲜。
 DEFAULT_CLAIM_HEARTBEAT_MAX_STALE_SECONDS = 60 * 60
 
-# Grace added to a claim when a reclaim is deferred because the previous
-# host-local worker is still alive after a termination attempt. Releasing the
-# claim in that state would spawn a duplicate alongside the surviving worker —
-# the runaway seen when a cgroup memory.high throttle parks a worker in
-# uninterruptible (D) state, where a pending SIGKILL cannot be delivered until
-# the throttle lifts. Holding the claim a short grace and retrying next tick
-# stops the duplication; once no duplicate is spawned the pressure eases, the
-# signal lands, and the following tick reclaims cleanly.
+# 当重新认领被推迟时添加到认领的宽限期，因为先前的主机本地 worker 在终止
+# 尝试后仍然存活。在这种状态下释放认领将在幸存 worker 旁边产生重复——
+# 当 cgroup memory.high 节流将 worker 停放在不可中断 (D) 状态时看到的失控
+# 情况，在节流解除之前无法传递待处理的 SIGKILL。保持认领短暂的宽限期并在
+# 下一个 tick 重试可以阻止重复；一旦没有产生重复，压力就会缓解，信号就会
+# 落地，下一个 tick 就会干净地重新认领。
 RECLAIM_DEFER_GRACE_SECONDS = 120
 
 
 def _resolve_claim_ttl_seconds(ttl_seconds: Optional[int] = None) -> int:
-    """Return the effective claim TTL, honoring the kanban env override.
+    """返回有效的认领 TTL，尊重看板环境覆盖。
 
-    Explicit call-site values win. Otherwise a positive integer from
-    ``HERMES_KANBAN_CLAIM_TTL_SECONDS`` overrides the built-in default.
-    Invalid or non-positive env values fall back silently so existing
-    installs keep working.
+    显式的调用点值优先。否则，来自 ``HERMES_KANBAN_CLAIM_TTL_SECONDS`` 的
+    正整数覆盖内置默认值。无效或非正的环境值会静默回退，以便现有安装
+    继续工作。
     """
     if ttl_seconds is not None:
         return max(1, int(ttl_seconds))
@@ -181,33 +162,28 @@ def _resolve_claim_ttl_seconds(ttl_seconds: Optional[int] = None) -> int:
     return DEFAULT_CLAIM_TTL_SECONDS
 
 
-# Grace period after a task transitions to ``running`` during which
-# ``detect_crashed_workers`` skips the ``_pid_alive`` check. Covers the
-# fork() → /proc-visibility window where liveness can transiently report
-# False for a freshly-spawned worker. The 15-minute claim TTL still
-# catches genuinely-crashed workers; this only suppresses false positives
-# during the launch window.
+# 任务转换到 ``running`` 后的宽限期，在此期间 ``detect_crashed_workers``
+# 跳过 ``_pid_alive`` 检查。覆盖 fork() → /proc 可见性窗口，其中活跃度可能
+# 对刚启动的 worker 瞬时报错为 False。15 分钟的认领 TTL 仍然可以捕获真正
+# 崩溃的 worker；这只是抑制启动窗口期间的误报。
 DEFAULT_CRASH_GRACE_SECONDS = 30
 
 
-# Sentinel exit code a kanban worker uses to signal "I bailed because the
-# provider rate-limited / exhausted quota, not because the task failed."
-# The dispatcher's reap classifier maps this to a ``rate_limited`` exit kind
-# so ``detect_crashed_workers`` can release the task back to ``ready``
-# WITHOUT counting a failure (the circuit breaker must never trip on a
-# transient throttle). 75 == BSD ``EX_TEMPFAIL`` (sysexits.h) — the
-# conventional "temporary failure, retry later" code, and well clear of the
-# 0/1/2 codes the worker uses for success / generic failure / usage error.
+# 看板 worker 用来发送信号"我退出是因为 provider 限流/配额耗尽，而不是因为
+# 任务失败"的哨兵退出码。Dispatcher 的收割分类器将此映射到 ``rate_limited``
+# 退出类型，因此 ``detect_crashed_workers`` 可以将任务释放回 ``ready`` 而
+# 不计为失败（断路器绝不能因瞬时限流而触发）。75 == BSD ``EX_TEMPFAIL``
+# （sysexits.h）——传统的"临时失败，稍后重试"代码，并且与 worker 用于
+# 成功/一般失败/用法错误的 0/1/2 代码完全区分开。
 KANBAN_RATE_LIMIT_EXIT_CODE = 75
 
 
 def _resolve_crash_grace_seconds() -> int:
-    """Return the crash-detection grace period in seconds.
+    """返回崩溃检测宽限期（秒）。
 
-    Reads ``HERMES_KANBAN_CRASH_GRACE_SECONDS`` from the environment;
-    falls back to ``DEFAULT_CRASH_GRACE_SECONDS`` when absent, empty,
-    non-integer, or negative. A value of 0 restores immediate-reclaim
-    behaviour (useful for tests).
+    从环境读取 ``HERMES_KANBAN_CRASH_GRACE_SECONDS``；缺失、空、非整数或
+    负数时回退到 ``DEFAULT_CRASH_GRACE_SECONDS``。值为 0 恢复即时重新认领
+    行为（对测试有用）。
     """
     raw = os.environ.get("HERMES_KANBAN_CRASH_GRACE_SECONDS", "").strip()
     if raw:
@@ -221,13 +197,12 @@ def _resolve_crash_grace_seconds() -> int:
 
 
 def _resolve_rate_limit_cooldown_seconds() -> int:
-    """Return the rate-limit requeue cooldown in seconds.
+    """返回限流重入队列冷却时间（秒）。
 
-    Reads ``HERMES_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS`` from the environment;
-    falls back to ``DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS`` when absent, empty,
-    non-integer, or negative. A value of 0 disables the cooldown (re-spawn on
-    the next tick) — useful for tests that want to assert the task becomes
-    spawnable again immediately.
+    从环境读取 ``HERMES_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS``；缺失、空、
+    非整数或负数时回退到 ``DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS``。值为 0
+    禁用冷却（在下一个 tick 重新启动）——对想要断言任务可以立即重新启动的
+    测试有用。
     """
     raw = os.environ.get(
         "HERMES_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS", ""
@@ -242,20 +217,19 @@ def _resolve_rate_limit_cooldown_seconds() -> int:
     return DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS
 
 
-# Worker-context caps so build_worker_context() stays bounded on
-# pathological boards (retry-heavy tasks, comment storms, giant
-# summaries). Values chosen to fit a typical 100k-char LLM prompt with
-# plenty of headroom. Each constant is tuned independently so users
-# who need to relax one don't have to relax all of them.
-_CTX_MAX_PRIOR_ATTEMPTS = 10      # most recent N prior runs shown in full
-_CTX_MAX_COMMENTS       = 30      # most recent N comments shown in full
-_CTX_MAX_FIELD_BYTES    = 4 * 1024   # 4 KB per summary/error/metadata/result
-_CTX_MAX_BODY_BYTES     = 8 * 1024   # 8 KB per task.body (opening post)
-_CTX_MAX_COMMENT_BYTES  = 2 * 1024   # 2 KB per comment
+# Worker 上下文上限，以便 build_worker_context() 在病态看板上保持有界
+# （重试繁重的任务、评论风暴、巨大的摘要）。选择的值可以适应典型的
+# 100k 字符 LLM 提示，并留有足够的余量。每个常量独立调整，因此需要
+# 放宽一个的用户不必放宽所有常量。
+_CTX_MAX_PRIOR_ATTEMPTS = 10      # 完整显示最近 N 次先前的运行
+_CTX_MAX_COMMENTS       = 30      # 完整显示最近 N 条评论
+_CTX_MAX_FIELD_BYTES    = 4 * 1024   # 每个摘要/错误/元数据/结果 4 KB
+_CTX_MAX_BODY_BYTES     = 8 * 1024   # 每个 task.body（开头帖子）8 KB
+_CTX_MAX_COMMENT_BYTES  = 2 * 1024   # 每条评论 2 KB
 
 
 # ---------------------------------------------------------------------------
-# Paths
+# 路径
 # ---------------------------------------------------------------------------
 
 DEFAULT_BOARD = "default"
@@ -267,23 +241,22 @@ _CURRENT_BOARD_OVERRIDE: ContextVar[str | None] = ContextVar(
 
 @contextlib.contextmanager
 def scoped_current_board(slug: str):
-    """Temporarily pin the active board for the current context only."""
+    """仅为当前上下文临时固定活动看板。"""
     token: Token[str | None] = _CURRENT_BOARD_OVERRIDE.set(slug)
     try:
         yield
     finally:
         _CURRENT_BOARD_OVERRIDE.reset(token)
 
-# Slug validator: lowercase alphanumerics, digits, hyphens; 1–64 chars.
-# Strict enough to stop traversal (`..`) and embedded path separators, loose
-# enough that kebab-case names like ``atm10-server`` or ``hermes-agent``
-# pass without fuss. Board names with display formatting (spaces, emoji)
-# live in ``board.json``; the slug is just the directory name.
+# Slug 验证器：小写字母数字、数字、连字符；1-64 个字符。足够严格以阻止
+# 遍历（``..``）和嵌入路径分隔符，足够宽松以使 kebab-case 名称如
+# ``atm10-server`` 或 ``hermes-agent`` 能够顺利通过。具有显示格式
+# （空格、emoji）的看板名称存在于 ``board.json`` 中；slug 只是目录名。
 _BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-_]{0,63}$")
 
 
 def _normalize_board_slug(slug: Optional[str]) -> Optional[str]:
-    """Lowercase + strip a slug; validate; return ``None`` for empty."""
+    """小写 + 去除 slug 的空白；验证；空值返回 ``None``。"""
     if slug is None:
         return None
     s = str(slug).strip().lower()
@@ -298,20 +271,19 @@ def _normalize_board_slug(slug: Optional[str]) -> Optional[str]:
 
 
 def kanban_home() -> Path:
-    """Return the shared Hermes root that anchors the kanban board.
+    """返回锚定看板的共享 Hermes 根目录。
 
-    Resolution order:
+    解析顺序：
 
-    1. ``HERMES_KANBAN_HOME`` env var when set and non-empty (explicit
-       override for tests and unusual deployments).
-    2. ``get_default_hermes_root()``, which already returns ``<root>``
-       when ``HERMES_HOME`` is ``<root>/profiles/<name>``, and returns
-       ``HERMES_HOME`` directly for Docker / custom deployments.
+    1. ``HERMES_KANBAN_HOME`` 环境变量（如果设置且非空）（测试和不寻常
+       部署的显式覆盖）。
+    2. ``get_default_hermes_root()``，当 ``HERMES_HOME`` 是
+       ``<root>/profiles/<name>`` 时已经返回 ``<root>``，对于 Docker/
+       自定义部署直接返回 ``HERMES_HOME``。
 
-    The kanban board is shared across profiles **by design** (see the
-    module docstring). Resolving the kanban paths through the active
-    profile's ``HERMES_HOME`` would silently fork the board per profile,
-    which breaks the dispatcher / worker handoff.
+    看板在 profile 之间共享是**设计如此**（参见模块文档字符串）。通过活动
+    profile 的 ``HERMES_HOME`` 解析看板路径会默默地按 profile 分叉看板，
+    这会破坏 dispatcher/worker 交接。
     """
     override = os.environ.get("HERMES_KANBAN_HOME", "").strip()
     if override:
@@ -321,40 +293,38 @@ def kanban_home() -> Path:
 
 
 def boards_root() -> Path:
-    """Return ``<root>/kanban/boards`` — the parent of non-default board dirs.
+    """返回 ``<root>/kanban/boards``——非默认看板目录的父目录。
 
-    ``default`` is intentionally NOT under this directory — its DB lives at
-    ``<root>/kanban.db`` for back-compat with pre-boards installs. This
-    function returns the directory where *additional* named boards live,
-    used by :func:`list_boards` to enumerate them.
+    ``default`` 有意**不**在此目录下——其数据库位于 ``<root>/kanban.db``
+    以与看板前的安装向后兼容。此函数返回*额外*命名看板所在的目录，
+    由 :func:`list_boards` 用于枚举它们。
     """
     return kanban_home() / "kanban" / "boards"
 
 
 def current_board_path() -> Path:
-    """Return the path to ``<root>/kanban/current``.
+    """返回 ``<root>/kanban/current`` 的路径。
 
-    One-line text file written by ``hermes kanban boards switch <slug>``
-    to persist the user's board selection across CLI invocations. Absent
-    by default (meaning: active board is ``default``).
+    由 ``hermes kanban boards switch <slug>`` 写入的单行文本文件，
+    用于在 CLI 调用之间持久化用户的看板选择。默认缺失（意味着：
+    活动看板为 ``default``）。
     """
     return kanban_home() / "kanban" / "current"
 
 
 def get_current_board() -> str:
-    """Return the active board slug, honouring the resolution chain.
+    """返回活动看板 slug，遵循解析链。
 
-    Order (highest precedence first):
+    顺序（优先级从高到低）：
 
-    1. ``HERMES_KANBAN_BOARD`` env var (set by the dispatcher on worker
-       spawn, or manually for ad-hoc overrides).
-    2. ``<root>/kanban/current`` on disk (set by ``hermes kanban boards
-       switch``), but only when that board still exists.
-    3. ``DEFAULT_BOARD`` (``"default"``).
+    1. ``HERMES_KANBAN_BOARD`` 环境变量（在 worker 启动时由 dispatcher
+       设置，或手动用于临时覆盖）。
+    2. 磁盘上的 ``<root>/kanban/current``（由 ``hermes kanban boards
+       switch`` 设置），但仅当该看板仍然存在时。
+    3. ``DEFAULT_BOARD``（``"default"``）。
 
-    A malformed or stale slug at any step falls through to the next layer
-    with a best-effort warning — the dispatcher must never crash because a
-    user hand-edited a file or removed a board directory.
+    任何步骤中格式错误或过期的 slug 都会尽最大努力警告并落到下一层——
+    dispatcher 绝不能因为用户手动编辑文件或移除看板目录而崩溃。
     """
     scoped = (_CURRENT_BOARD_OVERRIDE.get() or "").strip()
     if scoped:
@@ -390,12 +360,11 @@ def get_current_board() -> str:
 
 
 def set_current_board(slug: str) -> Path:
-    """Persist ``slug`` as the active board. Returns the file written.
+    """将 ``slug`` 持久化为活动看板。返回写入的文件。
 
-    Writes ``<root>/kanban/current``. The caller should validate the slug
-    exists first (via :func:`board_exists`) — this function does not —
-    so that ``hermes kanban boards switch <typo>`` returns an error
-    instead of silently pointing at nothing.
+    写入 ``<root>/kanban/current``。调用者应首先验证 slug 存在
+    （通过 :func:`board_exists`）——此函数不会——这样 ``hermes kanban
+    boards switch <typo>`` 会返回错误而不是静默指向无。
     """
     normed = _normalize_board_slug(slug)
     if not normed:
@@ -407,7 +376,7 @@ def set_current_board(slug: str) -> Path:
 
 
 def clear_current_board() -> None:
-    """Remove ``<root>/kanban/current`` so the active board reverts to ``default``."""
+    """移除 ``<root>/kanban/current`` 以便活动看板恢复为 ``default``。"""
     try:
         current_board_path().unlink()
     except FileNotFoundError:
@@ -415,25 +384,24 @@ def clear_current_board() -> None:
 
 
 def board_dir(board: Optional[str] = None) -> Path:
-    """Return the on-disk directory for ``board``.
+    """返回 ``board`` 的磁盘目录。
 
-    ``default`` is ``<root>/kanban/boards/default/`` **for metadata only**
-    (board.json + workspaces/ + logs/). Its DB file stays at
-    ``<root>/kanban.db`` for back-compat — see :func:`kanban_db_path`.
+    ``default`` 是 ``<root>/kanban/boards/default/`` **仅用于元数据**
+    （board.json + workspaces/ + logs/）。其数据库文件保持在
+    ``<root>/kanban.db`` 以向后兼容——参见 :func:`kanban_db_path`。
 
-    All other boards live at ``<root>/kanban/boards/<slug>/`` with
-    everything inside that directory including the ``kanban.db``.
+    所有其他看板位于 ``<root>/kanban/boards/<slug>/``，包括 ``kanban.db``
+    在内的所有内容都在该目录内。
     """
     slug = _normalize_board_slug(board) or DEFAULT_BOARD
     return boards_root() / slug
 
 
 def board_exists(board: Optional[str] = None) -> bool:
-    """Return True if the board has persisted metadata or a DB on disk.
+    """返回看板是否在磁盘上持久化了元数据或数据库。
 
-    ``default`` is considered to always exist — its DB is created
-    on first :func:`connect` and there's no way for it to be missing
-    in a configuration where the kanban feature is usable at all.
+    ``default`` 被认为始终存在——其数据库在首次 :func:`connect` 时
+    创建，在看板功能可用的任何配置中都不可能缺失。
     """
     slug = _normalize_board_slug(board) or DEFAULT_BOARD
     if slug == DEFAULT_BOARD:
@@ -443,18 +411,17 @@ def board_exists(board: Optional[str] = None) -> bool:
 
 
 def kanban_db_path(board: Optional[str] = None) -> Path:
-    """Return the path to the ``kanban.db`` for ``board``.
+    """返回 ``board`` 的 ``kanban.db`` 路径。
 
-    Resolution (highest precedence first):
+    解析（优先级从高到低）：
 
-    1. ``HERMES_KANBAN_DB`` env var — pins the path directly. Honoured for
-       back-compat and for the dispatcher→worker handoff (defense in
-       depth: dispatcher injects this into worker env so workers are
-       immune to any path-resolution disagreement).
-    2. When ``board`` arg is None, the active board from
-       :func:`get_current_board` is used.
-    3. Board ``default`` → ``<root>/kanban.db`` (back-compat path).
-       Other boards → ``<root>/kanban/boards/<slug>/kanban.db``.
+    1. ``HERMES_KANBAN_DB`` 环境变量——直接固定路径。为向后兼容和
+       dispatcher→worker 交接而支持（纵深防御：dispatcher 将此注入
+       worker 环境，使 worker 不受任何路径解析分歧的影响）。
+    2. 当 ``board`` 参数为 None 时，使用 :func:`get_current_board`
+       的活动看板。
+    3. 看板 ``default`` → ``<root>/kanban.db``（向后兼容路径）。
+       其他看板 → ``<root>/kanban/boards/<slug>/kanban.db``。
     """
     override = os.environ.get("HERMES_KANBAN_DB", "").strip()
     if override:
@@ -468,15 +435,15 @@ def kanban_db_path(board: Optional[str] = None) -> Path:
 
 
 def workspaces_root(board: Optional[str] = None) -> Path:
-    """Return the directory under which ``scratch`` workspaces are created.
+    """返回创建 ``scratch`` 工作区的目录。
 
-    Anchored per-board so workspaces don't leak between projects.
-    ``HERMES_KANBAN_WORKSPACES_ROOT`` pins the path directly (highest
-    precedence) — the dispatcher injects this into worker env.
+    按看板锚定，以便工作区不会在项目之间泄漏。
+    ``HERMES_KANBAN_WORKSPACES_ROOT`` 直接固定路径（优先级最高）
+    ——dispatcher 将此注入 worker 环境。
 
-    ``default`` keeps the legacy path ``<root>/kanban/workspaces/`` so
-    that existing scratch workspaces from before the boards feature are
-    preserved. Other boards use ``<root>/kanban/boards/<slug>/workspaces/``.
+    ``default`` 保留旧路径 ``<root>/kanban/workspaces/``，以便在看板
+    功能之前存在的 scratch 工作区得以保留。其他看板使用
+    ``<root>/kanban/boards/<slug>/workspaces/``。
     """
     override = os.environ.get("HERMES_KANBAN_WORKSPACES_ROOT", "").strip()
     if override:
@@ -490,14 +457,14 @@ def workspaces_root(board: Optional[str] = None) -> Path:
 
 
 def attachments_root(board: Optional[str] = None) -> Path:
-    """Return the directory under which task file attachments are stored.
+    """返回存储任务文件附件的目录。
 
-    Mirrors :func:`worker_logs_dir` / :func:`workspaces_root`: anchored
-    per-board so attachments don't leak between projects. Each task gets
-    its own ``<root>/.../attachments/<task_id>/`` subdirectory.
+    镜像 :func:`worker_logs_dir` / :func:`workspaces_root`：按看板
+    锚定，以便附件不会在项目之间泄漏。每个任务都有自己的
+    ``<root>/.../attachments/<task_id>/`` 子目录。
 
-    ``HERMES_KANBAN_ATTACHMENTS_ROOT`` pins the path directly (highest
-    precedence) for tests and unusual deployments.
+    ``HERMES_KANBAN_ATTACHMENTS_ROOT`` 直接固定路径（优先级最高）
+    用于测试和不寻常的部署。
 
     ``default`` uses ``<root>/kanban/attachments/``; other boards use
     ``<root>/kanban/boards/<slug>/attachments/``.
@@ -530,7 +497,7 @@ def worker_logs_dir(board: Optional[str] = None) -> Path:
     ``default`` keeps the legacy path ``<root>/kanban/logs/``. Other
     boards use ``<root>/kanban/boards/<slug>/logs/``. Logs follow the
     board — makes ``hermes kanban log`` unambiguous even when multiple
-    boards have tasks with the same id.
+    看板可以有相同 id 的任务。
     """
     slug = _normalize_board_slug(board)
     if slug is None:
@@ -541,33 +508,31 @@ def worker_logs_dir(board: Optional[str] = None) -> Path:
 
 
 def board_metadata_path(board: Optional[str] = None) -> Path:
-    """Return the path to ``board.json`` for ``board``.
+    """返回 ``board`` 的 ``board.json`` 路径。
 
-    Stores display metadata (display name, description, icon, color,
-    created_at). The on-disk slug is the canonical identity; this file
-    is purely for presentation in the CLI / dashboard.
+    存储显示元数据（显示名称、描述、图标、颜色、created_at）。
+    磁盘上的 slug 是规范身份；此文件纯粹用于 CLI/dashboard 中的
+    展示。
     """
     slug = _normalize_board_slug(board) or DEFAULT_BOARD
     return board_dir(slug) / "board.json"
 
 
 def _default_board_display_name(slug: str) -> str:
-    """Turn a slug into a reasonable default display name.
+    """将 slug 转换为合理的默认显示名称。
 
-    ``atm10-server`` → ``Atm10 Server``. Users can override via
-    ``board.json`` but the default should look presentable in the
-    dashboard without any follow-up editing.
+    ``atm10-server`` → ``Atm10 Server``。用户可以通过 ``board.json``
+    覆盖，但默认值应该在 dashboard 中看起来体面，无需后续编辑。
     """
     return " ".join(part.capitalize() for part in slug.replace("_", "-").split("-") if part) or slug
 
 
 def read_board_metadata(board: Optional[str] = None) -> dict:
-    """Return ``board.json`` contents (or synthesized defaults).
+    """返回 ``board.json`` 内容（或合成的默认值）。
 
-    Never raises — a missing / malformed ``board.json`` falls back to a
-    synthesised entry so the dashboard always has something to render.
-    Includes the canonical ``slug`` and ``db_path`` so the caller
-    doesn't need to reconstruct them.
+    永不抛出——缺失/格式错误的 ``board.json`` 会回退到合成条目，
+    因此 dashboard 始终有内容可以渲染。包括规范的 ``slug`` 和
+    ``db_path``，以便调用者无需重建它们。
     """
     slug = _normalize_board_slug(board) or DEFAULT_BOARD
     meta: dict[str, Any] = {
@@ -585,8 +550,8 @@ def read_board_metadata(board: Optional[str] = None) -> dict:
         if p.exists():
             raw = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
-                # Never let the metadata file claim a different slug than
-                # its directory — trust the filesystem.
+                # 永远不要让元数据文件声称与其目录不同的 slug——
+                # 信任文件系统。
                 raw["slug"] = slug
                 meta.update(raw)
     except (OSError, json.JSONDecodeError):
@@ -605,15 +570,15 @@ def write_board_metadata(
     archived: Optional[bool] = None,
     default_workdir: Optional[str] = None,
 ) -> dict:
-    """Create / update ``board.json`` for ``board``.
+    """为 ``board`` 创建/更新 ``board.json``。
 
-    Preserves any existing fields not mentioned in the call. Sets
-    ``created_at`` on first write. Returns the resulting metadata dict.
+    保留调用中未提及的任何现有字段。首次写入时设置 ``created_at``。
+    返回结果元数据字典。
     """
     slug = _normalize_board_slug(board) or DEFAULT_BOARD
     meta = read_board_metadata(slug)
-    # Preserve existing DB-derived fields — they get re-computed each
-    # read but shouldn't be written into board.json.
+    # 保留现有的数据库派生字段——它们在每次读取时重新计算，
+    # 但不应写入 board.json。
     meta.pop("db_path", None)
     if name is not None:
         meta["name"] = str(name).strip() or _default_board_display_name(slug)
@@ -648,11 +613,11 @@ def create_board(
     color: Optional[str] = None,
     default_workdir: Optional[str] = None,
 ) -> dict:
-    """Create a new board directory + DB + metadata. Idempotent.
+    """创建新看板目录 + 数据库 + 元数据。幂等。
 
-    Returns the resulting metadata. Raises :class:`ValueError` for a
-    malformed slug; returns the existing metadata (not an error) if the
-    board already exists — matching ``mkdir -p`` semantics.
+    返回结果元数据。格式错误的 slug 会抛出 :class:`ValueError`；
+    如果看板已存在则返回现有元数据（不是错误）——匹配 ``mkdir -p``
+    语义。
     """
     normed = _normalize_board_slug(slug)
     if not normed:
@@ -665,7 +630,7 @@ def create_board(
         color=color,
         default_workdir=default_workdir,
     )
-    # Touch the DB so list_boards() sees it immediately.
+    # 触摸数据库以便 list_boards() 立即看到它。
     init_db(board=normed)
     return meta
 

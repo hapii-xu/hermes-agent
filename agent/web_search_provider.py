@@ -1,27 +1,26 @@
 """
-Web Search Provider ABC
+Web Search Provider ABC（抽象基类）
 =======================
 
-Defines the pluggable-backend interface for web search and content extraction.
-Providers register instances via ``PluginContext.register_web_search_provider()``;
-the active one (selected via ``web.search_backend`` / ``web.extract_backend`` /
-``web.backend`` in ``config.yaml``) services every ``web_search`` /
-``web_extract`` tool call.
+定义 Web 搜索和内容提取的可插拔后端接口。
+Provider 通过 ``PluginContext.register_web_search_provider()`` 注册实例；
+当前激活的 provider（通过 ``config.yaml`` 中的 ``web.search_backend`` /
+``web.extract_backend`` / ``web.backend`` 选择）负责处理所有 ``web_search`` /
+``web_extract`` 工具调用。
 
-Providers live in ``<repo>/plugins/web/<name>/`` (built-in, auto-loaded as
-``kind: backend``) or ``~/.hermes/plugins/web/<name>/`` (user, opt-in via
-``plugins.enabled``).
+Provider 位于 ``<repo>/plugins/web/<name>/``（内置，作为 ``kind: backend``
+自动加载）或 ``~/.hermes/plugins/web/<name>/``（用户级，通过
+``plugins.enabled`` 手动启用）。
 
-This ABC is the SINGLE plugin-facing surface for web providers — every
-provider in the tree (brave-free, ddgs, searxng, exa, parallel, tavily,
-firecrawl) implements it. The legacy in-tree ``tools.web_providers.base``
-ABCs were deleted in PR #25182 along with the per-vendor inline helpers
-in ``tools/web_tools.py``; the response-shape contract documented below
-is preserved bit-for-bit so the tool wrapper does not have to translate.
+此 ABC 是 Web provider 唯一的插件接口 — 目录树中的每个 provider
+（brave-free、ddgs、searxng、exa、parallel、tavily、firecrawl）
+都实现了它。旧版的树内 ``tools.web_providers.base`` ABC 以及
+``tools/web_tools.py`` 中每个供应商的内联辅助函数已在 PR #25182 中删除；
+下方记录的响应格式约定原封不动地保留，以便工具包装器无需进行转换。
 
-Response shape (preserved from the legacy contract):
+响应格式（保留自旧版约定）：
 
-Search results::
+搜索结果::
 
     {
         "success": True,
@@ -33,7 +32,7 @@ Search results::
         }
     }
 
-Extract results::
+内容提取结果::
 
     {
         "success": True,
@@ -44,7 +43,7 @@ Extract results::
         ]
     }
 
-On failure (either capability)::
+任一能力调用失败时::
 
     {"success": False, "error": str}
 """

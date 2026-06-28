@@ -20,27 +20,26 @@ import type { Msg, Usage } from '../types.js'
 const FACE_TICK_MS = 2500
 const HEART_COLORS = ['#ff5fa2', '#ff4d6d']
 
-// Keep verb segment width stable so status-bar content to the right doesn't
-// jitter when the ticker rotates between short/long verbs.
-export const VERB_PAD_LEN = VERBS.reduce((max, v) => Math.max(max, v.length), 0) + 1 // + ellipsis
+// 保持 verb 段宽度稳定，这样状态栏右侧内容在 ticker
+// 在短/长动词之间切换时不会抖动。
+export const VERB_PAD_LEN = VERBS.reduce((max, v) => Math.max(max, v.length), 0) + 1 // + 省略号
 export const padVerb = (verb: string) => `${verb}…`.padEnd(VERB_PAD_LEN, ' ')
 
-// Compact alternates for the `emoji` and `ascii` indicator styles.
-// Each entry is a fixed-width (display-width) glyph.
+// `emoji` 和 `ascii` 指示器样式的紧凑替代方案。
+// 每个条目是固定宽度（显示宽度）的字形。
 const EMOJI_FRAMES = ['⚕ ', '🌀', '🤔', '✨', '🍵', '🔮']
 const ASCII_FRAMES = ['|', '/', '-', '\\']
 
-// Faster tick for spinner-style indicators — they read as motion only
-// at frame rates closer to their authored interval.
+// 对 spinner 风格指示器使用更快的 tick — 它们只有在
+// 接近其原始间隔的帧率下才看起来像运动。
 const SPINNER_TICK_MS = 100
 
 interface IndicatorRender {
   frame: string
   intervalMs: number
-  // When false, FaceTicker hides the rotating verb and just shows the
-  // glyph + duration.  Lets `unicode` stay minimal while the other
-  // styles keep the verb-rotation flavour users associate with the
-  // running… status.
+  // 当为 false 时，FaceTicker 隐藏旋转的 verb，只显示
+  // 字形 + 持续时间。让 `unicode` 保持最小化，而其他样式
+  // 保留用户与 running… 状态关联的 verb 轮换风格。
   showVerb: boolean
 }
 
@@ -65,18 +64,18 @@ const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender =
     }
   }
 
-  // 'unicode' — braille spinner (fixed 1-col).  Authored interval is
-  // ~80ms; honour it but bound below at a safe minimum so React
-  // re-renders stay reasonable.  This style is for users who want
-  // the cleanest possible status, so no verb rotation either.
+  // 'unicode' — 盲文 spinner（固定 1 列）。原始间隔约
+  // 80ms；遵循它但限制在安全最小值以下，以保持
+  // React 重新渲染合理。此样式面向想要最干净状态
+  // 的用户，因此也没有 verb 轮换。
   const spinner = unicodeSpinners.braille
   const frame = spinner.frames[tick % spinner.frames.length] ?? '⠋'
 
   return { frame, intervalMs: Math.max(SPINNER_TICK_MS, spinner.interval), showVerb: false }
 }
 
-// `FACES` / `EMOJI_FRAMES` are static, so measure their widest glyph once at
-// module load instead of rescanning on every status render.
+// `FACES` / `EMOJI_FRAMES` 是静态的，因此在模块加载时测量一次
+// 最宽字形，而不是在每次状态渲染时重新扫描。
 const KAOMOJI_FRAME_WIDTH = FACES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 const EMOJI_FRAME_WIDTH = EMOJI_FRAMES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 
@@ -89,28 +88,28 @@ const indicatorFrameWidth = (style: IndicatorStyle): number => {
     return EMOJI_FRAME_WIDTH
   }
 
-  // 'ascii' and 'unicode' are single-column glyphs.
+  // 'ascii' 和 'unicode' 是单列字形。
   return 1
 }
 
-// Bounded width of the elapsed-time clock, derived from `fmtDuration` itself so
-// the reservation/budget stays consistent with what actually renders (it emits
-// a space between units, e.g. `59m 59s` / `99h 59m`). Durations beyond this
-// (100h+) are left to clip rather than reserving unbounded width.
+// 由 `fmtDuration` 本身推导的已过时间时钟的有界宽度，
+// 这样预留/预算与实际渲染的内容保持一致（它在单位之间
+// 发出空格，例如 `59m 59s` / `99h 59m`）。超过此范围
+// （100h+）的持续时间将直接裁剪，而不是预留无限宽度。
 export const MAX_DURATION_WIDTH = Math.max(
   stringWidth(fmtDuration(59 * 60_000 + 59_000)), // "59m 59s"
   stringWidth(fmtDuration(99 * 3_600_000 + 59 * 60_000)) // "99h 59m"
 )
 
-// Display width to reserve for the busy indicator so its verb + elapsed-time
-// tail can't shove the model off-screen on narrow terminals. Style-aware:
-// `unicode` is a bare 1-col braille spinner with no verb, while kaomoji/emoji/
-// ascii add a fixed-width verb; any style adds a bounded elapsed-time tail.
-// Mirrors FaceTicker's `frame + verbSegment + durationSegment` layout.
+// 为忙碌指示器预留的显示宽度，使其 verb + 已过时间尾部
+// 不会在窄终端上把 model 挤出屏幕。样式感知：
+// `unicode` 是裸 1 列盲文 spinner，无 verb；而 kaomoji/emoji/
+// ascii 添加固定宽度 verb；任何样式都添加有界的已过时间尾部。
+// 镜像 FaceTicker 的 `frame + verbSegment + durationSegment` 布局。
 export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean): number => {
   const { showVerb } = renderIndicator(style, 0)
   const verb = showVerb ? 1 + VERB_PAD_LEN : 0
-  // ` · ` plus the bounded clock (e.g. `59m 59s`).
+  // ` · ` 加上有界的时钟（例如 `59m 59s`）。
   const duration = hasDuration ? stringWidth(' · ') + MAX_DURATION_WIDTH : 0
 
   return indicatorFrameWidth(style) + verb + duration
@@ -121,17 +120,16 @@ function FaceTicker({ color, startedAt, style }: { color: string; startedAt?: nu
   const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * VERBS.length))
   const [now, setNow] = useState(() => Date.now())
 
-  // Pre-compute cadence + verb-visibility for the active style so an
-  // `/indicator` switch re-arms the interval (and skips the verb timer
-  // for verb-less styles like `unicode`) without leaving the previous
-  // timer dangling.
+  // 预计算活跃样式的节奏 + verb 可见性，这样 `/indicator`
+  // 切换时重新设置间隔（对于无 verb 样式如 `unicode` 跳过
+  // verb 计时器），而不会留下之前的计时器悬挂。
   const { intervalMs, showVerb } = renderIndicator(style, 0)
 
   useEffect(() => {
     const glyph = setInterval(() => setTick(n => n + 1), intervalMs)
     const clock = setInterval(() => setNow(Date.now()), 1000)
-    // Verb timer is gated on `showVerb` — `unicode` style hides the verb
-    // entirely, so cycling `verbTick` would be an avoidable re-render.
+    // Verb 计时器受 `showVerb` 门控 — `unicode` 样式完全隐藏 verb，
+    // 因此循环 `verbTick` 将是不必要的重新渲染。
     const verb = showVerb ? setInterval(() => setVerbTick(n => n + 1), FACE_TICK_MS) : null
 
     return () => {
@@ -147,10 +145,9 @@ function FaceTicker({ color, startedAt, style }: { color: string; startedAt?: nu
   const { frame } = renderIndicator(style, tick)
   const verb = VERBS[verbTick % VERBS.length] ?? ''
   const verbSegment = showVerb ? ` ${padVerb(verb)}` : ''
-  // Leading space keeps a gap between the frame and the duration when the
-  // verb segment is hidden (e.g. `unicode` spinner style).  When the verb
-  // IS shown, its trailing padding already provides the gap, so the extra
-  // space is harmless.
+  // 前导空格在 verb 段隐藏时在 frame 和 duration 之间保持间距
+  // （例如 `unicode` spinner 样式）。当 verb 显示时，其尾部
+  // 填充已经提供了间距，所以额外的空格无害。
   const durationSegment = startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''
 
   return (
@@ -186,9 +183,9 @@ function statusSessionCountLabel(count: number) {
   return `${count} ${count === 1 ? 'session' : 'sessions'}`
 }
 
-// Colour a credits notice by its level. The notice TEXT already carries its
-// own glyph (⚠ • ✕ ✓) from the Python policy — we only tint it here, never
-// prepend another glyph. `success` maps to the theme's green status colour.
+// 根据其级别为 credits 通知着色。通知文本已携带其自身的
+// 字形（⚠ • ✕ ✓）来自 Python 策略 — 我们只在这里着色，
+// 绝不添加额外字形。`success` 映射到主题的绿色状态颜色。
 function noticeColor(level: Notice['level'], t: Theme): string {
   if (level === 'error') {
     return t.color.error
@@ -202,7 +199,7 @@ function noticeColor(level: Notice['level'], t: Theme): string {
     return t.color.statusGood
   }
 
-  // 'info' / undefined — keep it readable but understated.
+  // 'info' / 未定义 — 保持可读但低调。
   return t.color.accent
 }
 
@@ -213,17 +210,17 @@ function ctxBar(pct: number | undefined, w = 10) {
   return '█'.repeat(filled) + '░'.repeat(w - filled)
 }
 
-// `minLeftContent` is the display width of the high-priority left segments
-// (status indicator + model + context). Reserving it makes the cwd/branch
-// segment on the right yield FIRST on narrow terminals, instead of squeezing
-// the loading indicator and model down to nothing.
+// `minLeftContent` 是高优先级左侧段的显示宽度
+// （状态指示器 + model + context）。预留它使得右侧的
+// cwd/branch 段在窄终端上首先让出空间，而不是将
+// 加载指示器和 model 压缩到没有空间。
 export function statusRuleWidths(cols: number, cwdLabel: string, minLeftContent = 0) {
   const width = Math.max(1, Math.floor(cols || 1))
   const desiredSeparatorWidth = width >= 24 ? 3 : 1
   const baseMinLeft = width >= 24 ? 8 : 1
-  // Never reserve more than the terminal width; never less than the historical
-  // floor. With the default `minLeftContent = 0` this is identical to the old
-  // behaviour, so callers that don't pass content are unaffected.
+  // 预留不超过终端宽度；不低于历史下限。
+  // 默认 `minLeftContent = 0` 时与旧行为完全相同，
+  // 因此不传入内容的调用方不受影响。
   const minLeftWidth = Math.min(width, Math.max(baseMinLeft, Math.floor(minLeftContent)))
   const maxRightWidth = Math.max(0, width - desiredSeparatorWidth - minLeftWidth)
 
@@ -238,11 +235,12 @@ export function statusRuleWidths(cols: number, cwdLabel: string, minLeftContent 
   return { leftWidth, rightWidth, separatorWidth }
 }
 
-// Progressive disclosure for the status rule's lower-priority tail segments.
-// As the terminal narrows we shed the least important pieces first (cost →
-// bg → voice → compressions → duration → context bar), and below the bar
-// breakpoint the context read-out collapses to a bare token count. Status and
-// model are never gated here — they're guaranteed room by `statusRuleWidths`.
+// 状态栏规则中较低优先级尾部段的渐进式显示。
+// 随着终端变窄，我们首先移除最不重要的部分
+// （cost → bg → voice → compressions → duration → context bar），
+// 在 bar 断点以下，上下文读出折叠为纯 token 计数。
+// Status 和 model 从不在此处限制 — 它们由
+// `statusRuleWidths` 保证有空间。
 export interface StatusBarSegments {
   bar: boolean
   bg: boolean
@@ -270,8 +268,8 @@ export function statusBarSegments(cols: number): StatusBarSegments {
 }
 
 function SpawnHud({ t }: { t: Theme }) {
-  // Tight HUD that only appears when the session is actually fanning out.
-  // Colour escalates to warn/error as depth or concurrency approaches the cap.
+  // 仅在 session 实际扇出时出现的紧凑 HUD。
+  // 当深度或并发接近上限时，颜色升级为 warn/error。
   const delegation = useStore($delegationState)
   const subagents = useTurnSelector(state => state.subagents)
 
@@ -287,11 +285,10 @@ function SpawnHud({ t }: { t: Theme }) {
   const depth = Math.max(0, totals.maxDepthFromHere)
   const active = totals.activeCount
 
-  // `max_concurrent_children` is a per-parent cap, not a global one.
-  // `activeCount` sums every running agent across the tree and would
-  // over-warn for multi-orchestrator runs.  The widest level of the tree
-  // is a closer proxy to "most concurrent spawns that could be hitting a
-  // single parent's slot budget".
+  // `max_concurrent_children` 是每父级上限，而非全局上限。
+  // `activeCount` 汇总树中所有运行中的 agent，对于
+  // 多编排器运行会过度警告。树最宽的层级更接近
+  // "可能命中单个父级槽位预算的最大并发 spawn 数"。
   const widestLevel = widthByDepth(tree).reduce((a, b) => Math.max(a, b), 0)
   const depthRatio = maxDepth ? depth / maxDepth : 0
   const concRatio = maxConc ? widestLevel / maxConc : 0
@@ -310,9 +307,9 @@ function SpawnHud({ t }: { t: Theme }) {
     pieces.push(`d${depthLabel}`)
 
     if (active > 0) {
-      // Label pairs the widest-level count (drives concRatio above) with
-      // the total active count for context.  `W/cap` triggers the warn,
-      // `+N` is everything else currently running across the tree.
+      // 标签将最宽层级计数（驱动上面的 concRatio）与
+      // 总活跃计数配对以提供上下文。`W/cap` 触发警告，
+      // `+N` 是树中当前运行的其他所有内容。
       const extra = Math.max(0, active - widestLevel)
       const widthLabel = maxConc ? `${widestLevel}/${maxConc}` : `${widestLevel}`
       const suffix = extra > 0 ? `+${extra}` : ''
@@ -344,8 +341,8 @@ function SessionDuration({ startedAt }: { startedAt: number }) {
 }
 
 function IdleSince({ endedAt }: { endedAt: number }) {
-  // Time since the last final agent response. Re-ticks every second like
-  // SessionDuration so the read-out stays live while the session idles.
+  // 自上次最终 agent 响应以来的时间。每秒重新 tick，
+  // 与 SessionDuration 一样，使读数在 session 空闲时保持实时更新。
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -430,8 +427,8 @@ export function StatusRule({
   const barColor = ctxBarColor(pct, t)
   const segs = statusBarSegments(cols)
 
-  // On narrow terminals the context read-out collapses to a bare token count
-  // (`12k tok`) and the visual fill bar is dropped entirely.
+  // 在窄终端上，上下文读出折叠为纯 token 计数
+  // （`12k tok`），可视填充条完全省略。
   const ctxLabel = usage.context_max
     ? segs.compactCtx
       ? `${fmtK(usage.context_used ?? 0)} tok`
@@ -443,23 +440,23 @@ export function StatusRule({
   const bar = !segs.compactCtx && usage.context_max ? ctxBar(pct) : ''
   const modelText = modelLabel(model, modelReasoningEffort, modelFast)
 
-  // A credits notice replaces the status/verb slot, but only when idle —
-  // while busy the FaceTicker always wins (R1 render priority). The notice
-  // text carries its own glyph; we only tint it (R1) and let it shrink (R3-M7).
+  // Credits 通知替换 status/verb 槽，但仅在空闲时 —
+  // 忙碌时 FaceTicker 始终获胜（R1 渲染优先级）。
+  // 通知文本携带其自身字形；我们只着色（R1）并让其收缩（R3-M7）。
   const showNotice = !busy && !!notice?.text
-  // The notice slot is shrinkable (flexShrink={1}, truncate-end), so reserve
-  // only a small bounded width for it in the essentials budget — enough that
-  // a short notice never gets crushed, but a long one ellipsizes instead of
-  // shoving `model │ ctx` off-screen (R3-M7). Cap at the notice's own width
-  // so short notices reserve exactly what they need.
+  // 通知槽是可收缩的（flexShrink={1}，truncate-end），
+  // 因此在 essentials 预算中仅为其预留较小的有界宽度 —
+  // 足以让短通知不被压碎，但长通知会省略号截断，
+  // 而不是将 `model │ ctx` 挤出屏幕（R3-M7）。
+  // 上限为通知自身宽度，因此短通知精确预留所需空间。
   const NOTICE_RESERVE_MAX = 24
   const noticeReserve = showNotice ? Math.min(stringWidth(notice!.text), NOTICE_RESERVE_MAX) : 0
 
-  // Width of the must-keep left segments (indicator + model + context). They
-  // are pinned (never shrink) and reserved so the cwd/branch on the right
-  // yields first. The busy face width depends on the active /indicator style
-  // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
-  // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
+  // 必须保留的左侧段的宽度（indicator + model + context）。
+  // 它们固定（永不收缩）并预留空间，使右侧的 cwd/branch 首先让出。
+  // 忙碌 face 宽度取决于当前 /indicator 样式
+  // （kaomoji 宽 + verb；unicode 是裸 1 列 spinner）。
+  // 当通知占据该槽时仅预留 `noticeReserve`（它会收缩/截断）。
   const slotWidth = busy
     ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
     : showNotice
@@ -475,11 +472,11 @@ export function StatusRule({
 
   const { leftWidth, rightWidth, separatorWidth } = statusRuleWidths(cols, cwdLabel, essentialWidth)
 
-  // Whole-segment progressive disclosure for the tail: a segment renders only
-  // if it fits in the space left after the pinned essentials, evaluated in
-  // descending priority order — bar, duration, compressions, voice, session
-  // count, bg, cost. Lower-priority segments drop first and nothing truncates
-  // mid-segment, so status/model/context are never crushed.
+  // 尾部整体段的渐进式显示：段仅在适合固定 essentials
+  // 之后剩余空间时渲染，按降优先级顺序评估 —
+  // bar、duration、compressions、voice、session count、bg、cost。
+  // 较低优先级段首先丢弃，没有任何段中间截断，
+  // 因此 status/model/context 永远不会被压缩。
   const SEP = stringWidth(' │ ')
   let tailBudget = Math.max(0, leftWidth - essentialWidth)
   const fits = (w: number) => {
@@ -495,10 +492,10 @@ export function StatusRule({
   const sessionCountText = liveSessionCount > 0 ? statusSessionCountLabel(liveSessionCount) : ''
   const compressions = typeof usage.compressions === 'number' ? usage.compressions : 0
   const costText = typeof usage.cost_usd === 'number' ? `$${usage.cost_usd.toFixed(4)}` : ''
-  // Dev-only readout (HERMES_DEV_CREDITS). The server omits the key entirely unless the
-  // flag is on, so this segment self-hides for normal users. micros→cents is allowed money
-  // math (display formatting) — never parseFloat a *_usd. Signed: a mid-session top-up that
-  // raises remaining nets a negative Δ (honest).
+  // 仅开发模式读数（HERMES_DEV_CREDITS）。服务器在该标志未开启时
+  // 完全省略此键，因此此段对普通用户自动隐藏。micros→cents
+  // 是合法金额格式（显示格式化）— 绝不 parseFloat *_usd。
+  // 有符号：session 中途充值若增加余额则产生负 Δ（诚实）。
   const devCreditsText =
     typeof usage.dev_credits_spent_micros === 'number'
       ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢`
@@ -506,9 +503,9 @@ export function StatusRule({
 
   const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${pct}%` : ''}`))
   const showDuration = segs.duration && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
-  // Idle clock — time since the last final agent response. Hidden while busy
-  // (the FaceTicker's elapsed tail covers the live turn) and before the first
-  // turn completes. Shares the duration breakpoint and width reservation.
+  // 空闲时钟 — 自上次最终 agent 响应以来的时间。
+  // 忙碌时隐藏（FaceTicker 的已过时间尾部覆盖活跃回合）
+  // 以及首个回合完成前。共享 duration 断点和宽度预留。
   const showIdle = segs.duration && !busy && lastTurnEndedAt != null && fits(SEP + stringWidth('✓ ') + MAX_DURATION_WIDTH)
   const showCompressions = segs.compressions && compressions > 0 && fits(SEP + stringWidth(`cmp ${compressions}`))
   const showVoice = segs.voice && !!voiceLabel && fits(SEP + stringWidth(voiceLabel))
@@ -517,8 +514,8 @@ export function StatusRule({
   const subagentCount = typeof usage.active_subagents === 'number' ? usage.active_subagents : 0
   const showSubagents = segs.subagents && subagentCount > 0 && fits(SEP + stringWidth(`⛓ ${subagentCount}`))
   const showCostSeg = segs.cost && showCost && !!costText && fits(SEP + stringWidth(costText))
-  // No segs flag / no showCost coupling — it's a server-gated dev readout, lowest priority,
-  // so it consumes tail budget LAST and drops first on a narrow terminal.
+  // 无 segs 标志 / 无 showCost 耦合 — 它是服务器门控的开发读数，
+  // 最低优先级，因此在窄终端上最后消耗尾部预算并最先丢弃。
   const showDevCredits = !!devCreditsText && fits(SEP + stringWidth(devCreditsText))
 
   const handleSessionCountClick = (event: { stopImmediatePropagation?: () => void }) => {
@@ -537,10 +534,10 @@ export function StatusRule({
   return (
     <Box height={1}>
       <Box flexDirection="row" flexShrink={1} overflow="hidden" width={leftWidth}>
-        {/* Leading pinned chrome: border + busy face / idle status. When a
-            notice occupies the slot the status text is dropped — the notice
-            renders as a separate shrinkable box below so a long notice
-            ellipsizes instead of crushing model │ ctx (R3-M7). */}
+        {/* 前导固定 chrome：边框 + 忙碌 face / 空闲状态。
+            当通知占据该槽时，status 文本被移除 —
+            通知作为单独的可收缩框在下方渲染，
+            使长通知省略号截断而不是压缩 model │ ctx（R3-M7）。 */}
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
           {busy ? (
@@ -551,9 +548,9 @@ export function StatusRule({
             </Text>
           )}
         </Box>
-        {/* Notice slot — the only shrinkable left element (R3-M7). Sits in a
-            flexShrink={1} box with truncate-end so it yields/ellipsizes
-            before the pinned model │ ctx box ever clips. */}
+        {/* 通知槽 — 唯一可收缩的左侧元素（R3-M7）。位于
+            flexShrink={1} 框中，使用 truncate-end，使其在
+            固定的 model │ ctx 框裁剪之前先让出/省略号截断。 */}
         {showNotice ? (
           <Box flexDirection="row" flexShrink={1} overflow="hidden">
             <Text color={noticeColor(notice!.level, t)} wrap="truncate-end">
@@ -561,7 +558,7 @@ export function StatusRule({
             </Text>
           </Box>
         ) : null}
-        {/* Pinned essentials — model + context never shrink, always visible. */}
+        {/* 固定 essentials — model + context 永不收缩，始终可见。 */}
         <Box flexDirection="row" flexShrink={0}>
           {DEV_CREDITS_MODE ? (
             <Text color={t.color.warn} wrap="truncate-end">
@@ -641,9 +638,9 @@ export function StatusRule({
             {devCreditsText}
           </Text>
         ) : null}
-        {/* SpawnHud isn't part of the tail budget (its width is dynamic), so it
-            renders last — any overflow truncates the HUD itself rather than the
-            budgeted segments before it. It self-hides when no delegation runs. */}
+        {/* SpawnHud 不属于尾部预算（其宽度是动态的），因此最后
+            渲染 — 任何溢出截断 HUD 本身而不是其前面的预算段。
+            没有 delegation 运行时自动隐藏。 */}
         <SpawnHud t={t} />
       </Box>
 

@@ -1,16 +1,15 @@
 """
-QQBot scan-to-configure (QR code onboard) module.
+QQBot 扫码配置（二维码入驻引导）模块。
 
-Mirrors the Feishu onboarding pattern: synchronous HTTP + a single public
-entry-point ``qr_register()`` that handles the full flow (create task →
-display QR code → poll → decrypt credentials).
+复刻飞书入驻引导模式：同步 HTTP + 单一公开入口 ``qr_register()``，
+该函数处理完整流程（创建任务 → 展示二维码 → 轮询 → 解密凭据）。
 
-Calls the ``q.qq.com`` ``create_bind_task`` / ``poll_bind_result`` APIs to
-generate a QR-code URL and poll for scan completion.  On success the caller
-receives the bot's *app_id*, *client_secret* (decrypted locally), and the
-scanner's *user_openid* — enough to fully configure the QQBot gateway.
+调用 ``q.qq.com`` 的 ``create_bind_task`` / ``poll_bind_result`` API，
+生成二维码 URL 并轮询扫码完成状态。成功后调用方将收到 bot 的
+*app_id*、（本地解密的）*client_secret* 以及扫码者的 *user_openid*，
+足以完整配置 QQBot 网关。
 
-Reference: https://bot.q.qq.com/wiki/develop/api-v2/
+参考文档：https://bot.q.qq.com/wiki/develop/api-v2/
 """
 
 from __future__ import annotations
@@ -36,12 +35,12 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Bind status
+# 绑定状态
 # ---------------------------------------------------------------------------
 
 
 class BindStatus(IntEnum):
-    """Status codes returned by ``_poll_bind_result``."""
+    """``_poll_bind_result`` 返回的状态码。"""
 
     NONE = 0
     PENDING = 1
@@ -50,7 +49,7 @@ class BindStatus(IntEnum):
 
 
 # ---------------------------------------------------------------------------
-# QR rendering
+# 二维码渲染
 # ---------------------------------------------------------------------------
 
 try:
@@ -60,7 +59,7 @@ except (ImportError, TypeError):
 
 
 def _render_qr(url: str) -> bool:
-    """Try to render a QR code in the terminal. Returns True if successful."""
+    """尝试在终端渲染二维码。成功返回 True。"""
     if _qrcode_mod is None:
         return False
     try:
@@ -77,15 +76,15 @@ def _render_qr(url: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Synchronous HTTP helpers (mirrors Feishu _post_registration pattern)
+# 同步 HTTP 辅助函数（复刻飞书 _post_registration 模式）
 # ---------------------------------------------------------------------------
 
 
 def _create_bind_task(timeout: float = ONBOARD_API_TIMEOUT) -> Tuple[str, str]:
-    """Create a bind task and return *(task_id, aes_key_base64)*.
+    """创建绑定任务并返回 *(task_id, aes_key_base64)*。
 
     Raises:
-        RuntimeError: If the API returns a non-zero ``retcode``.
+        RuntimeError: 若 API 返回非零 ``retcode``。
     """
     import httpx
 
@@ -112,13 +111,13 @@ def _poll_bind_result(
     task_id: str,
     timeout: float = ONBOARD_API_TIMEOUT,
 ) -> Tuple[BindStatus, str, str, str]:
-    """Poll the bind result for *task_id*.
+    """轮询 *task_id* 对应的绑定结果。
 
     Returns:
-        A 4-tuple of ``(status, bot_appid, bot_encrypt_secret, user_openid)``.
+        4 元组 ``(status, bot_appid, bot_encrypt_secret, user_openid)``。
 
     Raises:
-        RuntimeError: If the API returns a non-zero ``retcode``.
+        RuntimeError: 若 API 返回非零 ``retcode``。
     """
     import httpx
 
@@ -142,31 +141,31 @@ def _poll_bind_result(
 
 
 def build_connect_url(task_id: str) -> str:
-    """Build the QR-code target URL for a given *task_id*."""
+    """为给定的 *task_id* 构建二维码目标 URL。"""
     return QR_URL_TEMPLATE.format(task_id=quote(task_id))
 
 
 # ---------------------------------------------------------------------------
-# Public entry-point
+# 公开入口点
 # ---------------------------------------------------------------------------
 
 _MAX_REFRESHES = 3
 
 
 def qr_register(timeout_seconds: int = 600) -> Optional[dict]:
-    """Run the QQBot scan-to-configure QR registration flow.
+    """执行 QQBot 扫码配置二维码注册流程。
 
-    Mirrors ``feishu.qr_register()``: handles create → display → poll →
-    decrypt in one call.  Unexpected errors propagate to the caller.
+    复刻 ``feishu.qr_register()``：在单次调用中依次处理创建 → 展示 →
+    轮询 → 解密。意外错误会向上层调用方传播。
 
     :returns:
-        ``{"app_id": ..., "client_secret": ..., "user_openid": ...}`` on
-        success, or ``None`` on failure / expiry / cancellation.
+        成功时返回 ``{"app_id": ..., "client_secret": ..., "user_openid": ...}``，
+        失败、过期或取消时返回 ``None``。
     """
     deadline = time.monotonic() + timeout_seconds
 
     for refresh_count in range(_MAX_REFRESHES + 1):
-        # ── Create bind task ──
+        # ── 创建绑定任务 ──
         try:
             task_id, aes_key = _create_bind_task()
         except Exception as exc:
@@ -175,16 +174,16 @@ def qr_register(timeout_seconds: int = 600) -> Optional[dict]:
 
         url = build_connect_url(task_id)
 
-        # ── Display QR code + URL ──
+        # ── 展示二维码与 URL ──
         print()
         if _render_qr(url):
-            print(f"  Scan the QR code above, or open this URL directly:\n  {url}")
+            print(f"  请扫描上方二维码，或直接打开以下链接：\n  {url}")
         else:
-            print(f"  Open this URL in QQ on your phone:\n  {url}")
-            print("  Tip: pip install qrcode  to display a scannable QR code here")
+            print(f"  请在手机 QQ 中打开以下链接：\n  {url}")
+            print("  提示：执行 pip install qrcode 可在此处显示可扫描的二维码")
         print()
 
-        # ── Poll loop ──
+        # ── 轮询循环 ──
         while time.monotonic() < deadline:
             try:
                 status, app_id, encrypted_secret, user_openid = _poll_bind_result(task_id)
@@ -195,9 +194,9 @@ def qr_register(timeout_seconds: int = 600) -> Optional[dict]:
             if status == BindStatus.COMPLETED:
                 client_secret = decrypt_secret(encrypted_secret, aes_key)
                 print()
-                print(f"  QR scan complete! (App ID: {app_id})")
+                print(f"  二维码扫描完成！（App ID：{app_id}）")
                 if user_openid:
-                    print(f"  Scanner's OpenID: {user_openid}")
+                    print(f"  扫码者 OpenID：{user_openid}")
                 return {
                     "app_id": app_id,
                     "client_secret": client_secret,
@@ -208,12 +207,12 @@ def qr_register(timeout_seconds: int = 600) -> Optional[dict]:
                 if refresh_count >= _MAX_REFRESHES:
                     logger.warning("[QQBot onboard] QR code expired %d times — giving up", _MAX_REFRESHES)
                     return None
-                print(f"\n  QR code expired, refreshing... ({refresh_count + 1}/{_MAX_REFRESHES})")
-                break  # next for-loop iteration creates a new task
+                print(f"\n  二维码已过期，正在刷新…（{refresh_count + 1}/{_MAX_REFRESHES}）")
+                break  # 进入下一次 for 循环迭代，创建新任务
 
             time.sleep(ONBOARD_POLL_INTERVAL)
         else:
-            # deadline reached without completing
+            # 已到截止时间但仍未完成
             logger.warning("[QQBot onboard] Poll timed out after %ds", timeout_seconds)
             return None
 

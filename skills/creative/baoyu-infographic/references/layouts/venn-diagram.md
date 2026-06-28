@@ -1,41 +1,41 @@
 # venn-diagram
 
-Overlapping circles showing relationships, commonalities, and differences.
+相互重叠的圆形，展示关系、共同点和差异。
 
-## Structure
+## 结构
 
-- 2-3 overlapping circles
-- Each circle is a category/concept
-- Overlaps show shared elements
-- Center shows common to all
-- Unique areas for exclusives
+- 2-3 个相互重叠的圆形
+- 每个圆代表一个类别/概念
+- 重叠部分表示共享元素
+- 中心表示所有集合的交集
+- 非重叠区为各自独有
 
-## Best For
+## 最适用于
 
-- Concept relationships
-- Skill overlaps
-- Market segments
-- Comparative analysis
-- Finding common ground
+- 概念关系
+- 技能重叠
+- 市场细分
+- 对比分析
+- 寻找共同点
 
-## Visual Elements
+## 视觉元素
 
-- Translucent circle fills
-- Clear overlap regions
-- Distinct colors per circle
-- Icons in regions
-- Boundary labels
+- 半透明的圆形填充
+- 清晰的重叠区域
+- 每个圆颜色区分
+- 各区域内配图标
+- 边界标签
 
-## Text Placement
+## 文字排布
 
-- Title at top
-- Circle labels outside or on edge
-- Items in appropriate regions
-- Overlap region labels
-- Legend if needed
+- 标题置于顶部
+- 圆形标签置于外侧或边缘
+- 各区域放入对应条目
+- 重叠区配标签
+- 需要时配图例
 
-## Recommended Pairings
+## 推荐搭配
 
-- `cartoon-hand-drawn`: Friendly concept overlaps
-- `corporate-memphis`: Business segment analysis
-- `pop-art`: High-contrast comparisons
+- `cartoon-hand-drawn`：友好型概念重叠
+- `corporate-memphis`：商业细分分析
+- `pop-art`：高对比对比图

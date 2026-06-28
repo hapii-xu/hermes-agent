@@ -1,13 +1,11 @@
-"""Audit log for dashboard-auth events.
+"""Dashboard auth 事件的审计日志。
 
-Profile-aware location: ``$HERMES_HOME/logs/dashboard-auth.log``.
-Format: one JSON object per line. Token-like fields are stripped before
-serialisation to avoid leaking refresh tokens or JWTs to disk.
+支持 Profile 感知路径：``$HERMES_HOME/logs/dashboard-auth.log``。
+格式：每行一个 JSON 对象。类似 token 的字段在序列化前会被清除，
+以避免将 refresh token 或 JWT 泄露到磁盘。
 
-This module deliberately keeps a minimal dependency surface — no imports
-from ``hermes_constants`` or other hermes_cli modules — so it can be
-imported safely from middleware code that loads early in the startup
-sequence.
+本模块有意保持最小的依赖面——不从 ``hermes_constants`` 或其他
+hermes_cli 模块导入——以便可以在启动序列中早期加载的中间件代码中安全导入。
 """
 from __future__ import annotations
 
@@ -23,8 +21,7 @@ from typing import Any
 _log = logging.getLogger(__name__)
 _write_lock = threading.Lock()
 
-# Field names that must never appear in the log raw. Any kwarg matching
-# these is silently dropped.
+# 不允许在日志中原始出现的字段名。任何匹配这些名称的 kwarg 都会被静默丢弃。
 _REDACTED_FIELDS: frozenset = frozenset({
     "access_token", "refresh_token", "code", "code_verifier",
     "state", "ticket", "cookie", "Authorization", "authorization",
@@ -32,9 +29,9 @@ _REDACTED_FIELDS: frozenset = frozenset({
 
 
 class AuditEvent(enum.Enum):
-    """Event types written to dashboard-auth.log.
+    """写入 dashboard-auth.log 的事件类型。
 
-    Values are the literal ``event`` field on the JSON line.
+    值是 JSON 行中 ``event`` 字段的字面值。
     """
 
     LOGIN_START = "login_start"
@@ -50,22 +47,22 @@ class AuditEvent(enum.Enum):
 
 
 def _resolve_log_path() -> Path:
-    """``$HERMES_HOME/logs/dashboard-auth.log`` with the standard fallback.
+    """``$HERMES_HOME/logs/dashboard-auth.log``，带标准回退。
 
-    Mirrors ``hermes_constants.get_hermes_home`` semantics: env var wins,
-    else ``~/.hermes``. A local copy avoids an import cycle with the
-    middleware which lives below ``hermes_cli``.
+    镜像 ``hermes_constants.get_hermes_home`` 的语义：环境变量优先，
+    否则使用 ``~/.hermes``。本地副本避免了与位于 ``hermes_cli`` 下层
+    的中间件之间的导入循环。
     """
     home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
     return Path(home) / "logs" / "dashboard-auth.log"
 
 
 def audit_log(event: AuditEvent, **fields: Any) -> None:
-    """Append one event to the audit log.
+    """将一个事件追加到审计日志。
 
-    Token-like fields are dropped. Missing log directory is created.
-    Write failures are logged at WARNING but never raise — auth must not
-    fail because the audit logger broke.
+    类似 token 的字段会被丢弃。缺失的日志目录会被创建。
+    写入失败会以 WARNING 级别记录但不会抛出异常——认证不能因为
+    审计日志出错而失败。
     """
     safe_fields = {
         k: v for k, v in fields.items()

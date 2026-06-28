@@ -1,18 +1,18 @@
-# Troubleshooting
+# 故障排查
 
-## LaTeX Errors
+## LaTeX 错误
 
-**Missing raw string** (the #1 error):
+**漏写原始字符串**（头号错误）：
 ```python
-# WRONG: MathTex("\\frac{1}{2}")  -- \\f is form-feed
-# RIGHT: MathTex(r"\frac{1}{2}")
+# 错误：MathTex("\\frac{1}{2}")  -- \\f 是换页符
+# 正确：MathTex(r"\frac{1}{2}")
 ```
 
-**Unbalanced braces**: `MathTex(r"\frac{1}{2")` -- missing closing brace.
+**花括号不配对**：`MathTex(r"\frac{1}{2")` —— 缺少右花括号。
 
-**LaTeX not installed**: `which pdflatex` -- install texlive-full or mactex.
+**未安装 LaTeX**：`which pdflatex` —— 安装 texlive-full 或 mactex。
 
-**Missing package**: Add to preamble:
+**缺少宏包**：加入导言区：
 ```python
 tex_template = TexTemplate()
 tex_template.add_to_preamble(r"\usepackage{mathrsfs}")
@@ -21,115 +21,115 @@ MathTex(r"\mathscr{L}", tex_template=tex_template)
 
 ## VGroup TypeError
 
-**Error:** `TypeError: Only values of type VMobject can be added as submobjects of VGroup`
+**错误：** `TypeError: Only values of type VMobject can be added as submobjects of VGroup`
 
-**Cause:** `Text()` objects are `Mobject`, not `VMobject`. Mixing `Text` with shapes in a `VGroup` fails on Manim CE v0.20+.
+**原因：** `Text()` 对象是 `Mobject`，不是 `VMobject`。在 Manim CE v0.20+ 上，把 `Text` 与形状混在 `VGroup` 里会失败。
 
 ```python
-# WRONG: Text is not a VMobject
+# 错误：Text 不是 VMobject
 group = VGroup(circle, Text("Label"))
 
-# RIGHT: use Group for mixed types
+# 正确：混合类型用 Group
 group = Group(circle, Text("Label"))
 
-# RIGHT: VGroup is fine for shapes-only
+# 正确：全是形状时 VGroup 没问题
 shapes = VGroup(circle, square, arrow)
 
-# RIGHT: MathTex IS a VMobject — VGroup works
+# 正确：MathTex 是 VMobject —— VGroup 可用
 equations = VGroup(MathTex(r"a"), MathTex(r"b"))
 ```
 
-**Rule:** If the group contains any `Text()`, use `Group`. If it's all shapes or all `MathTex`, `VGroup` is fine.
+**规则：** 如果组里包含任何 `Text()`，用 `Group`。如果全是形状或全是 `MathTex`，`VGroup` 没问题。
 
-**FadeOut everything:** Always use `Group(*self.mobjects)`, not `VGroup(*self.mobjects)`:
+**FadeOut 所有东西：** 始终用 `Group(*self.mobjects)`，不要用 `VGroup(*self.mobjects)`：
 ```python
-self.play(FadeOut(Group(*self.mobjects)))  # safe for mixed types
+self.play(FadeOut(Group(*self.mobjects)))  # 对混合类型安全
 ```
 
-## Group save_state() / restore() Not Supported
+## Group 的 save_state() / restore() 不支持
 
-**Error:** `NotImplementedError: Please override in a child class.`
+**错误：** `NotImplementedError: Please override in a child class.`
 
-**Cause:** `Group.save_state()` and `Group.restore()` are not implemented in Manim CE v0.20+. Only `VGroup` and individual `Mobject` subclasses support save/restore.
+**原因：** `Group.save_state()` 和 `Group.restore()` 在 Manim CE v0.20+ 中没有实现。只有 `VGroup` 和单独的 `Mobject` 子类支持保存/恢复。
 
 ```python
-# WRONG: Group doesn't support save_state
+# 错误：Group 不支持 save_state
 group = Group(circle, Text("label"))
-group.save_state()  # NotImplementedError!
+group.save_state()  # NotImplementedError！
 
-# RIGHT: use FadeIn with shift/scale instead of save_state/restore
+# 正确：改用带 shift/scale 的 FadeIn，而不用 save_state/restore
 self.play(FadeIn(group, shift=UP * 0.3, scale=0.8))
 
-# RIGHT: or save/restore on individual VMobjects
+# 正确：或者在单独的 VMobject 上保存/恢复
 circle.save_state()
 self.play(circle.animate.shift(RIGHT))
 self.play(Restore(circle))
 ```
 
-## letter_spacing Is Not a Valid Parameter
+## letter_spacing 不是有效参数
 
-**Error:** `TypeError: Mobject.__init__() got an unexpected keyword argument 'letter_spacing'`
+**错误：** `TypeError: Mobject.__init__() got an unexpected keyword argument 'letter_spacing'`
 
-**Cause:** `Text()` does not accept `letter_spacing`. Manim uses Pango for text rendering and does not expose kerning controls on `Text()`.
+**原因：** `Text()` 不接受 `letter_spacing`。Manim 用 Pango 渲染文字，不在 `Text()` 上暴露字距控制。
 
 ```python
-# WRONG
+# 错误
 Text("HERMES", letter_spacing=6)
 
-# RIGHT: use MarkupText with Pango attributes for spacing control
+# 正确：用 MarkupText 配 Pango 属性来控制间距
 MarkupText('<span letter_spacing="6000">HERMES</span>', font_size=18)
-# Note: Pango letter_spacing is in 1/1024 of a point
+# 注意：Pango 的 letter_spacing 单位是 1/1024 个点
 ```
 
-## Animation Errors
+## 动画错误
 
-**Invisible animation** -- mobject never added:
+**看不见的动画** —— mobject 从未添加：
 ```python
-# WRONG: circle = Circle(); self.play(circle.animate.set_color(RED))
-# RIGHT: self.play(Create(circle)); self.play(circle.animate.set_color(RED))
+# 错误：circle = Circle(); self.play(circle.animate.set_color(RED))
+# 正确：self.play(Create(circle)); self.play(circle.animate.set_color(RED))
 ```
 
-**Transform confusion** -- after Transform(A, B), A is on screen, B is not. Use ReplacementTransform if you want B.
+**Transform 困惑** —— Transform(A, B) 之后，A 在屏幕上，B 不在。如果你想要 B，用 ReplacementTransform。
 
-**Duplicate animation** -- same mobject twice in one play():
+**重复动画** —— 同一个 mobject 在一次 play() 里出现两次：
 ```python
-# WRONG: self.play(c.animate.shift(RIGHT), c.animate.set_color(RED))
-# RIGHT: self.play(c.animate.shift(RIGHT).set_color(RED))
+# 错误：self.play(c.animate.shift(RIGHT), c.animate.set_color(RED))
+# 正确：self.play(c.animate.shift(RIGHT).set_color(RED))
 ```
 
-**Updater fights animation**:
+**更新器与动画打架**：
 ```python
 mob.suspend_updating()
 self.play(mob.animate.shift(RIGHT))
 mob.resume_updating()
 ```
 
-## Rendering Issues
+## 渲染问题
 
-**Blurry output**: Using -ql (480p). Switch to -qm/-qh for final.
+**输出模糊**：用了 -ql（480p）。出成品时改用 -qm/-qh。
 
-**Slow render**: Use -ql during development. Reduce Surface resolution. Shorter self.wait().
+**渲染慢**：开发时用 -ql。降低 Surface 分辨率。缩短 self.wait()。
 
-**Stale output**: `manim -ql --disable_caching script.py Scene`
+**输出陈旧**：`manim -ql --disable_caching script.py Scene`
 
-**ffmpeg concat fails**: All clips must match resolution/FPS/codec.
+**ffmpeg 拼接失败**：所有片段的分辨率/FPS/编码必须一致。
 
-## Common Mistakes
+## 常见误区
 
-**Text clips at edge**: `buff >= 0.5` for `.to_edge()`
+**文字在边缘被裁切**：`.to_edge()` 的 `buff >= 0.5`
 
-**Overlapping text**: Use `ReplacementTransform(old, new)`, not `Write(new)` on top.
+**文字重叠**：用 `ReplacementTransform(old, new)`，不要在上面 `Write(new)`。
 
-**Too crowded**: Max 5-6 elements visible. Split into scenes or use opacity layering.
+**太拥挤**：最多 5-6 个可见元素。拆成多个场景或用透明度分层。
 
-**No breathing room**: `self.wait(1.5)` minimum after reveals, `self.wait(2.0)` for key moments.
+**没有呼吸空间**：揭示之后最少 `self.wait(1.5)`，关键时刻 `self.wait(2.0)`。
 
-**Missing background color**: Set `self.camera.background_color = BG` in every scene.
+**漏设背景色**：每个场景都设 `self.camera.background_color = BG`。
 
-## Debugging Strategy
+## 调试策略
 
-1. Render a still: `manim -ql -s script.py Scene` -- instant layout check
-2. Isolate the broken scene -- render only that one
-3. Replace `self.play()` with `self.add()` to see final state instantly
-4. Print positions: `print(mob.get_center())`
-5. Clear cache: delete `media/` directory
+1. 渲染一张静帧：`manim -ql -s script.py Scene` —— 瞬间检查布局
+2. 隔离出问题的场景 —— 只渲染那一个
+3. 用 `self.add()` 替换 `self.play()` 以瞬间看到最终状态
+4. 打印位置：`print(mob.get_center())`
+5. 清缓存：删除 `media/` 目录

@@ -1,6 +1,6 @@
-# Rendering Reference
+# 渲染参考
 
-## Prerequisites
+## 前置条件
 
 ```bash
 manim --version       # Manim CE
@@ -8,34 +8,34 @@ pdflatex --version    # LaTeX
 ffmpeg -version       # ffmpeg
 ```
 
-## CLI Reference
+## CLI 参考
 
 ```bash
-manim -ql script.py Scene1 Scene2    # draft (480p 15fps)
-manim -qm script.py Scene1           # medium (720p 30fps)
-manim -qh script.py Scene1           # production (1080p 60fps)
-manim -ql --format=png -s script.py Scene1  # preview still (last frame)
-manim -ql --format=gif script.py Scene1     # GIF output
+manim -ql script.py Scene1 Scene2    # 草稿（480p 15fps）
+manim -qm script.py Scene1           # 中等（720p 30fps）
+manim -qh script.py Scene1           # 成品（1080p 60fps）
+manim -ql --format=png -s script.py Scene1  # 预览静帧（最后一帧）
+manim -ql --format=gif script.py Scene1     # GIF 输出
 ```
 
-## Quality Presets
+## 质量预设
 
-| Flag | Resolution | FPS | Use case |
+| 标志 | 分辨率 | FPS | 用途 |
 |------|-----------|-----|----------|
-| `-ql` | 854x480 | 15 | Draft iteration (layout, timing) |
-| `-qm` | 1280x720 | 30 | Preview (use for text-heavy scenes) |
-| `-qh` | 1920x1080 | 60 | Production |
+| `-ql` | 854x480 | 15 | 草稿迭代（布局、节奏） |
+| `-qm` | 1280x720 | 30 | 预览（文字密集场景用这个） |
+| `-qh` | 1920x1080 | 60 | 成品 |
 
-**Text rendering quality:** `-ql` (480p15) produces noticeably poor text kerning and readability. For scenes with significant text, preview stills at `-qm` to catch issues invisible at 480p. Use `-ql` only for testing layout and animation timing.
+**文字渲染质量：** `-ql`（480p15）的文字字距和可读性明显很差。对于有大量文字的场景，在 `-qm` 下预览静帧以发现 480p 下看不见的问题。`-ql` 仅用于测试布局和动画节奏。
 
-## Output Structure
+## 输出结构
 
 ```
 media/videos/script/480p15/Scene1_Intro.mp4
-media/images/script/Scene1_Intro.png  (from -s flag)
+media/images/script/Scene1_Intro.png  （来自 -s 标志）
 ```
 
-## Stitching with ffmpeg
+## 用 ffmpeg 拼接
 
 ```bash
 cat > concat.txt << 'EOF'
@@ -45,13 +45,13 @@ EOF
 ffmpeg -y -f concat -safe 0 -i concat.txt -c copy final.mp4
 ```
 
-## Add Voiceover
+## 添加配音
 
 ```bash
-# Mux narration
+# 混入旁白
 ffmpeg -y -i final.mp4 -i narration.mp3 -c:v copy -c:a aac -b:a 192k -shortest final_narrated.mp4
 
-# Concat per-scene audio first
+# 先把每个场景的音频拼接起来
 cat > audio_concat.txt << 'EOF'
 file 'audio/scene1.mp3'
 file 'audio/scene2.mp3'
@@ -59,7 +59,7 @@ EOF
 ffmpeg -y -f concat -safe 0 -i audio_concat.txt -c copy full_narration.mp3
 ```
 
-## Add Background Music
+## 添加背景音乐
 
 ```bash
 ffmpeg -y -i final.mp4 -i music.mp3 \
@@ -67,7 +67,7 @@ ffmpeg -y -i final.mp4 -i music.mp3 \
   -c:v copy final_with_music.mp4
 ```
 
-## GIF Export
+## GIF 导出
 
 ```bash
 ffmpeg -y -i scene.mp4 \
@@ -75,26 +75,26 @@ ffmpeg -y -i scene.mp4 \
   output.gif
 ```
 
-## Aspect Ratios
+## 宽高比
 
 ```bash
-manim -ql --resolution 1080,1920 script.py Scene  # 9:16 vertical
-manim -ql --resolution 1080,1080 script.py Scene  # 1:1 square
+manim -ql --resolution 1080,1920 script.py Scene  # 9:16 竖屏
+manim -ql --resolution 1080,1080 script.py Scene  # 1:1 正方形
 ```
 
-## Render Workflow
+## 渲染工作流
 
-1. Draft render all scenes at `-ql`
-2. Preview stills at key moments (`-s`)
-3. Fix and re-render only broken scenes
-4. Stitch with ffmpeg
-5. Review stitched output
-6. Production render at `-qh`
-7. Re-stitch + add audio
+1. 在 `-ql` 下草稿渲染所有场景
+2. 在关键时刻预览静帧（`-s`）
+3. 修复并只重新渲染出问题的场景
+4. 用 ffmpeg 拼接
+5. 审查拼接后的输出
+6. 在 `-qh` 下成品渲染
+7. 重新拼接 + 加音频
 
-## manim.cfg — Project Configuration
+## manim.cfg —— 项目配置
 
-Create `manim.cfg` in the project directory for per-project defaults:
+在项目目录下创建 `manim.cfg` 以设定项目级默认值：
 
 ```ini
 [CLI]
@@ -109,42 +109,42 @@ background_color = #0D1117
 tex_template_file = custom_template.tex
 ```
 
-This eliminates repetitive CLI flags and `self.camera.background_color` in every scene.
+这样就省去了在每个场景里重复写 CLI 标志和 `self.camera.background_color`。
 
-## Sections — Chapter Markers
+## Sections —— 章节标记
 
-Mark sections within a scene for organized output:
+在一个场景内标记章节，以便输出更有组织：
 
 ```python
 class LongVideo(Scene):
     def construct(self):
         self.next_section("Introduction")
-        # ... intro content ...
+        # ... 引言内容 ...
 
         self.next_section("Main Concept")
-        # ... main content ...
+        # ... 主要内容 ...
 
         self.next_section("Conclusion")
-        # ... closing ...
+        # ... 收尾 ...
 ```
 
-Render individual sections: `manim --save_sections script.py LongVideo`
-This outputs separate video files per section — useful for long videos where you want to re-render only one part.
+渲染单独的章节：`manim --save_sections script.py LongVideo`
+这会为每个章节输出单独的视频文件 —— 适用于长视频中只想重新渲染某一部分的情况。
 
-## manim-voiceover Plugin (Recommended for Narrated Videos)
+## manim-voiceover 插件（推荐用于带旁白的视频）
 
-The official `manim-voiceover` plugin integrates TTS directly into scene code, auto-syncing animation duration to voiceover length. This is significantly cleaner than the manual ffmpeg muxing approach above.
+官方的 `manim-voiceover` 插件把 TTS 直接集成进场景代码，自动把动画时长同步到配音长度。这比上面手动的 ffmpeg 混流方式干净得多。
 
-### Installation
+### 安装
 
 ```bash
 pip install "manim-voiceover[elevenlabs]"
-# Or for free/local TTS:
-pip install "manim-voiceover[gtts]"    # Google TTS (free, lower quality)
-pip install "manim-voiceover[azure]"   # Azure Cognitive Services
+# 或者用免费/本地 TTS：
+pip install "manim-voiceover[gtts]"    # Google TTS（免费，质量较低）
+pip install "manim-voiceover[azure]"   # Azure 认知服务
 ```
 
-### Usage
+### 用法
 
 ```python
 from manim import *
@@ -158,7 +158,7 @@ class NarratedScene(VoiceoverScene):
             model_id="eleven_multilingual_v2"
         ))
 
-        # Voiceover auto-controls scene duration
+        # 配音自动控制场景时长
         with self.voiceover(text="Here is a circle being drawn.") as tracker:
             self.play(Create(Circle()), run_time=tracker.duration)
 
@@ -166,15 +166,15 @@ class NarratedScene(VoiceoverScene):
             self.play(Transform(circle, Square()), run_time=tracker.duration)
 ```
 
-### Key Features
+### 关键特性
 
-- `tracker.duration` — total voiceover duration in seconds
-- `tracker.time_until_bookmark("mark1")` — sync specific animations to specific words
-- Auto-generates subtitle `.srt` files
-- Caches audio locally — re-renders don't re-generate TTS
-- Works with: ElevenLabs, Azure, Google TTS, pyttsx3 (offline), and custom services
+- `tracker.duration` —— 配音总时长（秒）
+- `tracker.time_until_bookmark("mark1")` —— 把特定动画同步到特定词
+- 自动生成字幕 `.srt` 文件
+- 在本地缓存音频 —— 重新渲染不会重新生成 TTS
+- 支持：ElevenLabs、Azure、Google TTS、pyttsx3（离线）以及自定义服务
 
-### Bookmarks for Precise Sync
+### 用书签做精确同步
 
 ```python
 with self.voiceover(text='This is a <bookmark mark="circle"/>circle.') as tracker:
@@ -182,4 +182,4 @@ with self.voiceover(text='This is a <bookmark mark="circle"/>circle.') as tracke
     self.play(Create(Circle()), run_time=tracker.time_until_bookmark("circle", limit=1))
 ```
 
-This is the recommended approach for any video with narration. The manual ffmpeg muxing workflow above is still useful for adding background music or post-production audio mixing.
+这是任何带旁白的视频推荐的做法。上面的手动 ffmpeg 混流工作流仍然适用于添加背景音乐或后期音频混音。

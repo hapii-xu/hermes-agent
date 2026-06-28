@@ -1,34 +1,31 @@
 """
-Security advisory checker for Hermes Agent.
+Hermes Agent 安全公告检查器。
 
-Detects known-compromised Python packages installed in the active venv
-(supply-chain attacks like the Mini Shai-Hulud worm of May 2026 that
-poisoned ``mistralai 2.4.6`` on PyPI) and surfaces remediation guidance to
-the user.
+检测活动虚拟环境中已安装的已知受损 Python 包
+（供应链攻击，例如 2026 年 5 月的 Mini Shai-Hulud 蠕虫
+在 PyPI 上污染了 ``mistralai 2.4.6``），并向用户展示修复指导。
 
-Design goals:
+设计目标：
 
-- **Cheap.** A single ``importlib.metadata.version()`` call per advisory
-  package. Safe to run on every CLI startup.
-- **Loud when it matters, silent otherwise.** If no compromised package is
-  installed, the user sees nothing.
-- **Acknowledgeable.** Once the user has read and acted on an advisory they
-  can dismiss it via ``hermes doctor --ack <id>``; the ack is persisted to
-  ``config.security.acked_advisories`` and survives restart.
-- **Extensible.** Adding a new advisory is one entry in ``ADVISORIES``;
-  adding a new compromised version is a one-line edit. No code changes
-  needed when the next worm hits.
+- **低成本。** 每个公告包只需一次 ``importlib.metadata.version()`` 调用。
+  可在每次 CLI 启动时安全运行。
+- **重要时高声提醒，否则静默。** 如果未安装受损包，用户不会看到任何内容。
+- **可确认。** 用户阅读并处理公告后，可通过
+  ``hermes doctor --ack <id>`` 关闭公告；确认信息会持久化到
+  ``config.security.acked_advisories`` 并在重启后保留。
+- **可扩展。** 添加新公告只需在 ``ADVISORIES`` 中添加一个条目；
+  添加新的受损版本只需修改一行。下一次蠕虫爆发时无需更改代码。
 
-The check is invoked from three places:
+检查从以下三个位置调用：
 
-1. ``hermes doctor`` (and ``hermes doctor --ack <id>``)
-2. CLI startup banner (one short line, then full guidance via
-   ``hermes doctor``)
-3. Gateway startup (logged to gateway.log; first interactive message gets
-   a one-line operator banner)
+1. ``hermes doctor``（和 ``hermes doctor --ack <id>``）
+2. CLI 启动横幅（一行简短提示，然后通过
+   ``hermes doctor`` 查看完整指导）
+3. Gateway 启动（记录到 gateway.log；首条交互消息会显示
+   一行运维横幅）
 
-This module is intentionally dependency-free beyond the stdlib so it can
-run in environments where the rest of Hermes failed to import.
+此模块有意保持无外部依赖（仅使用标准库），以便在
+ Hermes 其他部分导入失败的环境中也能运行。
 """
 
 from __future__ import annotations
@@ -44,42 +41,41 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Advisory catalog
+# 公告目录
 #
-# Each advisory is a community-facing security warning about one or more
-# specific package versions that are known to be compromised. To add a new
-# advisory:
+# 每个公告都是面向社区的安全警告，涉及一个或多个
+# 已知受损的特定包版本。添加新公告的步骤：
 #
-#   1. Append a new ``Advisory`` to ``ADVISORIES`` below
-#   2. Set ``compromised`` to a tuple of ``(pkg_name, frozenset_of_versions)``
-#      — version strings must match what ``importlib.metadata.version()``
-#      returns. Use an empty frozenset to flag *any installed version*
-#      (rare; only when the maintainer namespace itself is compromised).
-#   3. Write 2-4 short ``remediation`` lines a non-expert can copy/paste.
+#   1. 在下面的 ``ADVISORIES`` 中追加新的 ``Advisory``
+#   2. 将 ``compromised`` 设置为 ``(pkg_name, frozenset_of_versions)`` 的元组
+#      — 版本字符串必须与 ``importlib.metadata.version()``
+#      返回的内容匹配。使用空 frozenset 标记*任何已安装版本*
+#      （罕见；仅在维护者命名空间本身受损时使用）。
+#   3. 编写 2-4 行简短的 ``remediation`` 步骤，方便非专业用户复制粘贴。
 #
-# Do NOT remove old advisories. Once an advisory ships, leave it in place so
-# users running an older release with the compromised package still get
-# warned. Mark superseded ones via ``superseded_by`` if needed.
+# 不要删除旧公告。公告发布后，保留在原处，以便
+# 运行包含受损包的旧版本的用户仍能收到
+# 警告。如需要，通过 ``superseded_by`` 标记已取代的公告。
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class Advisory:
-    """One security advisory entry.
+    """单个安全公告条目。
 
-    Attributes:
-        id: stable identifier used for acks (e.g. ``shai-hulud-2026-05``).
-            Lowercase-hyphen, never reused.
-        title: one-line headline shown in banners.
-        summary: 1-3 sentence description of what was compromised and how.
-        url: reference URL (Socket advisory, GitHub advisory, PyPI page).
-        compromised: tuple of ``(package_name, frozenset_of_versions)``
-            pairs. Empty frozenset means "any version of this package is
-            considered suspect" — use sparingly.
-        remediation: ordered list of steps the user should take. First step
-            should be the uninstall command; subsequent steps the credential
-            audit / rotation guidance.
-        published: ISO date string for sort order.
+    属性：
+        id: 用于确认的稳定标识符（例如 ``shai-hulud-2026-05``）。
+            小写连字符格式，永不重复使用。
+        title: 横幅中显示的单行标题。
+        summary: 1-3 句描述，说明受损内容及其方式。
+        url: 参考 URL（Socket 公告、GitHub 公告、PyPI 页面）。
+        compromised: ``(package_name, frozenset_of_versions)`` 对的元组。
+            空 frozenset 表示"此包的任何版本均被视为可疑"
+            — 请谨慎使用。
+        remediation: 用户应执行的有序步骤列表。第一步
+            应为卸载命令；后续步骤为凭据
+            审计/轮换指导。
+        published: 用于排序的 ISO 日期字符串。
     """
 
     id: str
@@ -89,7 +85,7 @@ class Advisory:
     compromised: tuple[tuple[str, frozenset[str]], ...]
     remediation: tuple[str, ...]
     published: str = ""
-    severity: str = "high"  # low / medium / high / critical
+    severity: str = "high"  # low / medium / high / critical（低/中/高/严重）
 
 
 ADVISORIES: tuple[Advisory, ...] = (
@@ -130,13 +126,13 @@ ADVISORIES: tuple[Advisory, ...] = (
 
 
 # =============================================================================
-# Detection
+# 检测
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class AdvisoryHit:
-    """One package-version match against an advisory."""
+    """公告的一个包版本匹配项。"""
 
     advisory: Advisory
     package: str
@@ -144,22 +140,22 @@ class AdvisoryHit:
 
 
 def _installed_version(pkg_name: str) -> Optional[str]:
-    """Return the installed version of ``pkg_name``, or None if not installed.
+    """返回 ``pkg_name`` 的已安装版本，如果未安装则返回 None。
 
-    Uses ``importlib.metadata`` so we don't depend on pip being importable
-    inside the active venv (uv-created venvs may lack pip).
+    使用 ``importlib.metadata``，这样我们就不依赖于活动虚拟环境中
+    pip 的可导入性（uv 创建的虚拟环境可能缺少 pip）。
     """
     try:
         from importlib.metadata import PackageNotFoundError, version
-    except ImportError:  # py<3.8 — Hermes requires 3.10+ but defensive.
+    except ImportError:  # py<3.8 — Hermes 要求 3.10+，但这是防御性检查。
         return None
     try:
         return version(pkg_name)
     except PackageNotFoundError:
         return None
     except Exception:
-        # Some metadata corruption modes raise ValueError or OSError. Don't
-        # let advisory checking crash the CLI startup path.
+        # 某些元数据损坏模式会引发 ValueError 或 OSError。不要让
+        # 公告检查使 CLI 启动路径崩溃。
         logger.debug("importlib.metadata.version(%s) raised", pkg_name, exc_info=True)
         return None
 
@@ -167,11 +163,11 @@ def _installed_version(pkg_name: str) -> Optional[str]:
 def detect_compromised(
     advisories: Iterable[Advisory] = ADVISORIES,
 ) -> list[AdvisoryHit]:
-    """Scan installed packages and return all advisory hits.
+    """扫描已安装的包并返回所有公告匹配项。
 
-    A "hit" means an advisory's listed package is installed AND the version
-    is in the compromised set (or the compromised set is empty, meaning
-    *any* version is suspect).
+    "匹配"表示公告列出的包已安装，并且版本
+    在受损集合中（或者受损集合为空，表示
+    *任何*版本均可疑）。
     """
     hits: list[AdvisoryHit] = []
     for advisory in advisories:
@@ -189,22 +185,22 @@ def detect_compromised(
 
 
 # =============================================================================
-# Acknowledgement persistence
+# 确认持久化
 #
-# Acks live under ``security.acked_advisories`` in config.yaml as a list of
-# advisory IDs. The list is the only state — no per-host data, no
-# timestamps, no fingerprints. Users sharing a config.yaml across machines
-# (rare but possible) get the same dismissal everywhere, which is the
-# correct behavior for a global advisory.
+# 确认信息存储在 config.yaml 的 ``security.acked_advisories`` 下，
+# 作为公告 ID 的列表。该列表是唯一的状态 — 没有每台主机的数据、
+# 没有时间戳、没有指纹。跨机器共享 config.yaml 的用户
+# （罕见但可能）会在所有位置获得相同的关闭效果，
+# 这对于全局公告是正确的行为。
 # =============================================================================
 
 
 def get_acked_ids() -> set[str]:
-    """Return the set of advisory IDs the user has dismissed.
+    """返回用户已关闭的公告 ID 集合。
 
-    Returns an empty set if config can't be loaded (don't block startup
-    just because config is broken — the advisory will keep firing until
-    config is repaired, which is fine).
+    如果无法加载配置，则返回空集（不要因为
+    配置损坏而阻塞启动 — 公告会继续触发，直到
+    配置修复，这没问题）。
     """
     try:
         from hermes_cli.config import load_config
@@ -220,9 +216,9 @@ def get_acked_ids() -> set[str]:
 
 
 def ack_advisory(advisory_id: str) -> bool:
-    """Persist an ack for ``advisory_id``. Returns True on success.
+    """持久化 ``advisory_id`` 的确认。成功时返回 True。
 
-    Idempotent — acking an already-acked ID is a no-op.
+    幂等操作 — 确认已确认的 ID 是空操作。
     """
     advisory_id = advisory_id.strip()
     if not advisory_id:
@@ -249,7 +245,7 @@ def ack_advisory(advisory_id: str) -> bool:
 
 
 def filter_unacked(hits: list[AdvisoryHit]) -> list[AdvisoryHit]:
-    """Return only hits whose advisories the user has not dismissed."""
+    """仅返回用户尚未关闭的公告的匹配项。"""
     if not hits:
         return []
     acked = get_acked_ids()
@@ -257,7 +253,7 @@ def filter_unacked(hits: list[AdvisoryHit]) -> list[AdvisoryHit]:
 
 
 # =============================================================================
-# Rendering helpers
+# 渲染辅助函数
 # =============================================================================
 
 
@@ -270,10 +266,10 @@ def _term_supports_color() -> bool:
 
 
 def short_banner_lines(hits: list[AdvisoryHit]) -> list[str]:
-    """Return 1-3 short lines suitable for a startup banner.
+    """返回 1-3 行适合启动横幅的简短文本。
 
-    Caller is responsible for color/styling. Always names the worst hit
-    explicitly so the user knows what's wrong without running doctor.
+    调用方负责颜色/样式。始终明确命名最严重的匹配项，
+    以便用户无需运行 doctor 即可了解问题所在。
     """
     if not hits:
         return []
@@ -290,7 +286,7 @@ def short_banner_lines(hits: list[AdvisoryHit]) -> list[str]:
 
 
 def full_remediation_text(hit: AdvisoryHit) -> list[str]:
-    """Return a multi-line block describing the advisory + remediation."""
+    """返回描述公告 + 修复步骤的多行文本块。"""
     a = hit.advisory
     lines = [
         f"=== {a.title} ===",
@@ -308,15 +304,15 @@ def full_remediation_text(hit: AdvisoryHit) -> list[str]:
 
 
 # =============================================================================
-# Startup-banner gating
+# 启动横幅门控
 #
-# We do NOT want to hammer the user with the banner on every command. Once
-# they've seen it inside a 24h window we cache that fact in
-# ``~/.hermes/cache/advisory_banner_seen`` (a single line per advisory ID:
-# ``<id> <iso8601_timestamp>``).
+# 我们不希望在每个命令上都用横幅轰炸用户。一旦
+# 他们在 24 小时内看到过横幅，我们就将该事实缓存到
+# ``~/.hermes/cache/advisory_banner_seen``（每个公告 ID 一行：
+# ``<id> <iso8601_timestamp>``）。
 #
-# Acked advisories never re-banner. Cached-but-not-acked advisories
-# re-banner after 24h so the user doesn't fully forget.
+# 已确认的公告永远不会重新显示横幅。已缓存但未确认的公告
+# 会在 24 小时后重新显示横幅，这样用户不会完全忘记。
 # =============================================================================
 
 
@@ -373,10 +369,10 @@ def hits_due_for_banner(
     *,
     repeat_hours: int = _BANNER_REPEAT_HOURS,
 ) -> list[AdvisoryHit]:
-    """Return only hits whose banner is due (not acked, not recently shown).
+    """仅返回横幅到期（未确认、未最近显示）的匹配项。
 
-    Side effect: stamps the banner cache for any hit that's about to be
-    shown. Callers should subsequently render the result.
+    副作用：为即将显示的匹配项在横幅缓存中打时间戳。
+    调用方应随后渲染结果。
     """
     import time
 
@@ -399,15 +395,15 @@ def hits_due_for_banner(
 
 
 # =============================================================================
-# Public entry points used by doctor / CLI / gateway
+# doctor / CLI / gateway 使用的公共入口点
 # =============================================================================
 
 
 def render_doctor_section(hits: list[AdvisoryHit]) -> tuple[bool, list[str]]:
-    """Render the security-advisory section for ``hermes doctor``.
+    """为 ``hermes doctor`` 渲染安全公告部分。
 
-    Returns ``(has_problems, lines)``. Caller is responsible for printing
-    with whatever color scheme it uses.
+    返回 ``(has_problems, lines)``。调用方负责使用
+    其使用的任何颜色方案进行打印。
     """
     fresh = filter_unacked(hits)
     if not fresh:
@@ -422,10 +418,10 @@ def render_doctor_section(hits: list[AdvisoryHit]) -> tuple[bool, list[str]]:
 
 
 def startup_banner(hits: list[AdvisoryHit]) -> Optional[str]:
-    """Return a printable startup banner, or None if nothing is due.
+    """返回可打印的启动横幅，如果没有到期内容则返回 None。
 
-    Updates the banner cache as a side effect (so the next call within
-    24h returns None for the same hit).
+    副作用是更新横幅缓存（因此同一匹配项在
+    24 小时内的下一次调用会返回 None）。
     """
     due = hits_due_for_banner(hits)
     if not due:
@@ -439,7 +435,7 @@ def startup_banner(hits: list[AdvisoryHit]) -> Optional[str]:
 
 
 def gateway_log_message(hits: list[AdvisoryHit]) -> Optional[str]:
-    """Return a one-line log message for gateway operators, or None."""
+    """为 gateway 运维人员返回单行日志消息，或者返回 None。"""
     fresh = filter_unacked(hits)
     if not fresh:
         return None

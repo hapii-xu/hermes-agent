@@ -1,29 +1,27 @@
-"""Headless Google Meet bot — Playwright + live-caption scraping.
+"""无头 Google Meet bot — Playwright + 实时字幕抓取。
 
-Runs as a standalone subprocess spawned by ``process_manager.py``. Reads config
-from env vars, writes status + transcript to files under
-``$HERMES_HOME/workspace/meetings/<meeting-id>/``. The main hermes process
-reads those files via the ``meet_*`` tools — no IPC beyond filesystem.
+作为由 ``process_manager.py`` 启动的独立子进程运行。从环境变量
+读取配置，将状态 + 转录内容写入
+``$HERMES_HOME/workspace/meetings/<meeting-id>/`` 下的文件。主 hermes 进程
+通过 ``meet_*`` 工具读取这些文件 — 除文件系统外无 IPC。
 
-The scraping strategy mirrors OpenUtter (sumansid/openutter): we don't parse
-WebRTC audio, we enable Google Meet's built-in live captions and observe the
-captions container in the DOM via a MutationObserver. This is lossy and
-English-biased but it is:
+抓取策略借鉴 OpenUtter（sumansid/openutter）：我们不解析 WebRTC 音频，
+而是启用 Google Meet 内置的实时字幕，并通过 MutationObserver 观察
+DOM 中的字幕容器。这种方式有损且偏向英语，但：
 
-* deterministic (no API keys, no STT billing),
-* works behind Meet's normal login / admission,
-* survives Meet UI rewrites fairly well because the caption container has a
-  stable ARIA role.
+* 确定性（无需 API key，无 STT 计费），
+* 可在 Meet 的正常登录/准入流程下工作，
+* 由于字幕容器具有稳定的 ARIA role，能较好地应对 Meet UI 重写。
 
-Run standalone for debugging::
+独立运行以进行调试::
 
     HERMES_MEET_URL=https://meet.google.com/abc-defg-hij \\
     HERMES_MEET_OUT_DIR=/tmp/meet-debug \\
     HERMES_MEET_HEADED=1 \\
     python -m plugins.google_meet.meet_bot
 
-No meet.google.com URL → exits non-zero. Any URL that doesn't start with
-``https://meet.google.com/`` is rejected (explicit-by-design).
+非 meet.google.com URL → 以非零状态退出。任何不以
+``https://meet.google.com/`` 开头的 URL 都会被拒绝（显式拒绝设计）。
 """
 
 from __future__ import annotations
@@ -38,8 +36,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-# Match ``https://meet.google.com/abc-defg-hij`` or ``.../lookup/...`` — the
-# short three-segment code or a lookup URL. Anything else is rejected.
+# 匹配 ``https://meet.google.com/abc-defg-hij`` 或 ``.../lookup/...`` —
+# 即三段式短码或 lookup URL。其他任何内容均被拒绝。
 MEET_URL_RE = re.compile(
     r"^https://meet\.google\.com/("
     r"[a-z0-9]{3,}-[a-z0-9]{3,}-[a-z0-9]{3,}"
@@ -49,25 +47,24 @@ MEET_URL_RE = re.compile(
 )
 
 
-# Filenames the bot reads/writes in ``HERMES_MEET_OUT_DIR``.
+# bot 在 ``HERMES_MEET_OUT_DIR`` 中读写的文件名。
 SAY_QUEUE_FILENAME = "say_queue.jsonl"
 SAY_PCM_FILENAME = "speaker.pcm"
 
 
 def _is_safe_meet_url(url: str) -> bool:
-    """Return True if *url* is a Google Meet URL we're willing to navigate to."""
+    """如果 *url* 是我们愿意导航到的 Google Meet URL，则返回 True。"""
     if not isinstance(url, str):
         return False
     return bool(MEET_URL_RE.match(url.strip()))
 
 
 def _meeting_id_from_url(url: str) -> str:
-    """Extract the 3-segment meeting code from a Meet URL.
+    """从 Meet URL 中提取三段式会议代码。
 
-    For ``https://meet.google.com/abc-defg-hij`` → ``abc-defg-hij``.
-    For ``.../lookup/<id>`` or ``/new`` we fall back to a timestamped id — the
-    bot won't know the real code until after redirect, and callers pass this
-    through to filename anyway.
+    对于 ``https://meet.google.com/abc-defg-hij`` → ``abc-defg-hij``。
+    对于 ``.../lookup/<id>`` 或 ``/new``，我们回退到基于时间戳的 id —
+    bot 在重定向之前无法得知真实代码，而调用方无论如何都会将其传递给文件名。
     """
     m = re.search(
         r"meet\.google\.com/([a-z0-9]{3,}-[a-z0-9]{3,}-[a-z0-9]{3,})",
@@ -79,11 +76,11 @@ def _meeting_id_from_url(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Status + transcript file writers
+# 状态 + 转录文件写入器
 # ---------------------------------------------------------------------------
 
 class _BotState:
-    """Single-process mutable state, flushed to ``status.json`` on each change."""
+    """单进程可变状态，每次变更时刷新到 ``status.json``。"""
 
     def __init__(self, out_dir: Path, meeting_id: str, url: str):
         self.out_dir = out_dir
@@ -99,7 +96,7 @@ class _BotState:
         self.transcript_lines = 0
         self.error: Optional[str] = None
         self.exited = False
-        # v2 realtime fields.
+        # v2 实时字段。
         self.realtime = False
         self.realtime_ready = False
         self.realtime_device: Optional[str] = None
@@ -107,8 +104,8 @@ class _BotState:
         self.last_audio_out_at: Optional[float] = None
         self.last_barge_in_at: Optional[float] = None
         self.leave_reason: Optional[str] = None
-        # Scraped captions, in order, deduped. Each entry is a dict of
-        # {"ts": <epoch>, "speaker": str, "text": str}.
+        # 按顺序抓取的标题，去重。每个条目是
+        # {"ts": <epoch>, "speaker": str, "text": str} 形式的字典。
         self._seen: set = set()
         out_dir.mkdir(parents=True, exist_ok=True)
         self.transcript_path = out_dir / "transcript.txt"
@@ -118,7 +115,7 @@ class _BotState:
     # -------- transcript ------------------------------------------------
 
     def record_caption(self, speaker: str, text: str) -> None:
-        """Append a caption line if we haven't seen this exact (speaker, text)."""
+        """如果尚未见过此 (speaker, text) 组合，则追加一条字幕行。"""
         speaker = (speaker or "").strip() or "Unknown"
         text = (text or "").strip()
         if not text:
@@ -131,7 +128,7 @@ class _BotState:
         self.last_caption_at = time.time()
         ts = time.strftime("%H:%M:%S", time.localtime(self.last_caption_at))
         line = f"[{ts}] {speaker}: {text}\n"
-        # Atomic-ish append — good enough for a single-writer.
+        # 近似原子追加 — 对于单写入者已足够。
         with self.transcript_path.open("a", encoding="utf-8") as f:
             f.write(line)
         self._flush()
@@ -154,7 +151,7 @@ class _BotState:
             "error": self.error,
             "exited": self.exited,
             "pid": os.getpid(),
-            # v2 realtime telemetry.
+            # v2 实时遥测。
             "realtime": self.realtime,
             "realtimeReady": self.realtime_ready,
             "realtimeDevice": self.realtime_device,
@@ -174,13 +171,13 @@ class _BotState:
 
 
 # ---------------------------------------------------------------------------
-# Playwright bot entry point
+# Playwright bot 入口点
 # ---------------------------------------------------------------------------
 
-# JavaScript injected into the Meet tab to observe captions. Captures
-# {speaker, text} tuples via a MutationObserver on the caption container,
-# and exposes ``window.__hermesMeetDrain()`` to pull new entries. This
-# mirrors the OpenUtter caption scraping approach.
+# 注入到 Meet 标签页中以观察字幕的 JavaScript。通过
+# MutationObserver 在字幕容器上捕获 {speaker, text} 元组，
+# 并暴露 ``window.__hermesMeetDrain()`` 以提取新条目。此方法
+# 借鉴了 OpenUtter 的字幕抓取方式。
 _CAPTION_OBSERVER_JS = r"""
 (() => {
   if (window.__hermesMeetInstalled) return;
@@ -245,11 +242,11 @@ _CAPTION_OBSERVER_JS = r"""
 
 
 def _enable_captions_js() -> str:
-    """Return a small JS snippet that tries to click the 'Turn on captions' button.
+    """返回一个小型 JS 片段，尝试点击"开启字幕"按钮。
 
-    Best-effort — Meet's caption toggle is keyboard-accessible via ``c``. We
-    dispatch that keystroke as a cheap fallback. Real click targeting is too
-    brittle to rely on.
+    尽力而为 — Meet 的字幕切换可通过键盘 ``c`` 键访问。我们
+    将该按键作为低成本备选方案进行分发。实际点击定位
+    过于脆弱，无法依赖。
     """
     return r"""
     (() => {
@@ -274,14 +271,14 @@ def _start_realtime_speaker(
     stop_flag: dict,
     state: "_BotState",
 ) -> None:
-    """Wire up the OpenAI Realtime session + speaker thread + PCM pump.
+    """连接 OpenAI Realtime session + speaker 线程 + PCM 泵。
 
-    The speaker thread reads text lines from ``say_queue.jsonl``, sends each
-    to OpenAI Realtime, and writes PCM audio into ``speaker.pcm``. A
-    separate *pump* thread forwards that PCM into the OS audio sink so
-    Chrome's fake mic picks it up. On Linux we pipe to ``paplay`` against
-    the null-sink; on macOS the caller is expected to have the BlackHole
-    device selected as default input.
+    speaker 线程从 ``say_queue.jsonl`` 读取文本行，将每行
+    发送到 OpenAI Realtime，并将 PCM 音频写入 ``speaker.pcm``。一个
+    独立的 *泵* 线程将该 PCM 转发到 OS 音频 sink，以便
+    Chrome 的假麦克风拾取。在 Linux 上，我们通过管道传输到
+    null-sink 的 ``paplay``；在 macOS 上，调用方需将 BlackHole
+    设备选为默认输入。
     """
     try:
         from plugins.google_meet.realtime.openai_client import (
@@ -295,10 +292,10 @@ def _start_realtime_speaker(
     pcm_path = out_dir / SAY_PCM_FILENAME
     queue_path = out_dir / SAY_QUEUE_FILENAME
     processed_path = out_dir / "say_processed.jsonl"
-    # Reset the sink file so we start clean each session.
+    # 重置 sink 文件，使每次会话都从干净状态开始。
     pcm_path.write_bytes(b"")
-    # Make sure the queue exists so the speaker poller doesn't error on
-    # first iteration.
+    # 确保队列文件存在，以免 speaker 轮询器在
+    # 第一次迭代时出错。
     queue_path.touch()
 
     try:
@@ -338,10 +335,10 @@ def _start_realtime_speaker(
     t_speaker.start()
     rt["speaker_thread"] = t_speaker
 
-    # PCM pump: feeds speaker.pcm (24kHz s16le mono) into the OS audio
-    # device that Chrome's fake mic reads from. Different tools per
-    # platform, but the contract is the same — block-read the growing
-    # PCM file and stream it to the device in near-real-time.
+    # PCM 泵：将 speaker.pcm（24kHz s16le 单声道）馈送到
+    # Chrome 假麦克风读取的 OS 音频设备。不同平台
+    # 使用不同工具，但约定相同 — 块读取不断增长的
+    # PCM 文件，并以近实时方式流式传输到设备。
     platform_tag = (bridge_info or {}).get("platform")
     if platform_tag == "linux":
         import subprocess as _sp
@@ -366,27 +363,27 @@ def _start_realtime_speaker(
         except FileNotFoundError:
             state.set(error="paplay not found — install pulseaudio-utils for realtime on Linux")
     elif platform_tag == "darwin":
-        # macOS: use ffmpeg to tail-read speaker.pcm and write it to the
-        # BlackHole output device. The user must have BlackHole selected
-        # as the default input in System Settings → Sound for Chrome to
-        # pick it up. We prefer ffmpeg because it's scriptable and can
-        # target AVFoundation devices by name; fall back to afplay-ing
-        # the file in a tight loop if ffmpeg is absent.
+        # macOS：使用 ffmpeg 尾部读取 speaker.pcm 并将其写入
+        # BlackHole 输出设备。用户必须在系统设置 → 声音中
+        # 选择 BlackHole 作为默认输入，Chrome 才能拾取。
+        # 我们首选 ffmpeg，因为它可脚本化且可以
+        # 按名称指定 AVFoundation 设备；如果 ffmpeg 不存在，则回退到
+        # 紧密循环中 afplay 该文件。
         import shutil as _shutil
         import subprocess as _sp
 
         device_name = (bridge_info or {}).get("write_target") or "BlackHole 2ch"
         if _shutil.which("ffmpeg"):
             try:
-                # -re: read input at native frame rate.
-                # -f avfoundation -i: speaker path as raw PCM.
-                # -f s16le -ar 24000 -ac 1 -i <pcm>: interpret the file.
-                # -f audiotoolbox -audio_device_index: write to BlackHole.
-                # Simpler: output as raw via coreaudio using "-f audiotoolbox".
-                # ffmpeg's audiotoolbox output picks the current default
-                # output device, which isn't what we want. Instead we use
-                # -f avfoundation with the named device as OUTPUT via
-                # -vn and the device name.
+                # -re：以原生帧率读取输入。
+                # -f avfoundation -i：speaker 路径作为原始 PCM。
+                # -f s16le -ar 24000 -ac 1 -i <pcm>：解释该文件。
+                # -f audiotoolbox -audio_device_index：写入 BlackHole。
+                # 更简单的方式：通过 coreaudio 使用 "-f audiotoolbox" 输出原始数据。
+                # ffmpeg 的 audiotoolbox 输出会选择当前默认
+                # 输出设备，这不是我们想要的。因此我们使用
+                # -f avfoundation 并将命名设备作为 OUTPUT，
+                # 配合 -vn 和设备名称。
                 proc = _sp.Popen(
                     [
                         "ffmpeg",
@@ -412,12 +409,12 @@ def _start_realtime_speaker(
 
 
 def _mac_audio_device_index(device_name: str) -> str:
-    """Return the ffmpeg ``-audio_device_index`` for *device_name*, as a string.
+    """返回 *device_name* 的 ffmpeg ``-audio_device_index``，以字符串形式。
 
-    Probes ``ffmpeg -f avfoundation -list_devices true -i ''`` (which prints
-    the device table on stderr) and matches *device_name* case-insensitively.
-    Defaults to ``"0"`` if the device can't be found — caller will get a
-    misrouted stream but not a crash, and the error will be obvious.
+    探测 ``ffmpeg -f avfoundation -list_devices true -i ''``（在 stderr 上
+    打印设备表），并忽略大小写匹配 *device_name*。
+    如果找不到设备，默认返回 ``"0"`` — 调用方将获得错误路由的流
+    但不会崩溃，且错误将是显而易见的。
     """
     import subprocess as _sp
 
@@ -430,7 +427,7 @@ def _mac_audio_device_index(device_name: str) -> str:
         )
     except Exception:
         return "0"
-    # ffmpeg prints the table on stderr. Lines look like:
+    # ffmpeg 在 stderr 上打印设备表。行格式如下：
     #   [AVFoundation indev @ 0x...] [0] BlackHole 2ch
     import re as _re
 
@@ -451,7 +448,7 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
     auth_state = os.environ.get("HERMES_MEET_AUTH_STATE", "").strip()
     guest_name = os.environ.get("HERMES_MEET_GUEST_NAME", "Hermes Agent")
     duration_s = _parse_duration(os.environ.get("HERMES_MEET_DURATION", ""))
-    # v2: optional realtime mode. Enabled when HERMES_MEET_MODE=realtime.
+    # v2：可选实时模式。当 HERMES_MEET_MODE=realtime 时启用。
     mode = os.environ.get("HERMES_MEET_MODE", "transcribe").strip().lower()
     realtime_model = os.environ.get("HERMES_MEET_REALTIME_MODEL", "gpt-realtime")
     realtime_voice = os.environ.get("HERMES_MEET_REALTIME_VOICE", "alloy")
@@ -472,9 +469,9 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
     meeting_id = _meeting_id_from_url(url)
     state = _BotState(out_dir=out_dir, meeting_id=meeting_id, url=url)
 
-    # SIGTERM → exit cleanly so the parent ``meet_leave`` gets a finalized
-    # transcript. We set a flag instead of raising so the Playwright context
-    # teardown runs in the finally block below.
+    # SIGTERM → 干净退出，以便父进程 ``meet_leave`` 获取最终
+    # 转录内容。我们设置一个标志而非抛出异常，以便 Playwright context
+    # 在下面的 finally 块中执行清理。
     stop_flag = {"stop": False}
 
     def _on_signal(_sig, _frame):
@@ -483,10 +480,10 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT, _on_signal)
 
-    # v2 realtime: provision virtual audio device + start speaker thread.
-    # We track these in a dict so the finally block can tear them down
-    # regardless of how we exit. If anything in the realtime setup fails we
-    # fall back to transcribe mode with a status flag.
+    # v2 实时：配置虚拟音频设备 + 启动 speaker 线程。
+    # 我们将这些存储在字典中，以便 finally 块可以
+    无论我们如何退出都能进行清理。如果实时设置中的任何内容失败，我们
+    # 回退到带有状态标志的转录模式。
     rt = {
         "enabled": mode == "realtime",
         "bridge": None,            # AudioBridge | None
@@ -522,24 +519,24 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
             rt["bridge"].teardown()
         return 3
 
-    # Chrome env: if realtime is live on Linux, point PULSE_SOURCE at the
-    # virtual source so Chrome's fake mic reads the audio we generate.
+    # Chrome 环境：如果在 Linux 上实时模式已启动，将 PULSE_SOURCE 指向
+    # 虚拟 source，以便 Chrome 的假麦克风读取我们生成的音频。
     chrome_env = os.environ.copy()
     chrome_args = [
         "--use-fake-ui-for-media-stream",
         "--disable-blink-features=AutomationControlled",
     ]
     if not rt["enabled"]:
-        # v1-style fake device (silence) — we don't care about mic content
-        # when we're not speaking.
+        # v1 风格假设备（静音）— 当我们不发声时
+        # 我们不在乎麦克风内容。
         chrome_args.insert(1, "--use-fake-device-for-media-stream")
     elif rt["bridge_info"] and rt["bridge_info"].get("platform") == "linux":
         chrome_env["PULSE_SOURCE"] = rt["bridge_info"].get("device_name", "")
 
     try:
         with sync_playwright() as pw:
-            # Playwright's launch() doesn't take env; we set PULSE_SOURCE
-            # via the process env before launch so the child Chrome inherits it.
+            # Playwright 的 launch() 不接受 env 参数；我们在启动前通过
+            # 进程 env 设置 PULSE_SOURCE，以便子 Chrome 继承它。
             for k, v in chrome_env.items():
                 os.environ[k] = v
             browser = pw.chromium.launch(
@@ -565,12 +562,12 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
                 state.set(error=f"navigate failed: {e}", exited=True)
                 return 4
 
-            # Guest-mode: Meet shows a name field before "Ask to join". When
-            # we're authed, we instead see "Join now".
+            # 访客模式：Meet 在"请求加入"前显示名称字段。
+            # 当我们已认证时，我们看到的是"立即加入"。
             _try_guest_name(page, guest_name)
             _click_join(page, state)
 
-            # Install caption observer and attempt to enable captions.
+            # 安装字幕观察器并尝试启用字幕。
             try:
                 page.evaluate(_enable_captions_js())
                 state.set(captions_enabled_attempted=True)
@@ -581,15 +578,14 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
             except Exception as e:
                 state.set(error=f"caption observer install failed: {e}")
 
-            # Note: in_call=False until admission is confirmed (we detect
-            # either the Leave button or the caption region, signalling we
-            # made it past the lobby).
+            # 注意：在准入确认之前 in_call=False（我们通过
+            # 检测"离开"按钮或字幕区域来判断，表示我们
+            # 已通过大厅）。
             state.set(captioning=True, join_attempted_at=time.time())
 
-            # v2 realtime: start the speaker thread reading from the
-            # plugin-side say queue. The thread reads JSONL lines written by
-            # meet_say, calls OpenAI Realtime, and streams the audio PCM to
-            # the virtual sink that Chrome's fake-mic is pointed at.
+            # v2 实时：启动从插件侧 say 队列读取的 speaker 线程。
+            # 该线程读取 meet_say 写入的 JSONL 行，调用 OpenAI Realtime，
+            # 并将音频 PCM 流式传输到 Chrome 假麦克风所指向的虚拟 sink。
             if rt["enabled"]:
                 _start_realtime_speaker(
                     rt=rt,
@@ -605,15 +601,14 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
                 if rt["session"] is not None:
                     state.set(realtime_ready=True)
 
-            # Admission + drain loop. Runs until SIGTERM, duration expiry,
-            # or the page detects "You were removed / you left the
-            # meeting". Responsible for:
-            #   * detecting admission (Leave button visible → in_call=True)
-            #   * timing out stuck-in-lobby (default 5 minutes)
-            #   * draining scraped captions into the transcript
-            #   * triggering realtime barge-in when a human speaks while
-            #     the bot is generating audio
-            #   * periodically flushing realtime counters into status.json
+            # 准入 + 排空循环。运行直到 SIGTERM、时长到期，
+            # 或页面检测到"您已被移除/您已离开
+            # 会议"。负责：
+            #   * 检测准入（"离开"按钮可见 → in_call=True）
+            #   * 超时卡在大厅（默认 5 分钟）
+            #   * 将抓取的字幕排空到转录文件
+            #   * 当人类在 bot 正在生成音频时发言时触发实时打断
+            #   * 定期将实时计数器刷新到 status.json
             deadline = (time.time() + duration_s) if duration_s else None
             lobby_deadline = time.time() + float(
                 os.environ.get("HERMES_MEET_LOBBY_TIMEOUT", "300")
@@ -625,7 +620,7 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
                     state.set(leave_reason="duration_expired")
                     break
 
-                # Admission detection every ~3s until admitted.
+                # 每 ~3 秒进行一次准入检测，直到准入。
                 if not state.in_call and (now - last_admission_check) > 3.0:
                     last_admission_check = now
                     admitted = _detect_admission(page)
@@ -660,9 +655,9 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
                             speaker = str(entry.get("speaker", ""))
                             text = str(entry.get("text", ""))
                             state.record_caption(speaker=speaker, text=text)
-                            # Barge-in: if the bot is currently generating
-                            # audio AND a real human just spoke, cancel the
-                            # in-flight response so we don't talk over them.
+                            # 打断：如果 bot 当前正在生成
+                            # 音频 AND 一个真实人类刚刚发言，取消
+                            # 正在进行的响应，以免我们盖过他们。
                             if rt["enabled"] and rt["session"] is not None:
                                 if _looks_like_human_speaker(speaker, guest_name):
                                     try:
@@ -672,14 +667,14 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
                                     except Exception:
                                         pass
                 except Exception:
-                    # Meet reloaded or we got booted — try to detect and
-                    # exit gracefully rather than spinning.
+                    # Meet 已刷新或我们被踢出 — 尝试检测并
+                    # 优雅退出，而非持续旋转。
                     if page.is_closed():
                         state.set(leave_reason="page_closed")
                         break
 
-                # Fold the realtime session's byte/timestamp counters into
-                # the status file so meet_status can surface them.
+                # 将实时 session 的字节/时间戳计数器折叠到
+                # 状态文件中，以便 meet_status 可以展示它们。
                 if rt["session"] is not None:
                     state.set(
                         audio_bytes_out=getattr(rt["session"], "audio_bytes_out", 0),
@@ -688,7 +683,7 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
 
                 time.sleep(1.0)
 
-            # Try to leave cleanly — click "Leave call" button if present.
+            # 尝试干净离开 — 如果存在则点击"离开通话"按钮。
             try:
                 page.evaluate(
                     "() => { const b = document.querySelector('button[aria-label*=\"eave call\"]');"
@@ -699,7 +694,7 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
 
             context.close()
             browser.close()
-            # v2: teardown PCM pump, speaker thread, and audio bridge.
+            # v2：清理 PCM 泵、speaker 线程和音频桥。
             if rt.get("pcm_pump"):
                 try:
                     rt["pcm_pump"].terminate()
@@ -735,9 +730,9 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
 
 
 def _try_guest_name(page, guest_name: str) -> None:
-    """If Meet is showing a guest-name input, type *guest_name* into it."""
+    """如果 Meet 正在显示访客名称输入框，则在其中输入 *guest_name*。"""
     try:
-        # Meet's guest name input has placeholder "Your name".
+        # Meet 的访客名称输入框占位符为 "Your name"。
         locator = page.locator('input[aria-label*="name" i]').first
         if locator.count() and locator.is_visible():
             locator.fill(guest_name, timeout=2_000)
@@ -746,17 +741,17 @@ def _try_guest_name(page, guest_name: str) -> None:
 
 
 def _detect_admission(page) -> bool:
-    """True if we're clearly past the lobby and in the call itself.
+    """如果我们已明确通过大厅并进入通话本身，则返回 True。
 
-    Uses a JS-side probe because Meet's DOM structure varies by client
-    version. We check several high-signal indicators and declare admission
-    on the first hit:
+    使用 JS 端探测，因为 Meet 的 DOM 结构因客户端
+    版本而异。我们检查几个高信号指标，并在
+    首次命中时声明准入：
 
-      1. Leave-call button is present (``aria-label`` contains "eave call").
-      2. Caption region has appeared (we installed the observer and it attached).
-      3. The participant list container is visible.
+      1. 离开通话按钮存在（``aria-label`` 包含"eave call"）。
+      2. 字幕区域已出现（我们安装了观察器且其已附加）。
+      3. 参与者列表容器可见。
 
-    Conservative by default — returns False on any error.
+    默认保守 — 任何错误时返回 False。
     """
     probe = r"""
     (() => {
@@ -781,12 +776,12 @@ def _detect_admission(page) -> bool:
 
 
 def _detect_denied(page) -> bool:
-    """True when Meet is showing a 'you were denied' / 'no one admitted' page."""
+    """当 Meet 显示"您已被拒绝"/"无人准入"页面时返回 True。"""
     probe = r"""
     (() => {
       const text = document.body ? document.body.innerText || '' : '';
-      // English only — matches what shows up when the host denies or
-      // removes a guest.
+      # 仅限英语 — 匹配主持人拒绝或
+      # 移除访客时显示的内容。
       if (/You can't join this video call/i.test(text)) return true;
       if (/You were removed from the meeting/i.test(text)) return true;
       if (/No one responded to your request to join/i.test(text)) return true;
@@ -800,16 +795,16 @@ def _detect_denied(page) -> bool:
 
 
 def _looks_like_human_speaker(speaker: str, bot_guest_name: str) -> bool:
-    """Whether a caption line's speaker is probably a human, not our bot echo.
+    """判断字幕行的说话者是否可能是人类，而非我们的 bot 回声。
 
-    Meet attributes captions to the speaker's display name. When Chrome is
-    reading our fake mic, Meet still attributes captions to *our* bot name
-    (because the bot is the one "speaking"). We don't want those to trigger
-    barge-in. Anything else — real participant names — does.
+    Meet 将字幕归属于说话者的显示名称。当 Chrome
+    读取我们的假麦克风时，Meet 仍将字幕归属于 *我们的* bot 名称
+    （因为是 bot 在"说话"）。我们不希望这些触发
+    打断。其他任何内容 — 真实参与者名称 — 则会触发。
 
-    Conservative: unknown / blank speakers (common when caption scraping
-    falls back to raw text) do NOT trigger barge-in, because we can't tell
-    whether it was a human or us.
+    保守策略：未知/空白说话者（当字幕抓取
+    回退到原始文本时常见）不会触发打断，因为我们无法判断
+    是人类还是我们自己。
     """
     if not speaker or not speaker.strip():
         return False
@@ -820,10 +815,10 @@ def _looks_like_human_speaker(speaker: str, bot_guest_name: str) -> bool:
 
 
 def _click_join(page, state: _BotState) -> None:
-    """Click 'Join now' or 'Ask to join' if either button is visible.
+    """如果"立即加入"或"请求加入"按钮可见，则点击。
 
-    Flags ``lobby_waiting`` when we hit the "waiting for host to admit you"
-    state so the agent can surface that in status.
+    当我们进入"等待主持人准入"状态时标记
+    ``lobby_waiting``，以便 agent 可以在状态中展示。
     """
     for label in ("Join now", "Ask to join"):
         try:
@@ -838,7 +833,7 @@ def _click_join(page, state: _BotState) -> None:
 
 
 def _parse_duration(raw: str) -> Optional[float]:
-    """Parse ``30m`` / ``2h`` / ``90`` (seconds) → float seconds, or None."""
+    """解析 ``30m`` / ``2h`` / ``90``（秒）→ float 秒数，或 None。"""
     if not raw:
         return None
     raw = raw.strip().lower()

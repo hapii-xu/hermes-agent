@@ -1,46 +1,42 @@
-# ComfyUI Workflow-Template Integrity
+# ComfyUI 工作流模板完整性
 
-> **Authored by [@purzbeats](https://github.com/purzbeats)** — adapted from
-> [purzbeats/hermes-agent-comfyui-helper](https://github.com/purzbeats/hermes-agent-comfyui-helper).
-> Use this reference when converting workflows from the official
-> `comfyui-workflow-templates` package (editor format) into API format for
-> submission via `/api/prompt`. The conversion has subtle gotchas that cause
-> hard-to-diagnose validation errors if you don't follow these rules.
+> **由 [@purzbeats](https://github.com/purzbeats) 编写** — 改编自
+> [purzbeats/hermes-agent-comfyui-helper](https://github.com/purzbeats/hermes-agent-comfyui-helper)。
+> 当从官方 `comfyui-workflow-templates` 包（编辑器格式）转换为通过
+> `/api/prompt` 提交的 API 格式时，请使用此参考。转换中有一些微妙的陷阱，
+> 如果不遵循这些规则，会导致难以诊断的验证错误。
 
-## Background
+## 背景
 
-The official ComfyUI template package (`comfyui-workflow-templates`, currently
-v0.9.69) is installed inside the ComfyUI venv at a path like:
+官方 ComfyUI 模板包（`comfyui-workflow-templates`，目前
+v0.9.69）安装在 ComfyUI venv 内，路径类似：
 
 ```
 <comfy-install>/.venv/lib/python3.*/site-packages/comfyui_workflow_templates_*/templates/
 ```
 
-The exact path depends on how ComfyUI was installed (comfy-cli default,
-Comfy Desktop, manual venv, etc.). Find it once with:
+确切路径取决于 ComfyUI 的安装方式（comfy-cli 默认、
+Comfy Desktop、手动 venv 等）。用以下命令找到一次：
 
 ```bash
 comfy --workspace <ws> run-python -c "import comfyui_workflow_templates, pathlib; print(pathlib.Path(comfyui_workflow_templates.__file__).parent / 'templates')"
 ```
 
-Templates ship in **editor format** — `nodes` / `links` arrays inside
-`data['definitions']['subgraphs'][0]`. They must be converted to **API
-format** (a `node_id -> {class_type, inputs}` mapping) before submission.
+模板以**编辑器格式**发布 — `data['definitions']['subgraphs'][0]` 内的 `nodes` / `links` 数组。它们必须在提交前转换为**API 格式**（`node_id -> {class_type, inputs}` 映射）。
 
 ---
 
-## RULE #1: Use templates AS CLOSE TO ORIGINAL AS POSSIBLE
+## 规则 #1：尽可能原样使用模板
 
-- **Never strip, simplify, or "minimize" nodes** from a template.
-- Full template architecture (dual-pass pipelines, LoRA chains, distilled
-  sigmas, conditioning paths) is intentional — removing any part breaks quality.
-- If an image-dependent path exists but the task is text-to-video, **leave
-  it wired with the bypass toggle enabled** — don't remove the nodes.
-- Only change: prompt text, seed, and dimensions (when explicitly requested).
+- **绝不从模板中剥离、简化或"最小化"节点。**
+- 完整的模板架构（双通道流水线、LoRA 链、蒸馏
+  sigmas、条件路径）是有意为之 — 移除任何部分都会破坏质量。
+- 如果存在依赖图像的路径但任务是文本到视频，**保持其连接并启用绕过开关** — 不要移除节点。
+- 仅更改：提示词文本、种子和尺寸（当明确要求时）。
 
-## RULE #2: Server validation errors are the source of truth
+## 规则 #2：服务器验证错误是事实来源
 
-When a workflow submission fails, the server response looks like:
+当工作流提交失败时，服务器响应如下：
 
 ```json
 {
@@ -56,52 +52,48 @@ When a workflow submission fails, the server response looks like:
 }
 ```
 
-**The `extra_info.input_name` field tells you EXACTLY what JSON key the server
-wants. Use it literally.** If it says `"values.a"` or `"resize_type.width"`,
-those are the actual key names in the JSON object. Do not "simplify" them to
-flat names based on assumptions about what the field "should" be called.
+**`extra_info.input_name` 字段准确告诉你服务器想要的 JSON 键。按字面使用。** 如果它显示 `"values.a"` 或 `"resize_type.width"`，
+那些就是 JSON 对象中实际的键名。不要根据对该字段"应该"叫什么的假设将它们"简化"为扁平名称。
 
-## RULE #3: Don't rebuild from scratch — patch the failing nodes
+## 规则 #3：不要从头重建 — 修补失败的节点
 
-Every regeneration from the template reintroduces the same bugs. Instead:
+每次从模板重新生成都重新引入相同的 bug。相反：
 
-1. Submit the workflow once.
-2. Read the server error details for exact key names.
-3. Use targeted patch/fix calls against the workflow file on disk.
-4. Resubmit and check if errors resolved.
+1. 提交一次工作流。
+2. 读取服务器错误详情以获取确切的键名。
+3. 对磁盘上的工作流文件使用有针对性的 patch/fix 调用。
+4. 重新提交并检查错误是否解决。
 
 ---
 
-## Reroute nodes: bypass, don't delete
+## Reroute 节点：绕过，不要删除
 
-Most servers (local, Cloud) don't have a `Reroute` node type. When converting
-a template:
+大多数服务器（本地、云端）没有 `Reroute` 节点类型。转换
+模板时：
 
-1. Find what feeds into the Reroute by looking at links where
-   `target_id` = the Reroute node ID.
-2. Replace all inputs referencing the Reroute with
-   `[source_node_id, source_slot]`.
-3. Delete the Reroute node from the API mapping.
+1. 通过查看 `target_id` = Reroute 节点 ID 的链接找到 Reroute 的输入源。
+2. 将所有引用 Reroute 的输入替换为 `[source_node_id, source_slot]`。
+3. 从 API 映射中删除 Reroute 节点。
 
-**Real example — LTX 2.3 t2v template:**
+**真实示例 — LTX 2.3 t2v 模板：**
 
-- Reroute node 255 receives VAE from `CheckpointLoaderSimple 236` slot 2.
-- Three nodes reference Reroute 255 for their VAE input:
-  `LTXVImgToVideoInplace` (230), `LTXVLatentUpsampler` (253),
-  `VAEDecodeTiled` (251).
-- Fix: replace all occurrences of `vae: ["255", 0]` with `vae: ["236", 2]`.
-- `CheckpointLoaderSimple` slot 2 = VAE (not slot 0 = MODEL).
+- Reroute 节点 255 从 `CheckpointLoaderSimple 236` slot 2 接收 VAE。
+- 三个节点为 VAE 输入引用 Reroute 255：
+  `LTXVImgToVideoInplace`（230）、`LTXVLatentUpsampler`（253）、
+  `VAEDecodeTiled`（251）。
+- 修复：将所有 `vae: ["255", 0]` 替换为 `vae: ["236", 2]`。
+- `CheckpointLoaderSimple` slot 2 = VAE（不是 slot 0 = MODEL）。
 
 | | |
 |---|---|
-| ❌ Wrong  | `vae: ["236", 0]` → `MODELV mismatch input_type(VAE)` |
-| ✅ Correct | `vae: ["236", 2]` |
+| ❌ 错误  | `vae: ["236", 0]` → `MODELV mismatch input_type(VAE)` |
+| ✅ 正确 | `vae: ["236", 2]` |
 
 ---
 
-## Dynamic template nodes: dotted key names are correct
+## 动态模板节点：点分键名是正确的
 
-### ComfyMathExpression (COMFY_AUTOGROW_V3)
+### ComfyMathExpression（COMFY_AUTOGROW_V3）
 
 ```json
 {
@@ -113,12 +105,12 @@ a template:
 }
 ```
 
-- `values` is a `COMFY_AUTOGROW_V3` template.
-- Input names in links are `values.a`, `values.b`, etc.
-- **Keep the dotted format as JSON keys.**
-- Do NOT convert to `{"values": {"a": ...}}` or flatten to just `"a"`.
+- `values` 是一个 `COMFY_AUTOGROW_V3` 模板。
+- 链接中的输入名是 `values.a`、`values.b` 等。
+- **保持点分格式作为 JSON 键。**
+- 不要转换为 `{"values": {"a": ...}}` 或扁平化为仅 `"a"`。
 
-### ResizeImageMaskNode (COMFY_DYNAMICCOMBO_V3)
+### ResizeImageMaskNode（COMFY_DYNAMICCOMBO_V3）
 
 ```json
 {
@@ -134,86 +126,82 @@ a template:
 }
 ```
 
-- `resize_type` is a `COMFY_DYNAMICCOMBO_V3`.
-- Mode-specific fields: `resize_type.width`, `resize_type.height`, `resize_type.crop`.
-- `scale_method` options: `"nearest-exact"`, `"bilinear"`, `"area"`, `"bicubic"`, `"lanczos"`.
-- **Keep the dotted format as JSON keys.**
-- Do NOT flatten `resize_type.width` to just `"width"`.
+- `resize_type` 是一个 `COMFY_DYNAMICCOMBO_V3`。
+- 模式特定字段：`resize_type.width`、`resize_type.height`、`resize_type.crop`。
+- `scale_method` 选项：`"nearest-exact"`、`"bilinear"`、`"area"`、`"bicubic"`、`"lanczos"`。
+- **保持点分格式作为 JSON 键。**
+- 不要将 `resize_type.width` 扁平化为仅 `"width"`。
 
 ---
 
-## Conversion recipe
+## 转换配方
 
-1. Load template from the installed package path.
-2. Parse `data['definitions']['subgraphs'][0]`.
-3. For each node (skip Reroute):
-   - Resolve linked inputs from `sg['links']` dict.
-   - Map `widgets_values` to input field names.
-   - Keep all dotted key names as-is from the template.
-4. Bypass Reroute: trace source, replace references.
-5. Change only: prompt text, seed values, and user-requested parameters.
-6. Add `SaveVideo` terminal node if template uses only `CreateVideo`.
-7. Submit → read errors → patch specific nodes → resubmit.
+1. 从安装的包路径加载模板。
+2. 解析 `data['definitions']['subgraphs'][0]`。
+3. 对每个节点（跳过 Reroute）：
+   - 从 `sg['links']` 字典解析链接输入。
+   - 将 `widgets_values` 映射到输入字段名。
+   - 保持模板中所有点分键名原样。
+4. 绕过 Reroute：追踪源，替换引用。
+5. 仅更改：提示词文本、种子值和用户请求的参数。
+6. 如果模板仅使用 `CreateVideo`，则添加 `SaveVideo` 终端节点。
+7. 提交 → 读取错误 → 修补特定节点 → 重新提交。
 
-## What to NEVER change in a template
+## 模板中绝不更改的内容
 
-| Element | Why |
+| 元素 | 原因 |
 |---------|-----|
-| Node topology | Graph is designed for the specific model |
-| Sigmas values | Tuned for the model/sampler combination |
-| LoRA/distilled paths | Required for quality, even if they look unused |
-| Model parameters (cfg, steps, shifts) | Model-specific |
-| Conditioning chains (zero-out, crop guides) | Required for correct conditioning |
-| Pass-through wiring | Don't remove nodes, bypass them |
+| 节点拓扑 | 图是为特定模型设计的 |
+| Sigmas 值 | 为模型/采样器组合调优 |
+| LoRA/蒸馏路径 | 质量所必需，即使看起来未使用 |
+| 模型参数（cfg、steps、shifts） | 模型特定 |
+| 条件链（zero-out、crop guides） | 正确条件所必需 |
+| 传递连接 | 不要移除节点，绕过它们 |
 
 ---
 
-## Cloud compatibility (verified May 2025)
+## 云端兼容性（2025 年 5 月验证）
 
-The full LTX 2.3 T2V template (`video_ltx2_3_t2v.json`) runs **without
-modification** on Comfy Cloud.
+完整的 LTX 2.3 T2V 模板（`video_ltx2_3_t2v.json`）在 Comfy Cloud 上**无需修改**即可运行。
 
-**Confirmed working on Cloud (all custom nodes available):**
-`ComfyMathExpression`, `ResizeImageMaskNode`, `ResizeImagesByLongerEdge`,
-`PrimitiveInt`, `PrimitiveStringMultiline`, `PrimitiveBoolean`, `SaveVideo`,
-`LTXVCropGuides`, `LTXVImgToVideoInplace`, `LTXVConcatAVLatent`,
-`LTXVSeparateAVLatent`, `LTXVLatentUpsampler`, `LTXVAudioVAELoader`,
-`LTXVAudioVAEDecode`, `LTXVEmptyLatentAudio`, `LTXVPreprocess`,
-`LTXVConditioning`, `ManualSigmas`, `LTXAVTextEncoderLoader`, plus all core
-nodes.
+**在云端确认可用（所有自定义节点可用）：**
+`ComfyMathExpression`、`ResizeImageMaskNode`、`ResizeImagesByLongerEdge`、
+`PrimitiveInt`、`PrimitiveStringMultiline`、`PrimitiveBoolean`、`SaveVideo`、
+`LTXVCropGuides`、`LTXVImgToVideoInplace`、`LTXVConcatAVLatent`、
+`LTXVSeparateAVLatent`、`LTXVLatentUpsampler`、`LTXVAudioVAELoader`、
+`LTXVAudioVAEDecode`、`LTXVEmptyLatentAudio`、`LTXVPreprocess`、
+`LTXVConditioning`、`ManualSigmas`、`LTXAVTextEncoderLoader`，加上所有核心节点。
 
-**Cloud vs Local for LTX 2.3 (768x512):**
+**LTX 2.3 的云端 vs 本地（768x512）：**
 
-- Cloud: ~39s per video (4x faster).
-- Local (RTX 5090): ~160s per video.
-- `example.png` placeholder works on Cloud for bypassed image-dependent paths.
-- Submission format is **identical** between local and Cloud:
-  `{"prompt": wf, "extra_data": {}}` to `/api/prompt`.
-- Free tier = 1 concurrent job.
+- 云端：每个视频约 39 秒（快 4 倍）。
+- 本地（RTX 5090）：每个视频约 160 秒。
+- `example.png` 占位符在云端可用于绕过的依赖图像路径。
+- 提交格式在本地和云端之间**完全相同**：
+  `{"prompt": wf, "extra_data": {}}` 到 `/api/prompt`。
+- 免费层 = 1 个并发任务。
 
-**Cloud submission pitfalls:**
+**云端提交陷阱：**
 
-- `/api/object_info/<node>` returns 404 on free tier — can't query node
-  schemas remotely, but the workflow runs fine anyway. Always probe
-  `object_info` locally before building workflows.
-- Cloud is ~4x faster — prefer Cloud for batch runs unless local is needed
-  for debugging.
-- Cloud `/api/view` returns **302 redirect to signed GCS URL** — use
-  `curl -s -L` to follow and download. Python `urllib` fails with 401
-  (forwards auth headers to GCS CDN).
-- `COMFY_CLOUD_API_KEY` is only in the terminal/bash env, not in the Python
-  sandbox. Use subprocess or terminal scripts for Cloud API calls.
-- Cloud free tier processes jobs **sequentially** (1 at a time). Submit all,
-  then poll history.
-- LTX 2.3 at **1920x1080 OOMs locally** (even RTX 5090) — upscaler pass
-  exceeds VRAM. Prefer Cloud for 1080p; use 1280x720 locally (~90s/video).
+- `/api/object_info/<node>` 在免费层返回 404 — 无法远程查询节点
+  schema，但工作流仍然正常运行。始终在构建工作流之前在本地探测
+  `object_info`。
+- 云端快约 4 倍 — 批量运行时优先使用云端，除非调试需要本地。
+- 云端 `/api/view` 返回**302 重定向到签名 GCS URL** — 使用
+  `curl -s -L` 跟随并下载。Python `urllib` 因 401 失败
+  （将认证头转发给 GCS CDN）。
+- `COMFY_CLOUD_API_KEY` 仅在终端/bash 环境中，不在 Python
+  沙盒中。对云端 API 调用使用 subprocess 或终端脚本。
+- 云端免费层**顺序**处理任务（一次 1 个）。提交全部，
+  然后轮询历史。
+- LTX 2.3 在 **1920x1080 本地 OOM**（即使 RTX 5090）— 放大器通道
+  超出 VRAM。1080p 优先使用云端；本地使用 1280x720（约 90 秒/视频）。
 
 ---
 
-## FFmpeg stitch settings (Discord-compatible)
+## FFmpeg 拼接设置（Discord 兼容）
 
-Generated ComfyUI videos often use `yuv444p` pixel format which does NOT work
-on Discord. Re-encode with:
+生成的 ComfyUI 视频通常使用 `yuv444p` 像素格式，这在 Discord 上不起作用。用以下命令重新编码：
 
 ```bash
 ffmpeg -y -i input.mp4 \
@@ -222,14 +210,14 @@ ffmpeg -y -i input.mp4 \
   output_discord.mp4
 ```
 
-Key settings:
+关键设置：
 
-- `-pix_fmt yuv420p` — **required for Discord**, ComfyUI outputs `yuv444p` by default.
-- `-crf 13` — high quality without massive file size (default 23 is too lossy).
-- `-profile:v main` — widely compatible.
+- `-pix_fmt yuv420p` — **Discord 必需**，ComfyUI 默认输出 `yuv444p`。
+- `-crf 13` — 高质量而不会产生巨大文件（默认 23 损失太大）。
+- `-profile:v main` — 广泛兼容。
 
-For multi-video crossfade stitching, chain `xfade` (video) and `acrossfade`
-(audio):
+对于多视频交叉淡入淡出拼接，链接 `xfade`（视频）和 `acrossfade`
+（音频）：
 
 ```bash
 ffmpeg -y -i a.mp4 -i b.mp4 -i c.mp4 \
@@ -240,4 +228,4 @@ ffmpeg -y -i a.mp4 -i b.mp4 -i c.mp4 \
   output.mp4
 ```
 
-Offset for xfade #N = `(N+1) × duration - N × overlap`.
+xfade #N 的偏移 = `(N+1) × 时长 - N × 重叠`。

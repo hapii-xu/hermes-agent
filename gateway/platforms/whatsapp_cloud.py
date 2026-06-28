@@ -1,42 +1,39 @@
 """
-WhatsApp Cloud API adapter — official Meta WhatsApp Business Platform.
+WhatsApp Cloud API 适配器 —— 官方 Meta WhatsApp Business Platform。
 
-This adapter is a *complement* to ``whatsapp.py`` (the Baileys bridge), not
-a replacement. The two are independent:
+本适配器是 ``whatsapp.py``（Baileys bridge）的 *补充*，而非替代。
+两者相互独立：
 
-- ``whatsapp.py``      — unofficial Baileys bridge, personal accounts, no
-                         public URL needed, account-ban risk.
-- ``whatsapp_cloud.py`` (this file) — official Meta Cloud API, Business
-                         account required, public webhook URL required,
-                         token-based auth.
+- ``whatsapp.py``      —— 非官方 Baileys bridge，面向个人账号，无需
+                         公网 URL，存在封号风险。
+- ``whatsapp_cloud.py``（本文件）—— 官方 Meta Cloud API，需要 Business
+                         账号，需要公网 webhook URL，基于 token 的鉴权。
 
-Both share gating / mention / formatting behavior via ``WhatsAppBehaviorMixin``.
+两者通过 ``WhatsAppBehaviorMixin`` 共享门控 / mention / 格式化行为。
 
-Phase scope (this file evolves across phases):
-- Phase 2 — outbound text via Graph API + webhook server with verify-token
-            handshake.
-- Phase 3 — X-Hub-Signature-256 HMAC verification (raw body, constant-time)
-            + wamid replay protection + dispatch via handle_message. Phase 3
-            adapter is end-to-end usable for text DMs.
-- Phase 4 — media upload + send (image/video/audio/document), inbound
-            media download via the Graph media endpoint, voice-note opus
-            conversion via ffmpeg with graceful MP3 fallback when ffmpeg
-            isn't on PATH. Document text injection for readable types.
-- Phase 5 — 24-hour conversation window + template fallback.
+阶段范围（本文件随阶段演进）：
+- Phase 2 —— 通过 Graph API 出站文本 + 带 verify-token 握手的 webhook 服务器。
+- Phase 3 —— X-Hub-Signature-256 HMAC 校验（原始 body，常数时间）+ wamid
+            重放保护 + 通过 handle_message 分发。Phase 3 适配器已可端到端
+            用于文本 DM。
+- Phase 4 —— 媒体上传 + 发送（图片/视频/音频/文档），通过 Graph media
+            端点下载入站媒体，通过 ffmpeg 进行语音 opus 转换，并在 ffmpeg
+            不在 PATH 中时优雅回退为 MP3。可读类型的文档文本注入。
+- Phase 5 —— 24 小时会话窗口 + 模板兜底。
 
-Required env vars to enable the adapter:
-- WHATSAPP_CLOUD_PHONE_NUMBER_ID  (the Graph URL path component)
-- WHATSAPP_CLOUD_ACCESS_TOKEN     (System User permanent token)
+启用本适配器所需的环境变量：
+- WHATSAPP_CLOUD_PHONE_NUMBER_ID  （Graph URL 路径组件）
+- WHATSAPP_CLOUD_ACCESS_TOKEN     （System User 永久 token）
 
-Optional / Phase-3+:
+可选 / Phase-3+：
 - WHATSAPP_CLOUD_APP_ID
-- WHATSAPP_CLOUD_APP_SECRET       (HMAC key for X-Hub-Signature-256)
-- WHATSAPP_CLOUD_WABA_ID          (analytics / future use)
-- WHATSAPP_CLOUD_VERIFY_TOKEN     (hub.verify_token shared secret)
-- WHATSAPP_CLOUD_WEBHOOK_HOST     (default 0.0.0.0)
-- WHATSAPP_CLOUD_WEBHOOK_PORT     (default 8090)
-- WHATSAPP_CLOUD_WEBHOOK_PATH     (default /whatsapp/webhook)
-- WHATSAPP_CLOUD_API_VERSION      (default v20.0)
+- WHATSAPP_CLOUD_APP_SECRET       （X-Hub-Signature-256 的 HMAC 密钥）
+- WHATSAPP_CLOUD_WABA_ID          （分析 / 未来用途）
+- WHATSAPP_CLOUD_VERIFY_TOKEN     （hub.verify_token 共享密钥）
+- WHATSAPP_CLOUD_WEBHOOK_HOST     （默认 0.0.0.0）
+- WHATSAPP_CLOUD_WEBHOOK_PORT     （默认 8090）
+- WHATSAPP_CLOUD_WEBHOOK_PATH     （默认 /whatsapp/webhook）
+- WHATSAPP_CLOUD_API_VERSION      （默认 v20.0）
 """
 
 from __future__ import annotations
@@ -89,28 +86,27 @@ DEFAULT_WEBHOOK_HOST = "0.0.0.0"
 DEFAULT_WEBHOOK_PORT = 8090
 DEFAULT_WEBHOOK_PATH = "/whatsapp/webhook"
 GRAPH_API_BASE = "https://graph.facebook.com"
-# Meta retries failed webhooks for up to 7 days. We don't need to remember
-# every wamid for the full retry window — the practical risk is duplicate
-# delivery within minutes, not days. 5000 entries with FIFO eviction is
-# plenty for normal traffic and bounds memory.
+# Meta 最长会重试失败的 webhook 长达 7 天。我们不需要为整个重试窗口
+# 记住每一个 wamid —— 真正的风险是几分钟内的重复投递，而不是几天。
+# 5000 条记录配合 FIFO 淘汰对正常流量绰绰有余，且限制了内存占用。
 WAMID_DEDUP_CACHE_SIZE = 5000
-# Cap for the interactive-button state dicts and the per-chat last-wamid
-# cache. Generous for any realistic number of in-flight prompts / chats.
+# interactive-button 状态字典与每聊天 last-wamid 缓存的上限。
+# 对任何现实数量的在途提示 / 聊天都已足够宽裕。
 INTERACTIVE_STATE_CACHE_SIZE = 1000
 
-# Per-type size caps documented by Meta for the Cloud API /media endpoint.
-# These are the hard limits; we refuse uploads above them with a clean
-# error instead of round-tripping to Graph just to be rejected.
+# Meta 为 Cloud API /media 端点文档记录的按类型大小上限。
+# 这些是硬性限制；对超过上限的上传我们以干净错误拒绝，而不是
+# 往返 Graph 才被拒绝。
 # https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
 _MEDIA_SIZE_LIMITS = {
-    "image": 5 * 1024 * 1024,        # 5 MB (JPEG, PNG)
+    "image": 5 * 1024 * 1024,        # 5 MB（JPEG、PNG）
     "video": 16 * 1024 * 1024,       # 16 MB
-    "audio": 16 * 1024 * 1024,       # 16 MB (MP3, AAC, AMR, OGG opus)
+    "audio": 16 * 1024 * 1024,       # 16 MB（MP3、AAC、AMR、OGG opus）
     "document": 100 * 1024 * 1024,   # 100 MB
-    "sticker": 100 * 1024,           # 100 KB animated, 500 KB static
+    "sticker": 100 * 1024,           # 100 KB 动态，500 KB 静态
 }
 
-# Default mime types when we can't guess from the path's extension.
+# 当无法从路径扩展名猜测时的默认 MIME 类型。
 _DEFAULT_MIME = {
     "image": "image/jpeg",
     "video": "video/mp4",
@@ -119,37 +115,35 @@ _DEFAULT_MIME = {
     "sticker": "image/webp",
 }
 
-# ffmpeg location at import time. ``shutil.which`` honours PATHEXT on
-# Windows so a user's ``ffmpeg.exe`` is picked up. None means MP3 voice
-# falls back to "audio file attachment" rendering in WhatsApp.
+# 导入时的 ffmpeg 位置。``shutil.which`` 在 Windows 上遵守 PATHEXT，
+# 因此用户的 ``ffmpeg.exe`` 会被识别。为 None 时表示 MP3 语音回退为
+# WhatsApp 中的 "audio file attachment" 渲染。
 _FFMPEG_PATH = shutil.which("ffmpeg")
 
-# Python's mimetypes module returns RFC-correct but real-world-uncommon
-# extensions for some types (audio/ogg → .oga since RFC 5334; audio/mp4
-# → .mp4 instead of the de-facto .m4a for voice notes). Our downstream
-# STT pipeline whitelists the common-in-the-wild extensions, so override
-# the few Meta sends that don't match those defaults.
+# Python 的 mimetypes 模块对某些类型返回 RFC 正确但在现实不常见的
+# 扩展名（audio/ogg → .oga（RFC 5334）；audio/mp4 → .mp4 而非语音消息
+# 事实标准的 .m4a）。我们下游的 STT 流水线白名单了现实中常见的扩展名，
+# 因此覆盖 Meta 发送的少数不匹配默认值的类型。
 _WHATSAPP_MIME_EXTENSION_OVERRIDES: Dict[str, str] = {
-    # WhatsApp voice notes — opus codec inside an Ogg container.
+    # WhatsApp 语音消息 —— Ogg 容器中的 opus codec。
     "audio/ogg": ".ogg",
     "audio/x-opus+ogg": ".ogg",
     "audio/opus": ".ogg",
-    # iOS voice memos — AAC inside an MP4 container; STT tools expect .m4a.
+    # iOS 语音备忘 —— MP4 容器中的 AAC；STT 工具期望 .m4a。
     "audio/mp4": ".m4a",
     "audio/x-m4a": ".m4a",
-    # Image — mimetypes occasionally returns .jpe (legacy IANA) instead
-    # of .jpg, which trips up tools that switch on extension.
+    # 图片 —— mimetypes 偶尔返回 .jpe（legacy IANA）而非 .jpg，
+    # 这会让按扩展名切换的工具出错。
     "image/jpeg": ".jpg",
 }
 
 
 def _ext_for_mime(mime: str) -> Optional[str]:
-    """Resolve a mime type to the file extension we want on disk.
+    """将 MIME 类型解析为我们想要的磁盘文件扩展名。
 
-    Consults the override map first so types like ``audio/ogg`` produce
-    the extension downstream tools actually accept (``.ogg``, not the
-    technically-correct-but-broken ``.oga``). Falls back to Python's
-    ``mimetypes.guess_extension`` for anything we haven't pinned.
+    先查询覆盖映射，使 ``audio/ogg`` 这类类型产生下游工具真正能接受的
+    扩展名（``.ogg``，而不是技术上正确但实际损坏的 ``.oga``）。
+    对未固定的类型回退到 Python 的 ``mimetypes.guess_extension``。
     """
     if not mime:
         return None
@@ -160,50 +154,48 @@ def _ext_for_mime(mime: str) -> Optional[str]:
     return mimetypes.guess_extension(primary) or None
 
 
-# Inbound media cache lives under the user's hermes dir so it survives
-# restarts and gateway reloads — same convention the Baileys bridge uses.
+# 入站媒体缓存位于用户的 hermes 目录下，因此能跨重启和 gateway 重载存活
+# —— 与 Baileys bridge 使用的约定相同。
 _INBOUND_MEDIA_CACHE = Path(get_hermes_dir("platforms/whatsapp_cloud/media", "whatsapp_cloud/media"))
 
 
 def check_whatsapp_cloud_requirements() -> bool:
-    """Return whether transport dependencies are available.
+    """返回传输依赖是否可用。
 
-    aiohttp is needed for the webhook server (inbound). httpx is needed
-    for Graph API calls (outbound). Both ship with hermes-agent's default
-    dependency set, so this should always be True in normal installs.
+    webhook 服务器（入站）需要 aiohttp。Graph API 调用（出站）需要 httpx。
+    两者都随 hermes-agent 的默认依赖集分发，因此在正常安装中应始终为 True。
     """
     return AIOHTTP_AVAILABLE and HTTPX_AVAILABLE
 
 
 class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
-    """WhatsApp Business Cloud API adapter.
+    """WhatsApp Business Cloud API 适配器。
 
-    Outbound: HTTPS POST to ``graph.facebook.com/<api_version>/<phone_id>/messages``.
-    Inbound: aiohttp server accepting Meta's webhook payloads.
+    出站：HTTPS POST 到 ``graph.facebook.com/<api_version>/<phone_id>/messages``。
+    入站：接受 Meta webhook 负载的 aiohttp 服务器。
 
-    The mixin must come first in the bases list so its ``format_message``
-    overrides ``BasePlatformAdapter.format_message`` (the base provides a
-    generic implementation that does not convert markdown to WhatsApp
-    syntax). The Baileys adapter does the same.
+    mixin 必须位于 bases 列表的最前面，使其 ``format_message`` 覆盖
+    ``BasePlatformAdapter.format_message``（base 提供了一个不会将 Markdown
+    转换为 WhatsApp 语法的通用实现）。Baileys 适配器同样如此。
     """
 
-    splits_long_messages = True  # send() chunks via truncate_message()
+    splits_long_messages = True  # send() 通过 truncate_message() 分块
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.WHATSAPP_CLOUD)
         extra = config.extra or {}
 
-        # Required
+        # 必需
         self._phone_number_id: str = str(extra.get("phone_number_id", "")).strip()
         self._access_token: str = str(extra.get("access_token", "")).strip()
 
-        # Optional / used in later phases
+        # 可选 / 在后续阶段使用
         self._app_id: str = str(extra.get("app_id", "")).strip()
         self._app_secret: str = str(extra.get("app_secret", "")).strip()
         self._waba_id: str = str(extra.get("waba_id", "")).strip()
         self._verify_token: str = str(extra.get("verify_token", "")).strip()
 
-        # Webhook server config
+        # webhook 服务器配置
         self._webhook_host: str = str(extra.get("webhook_host", DEFAULT_WEBHOOK_HOST))
         self._webhook_port: int = int(extra.get("webhook_port", DEFAULT_WEBHOOK_PORT))
         self._webhook_path: str = self._normalize_path(
@@ -216,11 +208,9 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         # Graph API
         self._api_version: str = str(extra.get("api_version", DEFAULT_API_VERSION))
 
-        # Behavior-mixin contract: these names are read by the mixin's
-        # gating methods. WHATSAPP_CLOUD_* env vars take precedence so the
-        # two adapters can run in parallel with independent policies; the
-        # shared WHATSAPP_* names remain as fallback for single-adapter
-        # setups.
+        # Behavior-mixin 契约：这些名称由 mixin 的门控方法读取。
+        # WHATSAPP_CLOUD_* 环境变量优先，使两个适配器能以各自独立策略
+        # 并行运行；共享的 WHATSAPP_* 名称作为单适配器设置的兜底。
         import os
 
         self._reply_prefix: Optional[str] = extra.get("reply_prefix")
@@ -250,46 +240,41 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         )
         self._mention_patterns = self._compile_mention_patterns()
 
-        # Webhook dedup state — wamid → True. OrderedDict gives O(1) FIFO
-        # eviction. In-memory only; Phase 5 may promote to SessionDB if we
-        # decide we need replay protection across gateway restarts.
+        # webhook 去重状态 —— wamid → True。OrderedDict 提供 O(1) FIFO
+        # 淘汰。仅存于内存；Phase 5 可能提升到 SessionDB，如果我们决定
+        # 需要跨 gateway 重启的重放保护。
         self._seen_wamids: "OrderedDict[str, bool]" = OrderedDict()
         self._duplicate_count: int = 0
         self._accepted_count: int = 0
         self._rejected_signature_count: int = 0
 
-        # One-shot flags for warnings that would otherwise spam the log.
+        # 用于警告的一次性标志，否则会刷屏日志。
         self._warned_no_ffmpeg: bool = False
 
-        # Per-chat cache of the latest inbound wamid. Meta's typing
-        # indicator + read-receipt API requires a specific message_id
-        # to attach to (typically "the latest message in the
-        # conversation"). We refresh this on every accepted inbound
-        # message so ``send_typing`` always has a valid target without
-        # threading an extra kwarg through the gateway's base contract.
-        # In-memory only; on gateway restart the next inbound message
-        # repopulates it.
+        # 每聊天的最新入站 wamid 缓存。Meta 的 typing 指示符 + 已读回执
+        # API 需要附加到一个具体的 message_id（通常是 "会话中最新的消息"）。
+        # 我们在每条接受的入站消息上刷新它，使 ``send_typing`` 始终有
+        # 一个有效目标，而无需在 gateway 的 base 契约里塞一个额外的 kwarg。
+        # 仅存于内存；gateway 重启时下一条入站消息会重新填充。
         self._last_inbound_wamid_by_chat: "OrderedDict[str, str]" = OrderedDict()
 
-        # Interactive-button state. Each maps a short id (embedded in the
-        # outbound button payload) → the session/correlation key needed
-        # by the gateway's resolver. See ``_handle_interactive_reply`` for
-        # the dispatch table. Entries are popped when the user taps a
-        # button; ignored prompts would otherwise accumulate forever, so
-        # each dict is FIFO-capped via _bounded_put (oldest pending prompt
-        # evicted first — an evicted button tap degrades to the plain-text
-        # fallback path, same as after a gateway restart).
-        #   _clarify_state:        clarify_id → session_key (resolves via
-        #                          tools.clarify_gateway.resolve_gateway_clarify)
-        #   _exec_approval_state:  approval_id → session_key (resolves via
-        #                          tools.approval.resolve_gateway_approval)
-        #   _slash_confirm_state:  confirm_id → session_key (resolves via
-        #                          tools.slash_confirm.resolve)
+        # Interactive-button 状态。每个映射短 id（嵌入出站 button 负载）→
+        # gateway 解析器所需的 session/correlation key。分发表见
+        # ``_handle_interactive_reply``。条目在用户点击按钮时弹出；
+        # 否则被忽略的提示会永久累积，因此每个字典通过 _bounded_put 进行
+        # FIFO 上限（最旧的待处理提示先淘汰 —— 被淘汰的按钮点击会降级为
+        # 纯文本兜底路径，与 gateway 重启后一样）。
+        #   _clarify_state:        clarify_id → session_key（通过
+        #                          tools.clarify_gateway.resolve_gateway_clarify 解析）
+        #   _exec_approval_state:  approval_id → session_key（通过
+        #                          tools.approval.resolve_gateway_approval 解析）
+        #   _slash_confirm_state:  confirm_id → session_key（通过
+        #                          tools.slash_confirm.resolve 解析）
         self._clarify_state: "OrderedDict[str, str]" = OrderedDict()
         self._exec_approval_state: "OrderedDict[str, str]" = OrderedDict()
         self._slash_confirm_state: "OrderedDict[str, str]" = OrderedDict()
 
-        # Runtime
+        # 运行时
         self._runner = None
         self._http_client: Optional["httpx.AsyncClient"] = None
 
@@ -300,23 +285,23 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         return raw if raw.startswith("/") else f"/{raw}"
 
     def _graph_url(self, path: str) -> str:
-        """Build a Graph API URL for this adapter's phone-number scope."""
+        """为本适配器的 phone-number 作用域构建 Graph API URL。"""
         if path.startswith("/"):
             path = path[1:]
         return f"{GRAPH_API_BASE}/{self._api_version}/{self._phone_number_id}/{path}"
 
     @staticmethod
     def _bounded_put(cache: "OrderedDict[str, str]", key: str, value: str) -> None:
-        """Insert into a FIFO-capped OrderedDict, evicting oldest entries."""
+        """插入到 FIFO 上限的 OrderedDict，淘汰最旧的条目。"""
         cache[key] = value
         while len(cache) > INTERACTIVE_STATE_CACHE_SIZE:
             cache.popitem(last=False)
 
     def _effective_reply_prefix(self) -> str:
-        """Cloud API has no self-chat concept — never prepend a reply prefix.
+        """Cloud API 没有 self-chat 概念 —— 永不附加回复前缀。
 
-        Override the mixin default which keys off WHATSAPP_MODE=self-chat
-        (a Baileys-only setting).
+        覆盖 mixin 默认值（后者依据 WHATSAPP_MODE=self-chat，
+        这是一个仅 Baileys 才有的设置）。
         """
         if self._reply_prefix is not None:
             return self._reply_prefix.replace("\\n", "\n")
@@ -324,13 +309,12 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     @staticmethod
     def _normalize_allow_ids(ids: set[str]) -> set[str]:
-        """Normalize allowlist entries to bare wa_id form.
+        """将白名单条目规范化为纯 wa_id 形式。
 
-        The Cloud API identifies users by bare wa_id (digits, no JID
-        suffix), while Baileys uses ``<digits>@s.whatsapp.net`` JIDs.
-        Users sharing an allowlist between both adapters (or pasting a
-        JID/phone number with ``+`` or separators) should still match,
-        so strip any ``@...`` suffix and non-digit characters.
+        Cloud API 以纯 wa_id（数字、无 JID 后缀）标识用户，而 Baileys
+        使用 ``<digits>@s.whatsapp.net`` JID。在两个适配器之间共享白名单
+        （或粘贴带 ``+`` 或分隔符的 JID/电话号码）的用户也应能匹配，
+        因此剥离任何 ``@...`` 后缀和非数字字符。
         """
         normalized: set[str] = set()
         for entry in ids:
@@ -340,7 +324,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         return normalized
 
     def _is_dm_allowed(self, sender_id: str) -> bool:
-        """Allowlist check against the normalized bare wa_id."""
+        """针对规范化后的纯 wa_id 进行白名单检查。"""
         if self._dm_policy == "allowlist":
             bare = re.sub(r"\D", "", str(sender_id).split("@", 1)[0])
             return (bare or sender_id) in self._allow_from
@@ -365,15 +349,15 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             )
             return False
 
-        # Outbound HTTP client. Tighter keepalive matches other platform
-        # adapters so idle CLOSE_WAIT drains promptly (#18451).
+        # 出站 HTTP 客户端。更紧的 keepalive 与其他平台适配器一致，
+        # 使空闲的 CLOSE_WAIT 尽快排空（#18451）。
         from gateway.platforms._http_client_limits import platform_httpx_limits
 
         self._http_client = httpx.AsyncClient(
             timeout=30.0, limits=platform_httpx_limits()
         )
 
-        # Inbound webhook server.
+        # 入站 webhook 服务器。
         app = web.Application()
         app.router.add_get(self._health_path, self._handle_health)
         app.router.add_get(self._webhook_path, self._handle_verify)
@@ -429,10 +413,10 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a text message via Graph API.
+        """通过 Graph API 发送一条文本消息。
 
-        ``chat_id`` is the recipient's WhatsApp ID (``wa_id``) — typically
-        their phone number with country code, no plus sign.
+        ``chat_id`` 是接收者的 WhatsApp ID（``wa_id``）—— 通常是带国家
+        代码的电话号码，不带加号。
         """
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
@@ -458,7 +442,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 "text": {"body": chunk, "preview_url": True},
             }
             if reply_to and idx == 0:
-                # Quote the user's message on the first chunk only.
+                # 仅在第一个分块上引用用户消息。
                 payload["context"] = {"message_id": reply_to}
             try:
                 resp = await self._http_client.post(url, headers=headers, json=payload)
@@ -467,8 +451,8 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 return SendResult(success=False, error=str(exc))
 
             if resp.status_code != 200:
-                # Meta returns structured errors in the body — surface them
-                # to the caller so log lines have actionable context.
+                # Meta 在 body 中返回结构化错误 —— 将其上抛给调用方，
+                # 使日志行具备可操作的上下文。
                 try:
                     body = resp.json()
                 except Exception:
@@ -491,36 +475,33 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
         return SendResult(success=True, message_id=last_message_id)
 
-    # ------------------------------------------------------------------ typing indicator + read receipts
+    # ------------------------------------------------------------------ typing 指示符 + 已读回执
     #
-    # Meta couples these into a single API call: a POST to /messages
-    # with ``status: "read"`` marks the message read (blue double
-    # checkmarks), and the optional ``typing_indicator`` field
-    # additionally shows the user a "typing..." pip in their chat UI.
-    # The indicator auto-dismisses when we respond OR after 25 seconds,
-    # whichever comes first — so this matches "I see your message and
-    # I'm working on a reply" UX exactly.
+    # Meta 将这两者耦合进单次 API 调用：一个带 ``status: "read"`` 的
+    # POST /messages 会将消息标记为已读（蓝色双勾），可选的
+    # ``typing_indicator`` 字段还会在用户的聊天 UI 中显示 "typing..."
+    # 小提示。该指示符在我们回复或 25 秒后自动消失（取先到者）——
+    # 因此完全契合 "我看到你的消息了，正在回复" 的 UX。
     #
-    # The API requires a specific message_id to attach to. We cache the
-    # latest inbound wamid per chat in _last_inbound_wamid_by_chat
-    # (refreshed in _build_message_event_from_cloud) so this method can
-    # look it up without needing the gateway base contract to plumb
-    # event.message_id into send_typing's signature.
+    # API 需要附加到一个具体的 message_id。我们在
+    # _last_inbound_wamid_by_chat 中按聊天缓存最新入站 wamid
+    # （在 _build_message_event_from_cloud 中刷新），使本方法能查到它，
+    # 而无需 gateway base 契约把 event.message_id 一路塞进
+    # send_typing 的签名。
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
-        """Mark the latest inbound message as read AND show a typing
-        indicator in the user's chat UI.
+        """将最新入站消息标记为已读，并在用户的聊天 UI 中显示 typing 指示符。
 
-        Best-effort: any error (no inbound wamid yet, network failure,
-        stale token, message older than 30 days) is swallowed silently
-        so the agent's main reply path isn't blocked by UX polish.
+        尽力而为：任何错误（尚无入站 wamid、网络失败、过期 token、
+        消息超过 30 天）都会被静默吞掉，使 agent 的主回复路径不会
+        被 UX 修饰阻塞。
         """
         if self._http_client is None:
             return
         wamid = self._last_inbound_wamid_by_chat.get(chat_id)
         if not wamid:
-            # No inbound message yet for this chat (or cache cleared on
-            # restart) — skip. The next inbound message will repopulate.
+            # 此聊天尚无入站消息（或缓存因重启被清空）—— 跳过。
+            # 下一条入站消息会重新填充。
             return
 
         url = self._graph_url("messages")
@@ -537,13 +518,12 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         try:
             resp = await self._http_client.post(url, headers=headers, json=payload)
         except Exception:
-            # Network / connection error — silent fail. Typing UX must
-            # never block message dispatch.
+            # 网络 / 连接错误 —— 静默失败。Typing UX 绝不能阻塞消息分发。
             return
-        # Best-effort: surface 4xx for ops visibility but don't raise.
-        # Code 131009 = "Parameter value is not valid" (typically wamid
-        # > 30 days old) — common after a long-quiet conversation, log
-        # at info not warning.
+        # 尽力而为：上抛 4xx 供运维可见，但不抛异常。
+        # 错误码 131009 = "Parameter value is not valid"（通常是 wamid
+        # 超过 30 天）—— 在长时间沉寂的会话中常见，以 info 而非 warning
+        # 记录。
         if resp.status_code != 200:
             try:
                 body = resp.json()
@@ -563,20 +543,18 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     # ------------------------------------------------------------------ interactive messages
     #
-    # WhatsApp Cloud supports two interactive primitives we use here:
-    #   * ``interactive.type=button`` — up to 3 quick-reply buttons. Each
-    #     button has an ``id`` (≤256 chars, returned verbatim on tap) and
-    #     a ``title`` (≤20 chars, the label shown). Used for clarify with
-    #     ≤3 choices, exec_approval, and slash_confirm.
-    #   * ``interactive.type=list``   — a single "Tap to choose" button
-    #     that opens a sheet with up to 10 rows. Used for clarify with
-    #     >3 choices and the model picker.
+    # WhatsApp Cloud 支持两种我们在此使用的 interactive 原语：
+    #   * ``interactive.type=button`` —— 最多 3 个 quick-reply 按钮。
+    #     每个按钮有一个 ``id``（≤256 字符，点击时原样返回）和一个
+    #     ``title``（≤20 字符，显示的标签）。用于 ≤3 选项的 clarify、
+    #     exec_approval 和 slash_confirm。
+    #   * ``interactive.type=list``   —— 单个 "Tap to choose" 按钮，
+    #     打开一个最多 10 行的浮层。用于 >3 选项的 clarify 和模型选择器。
     #
-    # Unlike utility templates these are FREE-FORM and need no Meta-side
-    # approval. They only work *inside* the 24-hour conversation window —
-    # which is fine because all five senders below fire in direct response
-    # to a user message (clarify mid-conversation, approval mid-tool-call,
-    # etc.) so we're always inside the window when they're invoked.
+    # 与工具模板不同，这些是自由形态的，不需要 Meta 侧审批。它们仅在
+    # 24 小时会话窗口*内*有效 —— 这没问题，因为下面五个发送方都是
+    # 在直接响应用户消息时触发（会话中途的 clarify、工具调用中途的
+    # approval 等），因此被调用时我们始终处于窗口内。
 
     async def _post_interactive(
         self,
@@ -584,12 +562,12 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         interactive_body: Dict[str, Any],
         reply_to: Optional[str] = None,
     ) -> SendResult:
-        """Low-level POST for an ``interactive`` message payload.
+        """``interactive`` 消息负载的低层 POST。
 
-        ``interactive_body`` is the inner ``interactive: {...}`` dict —
-        the caller supplies ``type``, ``body``, and ``action``. This
-        wrapper handles auth, error mapping, and message_id extraction so
-        each send_* method stays focused on its own button shape.
+        ``interactive_body`` 是内部的 ``interactive: {...}`` 字典 ——
+        由调用方提供 ``type``、``body`` 和 ``action``。此封装处理鉴权、
+        错误映射和 message_id 提取，使每个 send_* 方法专注于自身的
+        按钮形状。
         """
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
@@ -639,19 +617,17 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     @staticmethod
     def _truncate_button_label(text: str, limit: int = 20) -> str:
-        """WhatsApp caps quick-reply button titles at 20 chars and list-row
-        titles at 24. Truncate with an ellipsis so we surface as much of
-        the choice as fits."""
+        """WhatsApp 将 quick-reply 按钮标题限制为 20 字符，list-row
+        标题限制为 24 字符。用省略号截断，使我们能尽可能多地展示选项。"""
         text = str(text or "").strip()
         if len(text) <= limit:
             return text
-        # Reserve 1 char for the ellipsis. WhatsApp counts the ellipsis
-        # toward the limit.
+        # 为省略号预留 1 字符。WhatsApp 将省略号计入长度上限。
         return text[: max(1, limit - 1)] + "…"
 
     @staticmethod
     def _truncate_body(text: str, limit: int = 1024) -> str:
-        """``interactive.body.text`` caps at 1024 chars."""
+        """``interactive.body.text`` 上限为 1024 字符。"""
         text = str(text or "")
         if len(text) <= limit:
             return text
@@ -666,18 +642,18 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         session_key: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Render a clarify prompt as native WhatsApp interactive buttons.
+        """将 clarify 提示渲染为原生 WhatsApp interactive 按钮。
 
-        - 1–3 choices → ``interactive.type=button`` (inline pill buttons).
-        - 4+ choices → ``interactive.type=list`` (tap-to-open sheet with
-          up to 10 rows). Telegram's "Other (type answer)" escape hatch
-          is appended as the final row, picking it flips the entry into
-          text-capture mode handled by the gateway's text intercept.
-        - 0 choices (open-ended) → plain text question; the next message
-          in the session is captured by the gateway and resolves clarify.
+        - 1–3 个选项 → ``interactive.type=button``（inline 胶囊按钮）。
+        - 4+ 个选项 → ``interactive.type=list``（点按打开的浮层，最多
+          10 行）。Telegram 的 "Other (type answer)" 兜底入口作为最后
+          一行追加，选择它会将条目切换为文本捕获模式，由 gateway 的
+          文本拦截处理。
+        - 0 个选项（开放式）→ 纯文本问题；会话中的下一条消息由
+          gateway 捕获并解析 clarify。
 
-        The button ``id`` field carries ``cl:<clarify_id>:<idx>`` (or
-        ``:other``); inbound webhook parsing dispatches on the prefix.
+        按钮 ``id`` 字段携带 ``cl:<clarify_id>:<idx>``（或 ``:other``）；
+        入站 webhook 解析按前缀分发。
         """
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
@@ -685,14 +661,13 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         question = (question or "").strip()
         reply_to = (metadata or {}).get("reply_to_message_id") if metadata else None
 
-        # Open-ended → just send the question, gateway captures next msg.
+        # 开放式 → 直接发送问题，gateway 捕获下一条消息。
         if not choices:
             return await self.send(chat_id, f"❓ {question}", reply_to=reply_to)
 
-        # Mirror Telegram: render full choice text in body so long
-        # options aren't truncated to the 20-char button label cap.
-        # Truncate choices to MAX_CHOICES (4) — the tool layer enforces
-        # this already, but be defensive.
+        # 对齐 Telegram：在 body 中渲染完整选项文本，使长选项不会被
+        # 截断到 20 字符的按钮标签上限。将选项截断为 MAX_CHOICES（4）
+        # —— 工具层已强制此限制，但做防御性处理。
         choices_list = [str(c).strip() for c in choices[:10] if str(c).strip()]
         option_lines = "\n".join(
             f"{i + 1}. {c}" for i, c in enumerate(choices_list)
@@ -716,9 +691,9 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 "action": {"buttons": buttons},
             }
         else:
-            # List mode: rows must each have id + title (≤24 chars).
-            # Description (≤72 chars) renders below the title — we put
-            # the truncated choice text there for skimmability.
+            # List 模式：每行必须包含 id + title（≤24 字符）。
+            # Description（≤72 字符）渲染在标题下方 —— 我们把截断后的
+            # 选项文本放在那里以提升可扫读性。
             rows = []
             for idx, choice_text in enumerate(choices_list):
                 rows.append({
@@ -753,18 +728,17 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         description: str = "dangerous command",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Render a dangerous-command approval prompt with native buttons.
+        """将危险命令的审批提示渲染为原生按钮。
 
-        Two quick-reply buttons (Approve / Deny). Tapping resolves the
-        waiting agent via ``tools.approval.resolve_gateway_approval`` —
-        same mechanism as the text ``/approve`` flow. The agent thread
-        is blocked until the user taps or types a response.
+        两个 quick-reply 按钮（Approve / Deny）。点击通过
+        ``tools.approval.resolve_gateway_approval`` 解析等待中的 agent
+        —— 与文本 ``/approve`` 流程相同的机制。agent 线程会一直阻塞，
+        直到用户点击或输入响应。
         """
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
 
-        # WhatsApp body caps at 1024 chars; reserve room for the
-        # framing prose around the command.
+        # WhatsApp body 上限 1024 字符；为命令周围的框架文字预留空间。
         cmd = command or ""
         cmd_preview = cmd if len(cmd) <= 800 else cmd[:800] + "..."
         body_text = self._truncate_body(
@@ -807,12 +781,11 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         confirm_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Render a 3-button slash-command confirmation prompt.
+        """将斜杠命令确认提示渲染为 3 按钮形式。
 
-        Mirrors Telegram's send_slash_confirm: Approve Once / Always /
-        Cancel. The confirm_id is supplied by the caller (slash command
-        handler) — we just store the session_key mapping for the inbound
-        resolver to look up.
+        对齐 Telegram 的 send_slash_confirm：Approve Once / Always /
+        Cancel。confirm_id 由调用方（斜杠命令处理程序）提供 —— 我们
+        只是存储 session_key 映射，供入站解析器查找。
         """
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
@@ -849,7 +822,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
     @staticmethod
     def _format_graph_error(body: Dict[str, Any], status_code: int) -> str:
         err = (body or {}).get("error") or {}
-        # Graph API error shape:
+        # Graph API 错误形状：
         # {"error": {"message": "...", "type": "...", "code": ..., "fbtrace_id": "..."}}
         message = err.get("message") or body.get("raw") or "unknown error"
         code = err.get("code")
@@ -858,10 +831,10 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         return f"HTTP {status_code}: {message}"
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        # Cloud API doesn't expose a direct "chat info" endpoint the way
-        # Slack/Discord do — we just echo the wa_id. Profile name (when
-        # known) flows in via webhook ``contacts[].profile.name`` and is
-        # cached on the MessageEvent, not here.
+        # Cloud API 没有像 Slack/Discord 那样的直接 "chat info" 端点
+        # —— 我们仅回显 wa_id。Profile name（已知时）通过 webhook
+        # ``contacts[].profile.name`` 流入，并缓存在 MessageEvent 上，
+        # 而非此处。
         return {"name": chat_id, "type": "dm"}
 
     # ------------------------------------------------------------------ outbound media
@@ -871,14 +844,14 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         media_kind: str,
         mime_type: Optional[str] = None,
     ) -> tuple[Optional[str], Optional[str]]:
-        """Upload a local file to the Graph /media endpoint.
+        """将本地文件上传到 Graph /media 端点。
 
-        Returns ``(media_id, None)`` on success, ``(None, error_string)``
-        on failure. Two-step send: this gets the id, then ``_send_media``
-        references it. Used when we have a local file and no public URL.
+        成功时返回 ``(media_id, None)``，失败时返回 ``(None, error_string)``。
+        两步发送：此处获取 id，然后 ``_send_media`` 引用它。用于我们有
+        本地文件但没有公网 URL 的场景。
 
-        ``media_kind`` is one of "image", "video", "audio", "document",
-        "sticker" — selects size cap + default mime fallback.
+        ``media_kind`` 是 "image"、"video"、"audio"、"document"、
+        "sticker" 之一 —— 选择大小上限 + 默认 mime 兜底。
         """
         if self._http_client is None:
             return None, "Not connected"
@@ -939,12 +912,11 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         filename: Optional[str] = None,
         reply_to: Optional[str] = None,
     ) -> SendResult:
-        """POST a media message referencing either an uploaded media_id or
-        a public ``link``.
+        """POST 一条媒体消息，引用已上传的 media_id 或公网 ``link``。
 
-        Exactly one of ``media_id`` or ``media_link`` must be set. Captions
-        and filenames are passed through where Meta accepts them (caption
-        on image/video/document; filename on document only).
+        ``media_id`` 和 ``media_link`` 必须恰好设置一个。Caption 和
+        filename 在 Meta 接受的位置透传（caption 在 image/video/document；
+        filename 仅在 document）。
         """
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
@@ -1017,12 +989,11 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         mime_type: Optional[str] = None,
     ) -> SendResult:
-        """Smart dispatcher: HTTPS URL → ``link`` send; local path → upload + ``id`` send.
+        """智能分发：HTTPS URL → ``link`` 发送；本地路径 → 上传 + ``id`` 发送。
 
-        Prefers the ``link`` path when possible (one fewer Graph round
-        trip). Meta fetches from the URL themselves. Used as the common
-        backend for ``send_image`` / ``send_video`` / etc. — keeps the
-        public method bodies thin.
+        在可能时优先走 ``link`` 路径（少一次 Graph 往返）。Meta 自行从
+        URL 拉取。作为 ``send_image`` / ``send_video`` 等的公共后端 ——
+        保持公开方法体精简。
         """
         if source.startswith(("http://", "https://")):
             return await self._send_media(
@@ -1053,11 +1024,11 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send an image by public URL. Prefers Meta's ``link`` mode.
+        """通过公网 URL 发送图片。优先使用 Meta 的 ``link`` 模式。
 
-        ``**kwargs`` absorbs platform-agnostic args the base class passes
-        (e.g. ``metadata``) that the Cloud API doesn't have a use for.
-        Mirrors send_image_file / send_video / send_voice / send_document.
+        ``**kwargs`` 吸收 base class 传入的平台无关参数（例如
+        ``metadata``），Cloud API 用不到它们。与 send_image_file /
+        send_video / send_voice / send_document 一致。
         """
         return await self._send_media_from_path_or_link(
             chat_id, image_url, "image", caption=caption, reply_to=reply_to
@@ -1071,7 +1042,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send a local image file via two-step upload + id."""
+        """通过两步 upload + id 发送本地图片文件。"""
         return await self._send_media_from_path_or_link(
             chat_id, image_path, "image", caption=caption, reply_to=reply_to
         )
@@ -1084,7 +1055,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send a video. Local path → upload; HTTPS URL → link mode."""
+        """发送视频。本地路径 → 上传；HTTPS URL → link 模式。"""
         return await self._send_media_from_path_or_link(
             chat_id, video_path, "video", caption=caption, reply_to=reply_to
         )
@@ -1097,13 +1068,12 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send an audio file as a WhatsApp voice message.
+        """将音频文件作为 WhatsApp 语音消息发送。
 
-        WhatsApp renders ``audio/ogg; codecs=opus`` as the green
-        voice-note bubble; other audio types (MP3, AAC, etc.) appear as
-        a generic audio attachment. Hermes TTS produces MP3, so we try
-        ffmpeg conversion to opus first and fall back to sending the
-        MP3 as-is when ffmpeg is unavailable.
+        WhatsApp 将 ``audio/ogg; codecs=opus`` 渲染为绿色语音气泡；
+        其他音频类型（MP3、AAC 等）显示为通用音频附件。Hermes TTS 生成
+        MP3，因此我们先尝试用 ffmpeg 转换为 opus，ffmpeg 不可用时
+        回退为原样发送 MP3。
         """
         source = audio_path
         mime_type: Optional[str] = None
@@ -1123,16 +1093,15 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                         mime_type="audio/ogg; codecs=opus",
                     )
                 finally:
-                    # The .ogg is a transient conversion artifact next to
-                    # the source MP3 — clean it up after upload so voice
-                    # sends don't leak a file per message.
+                    # .ogg 是源 MP3 旁边的瞬时转换产物 —— 上传后清理，
+                    # 使语音发送不会每条消息泄漏一个文件。
                     try:
                         os.unlink(opus_path)
                     except OSError:
                         pass
                 return result
-            # Will deliver as MP3 attachment, not voice bubble.
-            # Warn-once is logged inside _convert_to_opus.
+            # 将作为 MP3 附件投递，而非语音气泡。
+            # 警告一次性日志记录在 _convert_to_opus 内部。
             mime_type = "audio/mpeg"
 
         return await self._send_media_from_path_or_link(
@@ -1149,7 +1118,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         reply_to: Optional[str] = None,
         **kwargs,
     ) -> SendResult:
-        """Send a document attachment with optional filename + caption."""
+        """发送文档附件，可选附带 filename + caption。"""
         return await self._send_media_from_path_or_link(
             chat_id, file_path, "document",
             caption=caption,
@@ -1159,15 +1128,14 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     # ------------------------------------------------------------------ opus conversion
     async def _convert_to_opus(self, mp3_path: str) -> Optional[str]:
-        """Convert an MP3 to ``audio/ogg; codecs=opus`` for voice bubbles.
+        """将 MP3 转换为 ``audio/ogg; codecs=opus``，用于语音气泡。
 
-        Returns the path to the converted file, or None if ffmpeg is
-        missing / conversion fails (caller falls back to sending the
-        original MP3 as an audio file).
+        返回转换后文件的路径；如果 ffmpeg 缺失 / 转换失败则返回 None
+        （调用方回退为将原始 MP3 作为音频文件发送）。
 
-        ``-application voip`` tunes the opus encoder for speech.
-        ``-b:a 32k -vbr on`` matches the bitrate WhatsApp produces for
-        native voice notes (small files, good intelligibility).
+        ``-application voip`` 将 opus 编码器调优为语音。
+        ``-b:a 32k -vbr on`` 匹配 WhatsApp 原生语音消息的比特率
+        （文件小、可懂度好）。
         """
         if not _FFMPEG_PATH:
             self._warn_once_no_ffmpeg()
@@ -1215,21 +1183,20 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         *,
         ext_hint: Optional[str] = None,
     ) -> tuple[Optional[str], Optional[str]]:
-        """Two-step Graph media download: ``GET /<id>`` → temp URL → bytes.
+        """两步 Graph 媒体下载：``GET /<id>`` → 临时 URL → 字节流。
 
-        Returns ``(local_path, mime_type)`` on success. ``mime_type``
-        falls back to what Graph reports in the metadata response.
-        Returns ``(None, None)`` on any failure (logged).
+        成功时返回 ``(local_path, mime_type)``。``mime_type`` 回退为
+        Graph 在元数据响应中报告的值。任何失败都返回 ``(None, None)``
+        （并记录日志）。
 
-        The temporary URL from step 1 is signed and expires in ~5
-        minutes; we download immediately and never persist the URL.
+        第 1 步获得的临时 URL 是签名的，约 5 分钟后过期；我们立即下载，
+        且从不持久化该 URL。
         """
         if self._http_client is None:
             return None, None
-        # Defense in depth: media_id comes from the (signature-verified)
-        # webhook payload, but it's interpolated into both a Graph URL and
-        # a cache filename below — refuse anything that isn't a plain
-        # Meta-style media id so a hostile payload can't traverse paths.
+        # 纵深防御：media_id 来自（已校验签名的）webhook 负载，但它下面
+        # 会被插入到 Graph URL 和缓存文件名中 —— 拒绝任何非纯 Meta 风格
+        # media id 的内容，使恶意负载无法遍历路径。
         media_id = str(media_id).strip()
         if not re.fullmatch(r"[A-Za-z0-9._-]+", media_id):
             logger.warning(
@@ -1238,7 +1205,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             return None, None
         headers = {"Authorization": f"Bearer {self._access_token}"}
 
-        # Step 1 — metadata (gives us a temporary signed URL + mime)
+        # 第 1 步 —— 元数据（给我们一个临时签名 URL + mime）
         try:
             meta_resp = await self._http_client.get(
                 f"{GRAPH_API_BASE}/{self._api_version}/{media_id}",
@@ -1265,8 +1232,8 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         if not temp_url:
             return None, None
 
-        # Step 2 — bytes (auth required even though URL is signed; Meta
-        # documents this explicitly — the URL alone is not enough).
+        # 第 2 步 —— 字节流（即便 URL 已签名也需要鉴权；Meta 明确说明
+        # —— 仅凭 URL 不够）。
         try:
             blob_resp = await self._http_client.get(temp_url, headers=headers)
         except Exception:
@@ -1281,10 +1248,9 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             )
             return None, None
 
-        # Decide the extension. Prefer the override map so audio/ogg
-        # produces .ogg (not the technically-correct-but-broken .oga
-        # mimetypes returns by default). Fall back to ext_hint then
-        # ``.bin`` for unknown types.
+        # 确定扩展名。优先使用覆盖映射，使 audio/ogg 产生 .ogg
+        # （而非 mimetypes 默认返回的、技术上正确但实际损坏的 .oga）。
+        # 回退到 ext_hint，对未知类型使用 ``.bin``。
         ext = ext_hint
         if not ext and mime:
             ext = _ext_for_mime(mime)
@@ -1322,16 +1288,16 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         )
 
     async def _handle_verify(self, request: "web.Request") -> "web.Response":
-        """Meta subscription verification handshake.
+        """Meta 订阅验证握手。
 
-        Meta calls GET ``<webhook>?hub.mode=subscribe&hub.verify_token=...
-        &hub.challenge=...``. We must echo the challenge as plain text iff
-        ``hub.mode == "subscribe"`` AND ``hub.verify_token`` matches the
-        shared secret. Constant-time comparison.
+        Meta 发起 GET ``<webhook>?hub.mode=subscribe&hub.verify_token=...
+        &hub.challenge=...``。当且仅当 ``hub.mode == "subscribe"`` 且
+        ``hub.verify_token`` 匹配共享密钥时，我们必须以纯文本回显 challenge。
+        使用常数时间比较。
         """
         if not self._verify_token:
-            # Misconfigured server — refuse rather than silently accepting
-            # any verify_token, which would let an attacker subscribe.
+            # 配置错误的服务器 —— 拒绝，而不是静默接受任意 verify_token，
+            # 否则会让攻击者得以订阅。
             return web.Response(status=503, text="verify_token not configured")
 
         mode = request.query.get("hub.mode", "")
@@ -1341,8 +1307,8 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         if mode != "subscribe":
             return web.Response(status=400, text="bad mode")
 
-        # Constant-time compare to avoid token-length / token-content leaks
-        # via timing. ``hmac.compare_digest`` works on str.
+        # 常数时间比较，避免通过计时泄露 token 长度 / 内容。
+        # ``hmac.compare_digest`` 适用于 str。
         import hmac as _hmac
 
         if not _hmac.compare_digest(token, self._verify_token):
@@ -1352,35 +1318,33 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         return web.Response(text=challenge, content_type="text/plain")
 
     async def _handle_webhook(self, request: "web.Request") -> "web.Response":
-        """Inbound webhook POST handler.
+        """入站 webhook POST 处理器。
 
-        Lifecycle:
-          1. Read raw bytes (signature is over the raw body — JSON parsing
-             must NOT happen first, or the bytes change).
-          2. Verify ``X-Hub-Signature-256`` HMAC against ``app_secret``.
-          3. Parse JSON.
-          4. Walk ``entry[].changes[].value.{messages, statuses, contacts}``.
-          5. Per-message: dedup by wamid, build MessageEvent, dispatch via
-             ``handle_message`` (which runs the mixin's gating).
-          6. Always respond 200 once we've ack'd a valid request — Meta
-             retries on non-200 for up to 7 days, and we don't want to
-             multiply downstream agent work because of a transient bug
-             during dispatch.
+        生命周期：
+          1. 读取原始字节（签名基于原始 body —— 绝不能先做 JSON 解析，
+             否则字节会改变）。
+          2. 用 ``app_secret`` 校验 ``X-Hub-Signature-256`` HMAC。
+          3. 解析 JSON。
+          4. 遍历 ``entry[].changes[].value.{messages, statuses, contacts}``。
+          5. 每条消息：按 wamid 去重，构建 MessageEvent，通过
+             ``handle_message`` 分发（它会运行 mixin 的门控）。
+          6. 一旦确认请求有效就始终响应 200 —— Meta 在非 200 时会重试
+             长达 7 天，而我们不希望因分发期间的瞬时 bug 让下游 agent
+             工作成倍增加。
         """
         try:
             raw = await request.read()
         except Exception:
             return web.Response(status=400)
 
-        # Meta's documented max payload is 3MB. Reject earlier than aiohttp
-        # would so we don't even compute HMAC over giant junk.
+        # Meta 文档记录的最大负载为 3MB。比 aiohttp 更早拒绝，这样我们
+        # 甚至不会对巨型垃圾内容计算 HMAC。
         if len(raw) > 3 * 1024 * 1024:
             return web.Response(status=413)
 
-        # Refuse to accept anything if app_secret isn't configured. Without
-        # it we can't authenticate the sender, and the handler would be a
-        # data-injection point. Same defensive posture as the GET verify
-        # handshake refusing when verify_token is empty.
+        # 如果未配置 app_secret 则拒绝一切请求。没有它我们无法验证发送者，
+        # 处理器会成为一个数据注入点。与 GET verify 握手在 verify_token
+        # 为空时拒绝的防御姿态相同。
         if not self._app_secret:
             logger.error(
                 "[whatsapp_cloud] webhook POST refused: app_secret unset. "
@@ -1399,9 +1363,8 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             )
             return web.Response(status=401)
 
-        # Parse only AFTER signature passes — bad JSON from an attacker is
-        # already filtered out, this just guards against Meta sending
-        # something malformed.
+        # 仅在签名通过后才解析 —— 攻击者构造的坏 JSON 已被过滤掉，
+        # 这里只是防止 Meta 发来格式错误的内容。
         import json as _json
 
         try:
@@ -1418,11 +1381,11 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     # ------------------------------------------------------------------ signature
     def _verify_signature(self, raw_body: bytes, header: str) -> bool:
-        """Verify the X-Hub-Signature-256 HMAC.
+        """校验 X-Hub-Signature-256 HMAC。
 
-        Meta sends ``sha256=<hex>``; we compute the same HMAC with
-        ``app_secret`` as the key and ``raw_body`` (UTF-8 bytes, not
-        re-serialized JSON) as the message. Constant-time compare.
+        Meta 发送 ``sha256=<hex>``；我们用 ``app_secret`` 作为密钥、
+        ``raw_body``（UTF-8 字节，而非重新序列化的 JSON）作为消息计算
+        相同的 HMAC。常数时间比较。
         """
         if not self._app_secret or not header:
             return False
@@ -1440,36 +1403,34 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     # ------------------------------------------------------------------ dispatch
     def _dedup_wamid(self, wamid: str) -> bool:
-        """Return True if this wamid is being seen for the first time.
+        """当此 wamid 是首次见到时返回 True。
 
-        Returns False (and increments duplicate counter) if the wamid is
-        already in the in-memory cache. Cache is FIFO-evicted at
-        ``WAMID_DEDUP_CACHE_SIZE``.
+        如果 wamid 已在内存缓存中，则返回 False（并增加重复计数器）。
+        缓存在 ``WAMID_DEDUP_CACHE_SIZE`` 处按 FIFO 淘汰。
         """
         if not wamid:
-            # No wamid means we can't dedup — let it through. Meta should
-            # always populate ``id``, but be defensive.
+            # 没有 wamid 意味着我们无法去重 —— 放行。Meta 应始终填充
+            # ``id``，但做防御性处理。
             return True
         if wamid in self._seen_wamids:
             self._duplicate_count += 1
             return False
         self._seen_wamids[wamid] = True
-        # Trim oldest entries to stay under the cap.
+        # 淘汰最旧条目以保持在上限以下。
         while len(self._seen_wamids) > WAMID_DEDUP_CACHE_SIZE:
             self._seen_wamids.popitem(last=False)
         return True
 
     async def _dispatch_payload(self, payload: Dict[str, Any]) -> None:
-        """Walk a verified Meta webhook payload and dispatch each message.
+        """遍历已校验的 Meta webhook 负载并分发每条消息。
 
-        Payload shape (truncated):
+        负载形状（已截断）：
           {object, entry: [{id, changes: [{value: {messages, contacts,
           statuses, metadata}, field: "messages"}]}]}
 
-        We surface ``messages`` events as MessageEvents; ``statuses``
-        events (sent/delivered/read/failed) are logged but not dispatched
-        — the agent doesn't currently consume delivery receipts and
-        forwarding them would create noisy synthetic events.
+        我们将 ``messages`` 事件呈现为 MessageEvents；``statuses`` 事件
+        （sent/delivered/read/failed）只记录日志不分发 —— agent 当前不
+        消费投递回执，转发它们会产生嘈杂的合成事件。
         """
         if payload.get("object") != "whatsapp_business_account":
             logger.debug(
@@ -1484,15 +1445,13 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 if not isinstance(change, dict):
                     continue
                 if change.get("field") != "messages":
-                    # Other fields (account_alerts, template_status_update,
-                    # etc.) are subscription-dependent and not message
-                    # ingress. Silent skip.
+                    # 其他字段（account_alerts、template_status_update 等）
+                    # 取决于订阅，且不是消息入口。静默跳过。
                     continue
                 value = change.get("value") or {}
                 contacts = value.get("contacts") or []
                 metadata = value.get("metadata") or {}
-                # Build a wa_id → profile-name index for the messages we're
-                # about to surface.
+                # 为即将呈现的消息构建 wa_id → profile-name 索引。
                 contacts_by_waid: Dict[str, str] = {}
                 for contact in contacts:
                     if not isinstance(contact, dict):
@@ -1518,11 +1477,10 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                             raw_message, contacts_by_waid, metadata
                         )
                     except Exception:
-                        # Build errors must not bubble out either: the wamid
-                        # is already dedup-marked above, so a 500 here would
-                        # make Meta retry the batch and every message in it
-                        # (including this one) would be silently dropped as
-                        # a duplicate. Log and move on to the next message.
+                        # 构建错误也绝不能上抛：上方 wamid 已标记为去重，
+                        # 因此这里返回 500 会让 Meta 重试整批，而该批中的
+                        # 每条消息（包括此条）都会被作为重复静默丢弃。
+                        # 记录日志并继续处理下一条消息。
                         logger.exception(
                             "[whatsapp_cloud] failed to build event for wamid %s",
                             wamid,
@@ -1534,15 +1492,15 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     try:
                         await self.handle_message(event)
                     except Exception:
-                        # Dispatch errors must not bubble out — Meta would
-                        # retry the whole batch, multiplying the bug.
+                        # 分发错误绝不能上抛 —— Meta 会重试整批，
+                        # 使 bug 成倍放大。
                         logger.exception(
                             "[whatsapp_cloud] handle_message raised for wamid %s",
                             wamid,
                         )
 
-                # Log status updates at debug level — useful for diagnosing
-                # "did Meta accept my outbound" without flooding INFO logs.
+                # 以 debug 级别记录状态更新 —— 有助于诊断 "Meta 是否接受了
+                # 我的出站"，又不会淹没 INFO 日志。
                 for status in value.get("statuses") or []:
                     if isinstance(status, dict):
                         logger.debug(
@@ -1556,31 +1514,28 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         raw_message: Dict[str, Any],
         contacts_by_waid: Dict[str, str],
     ) -> bool:
-        """Route an inbound interactive reply to the matching resolver.
+        """将入站 interactive 回复路由到匹配的解析器。
 
-        Returns True if the tap was claimed (caller should drop the
-        webhook entry without dispatching a fresh conversation turn).
-        Returns False when the id has no recognized prefix, no live
-        state entry, or the resolver itself reports no waiter — in
-        those cases the caller falls back to standard text-event
-        dispatch, which treats the button title as a normal user
-        message. That graceful fallback covers stale-tap and
-        cross-process-restart scenarios.
+        如果该点击被认领则返回 True（调用方应丢弃该 webhook 条目，
+        不再分发新的会话 turn）。当 id 没有可识别的前缀、没有活跃的
+        状态条目、或解析器自身报告没有等待者时返回 False —— 在这些
+        情况下，调用方回退到标准 text-event 分发，将按钮标题作为普通
+        用户消息处理。这种优雅兜底覆盖了过期点击和跨进程重启的场景。
 
-        Dispatch table:
+        分发表：
           ``cl:<clarify_id>:<idx|other>``  → resolve_gateway_clarify
           ``appr:<approval_id>:approve|deny`` → resolve_gateway_approval
           ``sc:<once|always|cancel>:<confirm_id>`` → slash_confirm.resolve
         """
         inter = raw_message.get("interactive") or {}
-        # button_reply (interactive.type=button) and list_reply
-        # (interactive.type=list) carry id+title in different sub-objects.
+        # button_reply（interactive.type=button）和 list_reply
+        # （interactive.type=list）将 id+title 放在不同的子对象中。
         inner = inter.get("button_reply") or inter.get("list_reply") or {}
         button_id = str(inner.get("id") or "").strip()
         if not button_id:
             return False
 
-        # Clarify: cl:<clarify_id>:<idx|other>
+        # Clarify：cl:<clarify_id>:<idx|other>
         if button_id.startswith("cl:"):
             parts = button_id.split(":", 2)
             if len(parts) != 3:
@@ -1603,15 +1558,12 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 )
                 return False
             if choice == "other":
-                # User wants to type a free-form answer. Flip the entry
-                # into text-capture mode so the gateway's text-intercept
-                # (in _handle_message) picks up their next message and
-                # resolves the clarify. Without this flip,
-                # ``get_pending_for_session`` won't return the entry —
-                # the next text would fall through to the regular agent
-                # path, which collides with the agent thread still
-                # blocked in clarify and produces an "Interrupting
-                # current task" loop.
+                # 用户想输入自由格式的答案。将条目切换为文本捕获模式，
+                # 使 gateway 的文本拦截（在 _handle_message 中）能拾取他们
+                # 的下一条消息并解析 clarify。若不切换，
+                # ``get_pending_for_session`` 不会返回该条目 —— 下一条文本
+                # 会落入常规 agent 路径，与仍在 clarify 中阻塞的 agent
+                # 线程冲突，产生 "Interrupting current task" 循环。
                 try:
                     from tools.clarify_gateway import mark_awaiting_text
                     flipped = mark_awaiting_text(clarify_id)
@@ -1622,19 +1574,17 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     )
                     flipped = False
                 if not flipped:
-                    # Entry vanished between the user tap and our handler
-                    # (timeout, /new, gateway restart). Drop the stale
-                    # state and fall through to text dispatch so the
-                    # user's tap isn't completely ignored.
+                    # 条目在用户点击和我们的处理之间消失了（超时、/new、
+                    # gateway 重启）。丢弃过期状态，并落入文本分发，使
+                    # 用户的点击不被完全忽略。
                     logger.info(
                         "[whatsapp_cloud] clarify 'Other' tap but entry "
                         "missing (clarify_id=%s); falling back to text",
                         clarify_id,
                     )
                     return False
-                # Put state back since we popped it earlier — keep the
-                # clarify_id → session_key mapping live in case future
-                # taps land on the same prompt.
+                # 因为我们之前弹出了状态，这里放回 —— 保持 clarify_id →
+                # session_key 映射活跃，以防未来还有点击落在同一提示上。
                 self._clarify_state[clarify_id] = session_key
                 try:
                     await self.send(
@@ -1643,7 +1593,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     )
                 except Exception:
                     logger.exception("[whatsapp_cloud] clarify other-prompt failed")
-                return True  # claim so we don't also dispatch the tap as text
+                return True  # 认领，这样我们也不会把该点击作为文本分发
             try:
                 idx = int(choice)
             except ValueError:
@@ -1651,20 +1601,17 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     "[whatsapp_cloud] clarify tap had non-int choice: %r",
                     choice,
                 )
-                # Put state back so a follow-up text can still resolve.
+                # 放回状态，使后续文本仍可解析。
                 self._clarify_state[clarify_id] = session_key
                 return False
-            # Use the title text as the resolved response so the agent
-            # sees the human-readable answer, not the index. Title is
-            # the numeric label ("1", "2", ...) so we look up the
-            # full choice from the original prompt — but we didn't
-            # persist that. Fall back to passing the index; the agent
-            # has the prompt in context and can interpret it.
+            # 使用标题文本作为解析后的响应，使 agent 看到人类可读的答案，
+            # 而非索引。标题是数字标签（"1"、"2"、...），因此我们从原始
+            # 提示查找完整选项 —— 但我们没有持久化它。回退为传入索引；
+            # agent 在上下文中持有提示，可以自行解释。
             response_text = str(inner.get("title") or str(idx + 1))
             resolved = resolve_gateway_clarify(clarify_id, response_text)
             if not resolved:
-                # Resolver couldn't find a waiter (e.g. agent already
-                # timed out). Fall through to text dispatch.
+                # 解析器找不到等待者（例如 agent 已超时）。落入文本分发。
                 logger.info(
                     "[whatsapp_cloud] clarify resolver reported no waiter "
                     "(clarify_id=%s) — falling back to text", clarify_id,
@@ -1672,7 +1619,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 return False
             return True
 
-        # Exec approval: appr:<approval_id>:approve|deny
+        # Exec approval：appr:<approval_id>:approve|deny
         if button_id.startswith("appr:"):
             parts = button_id.split(":", 2)
             if len(parts) != 3:
@@ -1703,7 +1650,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     "(session_key=%s) — likely already resolved",
                     session_key,
                 )
-            # Send confirmation message — paralleling Telegram's UX.
+            # 发送确认消息 —— 对齐 Telegram 的 UX。
             try:
                 confirm_text = (
                     "✅ Approved." if choice == "approve" else "❌ Denied."
@@ -1713,7 +1660,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 logger.exception("[whatsapp_cloud] approval confirm failed")
             return True
 
-        # Slash confirm: sc:<once|always|cancel>:<confirm_id>
+        # Slash confirm：sc:<once|always|cancel>:<confirm_id>
         if button_id.startswith("sc:"):
             parts = button_id.split(":", 2)
             if len(parts) != 3:
@@ -1742,7 +1689,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 )
             except Exception:
                 logger.exception("[whatsapp_cloud] slash_confirm.resolve failed")
-                return True  # still claim the tap; surfacing it as text wouldn't help
+                return True  # 仍认领该点击；把它作为文本呈现也无济于事
             if result_text:
                 try:
                     await self.send(str(raw_message.get("from") or ""), result_text)
@@ -1750,9 +1697,8 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     logger.exception("[whatsapp_cloud] slash_confirm reply failed")
             return True
 
-        # Unknown prefix — let text dispatch handle the title as a
-        # regular message. Could be a tap from a plugin-defined adapter
-        # we don't know about; treating it as text is the safe default.
+        # 未知前缀 —— 让文本分发将标题作为普通消息处理。可能是来自
+        # 我们不认识的某个插件定义适配器的点击；将其作为文本是安全默认。
         return False
 
     async def _build_message_event_from_cloud(
@@ -1761,26 +1707,24 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         contacts_by_waid: Dict[str, str],
         metadata: Dict[str, Any],
     ) -> Optional[MessageEvent]:
-        """Convert a Cloud-API message object into a Hermes MessageEvent.
+        """将 Cloud-API 消息对象转换为 Hermes MessageEvent。
 
-        Phase 4 expands beyond text to download inbound media (image,
-        video, audio/voice, document, sticker) by ``media_id`` via the
-        two-step Graph endpoint. Cached files are populated into
-        ``media_urls`` / ``media_types`` so the agent's vision and STT
-        layers see them. Text-readable documents (.txt, .md, .json,
-        source code, etc.) are read and prepended to the message body
-        up to 100KB — same heuristic the Baileys adapter uses.
+        Phase 4 在文本之外扩展，按 ``media_id`` 通过两步 Graph 端点
+        下载入站媒体（图片、视频、音频/语音、文档、贴纸）。缓存文件被
+        填入 ``media_urls`` / ``media_types``，使 agent 的 vision 和 STT
+        层能看到它们。可读文本的文档（.txt、.md、.json、源代码等）会被
+        读取并前置到消息正文，上限 100KB —— 与 Baileys 适配器使用的
+        启发式相同。
 
-        Returns None if the message is filtered out by the mixin's
-        gating (broadcast filter, allow-list, mention requirements).
+        如果消息被 mixin 的门控过滤掉（广播过滤、白名单、mention 要求），
+        则返回 None。
         """
         msg_type_str = str(raw_message.get("type") or "text").lower()
 
-        # Interactive replies (button taps, list selections) carry an ``id``
-        # we set when sending the prompt. Route those to the appropriate
-        # gateway resolver BEFORE falling through to text dispatch — the
-        # resolver unblocks the waiting agent thread, so we don't want to
-        # also kick a fresh conversation turn off the same tap.
+        # Interactive 回复（按钮点击、列表选择）携带我们发送提示时设置
+        # 的 ``id``。在落入文本分发之前，先将它们路由到对应的 gateway
+        # 解析器 —— 解析器会解除等待中 agent 线程的阻塞，因此我们不希望
+        # 同一点击又触发一次新的会话 turn。
         if msg_type_str == "interactive":
             handled = await self._dispatch_interactive_reply(
                 raw_message, contacts_by_waid
@@ -1793,18 +1737,18 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             text = raw_message.get("text") or {}
             body = str(text.get("body") or "")
         elif msg_type_str in {"button", "interactive"}:
-            # Quick-reply buttons. Treat the button payload as text so the
-            # agent can reason about the user's choice.
+            # Quick-reply 按钮。将按钮负载视为文本，使 agent 能推理用户的
+            # 选择。
             if msg_type_str == "button":
                 body = str((raw_message.get("button") or {}).get("text") or "")
             else:
                 inter = raw_message.get("interactive") or {}
-                # button_reply / list_reply both expose ``title``
+                # button_reply / list_reply 都暴露 ``title``
                 inner = inter.get("button_reply") or inter.get("list_reply") or {}
                 body = str(inner.get("title") or "")
         elif msg_type_str in {"image", "video", "audio", "voice", "document", "sticker"}:
-            # Captions live on image / video / document. Other media types
-            # don't carry a caption in Meta's spec, but be defensive.
+            # caption 位于 image / video / document 上。其他媒体类型在
+            # Meta 规范中不携带 caption，但做防御性处理。
             inner = raw_message.get(msg_type_str) or {}
             body = str(inner.get("caption") or "")
 
@@ -1825,14 +1769,13 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         sender_id = str(raw_message.get("from") or "").strip()
         sender_name = contacts_by_waid.get(sender_id, "")
 
-        # Cloud API doesn't have a separate "chat" entity for DMs — chat_id
-        # equals the sender's wa_id. Group support is deferred to v2.
+        # Cloud API 对 DM 没有独立的 "chat" 实体 —— chat_id 等于发送者
+        # 的 wa_id。群组支持推迟到 v2。
         #
-        # Defensive guard: if Meta ever delivers a group-shaped payload
-        # (group support is capability-tier gated by Meta; some WABAs
-        # have it enabled), refuse rather than silently treating it as
-        # a DM. Group messages carry a ``chat`` field on the message
-        # object identifying the group JID — its absence signals DM.
+        # 防御性守卫：如果 Meta 投递了群组形态的负载（群组支持由 Meta
+        # 按能力层级门控；某些 WABA 已启用），则拒绝，而不是静默将其
+        # 视为 DM。群组消息在消息对象上携带标识群组 JID 的 ``chat``
+        # 字段 —— 它的缺失表示是 DM。
         chat_field = raw_message.get("chat")
         if chat_field:
             logger.warning(
@@ -1845,19 +1788,19 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
         chat_id = sender_id
 
-        # Build the data dict the mixin's _should_process_message expects.
-        # Cloud API uses different field names from Baileys, so we adapt.
+        # 构建 mixin 的 _should_process_message 所期望的数据字典。
+        # Cloud API 使用的字段名与 Baileys 不同，因此我们做适配。
         gating_data = {
             "chatId": chat_id,
             "senderId": sender_id,
-            "isGroup": False,  # Phase 3 = DM only
+            "isGroup": False,  # Phase 3 = 仅 DM
             "body": body,
         }
         if not self._should_process_message(gating_data):
             return None
 
-        # Download media if this is a non-text message type. Inbound media
-        # arrives as ``{type: "image", image: {id, mime_type, sha256, ...}}``.
+        # 如果是非文本消息类型则下载媒体。入站媒体以
+        # ``{type: "image", image: {id, mime_type, sha256, ...}}`` 形式到达。
         media_urls: list[str] = []
         media_types: list[str] = []
         if msg_type_str in {"image", "video", "audio", "voice", "document", "sticker"}:
@@ -1884,16 +1827,15 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                         "agent will see message metadata but not the binary",
                         msg_type_str, media_id,
                     )
-                # Document: original filename for the agent's UX.
+                # Document：原始文件名，用于 agent 的 UX。
                 if msg_type_str == "document":
                     fname = str(inner.get("filename") or "").strip()
                     if fname and not body:
                         body = f"[Document: {fname}]"
 
-        # For text-readable documents, inject the file content directly into
-        # the message body so the agent can reason about it without a
-        # separate read_file call. Same heuristic the Baileys adapter uses.
-        # 100KB cap matches Telegram/Discord/Slack.
+        # 对于可读文本的文档，将文件内容直接注入消息正文，使 agent
+        # 无需单独调用 read_file 即可推理它。与 Baileys 适配器使用的
+        # 启发式相同。100KB 上限与 Telegram/Discord/Slack 一致。
         MAX_TEXT_INJECT_BYTES = 100 * 1024
         if msg_type_str == "document" and media_urls:
             for doc_path in media_urls:
@@ -1923,7 +1865,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                             doc_path,
                         )
 
-        # context.id is set when the user replied to one of our messages.
+        # 当用户回复了我们某条消息时，context.id 会被设置。
         context = raw_message.get("context") or {}
         reply_to_id = str(context.get("id") or "").strip() or None
 
@@ -1935,15 +1877,14 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             user_name=sender_name or None,
         )
 
-        # Cloud API timestamps are unix seconds (string). MessageEvent
-        # doesn't enforce a type but downstream code formats with it.
+        # Cloud API 时间戳是 unix 秒（字符串）。MessageEvent 不强制类型，
+        # 但下游代码会用它进行格式化。
         wamid = str(raw_message.get("id") or "") or None
         if wamid and chat_id:
-            # Refresh the per-chat latest-wamid cache so a subsequent
-            # send_typing call can attach the indicator + read receipt
-            # to this message. Done HERE (after _should_process_message
-            # gating) so filtered messages don't leak typing on
-            # unwanted inbound traffic.
+            # 刷新每聊天的最新 wamid 缓存，使后续 send_typing 调用能将
+            # 指示符 + 已读回执附加到此消息。在此处（在
+            # _should_process_message 门控之后）完成，使被过滤的消息不会
+            # 对不想要的入站流量泄漏 typing。
             self._bounded_put(self._last_inbound_wamid_by_chat, chat_id, wamid)
 
         return MessageEvent(

@@ -1,4 +1,4 @@
-"""Microsoft Graph webhook adapter for change-notification ingress."""
+"""Microsoft Graph 变更通知 Webhook 入站适配器。"""
 
 from __future__ import annotations
 
@@ -38,12 +38,12 @@ NotificationScheduler = Callable[[Dict[str, Any], MessageEvent], Awaitable[None]
 
 
 def check_msgraph_webhook_requirements() -> bool:
-    """Return whether required webhook dependencies are available."""
+    """检查 Webhook 所需依赖是否可用。"""
     return AIOHTTP_AVAILABLE
 
 
 class MSGraphWebhookAdapter(BasePlatformAdapter):
-    """Receive Microsoft Graph change notifications and surface them internally."""
+    """接收 Microsoft Graph 变更通知并在内部处理。"""
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.MSGRAPH_WEBHOOK)
@@ -100,13 +100,12 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
     def _parse_allowed_source_cidrs(
         raw: Any,
     ) -> list[ipaddress._BaseNetwork]:
-        """Parse an optional list of CIDR ranges allowed to POST to the webhook.
+        """解析可选的 CIDR 范围列表，允许其中的 IP 向 Webhook POST 数据。
 
-        An empty or missing value means "allow everything" (same behavior as
-        before this field existed). When populated, requests from source IPs
-        outside every listed CIDR are rejected with 403 before the body is
-        parsed. Use this to restrict the endpoint to Microsoft Graph's
-        published webhook source ranges in production deployments.
+        空值或缺失值表示"允许所有"（与该字段存在之前的行为相同）。
+        填写后，来源 IP 不在任何列出 CIDR 范围内的请求将在解析请求体
+        之前以 403 拒绝。在生产部署中使用此字段将端点限制为
+        Microsoft Graph 公布的 Webhook 源 IP 范围。
         """
         if raw is None:
             return []
@@ -203,13 +202,12 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
         )
 
     async def _handle_validation(self, request: "web.Request") -> "web.Response":
-        """Handle Microsoft Graph subscription validation handshake.
+        """处理 Microsoft Graph 订阅验证握手。
 
-        Graph validates a subscription endpoint by sending a GET with
-        ``validationToken`` in the query string; the service must echo the
-        token verbatim as ``text/plain`` within 10 seconds. Anything else
-        (bare GET, GET without the token) is rejected so the endpoint can't
-        be enumerated or mistakenly used for data exfiltration.
+        Graph 通过向端点发送携带 ``validationToken`` 查询参数的 GET 请求
+        来验证订阅端点；服务必须在 10 秒内以 ``text/plain`` 形式逐字
+        回显该 token。其他情况（裸 GET、缺少 token 的 GET）一律拒绝，
+        防止端点被枚举或被误用于数据外泄。
         """
         if not self._source_ip_allowed(request):
             return web.Response(status=403)
@@ -222,8 +220,8 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
         if not self._source_ip_allowed(request):
             return web.Response(status=403)
 
-        # Graph never sends validationToken on POST, but tolerate it for
-        # defensive clients that replay the handshake in-band.
+        # Graph 不会在 POST 上携带 validationToken，但为兼容在带内
+        # 重播握手的防御性客户端，此处也予以处理。
         validation_token = request.query.get("validationToken", "")
         if validation_token:
             return web.Response(text=validation_token, content_type="text/plain")
@@ -251,10 +249,9 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
                 other_rejected += 1
                 continue
             if not self._verify_client_state(notification):
-                # Treat bad clientState as an auth failure: if the whole
-                # batch is forged, we want to signal 403 so the sender
-                # stops retrying. Legitimate Graph retries have valid
-                # clientState and hit the accepted/duplicate paths.
+                # 将错误的 clientState 视为认证失败：若整批消息都是伪造的，
+                # 返回 403 可阻止发送方继续重试。合法的 Graph 重试携带
+                # 有效的 clientState，会命中 accepted/duplicate 路径。
                 auth_rejected += 1
                 continue
 
@@ -271,12 +268,10 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
             self._schedule_notification(notification, event)
 
         self._duplicate_count += duplicates
-        # If anything ingested OR deduped, return 202 with empty body so
-        # Graph acks successfully and we don't leak internal counters. If
-        # every item failed auth, return 403 so an attacker POSTing fake
-        # notifications gets a clear reject. Other failures (malformed,
-        # resource-not-accepted) are the sender's configuration problem,
-        # so 400.
+        # 如果有成功接收或去重的消息，返回 202 空体，使 Graph 确认成功
+        # 且不泄露内部计数器。如果所有条目均认证失败，返回 403 让
+        # 发送伪造通知的攻击者收到明确拒绝。其他失败（格式错误、
+        # 资源不匹配）属于发送方配置问题，返回 400。
         if accepted or duplicates:
             return web.Response(status=202)
         if auth_rejected and not other_rejected:
@@ -284,11 +279,11 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
         return web.Response(status=400)
 
     def _source_ip_allowed(self, request: "web.Request") -> bool:
-        """Return True if the request's source IP is in the configured allowlist.
+        """如果请求源 IP 在配置的允许列表中则返回 True。
 
-        Loopback-only binds may omit ``allowed_source_cidrs`` for local reverse
-        proxies and dev tunnels. Network-accessible binds fail closed until an
-        explicit CIDR allowlist is configured.
+        仅绑定到回环地址的部署可省略 ``allowed_source_cidrs``，
+        适用于本地反向代理和开发隧道。绑定到网络可访问地址时，
+        在配置明确的 CIDR 允许列表之前默认拒绝。
         """
         if self._source_allowlist_required_but_missing():
             return False
@@ -324,13 +319,13 @@ class MSGraphWebhookAdapter(BasePlatformAdapter):
         return False
 
     def _verify_client_state(self, notification: Dict[str, Any]) -> bool:
-        """Verify the Graph-supplied clientState matches the configured secret.
+        """验证 Graph 提供的 clientState 是否与配置的密钥匹配。
 
-        Uses ``hmac.compare_digest`` instead of ``==`` so that a mismatch
-        doesn't leak how many leading characters matched via string-compare
-        timing. The configured client_state is a shared secret (documented in
-        the setup guide as "generate with ``openssl rand -hex 32``"), so a
-        timing-safe compare is the right primitive.
+        使用 ``hmac.compare_digest`` 而非 ``==``，防止不匹配时
+        通过字符串比较时序泄露已匹配的前缀字符数。配置的
+        client_state 是共享密钥（安装指南中记录为
+        "通过 ``openssl rand -hex 32`` 生成"），因此使用时序安全
+        比较是正确的原语。
         """
         expected = self._client_state
         if expected is None:

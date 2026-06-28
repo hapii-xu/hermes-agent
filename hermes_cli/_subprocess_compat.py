@@ -1,28 +1,27 @@
-"""Windows subprocess compatibility helpers.
+"""Windows subprocess 兼容性辅助工具。
 
-Hermes is developed on Linux / macOS and tested natively on Windows too.
-Several common subprocess patterns break silently-or-loudly on Windows:
+Hermes 在 Linux / macOS 上开发，也在 Windows 上原生测试。
+若干常见的 subprocess 使用方式在 Windows 上会静默失败或报错：
 
-* ``["npm", "install", ...]`` — on Windows ``npm`` is ``npm.cmd``, a batch
-  shim.  ``subprocess.Popen(["npm", ...])`` fails with WinError 193
-  ("not a valid Win32 application") because CreateProcessW can't run a
-  ``.cmd`` file without ``shell=True`` or PATHEXT resolution.
+* ``["npm", "install", ...]`` — 在 Windows 上 ``npm`` 是 ``npm.cmd``，
+  一个批处理包装脚本。``subprocess.Popen(["npm", ...])`` 会以 WinError 193
+  （"不是有效的 Win32 应用程序"）失败，因为 CreateProcessW 无法直接运行
+  ``.cmd`` 文件，除非使用 ``shell=True`` 或通过 PATHEXT 解析。
 
-* ``start_new_session=True`` — on POSIX, this maps to ``os.setsid()`` and
-  actually detaches the child.  On Windows it's silently ignored; the
-  Windows equivalent is ``CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS``
-  creationflags, which Python only applies when you pass them explicitly.
+* ``start_new_session=True`` — 在 POSIX 上，这会映射到 ``os.setsid()``，
+  真正地分离子进程。在 Windows 上该参数被静默忽略；Windows 等价方式是
+  ``CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS`` creationflags，
+  只有显式传递时 Python 才会应用。
 
-* Console-window flashes — every ``subprocess.Popen`` of a ``.exe`` on
-  Windows spawns a cmd window briefly unless ``CREATE_NO_WINDOW`` is
-  passed.  Cosmetic but jarring for background daemons.
+* 控制台窗口闪现 — 在 Windows 上每次 ``subprocess.Popen`` 一个 ``.exe``
+  都会短暂弹出 cmd 窗口，除非传入 ``CREATE_NO_WINDOW``。
+  对于后台守护进程而言，这虽属视觉问题，但相当干扰。
 
-This module centralizes the platform-branching logic so the rest of the
-codebase doesn't sprinkle ``if sys.platform == "win32":`` everywhere.
+本模块集中了平台分支逻辑，避免在整个代码库中到处散布
+``if sys.platform == "win32":``。
 
-**All helpers are no-ops on non-Windows** — calling them in Linux/macOS
-code paths is safe by design.  That's the "do no damage on POSIX"
-guarantee.
+**所有辅助函数在非 Windows 系统上均为空操作** — 在 Linux/macOS 代码路径
+中调用它们是安全的，这是"在 POSIX 上无副作用"的保证。
 """
 
 from __future__ import annotations
@@ -45,41 +44,37 @@ IS_WINDOWS = sys.platform == "win32"
 
 
 # -----------------------------------------------------------------------------
-# Node ecosystem launcher resolution
+# Node 生态系统启动器解析
 # -----------------------------------------------------------------------------
 
 
 def resolve_node_command(name: str, argv: Sequence[str]) -> list[str]:
-    """Resolve a Node-ecosystem command name to an absolute-path argv.
+    """将 Node 生态系统命令名解析为绝对路径的 argv。
 
-    On Windows, commands like ``npm``, ``npx``, ``yarn``, ``pnpm``,
-    ``playwright``, ``prettier`` ship as ``.cmd`` files (batch shims).
-    ``subprocess.Popen(["npm", "install"])`` fails with WinError 193
-    because CreateProcessW doesn't execute batch files directly.
+    在 Windows 上，``npm``、``npx``、``yarn``、``pnpm``、
+    ``playwright``、``prettier`` 等命令以 ``.cmd`` 文件（批处理包装脚本）形式存在。
+    ``subprocess.Popen(["npm", "install"])`` 会因 WinError 193 失败，
+    因为 CreateProcessW 无法直接执行批处理文件。
 
-    ``shutil.which(name)`` *does* resolve ``.cmd`` via PATHEXT and returns
-    the fully-qualified path — which CreateProcessW accepts because the
-    extension tells Windows to route through ``cmd.exe /c``.
+    ``shutil.which(name)`` 会通过 PATHEXT 解析 ``.cmd`` 并返回完整路径，
+    CreateProcessW 能接受该路径，因为扩展名会告知 Windows 通过 ``cmd.exe /c`` 路由。
 
-    On POSIX ``shutil.which`` also returns a fully-qualified path when
-    found.  That's a small change from bare-name resolution (the OS does
-    its own PATH search) but functionally identical and has the side
-    benefit of making the argv reproducible in logs.
+    在 POSIX 上，``shutil.which`` 找到命令时也会返回完整路径。
+    这与裸名解析（由 OS 自行搜索 PATH）略有不同，但功能上完全等价，
+    并且使 argv 在日志中可复现。
 
-    Behavior when the command is not on PATH:
-    - On Windows: return the bare name — caller can still try with
-      ``shell=True`` as a last resort, OR the subsequent Popen will
-      raise FileNotFoundError with a readable error we want to surface.
-    - On POSIX: same.  Bare ``npm`` on a Linux box without npm installed
-      fails the same way it did before this function existed.
+    命令不在 PATH 上时的行为：
+    - Windows：返回裸名——调用方仍可以 ``shell=True`` 作为最后手段重试，
+      或者后续 Popen 会抛出带有可读错误信息的 FileNotFoundError。
+    - POSIX：相同。在没有安装 npm 的 Linux 上，裸 ``npm`` 的失败方式
+      与此函数存在之前相同。
 
-    Args:
-        name: The command name to resolve (``npm``, ``npx``, ``node`` …).
-        argv: The remaining arguments.  Must NOT include ``name`` itself —
-            this function builds the full argv list.
+    参数：
+        name: 要解析的命令名（``npm``、``npx``、``node`` 等）。
+        argv: 其余参数。不得包含 ``name`` 本身——此函数会构建完整的 argv 列表。
 
-    Returns:
-        A list suitable for passing to subprocess.Popen/run/call.
+    返回：
+        适合传递给 subprocess.Popen/run/call 的列表。
     """
     resolved = shutil.which(name)
     if resolved:
@@ -88,60 +83,53 @@ def resolve_node_command(name: str, argv: Sequence[str]) -> list[str]:
 
 
 # -----------------------------------------------------------------------------
-# Detached / hidden process creation
+# 分离式 / 隐藏式进程创建
 # -----------------------------------------------------------------------------
 
 
-# Win32 CreationFlags — defined here rather than imported from subprocess
-# because CREATE_NO_WINDOW and DETACHED_PROCESS aren't guaranteed to be
-# present on stdlib subprocess on older Pythons or non-Windows builds.
+# Win32 CreationFlags——在此处定义而非从 subprocess 导入，
+# 因为 CREATE_NO_WINDOW 和 DETACHED_PROCESS 在旧版 Python 或非 Windows 构建中
+# 不保证出现在标准库 subprocess 中。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _DETACHED_PROCESS = 0x00000008
 _CREATE_NO_WINDOW = 0x08000000
-# Escape any Win32 job object the parent process belongs to. Without this,
-# a detached child still inherits its parent's job object membership, and
-# when that parent (Electron, Tauri, Windows Terminal, the Desktop GUI's
-# bootstrap-installer) dies, the OS tears down the whole job — taking the
-# "detached" child with it. Critical for the post-update gateway watcher:
-# Electron spawns the Tauri updater inside its own job, the updater spawns
-# the watcher subprocess; without BREAKAWAY the watcher dies the instant
-# Electron exits, so the gateway never gets respawned after a `hermes
-# update` triggered from the GUI. See fix/windows-gateway-reliability.
+# 脱离父进程所属的任何 Win32 作业对象。若不设置此标志，
+# 分离的子进程仍会继承父进程的作业对象成员资格，
+# 当父进程（Electron、Tauri、桌面 GUI 的引导安装程序）退出时，
+# OS 会销毁整个作业——连同"分离的"子进程一起。
+# 这对更新后的 gateway 守护进程至关重要：
+# Electron 在自己的作业中启动 Tauri 更新程序，更新程序再启动守护子进程；
+# 若没有 BREAKAWAY，Electron 退出的瞬间守护进程就会死亡，
+# 导致 `hermes update` 从 GUI 触发后 gateway 无法重新启动。
+# 参见 fix/windows-gateway-reliability。
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 
 def windows_detach_flags() -> int:
-    """Return Win32 creationflags that detach a child from the parent
-    console and process group.  0 on non-Windows.
+    """返回将子进程从父控制台和进程组分离的 Win32 creationflags。非 Windows 上返回 0。
 
-    Pair with ``start_new_session=False`` (default) when calling
-    subprocess.Popen — on POSIX use ``start_new_session=True`` instead,
-    which maps to ``os.setsid()`` in the child.
+    调用 subprocess.Popen 时搭配 ``start_new_session=False``（默认值）使用——
+    在 POSIX 上请改用 ``start_new_session=True``，该参数在子进程中映射到 ``os.setsid()``。
 
-    Rationale:
-    - ``CREATE_NEW_PROCESS_GROUP`` — child has its own process group so
-      Ctrl+C in the parent console doesn't propagate.
-    - ``DETACHED_PROCESS`` — child has no console at all.  Necessary for
-      background daemons (gateway watchers, update respawners) because
-      without it, closing the console kills the child.
-    - ``CREATE_NO_WINDOW`` — suppress the brief cmd flash that would
-      otherwise appear when launching a console app.  Redundant with
-      DETACHED_PROCESS but explicit for clarity.
-    - ``CREATE_BREAKAWAY_FROM_JOB`` — escape any job object the parent is
-      in.  Electron (Desktop app) and Tauri (bootstrap installer) wrap
-      their children in job objects; without breakaway, those children
-      die when the parent process exits even if they were spawned with
-      DETACHED_PROCESS.  This was the missing flag that made the
-      post-update gateway respawn watcher silently die alongside the
-      Tauri updater after the Electron Desktop's update flow finished.
+    各标志说明：
+    - ``CREATE_NEW_PROCESS_GROUP``——子进程拥有独立进程组，
+      父控制台的 Ctrl+C 不会传播到子进程。
+    - ``DETACHED_PROCESS``——子进程完全没有控制台。
+      后台守护进程（gateway 守护进程、更新重启程序）必须设置此标志，
+      否则关闭控制台会杀死子进程。
+    - ``CREATE_NO_WINDOW``——抑制启动控制台应用时短暂出现的 cmd 闪窗。
+      与 DETACHED_PROCESS 重复，但明确列出以提高可读性。
+    - ``CREATE_BREAKAWAY_FROM_JOB``——脱离父进程所在的任何作业对象。
+      Electron（桌面应用）和 Tauri（引导安装程序）会将子进程包裹在作业对象中；
+      若不设置此标志，即使用 DETACHED_PROCESS 启动，父进程退出时子进程也会死亡。
+      正是由于缺少此标志，导致更新后的 gateway 重启守护进程在
+      Electron 桌面更新流程结束、Tauri 更新程序退出时静默死亡。
 
-    If a process is in a job that disallows breakaway (rare —
-    JOB_OBJECT_LIMIT_BREAKAWAY_OK isn't set), CreateProcess returns
-    ERROR_ACCESS_DENIED.  Python surfaces that as ``PermissionError``
-    on the ``subprocess.Popen`` call.  Callers in this codebase already
-    wrap detached spawns in ``try/except OSError`` and fall back to a
-    cmd.exe wrapper, so the breakaway-denied case degrades gracefully
-    rather than crashing.
+    若进程所在的作业对象不允许脱离（罕见情况——未设置 JOB_OBJECT_LIMIT_BREAKAWAY_OK），
+    CreateProcess 会返回 ERROR_ACCESS_DENIED，Python 会在 ``subprocess.Popen`` 调用时
+    将其转化为 ``PermissionError``。本代码库中的调用方已将分离式启动包裹在
+    ``try/except OSError`` 中并回退到 cmd.exe 包装器，
+    因此脱离被拒绝的情况会优雅降级而非崩溃。
     """
     if not IS_WINDOWS:
         return 0
@@ -154,15 +142,14 @@ def windows_detach_flags() -> int:
 
 
 def windows_detach_flags_without_breakaway() -> int:
-    """Same as :func:`windows_detach_flags` minus ``CREATE_BREAKAWAY_FROM_JOB``.
+    """与 :func:`windows_detach_flags` 相同，但去掉了 ``CREATE_BREAKAWAY_FROM_JOB``。
 
-    The docstring on :func:`windows_detach_flags` notes that a process in
-    a job which disallows breakaway (no ``JOB_OBJECT_LIMIT_BREAKAWAY_OK``)
-    will see ``ERROR_ACCESS_DENIED`` from CreateProcess, surfacing as
-    ``OSError`` (``PermissionError``) on the ``subprocess.Popen`` call.
-    Callers that want to recover — by retrying without the breakaway
-    bit — can pair the two helpers symbolically rather than coding the
-    ``& ~0x01000000`` magic at every site:
+    :func:`windows_detach_flags` 的文档字符串中提到，若进程所在的作业对象
+    不允许脱离（未设置 ``JOB_OBJECT_LIMIT_BREAKAWAY_OK``），
+    CreateProcess 会返回 ``ERROR_ACCESS_DENIED``，在 ``subprocess.Popen`` 调用时
+    表现为 ``OSError``（``PermissionError``）。
+    想要恢复——即去掉脱离位重试——的调用方可以将两个辅助函数配对使用，
+    而无需在每处都写 ``& ~0x01000000`` 这样的魔法数字：
 
     .. code-block:: python
 
@@ -175,8 +162,8 @@ def windows_detach_flags_without_breakaway() -> int:
                 …,
             )
 
-    See ``gateway_windows.py::_spawn_detached`` for the canonical
-    implementation of this pattern.  Returns 0 on non-Windows.
+    该模式的规范实现参见 ``gateway_windows.py::_spawn_detached``。
+    非 Windows 上返回 0。
     """
     if not IS_WINDOWS:
         return 0
@@ -184,17 +171,15 @@ def windows_detach_flags_without_breakaway() -> int:
 
 
 def windows_hide_flags() -> int:
-    """Return Win32 creationflags that merely hide the child's console
-    window without detaching the child.  0 on non-Windows.
+    """返回仅隐藏子进程控制台窗口、但不分离子进程的 Win32 creationflags。非 Windows 上返回 0。
 
-    Use for short-lived console apps spawned as part of a larger
-    operation (``taskkill``, ``where``, version probes) where we want no
-    flash but also want to collect stdout/exit code synchronously.
+    适用于作为较大操作一部分启动的短生命周期控制台应用
+    （``taskkill``、``where``、版本探测等），
+    这类场景需要无闪窗，同时需要同步收集 stdout 和退出码。
 
-    The key difference from :func:`windows_detach_flags`: NO
-    ``DETACHED_PROCESS`` — the child still inherits stdio handles so
-    ``capture_output=True`` works.  ``DETACHED_PROCESS`` would sever
-    stdio and break stdout capture.
+    与 :func:`windows_detach_flags` 的核心区别：不含 ``DETACHED_PROCESS``——
+    子进程仍然继承 stdio 句柄，因此 ``capture_output=True`` 可正常工作。
+    若设置 ``DETACHED_PROCESS`` 会切断 stdio，导致 stdout 捕获失败。
     """
     if not IS_WINDOWS:
         return 0

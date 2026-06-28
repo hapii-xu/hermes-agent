@@ -1,17 +1,15 @@
-"""Kanban Swarm v1: thin swarm topology helpers on top of Kanban.
+"""Kanban Swarm v1：基于 Kanban 的轻量级 swarm 拓扑辅助工具。
 
-This module intentionally does not introduce a second scheduler. It writes a
-small task graph into the existing Kanban kernel:
+本模块有意不引入第二个调度器。它将一个小型任务图写入现有的 Kanban 内核：
 
-    planning root (completed immediately)
-        ├─ parallel specialist workers (ready)
-        └─ verifier (todo until all workers done)
-             └─ synthesizer (todo until verifier done)
+    planning root（立即完成）
+        ├─ 并行的专业 worker（ready）
+        └─ verifier（todo，等待所有 worker 完成）
+             └─ synthesizer（todo，等待 verifier 完成）
 
-The shared blackboard is also deliberately low-tech: structured JSON comments on
-the root task. That keeps all state in existing task_comments/task_events rows,
-so the dashboard, notifier, slash command, and dispatcher keep working without a
-new service.
+共享信息板也刻意采用低技术方案：根任务上的结构化 JSON 注释。这样所有状态都
+保留在现有的 task_comments/task_events 行中，因此 dashboard、notifier、
+slash command 和 dispatcher 无需新增服务即可继续正常工作。
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ BLACKBOARD_PREFIX = "[swarm:blackboard] "
 
 @dataclass(frozen=True)
 class SwarmWorkerSpec:
-    """A single parallel worker card in a swarm."""
+    """swarm 中的单个并行 worker 卡片。"""
 
     profile: str
     title: str
@@ -40,7 +38,7 @@ class SwarmWorkerSpec:
 
 @dataclass(frozen=True)
 class SwarmCreated:
-    """IDs produced by :func:`create_swarm`."""
+    """由 :func:`create_swarm` 创建的 ID。"""
 
     root_id: str
     worker_ids: list[str]
@@ -91,11 +89,11 @@ def create_swarm(
     priority: int = 0,
     idempotency_key: Optional[str] = None,
 ) -> SwarmCreated:
-    """Create a durable Kanban swarm graph.
+    """创建一个持久化的 Kanban swarm 图。
 
-    The returned graph is immediately dispatchable: the planning root is marked
-    ``done`` with topology metadata, parallel workers are ``ready``, the verifier
-    waits for every worker, and the synthesizer waits for the verifier.
+    返回的图可以立即被调度：planning root 被标记为 ``done`` 并附带拓扑元数据，
+    并行 worker 为 ``ready``，verifier 等待所有 worker 完成，synthesizer 等待
+    verifier 完成。
     """
 
     goal = _require_text(goal, "goal")

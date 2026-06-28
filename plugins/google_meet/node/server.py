@@ -1,25 +1,25 @@
-"""Remote node server.
+"""远程节点服务器。
 
-Runs on the machine that will host the Meet bot (typically the user's
-Mac laptop with a signed-in Chrome). Exposes a WebSocket endpoint that
-accepts signed RPC requests and dispatches them to the existing
-``plugins.google_meet.process_manager`` module.
+在将托管 Meet bot 的机器上运行（通常是用户已登录 Chrome 的
+Mac 笔记本电脑）。暴露一个 WebSocket 端点，接受签名的 RPC 请求
+并将它们分发到现有的
+``plugins.google_meet.process_manager`` 模块。
 
-Launched by ``hermes meet node run``.
+通过 ``hermes meet node run`` 启动。
 
-Token handling
+Token 处理
 --------------
-On first boot we mint 32 hex chars of entropy and persist them at
-``$HERMES_HOME/workspace/meetings/node_token.json``. Subsequent boots
-reuse the same token so previously-approved gateways don't need to be
-re-paired. The operator copies this token out-of-band to the gateway
-via ``hermes meet node approve <name> <url> <token>``.
+首次启动时，我们生成 32 个十六进制字符的熵并将其持久化到
+``$HERMES_HOME/workspace/meetings/node_token.json``。后续启动
+复用同一 token，以便之前已批准的网关无需重新
+配对。操作员通过带外方式将此 token 复制到网关
+通过 ``hermes meet node approve <name> <url> <token>``。
 
-Dependencies
+依赖项
 ------------
-``websockets`` is an optional dep. We import it lazily inside
-:meth:`serve` so installing the plugin doesn't require it unless you
-actually host a node.
+``websockets`` 是一个可选依赖。我们在
+:meth:`serve` 中延迟导入它，因此除非您
+实际托管节点，否则安装插件不需要它。
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def _default_token_path() -> Path:
 
 
 class NodeServer:
-    """WebSocket server that executes meet bot RPCs locally."""
+    """本地执行 meet bot RPC 的 WebSocket 服务器。"""
 
     def __init__(
         self,
@@ -54,10 +54,10 @@ class NodeServer:
         self.token_path = Path(token_path) if token_path is not None else _default_token_path()
         self._token: Optional[str] = None
 
-    # ----- token management --------------------------------------------
+    # ----- token 管理 --------------------------------------------
 
     def ensure_token(self) -> str:
-        """Return the persisted shared secret, generating one on first use."""
+        """返回已持久化的共享密钥，首次使用时生成一个。"""
         if self._token:
             return self._token
         if self.token_path.is_file():
@@ -76,19 +76,19 @@ class NodeServer:
             json.dumps({"token": tok, "generated_at": time.time()}, indent=2),
             encoding="utf-8",
         )
-        # Restrict to owner-read-write only — the token grants full RPC
-        # access to the meet bot (start, transcribe, speak in meetings).
+        # 限制为仅所有者可读写 — token 授予对 meet bot 的完整 RPC
+        # 访问权限（启动、转录、在会议中发言）。
         try:
             tmp.chmod(0o600)
         except (OSError, NotImplementedError):
-            # Best-effort on non-POSIX filesystems; mode is set on POSIX.
+            # 在非 POSIX 文件系统上尽力而为；在 POSIX 上设置模式。
             pass
         tmp.replace(self.token_path)
         self._token = tok
         return tok
 
     def get_token(self) -> str:
-        """Alias for :meth:`ensure_token`; does not mutate on subsequent calls."""
+        """:meth:`ensure_token` 的别名；后续调用不会变更。"""
         return self.ensure_token()
 
     # ----- dispatch -----------------------------------------------------
@@ -112,7 +112,7 @@ class NodeServer:
         t = msg["type"]
         payload = msg["payload"]
 
-        # Import lazily so test mocks can monkeypatch freely.
+        # 延迟导入，以便测试 mock 可以自由 monkeypatch。
         from plugins.google_meet import process_manager as pm
 
         try:
@@ -121,7 +121,7 @@ class NodeServer:
                         "payload": {"display_name": self.display_name,
                                     "ts": time.time()}}
             if t == "start_bot":
-                # Whitelist kwargs we pass through to pm.start.
+                # 白名单我们传递给 pm.start 的 kwargs。
                 kwargs = {
                     k: payload[k]
                     for k in ("url", "guest_name", "duration", "headed",
@@ -143,9 +143,9 @@ class NodeServer:
                 result = pm.transcript(last=last)
                 return _proto.make_response(req_id, result)
             if t == "say":
-                # v2 wiring: enqueue into say_queue.jsonl inside the
-                # active meeting's out_dir when present. The bot-side
-                # consumer is v3+ (for v1 this is a stub returning ok).
+                # v2 接线：当存在时，将内容入队到活跃
+                # 会议的 out_dir 中的 say_queue.jsonl。bot 侧
+                # 消费者为 v3+（对于 v1，这是一个返回 ok 的存根）。
                 text = payload.get("text", "")
                 active = pm._read_active()  # type: ignore[attr-defined]
                 enqueued = False
@@ -170,9 +170,9 @@ class NodeServer:
     # ----- server loop --------------------------------------------------
 
     async def serve(self) -> None:
-        """Run the WebSocket server until cancelled.
+        """运行 WebSocket 服务器直到取消。
 
-        Blocks forever. Callers typically wrap this in ``asyncio.run``.
+        永久阻塞。调用方通常将其包装在 ``asyncio.run`` 中。
         """
         try:
             import websockets  # type: ignore
@@ -195,6 +195,6 @@ class NodeServer:
                 await ws.send(_proto.encode(reply))
 
         async with websockets.serve(_handler, self.host, self.port):
-            # Run until cancelled.
+            # 运行直到取消。
             import asyncio
             await asyncio.Future()

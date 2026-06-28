@@ -54,8 +54,8 @@ const findClickableWithText = (node: ReactNodeLike, needle: string): React.React
   return findClickableWithText(node.props.children, needle)
 }
 
-// Find the innermost element whose own (direct) text content includes the
-// needle. Used to assert the colour the notice text is rendered with.
+// 找到最内层的元素，其自身（直接）文本内容包含
+// needle。用于断言 notice 文本渲染时使用的颜色。
 const findElementWithText = (node: ReactNodeLike, needle: string): React.ReactElement | null => {
   if (node === null || node === undefined || typeof node === 'boolean') {
     return null
@@ -77,8 +77,8 @@ const findElementWithText = (node: ReactNodeLike, needle: string): React.ReactEl
     return null
   }
 
-  // Prefer the deepest matching element so we get the leaf <Text> that
-  // actually carries the colour, not an ancestor Box.
+  // 优先使用最深处的匹配元素，这样我们获取的是实际携带颜色
+  // 的叶子 <Text>，而不是祖先 Box。
   const deeper = findElementWithText(node.props.children, needle)
 
   if (deeper) {
@@ -131,9 +131,9 @@ describe('StatusRule background-subagent indicator', () => {
   })
 
   it('drops the subagent segment before the bg segment on a narrow terminal', () => {
-    // cols=44 is below the subagents breakpoint (92) but the bg breakpoint
-    // (88) too — both gone. Assert the lower-priority subagent indicator is
-    // not shown when space is tight even with a live count.
+    // cols=44 低于 subagents 断点 (92)，也低于 bg 断点
+    // (88) —— 两者都消失。断言当空间紧张时，即使有活跃计数，
+    // 优先级较低的 subagent 指示器也不会显示。
     const element = StatusRule({
       ...baseProps,
       cols: 44,
@@ -194,10 +194,10 @@ describe('StatusRule session count click target', () => {
 
     const rendered = textContent(element)
 
-    // Must-keep essentials survive intact …
+    // 必须保留的核心内容完整保留 …
     expect(rendered).toContain('ready')
     expect(rendered).toContain('opus 4.8')
-    // … while the low-value tail (session count, cost) is dropped, not truncated.
+    // … 而低价值的尾部（session 计数、费用）被丢弃，而非截断。
     expect(rendered).not.toContain('3 sessions')
     expect(rendered).not.toContain('$0.5000')
   })
@@ -212,10 +212,10 @@ describe('StatusRule credits notice render priority', () => {
 
     const rendered = textContent(element)
 
-    // Notice replaces the status verb slot …
+    // Notice 替换了 status verb 槽位 …
     expect(rendered).toContain('✕ credits exhausted')
     expect(rendered).not.toContain('ready')
-    // … but model + context stay visible.
+    // … 但 model + context 仍然可见。
     expect(rendered).toContain('opus 4.8')
     expect(rendered).toContain('50k')
   })
@@ -230,9 +230,9 @@ describe('StatusRule credits notice render priority', () => {
 
     const rendered = textContent(element)
 
-    // Notice must NOT render while busy.
+    // 忙碌时 notice 不能渲染。
     expect(rendered).not.toContain('⚠ 90% used')
-    // Model still visible.
+    // Model 仍然可见。
     expect(rendered).toContain('opus 4.8')
   })
 
@@ -259,7 +259,7 @@ describe('StatusRule credits notice render priority', () => {
     })
     const noticeText = findElementWithText(element, '90% used')
 
-    // The leaf carries exactly the policy text — no extra prepended glyph.
+    // 叶子元素恰好携带策略文本 —— 没有额外前置的图标。
     expect(noticeText?.props.children).toBe('⚠ 90% used')
   })
 
@@ -271,11 +271,11 @@ describe('StatusRule credits notice render priority', () => {
       notice: { key: 'credits.90', kind: 'sticky', level: 'warn', text: longText }
     })
 
-    // The leaf <Text> truncates rather than wrapping/clipping the pinned tail.
+    // 叶子 <Text> 使用截断而非换行/裁剪固定的尾部。
     const noticeText = findElementWithText(element, 'xxxxx')
     expect(noticeText?.props.wrap).toBe('truncate-end')
 
-    // Its container box yields first (flexShrink=1) so model stays visible.
+    // 其容器 box 优先让出空间 (flexShrink=1)，使 model 保持可见。
     const findShrinkBoxContaining = (node: ReactNodeLike): React.ReactElement | null => {
       if (!React.isValidElement(node)) {
         if (Array.isArray(node)) {
@@ -287,7 +287,7 @@ describe('StatusRule credits notice render priority', () => {
         return null
       }
       if (node.props.flexShrink === 1 && textContent(node).includes('xxxxx') && node.type !== StatusRule) {
-        // Prefer the closest shrink box that wraps the notice text.
+        // 优先使用包裹 notice 文本的最近 shrink box。
         const deeper = findShrinkBoxContaining(node.props.children)
         return deeper ?? node
       }
@@ -296,15 +296,15 @@ describe('StatusRule credits notice render priority', () => {
     const shrinkBox = findShrinkBoxContaining(element)
     expect(shrinkBox).not.toBeNull()
 
-    // Model survives on a narrow terminal because the notice yields.
+    // 在窄终端上 model 仍然保留，因为 notice 让出了空间。
     expect(textContent(element)).toContain('opus 4.8')
   })
 })
 
 describe('StatusRule idle-since read-out', () => {
-  // The IdleSince component uses hooks, so it can't be invoked outside a
-  // renderer — assert on the element tree instead (same reason the duration
-  // tests don't check SessionDuration's text).
+  // IdleSince component 使用了 hooks，因此无法在
+  // renderer 外部调用 —— 改为对 element 树进行断言（与 duration
+  // 测试不检查 SessionDuration 文本的原因相同）。
   const findComponentByName = (node: ReactNodeLike, name: string): React.ReactElement | null => {
     if (node === null || node === undefined || typeof node === 'boolean') {
       return null

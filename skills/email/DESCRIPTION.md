@@ -1,3 +1,3 @@
 ---
-description: Skills for sending, receiving, searching, and managing email from the terminal.
+description: 用于从终端发送、接收、搜索和管理电子邮件的技能。
 ---

@@ -1,4 +1,4 @@
-"""Helpers for translating OpenAI-style tool schemas to Gemini's schema subset."""
+"""将 OpenAI 风格的 tool schema 转换为 Gemini schema 子集的辅助工具。"""
 
 from __future__ import annotations
 

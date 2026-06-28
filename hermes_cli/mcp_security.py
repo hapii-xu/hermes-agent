@@ -1,27 +1,23 @@
-"""Security checks for user-configured MCP server entries.
+"""用户配置的 MCP server 条目安全检查。
 
-MCP stdio transports intentionally support arbitrary local commands so users can
-run custom servers. This module does not try to sandbox that capability. It
-blocks two high-signal abuse shapes seen in the wild:
+MCP stdio 传输方式有意支持任意本地命令，以便用户可以运行自定义服务器。
+本模块不尝试对该能力进行沙箱隔离。它仅阻止实际中发现的两种高信号滥用模式：
 
-1. The exfiltration shape from #45620: a shell interpreter whose inline script
-   invokes network egress tooling.
-2. The persistence shape from the June 2026 ``hermes-0day`` campaign: a shell
-   interpreter whose inline script writes to OS persistence surfaces
-   (``~/.ssh/authorized_keys``, ``/etc/ssh``, ``/etc/pam.d``, ``sudoers``,
-   crontab, shell rc files). The campaign planted ``command: bash`` MCP entries
-   whose payload appended an attacker SSH key to ``authorized_keys``; Hermes
-   re-executed them on every cron tick / startup, re-installing the backdoor.
+1. #45620 中的数据窃取模式：一个 shell 解释器的内联脚本调用了网络出站工具。
+2. 2026 年 6 月 ``hermes-0day`` 攻击活动中的持久化模式：一个 shell 解释器的
+   内联脚本向操作系统持久化表面写入数据（``~/.ssh/authorized_keys``、
+   ``/etc/ssh``、``/etc/pam.d``、``sudoers``、crontab、shell rc 文件）。
+   该活动植入了 ``command: bash`` 的 MCP 条目，其 payload 将攻击者的 SSH
+   密钥追加到 ``authorized_keys``；Hermes 在每个 cron 周期/启动时重新执行它们，
+   反复安装后门。
 
-3. A hardcoded indicator-of-compromise (IOC) blocklist for that campaign — the
-   attacker's ``hermes-0day`` SSH public key and source IPs. Any entry whose
-   command/args/env carry an IOC is refused outright, regardless of shape, so a
-   pre-planted ``config.yaml`` cannot spawn it.
+3. 针对该活动的硬编码入侵指标（IOC）黑名单——攻击者的 ``hermes-0day`` SSH
+   公钥和来源 IP。任何 command/args/env 中包含 IOC 的条目都将被直接拒绝，
+   无论其形态如何，因此预植的 ``config.yaml`` 无法生成此类条目。
 
-These checks run BOTH at save time (``_save_mcp_server`` — dashboard API + CLI)
-and at spawn time (``tools.mcp_tool._filter_suspicious_mcp_servers`` — discovery
-/ cron / startup), so a hand-edited or pre-planted entry is also caught before
-it can execute.
+这些检查在保存时（``_save_mcp_server``——仪表板 API + CLI）和启动时
+（``tools.mcp_tool._filter_suspicious_mcp_servers``——发现/cron/启动）
+都会运行，因此手动编辑或预植的条目在执行前也会被捕获。
 """
 from __future__ import annotations
 
@@ -58,30 +54,29 @@ _EXFIL_HINT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# OS persistence surfaces an MCP server has no legitimate reason to write to.
-# A shell payload that touches any of these is the June 2026 hermes-0day shape
-# (SSH-key/PAM/sudoers/cron persistence). Matched anywhere in the inline script.
+# MCP server 没有正当理由写入的操作系统持久化表面。
+# 触及其中任何一个的 shell payload 都属于 2026 年 6 月 hermes-0day 的模式
+# （SSH 密钥/PAM/sudoers/cron 持久化）。在内联脚本中任意位置匹配。
 _PERSISTENCE_PATTERN = re.compile(
-    r"authorized_keys"               # SSH key persistence (the campaign's payload)
-    r"|\.ssh/"                       # any write under ~/.ssh
-    r"|/etc/ssh\b"                   # sshd_config / AuthorizedKeysCommand backdoor
-    r"|/etc/pam\.d\b|pam_[\w-]+\.so" # PAM credential logger
-    r"|/etc/sudoers"                 # sudoers escalation
-    r"|/etc/cron|crontab\b"          # cron persistence
-    r"|/etc/rc\.local|/etc/systemd"  # init / unit persistence
-    r"|\.bashrc\b|\.bash_profile\b|\.profile\b|\.zshrc\b",  # shell rc backdoor
+    r"authorized_keys"               # SSH 密钥持久化（该活动的 payload）
+    r"|\.ssh/"                       # ~/.ssh 下的任何写入
+    r"|/etc/ssh\b"                   # sshd_config / AuthorizedKeysCommand 后门
+    r"|/etc/pam\.d\b|pam_[\w-]+\.so" # PAM 凭据记录器
+    r"|/etc/sudoers"                 # sudoers 提权
+    r"|/etc/cron|crontab\b"          # cron 持久化
+    r"|/etc/rc\.local|/etc/systemd"  # init / systemd 单元持久化
+    r"|\.bashrc\b|\.bash_profile\b|\.profile\b|\.zshrc\b",  # shell rc 后门
     re.IGNORECASE,
 )
 
-# ── Indicators of compromise: June 2026 hermes-0day campaign ──────────────────
-# Hardcoded so a pre-planted config.yaml (written by any vector) is refused at
-# both save and spawn time. These are exact attacker artifacts observed on
-# multiple compromised public instances (r/hermesagent, 854.media).
+# ── 入侵指标：2026 年 6 月 hermes-0day 攻击活动 ─────────────────────────
+# 硬编码，以便预植的 config.yaml（通过任何途径写入）在保存和启动时都会被拒绝。
+# 这些是在多个被攻陷的公共实例（r/hermesagent、854.media）上观察到的确切攻击者产物。
 _IOC_SUBSTRINGS = (
-    # Attacker SSH public key (the "hermes-0day" persistence key).
+    # 攻击者 SSH 公钥（"hermes-0day" 持久化密钥）。
     "AAAAC3NzaC1lZDI1NTE5AAAAICBoh1oDC4DnsO1m5mJ4yfEKrQebaFh",
     "hermes-0day",
-    # Attacker source IPs (China Telecom Gansu) seen authenticating with the key.
+    # 攻击者来源 IP（中国电信甘肃），曾使用该密钥进行认证。
     "60.165.167.",
     "118.182.244.156",
     "61.178.123.196",
@@ -109,7 +104,7 @@ def _inline_script(args: Any) -> str:
 
 
 def _entry_text(entry: dict[str, Any]) -> str:
-    """Flatten command + args + env values into one string for IOC scanning."""
+    """将 command + args + env 值展平为一个字符串，用于 IOC 扫描。"""
     parts: list[str] = [str(entry.get("command") or "")]
     parts.append(_inline_script(entry.get("args")))
     env = entry.get("env")
@@ -119,23 +114,22 @@ def _entry_text(entry: dict[str, Any]) -> str:
 
 
 def validate_mcp_server_entry(name: str, entry: dict[str, Any]) -> list[str]:
-    """Return security warnings for an MCP server entry.
+    """返回 MCP server 条目的安全警告。
 
-    Empty return means the entry is not suspicious. This is intentionally not a
-    whitelist: legitimate local MCPs can still use custom commands, Python
-    scripts, npx, uvx, etc. We block three narrow shapes only:
+    返回空列表表示该条目不可疑。这有意不做白名单：合法的本地 MCP 仍然可以
+    使用自定义命令、Python 脚本、npx、uvx 等。我们仅阻止三种窄范围模式：
 
-    * a known hermes-0day IOC anywhere in command/args/env (hardcoded blocklist);
-    * a shell interpreter whose inline script invokes network egress (#45620);
-    * a shell interpreter whose inline script writes to an OS persistence
-      surface (June 2026 hermes-0day SSH/PAM/sudoers/cron shape).
+    * command/args/env 中存在已知 hermes-0day IOC（硬编码黑名单）；
+    * shell 解释器的内联脚本调用了网络出站工具（#45620）；
+    * shell 解释器的内联脚本向操作系统持久化表面写入数据
+      （2026 年 6 月 hermes-0day SSH/PAM/sudoers/cron 模式）。
     """
     if not isinstance(entry, dict):
         return []
 
     issues: list[str] = []
 
-    # 1. Hardcoded IOC blocklist — applies regardless of command shape.
+    # 1. 硬编码 IOC 黑名单——无论命令形态如何都适用。
     flat = _entry_text(entry)
     for ioc in _IOC_SUBSTRINGS:
         if ioc in flat:
@@ -143,7 +137,7 @@ def validate_mcp_server_entry(name: str, entry: dict[str, Any]) -> list[str]:
                 f"MCP server '{name}' contains a known hermes-0day "
                 f"indicator-of-compromise ('{ioc}')"
             )
-            # One IOC is enough to refuse; don't leak the full match list.
+            # 一个 IOC 就足以拒绝；不要泄露完整的匹配列表。
             return issues
 
     command = entry.get("command")
@@ -155,7 +149,7 @@ def validate_mcp_server_entry(name: str, entry: dict[str, Any]) -> list[str]:
     if not script:
         return issues
 
-    # 2. Network exfiltration shape.
+    # 2. 网络数据窃取模式。
     if _EGRESS_PATTERN.search(script):
         issue = (
             f"MCP server '{name}' uses shell interpreter '{command}' with "
@@ -165,7 +159,7 @@ def validate_mcp_server_entry(name: str, entry: dict[str, Any]) -> list[str]:
             issue += " and exfiltration-shaped arguments"
         issues.append(issue)
 
-    # 3. OS persistence shape (SSH key / PAM / sudoers / cron / rc files).
+    # 3. 操作系统持久化模式（SSH 密钥 / PAM / sudoers / cron / rc 文件）。
     if _PERSISTENCE_PATTERN.search(script):
         issues.append(
             f"MCP server '{name}' uses shell interpreter '{command}' to write "

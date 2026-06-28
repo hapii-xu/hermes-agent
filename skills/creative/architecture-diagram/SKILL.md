@@ -1,6 +1,6 @@
 ---
 name: architecture-diagram
-description: "Dark-themed SVG architecture/cloud/infra diagrams as HTML."
+description: "生成深色主题的 SVG 架构图/云/基础设施图，输出为 HTML。"
 version: 1.0.0
 author: Cocoon AI (hello@cocoon-ai.com), ported by Hermes Agent
 license: MIT
@@ -12,47 +12,47 @@ metadata:
     related_skills: [concept-diagrams, excalidraw]
 ---
 
-# Architecture Diagram Skill
+# 架构图技能（Architecture Diagram Skill）
 
-Generate professional, dark-themed technical architecture diagrams as standalone HTML files with inline SVG graphics. No external tools, no API keys, no rendering libraries — just write the HTML file and open it in a browser.
+生成专业、深色主题的技术架构图，输出为带内联 SVG 图形的独立 HTML 文件。无需外部工具、无需 API 密钥、无需渲染库 —— 只需写出 HTML 文件并在浏览器中打开即可。
 
-## Scope
+## 适用范围
 
-**Best suited for:**
-- Software system architecture (frontend / backend / database layers)
-- Cloud infrastructure (VPC, regions, subnets, managed services)
-- Microservice / service-mesh topology
-- Database + API map, deployment diagrams
-- Anything with a tech-infra subject that fits a dark, grid-backed aesthetic
+**最适合：**
+- 软件系统架构（前端 / 后端 / 数据库分层）
+- 云基础设施（VPC、区域、子网、托管服务）
+- 微服务 / 服务网格拓扑
+- 数据库 + API 地图、部署图
+- 任何符合深色、网格背景美学的技术基础设施主题
 
-**Look elsewhere first for:**
-- Physics, chemistry, math, biology, or other scientific subjects
-- Physical objects (vehicles, hardware, anatomy, cross-sections)
-- Floor plans, narrative journeys, educational / textbook-style visuals
-- Hand-drawn whiteboard sketches (consider `excalidraw`)
-- Animated explainers (consider an animation skill)
+**应优先考虑其他技能的场景：**
+- 物理、化学、数学、生物或其他科学主题
+- 实体物件（车辆、硬件、解剖结构、剖面图）
+- 平面图、叙事旅程、教科书式的教学/可视化
+- 手绘白板草图（考虑 `excalidraw`）
+- 动画讲解（考虑动画类技能）
 
-If a more specialized skill is available for the subject, prefer that. If none fits, this skill can also serve as a general SVG diagram fallback — the output will just carry the dark tech aesthetic described below.
+如果有更专精于该主题的技能，请优先使用它。如果都不合适，本技能也可作为通用的 SVG 图表兜底方案 —— 只是输出会带有下文描述的深色技术美学风格。
 
-Based on [Cocoon AI's architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator) (MIT).
+基于 [Cocoon AI 的 architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator)（MIT）。
 
-## Workflow
+## 工作流
 
-1. User describes their system architecture (components, connections, technologies)
-2. Generate the HTML file following the design system below
-3. Save with `write_file` to a `.html` file (e.g. `~/architecture-diagram.html`)
-4. User opens in any browser — works offline, no dependencies
+1. 用户描述其系统架构（组件、连接、所用技术）
+2. 按下面的设计系统生成 HTML 文件
+3. 用 `write_file` 保存为 `.html` 文件（例如 `~/architecture-diagram.html`）
+4. 用户在任意浏览器中打开 —— 离线可用，无依赖
 
-### Output Location
+### 输出位置
 
-Save diagrams to a user-specified path, or default to the current working directory:
+将图表保存到用户指定的路径，或默认使用当前工作目录：
 ```
 ./[project-name]-architecture.html
 ```
 
-### Preview
+### 预览
 
-After saving, suggest the user open it:
+保存后，建议用户打开它：
 ```bash
 # macOS
 open ./my-architecture.html
@@ -60,64 +60,64 @@ open ./my-architecture.html
 xdg-open ./my-architecture.html
 ```
 
-## Design System & Visual Language
+## 设计系统与视觉语言
 
-### Color Palette (Semantic Mapping)
+### 调色板（语义映射）
 
-Use specific `rgba` fills and hex strokes to categorize components:
+使用特定的 `rgba` 填充和十六进制描边来对组件分类：
 
-| Component Type | Fill (rgba) | Stroke (Hex) |
+| 组件类型 | 填充（rgba） | 描边（Hex） |
 | :--- | :--- | :--- |
-| **Frontend** | `rgba(8, 51, 68, 0.4)` | `#22d3ee` (cyan-400) |
-| **Backend** | `rgba(6, 78, 59, 0.4)` | `#34d399` (emerald-400) |
-| **Database** | `rgba(76, 29, 149, 0.4)` | `#a78bfa` (violet-400) |
-| **AWS/Cloud** | `rgba(120, 53, 15, 0.3)` | `#fbbf24` (amber-400) |
-| **Security** | `rgba(136, 19, 55, 0.4)` | `#fb7185` (rose-400) |
-| **Message Bus** | `rgba(251, 146, 60, 0.3)` | `#fb923c` (orange-400) |
-| **External** | `rgba(30, 41, 59, 0.5)` | `#94a3b8` (slate-400) |
+| **前端（Frontend）** | `rgba(8, 51, 68, 0.4)` | `#22d3ee`（cyan-400） |
+| **后端（Backend）** | `rgba(6, 78, 59, 0.4)` | `#34d399`（emerald-400） |
+| **数据库（Database）** | `rgba(76, 29, 149, 0.4)` | `#a78bfa`（violet-400） |
+| **AWS/云（Cloud）** | `rgba(120, 53, 15, 0.3)` | `#fbbf24`（amber-400） |
+| **安全（Security）** | `rgba(136, 19, 55, 0.4)` | `#fb7185`（rose-400） |
+| **消息总线（Message Bus）** | `rgba(251, 146, 60, 0.3)` | `#fb923c`（orange-400） |
+| **外部（External）** | `rgba(30, 41, 59, 0.5)` | `#94a3b8`（slate-400） |
 
-### Typography & Background
-- **Font:** JetBrains Mono (Monospace), loaded from Google Fonts
-- **Sizes:** 12px (Names), 9px (Sublabels), 8px (Annotations), 7px (Tiny labels)
-- **Background:** Slate-950 (`#020617`) with a subtle 40px grid pattern
+### 字体与背景
+- **字体：** JetBrains Mono（等宽字体），从 Google Fonts 加载
+- **字号：** 12px（名称）、9px（子标签）、8px（注释）、7px（极小标签）
+- **背景：** Slate-950（`#020617`），带细微的 40px 网格图案
 
 ```svg
-<!-- Background Grid Pattern -->
+<!-- 背景网格图案 -->
 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
   <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
 </pattern>
 ```
 
-## Technical Implementation Details
+## 技术实现细节
 
-### Component Rendering
-Components are rounded rectangles (`rx="6"`) with 1.5px strokes. To prevent arrows from showing through semi-transparent fills, use a **double-rect masking technique**:
-1. Draw an opaque background rect (`#0f172a`)
-2. Draw the semi-transparent styled rect on top
+### 组件渲染
+组件是圆角矩形（`rx="6"`），描边为 1.5px。为避免箭头透过半透明填充显现，使用**双矩形遮罩技巧**：
+1. 先画一个不透明的背景矩形（`#0f172a`）
+2. 再在其上画半透明的样式化矩形
 
-### Connection Rules
-- **Z-Order:** Draw arrows *early* in the SVG (after the grid) so they render behind component boxes
-- **Arrowheads:** Defined via SVG markers
-- **Security Flows:** Use dashed lines in rose color (`#fb7185`)
-- **Boundaries:**
-  - *Security Groups:* Dashed (`4,4`), rose color
-  - *Regions:* Large dashed (`8,4`), amber color, `rx="12"`
+### 连接线规则
+- **Z 序：** 在 SVG 中**尽早**绘制箭头（在网格之后），使其渲染在组件框背后
+- **箭头：** 通过 SVG marker 定义
+- **安全流（Security Flows）：** 使用玫瑰色（`#fb7185`）虚线
+- **边界（Boundaries）：**
+  - *安全组：* 虚线（`4,4`），玫瑰色
+  - *区域：* 大虚线（`8,4`），琥珀色，`rx="12"`
 
-### Spacing & Layout Logic
-- **Standard Height:** 60px (Services); 80-120px (Large components)
-- **Vertical Gap:** Minimum 40px between components
-- **Message Buses:** Must be placed *in the gap* between services, not overlapping them
-- **Legend Placement:** **CRITICAL.** Must be placed outside all boundary boxes. Calculate the lowest Y-coordinate of all boundaries and place the legend at least 20px below it.
+### 间距与布局逻辑
+- **标准高度：** 60px（服务）；80-120px（大型组件）
+- **垂直间距：** 组件之间至少 40px
+- **消息总线：** 必须放置在服务*之间的空隙中*，不能与之重叠
+- **图例位置：** **关键。** 必须放置在所有边界框之外。计算所有边界的最低 Y 坐标，并将图例放在其下方至少 20px 处。
 
-## Document Structure
+## 文档结构
 
-The generated HTML file follows a four-part layout:
-1. **Header:** Title with a pulsing dot indicator and subtitle
-2. **Main SVG:** The diagram contained within a rounded border card
-3. **Summary Cards:** A grid of three cards below the diagram for high-level details
-4. **Footer:** Minimal metadata
+生成的 HTML 文件遵循四段式布局：
+1. **页头：** 带脉冲圆点指示器的标题和副标题
+2. **主 SVG：** 包含在圆角边框卡片中的图表
+3. **摘要卡片：** 图表下方由三张卡片组成的网格，用于呈现高层信息
+4. **页脚：** 极简的元信息
 
-### Info Card Pattern
+### 信息卡片模式
 ```html
 <div class="card">
   <div class="card-header">
@@ -131,18 +131,18 @@ The generated HTML file follows a four-part layout:
 </div>
 ```
 
-## Output Requirements
-- **Single File:** One self-contained `.html` file
-- **No External Dependencies:** All CSS and SVG must be inline (except Google Fonts)
-- **No JavaScript:** Use pure CSS for any animations (like pulsing dots)
-- **Compatibility:** Must render correctly in any modern web browser
+## 输出要求
+- **单文件：** 一个自包含的 `.html` 文件
+- **无外部依赖：** 所有 CSS 和 SVG 必须内联（Google Fonts 除外）
+- **无 JavaScript：** 任何动画（如脉冲圆点）均使用纯 CSS
+- **兼容性：** 必须能在任何现代浏览器中正确渲染
 
-## Template Reference
+## 模板参考
 
-Load the full HTML template for the exact structure, CSS, and SVG component examples:
+加载完整的 HTML 模板以获取精确的结构、CSS 和 SVG 组件示例：
 
 ```
 skill_view(name="architecture-diagram", file_path="templates/template.html")
 ```
 
-The template contains working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use it as your structural reference when generating diagrams.
+该模板包含每种组件类型（前端、后端、数据库、云、安全）的工作示例，各种箭头样式（标准、虚线、曲线）、安全组、区域边界以及图例 —— 在生成图表时请将其作为结构参考。

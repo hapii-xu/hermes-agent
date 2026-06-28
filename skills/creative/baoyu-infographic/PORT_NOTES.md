@@ -1,43 +1,43 @@
-# Port Notes — baoyu-infographic
+# 移植说明 — baoyu-infographic
 
-Ported from [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills) v1.56.1.
+从 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills) v1.56.1 移植而来。
 
-## Changes from upstream
+## 与上游版本的差异
 
-Only `SKILL.md` was modified. All 45 reference files are verbatim copies.
+仅修改了 `SKILL.md`。全部 45 个参考文件均为原样复制。
 
-### SKILL.md adaptations
+### SKILL.md 的适配
 
-| Change | Upstream | Hermes |
+| 变更项 | 上游版本 | Hermes 版本 |
 |--------|----------|--------|
-| Metadata namespace | `openclaw` | `hermes` |
-| Trigger | `/baoyu-infographic` slash command | Natural language skill matching |
-| User config | EXTEND.md file (project/user/XDG paths) | Removed — not part of Hermes infra |
-| User prompts | `AskUserQuestion` (batched) | `clarify` tool (one at a time) |
-| Image generation | baoyu-imagine (Bun/TypeScript) | `image_generate` tool |
-| Platform support | Linux/macOS/Windows/WSL/PowerShell | Linux/macOS only |
-| File operations | Bash commands | Hermes file tools (write_file, read_file) |
+| 元数据命名空间 | `openclaw` | `hermes` |
+| 触发方式 | `/baoyu-infographic` 斜杠命令 | 自然语言技能匹配 |
+| 用户配置 | EXTEND.md 文件（项目/用户/XDG 路径） | 已移除 — 不属于 Hermes 基础设施 |
+| 用户提问 | `AskUserQuestion`（批量） | `clarify` 工具（一次一个） |
+| 图像生成 | baoyu-imagine（Bun/TypeScript） | `image_generate` 工具 |
+| 平台支持 | Linux/macOS/Windows/WSL/PowerShell | 仅 Linux/macOS |
+| 文件操作 | Bash 命令 | Hermes 文件工具（write_file、read_file） |
 
-### What was preserved
+### 保留的内容
 
-- All layout definitions (21 files)
-- All style definitions (21 files)
-- Core reference files (analysis-framework, base-prompt, structured-content-template)
-- Recommended combinations table
-- Keyword shortcuts table
-- Core principles and workflow structure
-- Author, version, homepage attribution
+- 全部布局定义（21 个文件）
+- 全部风格定义（21 个文件）
+- 核心参考文件（analysis-framework、base-prompt、structured-content-template）
+- 推荐组合表
+- 关键词快捷方式表
+- 核心原则与工作流结构
+- 作者、版本、主页归属信息
 
-## Syncing with upstream
+## 与上游同步
 
-To pull upstream updates:
+拉取上游更新：
 ```bash
-# Compare versions
+# 比较版本
 curl -sL https://raw.githubusercontent.com/JimLiu/baoyu-skills/main/skills/baoyu-infographic/SKILL.md | head -5
-# Look for version: line
+# 查找 version: 行
 
-# Diff reference files
+# 对比参考文件
 diff <(curl -sL https://raw.githubusercontent.com/.../references/layouts/bento-grid.md) references/layouts/bento-grid.md
 ```
 
-Reference files can be overwritten directly (they're unchanged from upstream). SKILL.md must be manually merged since it contains Hermes-specific adaptations.
+参考文件可以直接覆盖（它们与上游一致）。SKILL.md 必须手动合并，因为它包含 Hermes 特有的适配内容。

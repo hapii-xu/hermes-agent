@@ -1,76 +1,71 @@
 from __future__ import annotations
 
 """
-Continuous PCM audio mixer for Discord voice channels.
+Discord 语音通道的连续 PCM 音频混音器。
 
-discord.py (Rapptz) ships no audio mixer: ``VoiceClient.play()`` accepts a
-single :class:`discord.AudioSource` and raises ``ClientException`` if called
-while already playing.  One opus stream per connection, one source feeding it.
+discord.py (Rapptz) 没有内置音频混音器：``VoiceClient.play()`` 只接受单个
+:class:`discord.AudioSource`，如果在播放中再次调用会抛出 ``ClientException``。
+每个连接只能有一个 opus 流，一个 source 喂给它。
 
-This module adds software mixing *upstream* of that single stream.  A
-:class:`VoiceMixer` is itself a ``discord.AudioSource`` that discord.py polls
-every 20 ms via :meth:`read`.  Internally it sums the 20 ms PCM frames of any
-number of child sources, clamps to int16, and returns one blended frame.
-discord.py never knows several streams were combined underneath — it just
-encodes and sends the single mixed frame.
+本模块在该单流的上游添加软件混音。:class:`VoiceMixer` 本身是一个
+``discord.AudioSource``，discord.py 每 20ms 通过 :meth:`read` 轮询它。
+内部将任意数量子源的 20ms PCM 帧求和，裁剪到 int16，返回一个混合帧。
+discord.py 不知道下面有多个流被合并——它只是编码并发送这唯一的混合帧。
 
-This gives us, for one voice connection at once:
+这使得每个语音连接可以同时：
 
-  * an always-on low-volume **ambient/idle loop** (the "thinking" sound),
-  * a **speech** channel (TTS replies, verbal acknowledgements) that plays
-    *over* the ambient bed, automatically **ducking** the ambient gain down
-    while speech is active and restoring it when speech ends — the smooth
-    Grok-voice-mode feel, instead of stop-and-swap.
+  * 始终开启的低音量**环境音/空闲循环**（"思考"音效），
+  * 一个**语音**通道（TTS 回复、语音确认）播放在环境音之上，
+    语音活跃时自动**压低**环境音增益，语音结束时恢复——
+    类似 Grok 语音模式的平滑体验，而非停止-切换。
 
-Design notes
-------------
-* The mixer is installed **once** per guild on join (``vc.play(mixer)``) and
-  runs continuously until the bot leaves.  Children come and go; the mixer
-  itself never stops, so there is no ``is_playing()`` race between an
-  acknowledgement and the final reply.
-* Frame format is Discord-native: 48 kHz, 2 channels, signed 16-bit LE,
-  20 ms per frame == ``discord.opus.Encoder.FRAME_SIZE`` bytes
-  (3840 = 960 samples * 2 channels * 2 bytes).
-* Mixing is a single vectorised int32 add + clip per 20 ms frame (numpy,
-  already a core dependency).  CPU cost is negligible.
-* :meth:`read` is called from discord.py's audio sender **thread**, while
-  children are added/removed from the asyncio event loop thread, so all
-  shared state is guarded by a plain ``threading.Lock``.
+设计说明
+--------
+* 混音器在每个 guild 加入时**安装一次**（``vc.play(mixer)``），
+  持续运行直到 bot 离开。子源来去自由；混音器本身永不停止，
+  因此确认音和最终回复之间不会有 ``is_playing()`` 竞态。
+* 帧格式为 Discord 原生格式：48 kHz，2 声道，有符号 16 位小端序，
+  每帧 20ms == ``discord.opus.Encoder.FRAME_SIZE`` 字节
+  (3840 = 960 采样 * 2 声道 * 2 字节)。
+* 混音是一个向量化的 int32 加法 + 裁剪操作（numpy，已是核心依赖）。
+  CPU 开销可忽略不计。
+* :meth:`read` 从 discord.py 的音频发送**线程**调用，而子源从
+  asyncio 事件循环线程添加/移除，因此所有共享状态由普通
+  ``threading.Lock`` 保护。
 
-The mixer NEVER touches the inbound receive path: it only produces the bot's
-*outgoing* stream.  The :class:`VoiceReceiver` decodes incoming SSRCs only, so
-the mixer's output cannot echo back into transcription.
+混音器永远不会触及入站接收路径：它只生成 bot 的*出站*流。
+:class:`VoiceReceiver` 仅解码入站 SSRC，因此混音器的输出
+不会回传到转录中。
 """
 
 import logging
 import threading
 from typing import TYPE_CHECKING, List, Optional
 
-if TYPE_CHECKING:  # numpy is an optional ("voice" extra) dep — never import at runtime top-level
+if TYPE_CHECKING:  # numpy 是可选依赖（"voice" extra）— 永远不在运行时顶层导入
     import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
 def _require_numpy():
-    """Import numpy lazily.
+    """惰性导入 numpy。
 
-    numpy ships in the optional ``voice`` extra, not the base install, so this
-    module must import cleanly without it (the Discord adapter imports this
-    file unconditionally).  Callers that actually mix audio call this; if the
-    voice extra isn't installed they get a clear error instead of a top-level
-    ImportError that would break the whole adapter import.
+    numpy 包含在可选的 ``voice`` extra 中，不在基础安装中，因此本模块
+    必须能在没有它的情况下正常导入（Discord 适配器无条件导入此文件）。
+    实际需要混音的调用者调用此函数；如果 voice extra 未安装，它们会
+    得到清晰的错误提示，而非破坏整个适配器导入的顶层 ImportError。
     """
     import numpy as np  # noqa: PLC0415 — intentional lazy import
     return np
 
-# Discord-native frame geometry (matches discord.opus.Encoder).
+# Discord 原生帧参数（与 discord.opus.Encoder 匹配）。
 SAMPLE_RATE = 48000
 CHANNELS = 2
-SAMPLE_WIDTH = 2                       # bytes per sample (s16)
+SAMPLE_WIDTH = 2                       # 每采样字节数 (s16)
 FRAME_LENGTH_MS = 20
 SAMPLES_PER_FRAME = SAMPLE_RATE * FRAME_LENGTH_MS // 1000   # 960
-FRAME_SIZE = SAMPLES_PER_FRAME * CHANNELS * SAMPLE_WIDTH    # 3840 bytes
+FRAME_SIZE = SAMPLES_PER_FRAME * CHANNELS * SAMPLE_WIDTH    # 3840 字节
 SILENCE_FRAME = b"\x00" * FRAME_SIZE
 
 

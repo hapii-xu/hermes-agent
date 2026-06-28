@@ -1,43 +1,41 @@
 #!/usr/bin/env python3
-"""X Search tool backed by xAI's built-in ``x_search`` Responses API tool.
+"""基于 xAI 内置 ``x_search`` Responses API 工具的 X Search 工具。
 
-Authentication
---------------
-The tool registers when **either** xAI credential path is available:
+认证
+----
+当**任一** xAI 凭据路径可用时，该工具即被注册：
 
-* ``XAI_API_KEY`` is set in ``~/.hermes/.env`` or the process environment
-  (paid xAI API key), OR
-* The user is signed in via xAI Grok OAuth — SuperGrok subscription —
-  i.e. ``hermes auth add xai-oauth`` has been run and the stored refresh
-  token still works.
+* ``~/.hermes/.env`` 或进程环境中设置了 ``XAI_API_KEY``
+  （付费 xAI API key），或者
+* 用户已通过 xAI Grok OAuth 登录——即 SuperGrok 订阅——
+  也就是已执行 ``hermes auth add xai-oauth`` 且存储的 refresh
+  token 仍然有效。
 
-Credential preference at call time matches
-:func:`tools.xai_http.resolve_xai_http_credentials`: SuperGrok OAuth first,
-direct OAuth resolver second, ``XAI_API_KEY`` last. That helper also
-auto-refreshes the OAuth access token when it's within the refresh skew
-window, so a ``True`` from :func:`check_x_search_requirements` means the
-bearer is fetchable AND non-empty.
+调用时的凭据优先级与
+:func:`tools.xai_http.resolve_xai_http_credentials` 一致：SuperGrok OAuth
+优先，其次是直接 OAuth 解析器，最后是 ``XAI_API_KEY``。该辅助函数还会在
+OAuth access token 处于刷新偏差窗口内时自动刷新，因此
+:func:`check_x_search_requirements` 返回 ``True`` 意味着 bearer 可获取且
+非空。
 
-Defensive output
-----------------
-The tool surfaces two additional signals beyond xAI's raw response so callers
-can tell a real citation-backed answer from an unsourced one:
+防御性输出
+----------
+除 xAI 的原始响应外，该工具还额外暴露两个信号，以便调用方能区分带有真实
+引用的答案和无来源的答案：
 
-* ``from_date`` / ``to_date`` are validated client-side before the HTTP call.
-  Malformed (non ``YYYY-MM-DD``), inverted (``from_date > to_date``), and
-  pure-future ranges (``from_date`` later than today UTC) fail fast with a
-  clear error instead of burning an API call. ``to_date`` in the future is
-  still allowed so callers can legitimately request "from yesterday to
-  tomorrow".
-* Successful responses carry ``degraded`` and ``degraded_reason`` fields.
-  ``degraded`` is ``True`` when any narrowing filter (handles or dates) was
-  active AND xAI returned no citations in either the top-level ``citations``
-  array or the inline ``url_citation`` annotations. In that case the
-  ``answer`` came from the model's own knowledge rather than the X index,
-  and the caller should treat the result as unsourced.
+* ``from_date`` / ``to_date`` 会在发起 HTTP 调用之前在客户端做校验。
+  格式错误（非 ``YYYY-MM-DD``）、倒序（``from_date > to_date``）以及纯
+  未来区间（``from_date`` 晚于今天 UTC）会快速失败并返回清晰的错误，而
+  不是白白消耗一次 API 调用。``to_date`` 在未来仍然被允许，以便调用方
+  合法地请求「从昨天到明天」。
+* 成功的响应会携带 ``degraded`` 和 ``degraded_reason`` 字段。
+  当任何收窄过滤器（handles 或日期）生效，且 xAI 在顶层的 ``citations``
+  数组或行内的 ``url_citation`` 注解中都没有返回任何引用时，
+  ``degraded`` 为 ``True``。此时 ``answer`` 来自模型自身的知识，而非 X
+  索引，调用方应将该结果视为无来源。
 
-Salvaged from PR #10786 (originally by @Jaaneek); credential resolution
-reworked to honor both auth modes per Teknium's design.
+Salvage 自 PR #10786（最初由 @Jaaneek 贡献）；凭据解析经过重写以同时
+兼容两种认证模式，遵循 Teknium 的设计。
 """
 
 from __future__ import annotations
@@ -63,7 +61,7 @@ MAX_HANDLES = 10
 
 
 # ---------------------------------------------------------------------------
-# Config
+# 配置
 # ---------------------------------------------------------------------------
 
 def _load_x_search_config() -> Dict[str, Any]:
@@ -99,18 +97,17 @@ def _get_x_search_retries() -> int:
 
 
 # ---------------------------------------------------------------------------
-# Credential resolution
+# 凭据解析
 # ---------------------------------------------------------------------------
 
 def _resolve_xai_bearer() -> Tuple[str, str, str]:
-    """Return ``(api_key, base_url, source)``.
+    """返回 ``(api_key, base_url, source)``。
 
-    ``source`` is one of ``"xai-oauth"`` or ``"xai"`` so callers (and tests)
-    can tell which credential path won. Raises ``RuntimeError`` if no usable
-    credential is available — the registered :func:`check_x_search_requirements`
-    gate makes that case unreachable in normal operation, but the runtime
-    check exists so a credential that expires between registration and
-    invocation produces a clean tool error instead of a 401.
+    ``source`` 取值为 ``"xai-oauth"`` 或 ``"xai"``，以便调用方（和测试）
+    判断是哪条凭据路径胜出。当没有可用的凭据时抛出 ``RuntimeError``——
+    注册时的 :func:`check_x_search_requirements` 门槛使这种情况在正常运行中
+    不可达，但运行时检查的存在是为了让在注册与调用之间过期的凭据产生一个
+    清晰的工具错误，而不是 401。
     """
     creds = resolve_xai_http_credentials()
     api_key = str(creds.get("api_key") or "").strip()
@@ -125,12 +122,12 @@ def _resolve_xai_bearer() -> Tuple[str, str, str]:
 
 
 def check_x_search_requirements() -> bool:
-    """Return True when xAI credentials are available AND valid.
+    """当 xAI 凭据可用且有效时返回 True。
 
-    ``resolve_xai_http_credentials`` calls
-    :func:`hermes_cli.auth.resolve_xai_oauth_runtime_credentials` which
-    auto-refreshes the OAuth access token if it's expiring; a successful
-    return therefore implies a usable bearer.
+    ``resolve_xai_http_credentials`` 会调用
+    :func:`hermes_cli.auth.resolve_xai_oauth_runtime_credentials`，后者会在
+    OAuth access token 即将过期时自动刷新；因此成功返回即意味着存在一个
+    可用的 bearer。
     """
     try:
         creds = resolve_xai_http_credentials()
@@ -140,7 +137,7 @@ def check_x_search_requirements() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 def _normalize_handles(handles: Optional[List[str]], field_name: str) -> List[str]:
@@ -155,14 +152,13 @@ def _normalize_handles(handles: Optional[List[str]], field_name: str) -> List[st
 
 
 def _parse_iso_date(value: str, field_name: str) -> date:
-    """Parse a strict YYYY-MM-DD string into a ``date``.
+    """把严格的 YYYY-MM-DD 字符串解析为 ``date``。
 
-    xAI accepts any string in the ``from_date``/``to_date`` slots and silently
-    returns an answer with no citations when the value is malformed or refers
-    to a window where no posts can exist. That behavior burns a billable API
-    call and produces a confident-sounding fluff answer that's hard for callers
-    to distinguish from a real result. Validating client-side fails fast and
-    gives the agent a clear error to act on.
+    xAI 会接受 ``from_date``/``to_date`` 槽位中的任意字符串，并在值格式
+    错误或指向一个不可能存在帖子的时间窗口时，静默返回一个没有引用的
+    答案。这种行为会白白消耗一次计费的 API 调用，并产出一个听起来很自信、
+    但调用方很难与真实结果区分的空话答案。在客户端做校验可以快速失败，
+    并给 agent 一个清晰可操作的错误。
     """
     raw = value.strip()
     try:
@@ -174,15 +170,14 @@ def _parse_iso_date(value: str, field_name: str) -> date:
 
 
 def _validate_date_range(from_date: str, to_date: str) -> None:
-    """Validate ``from_date`` / ``to_date`` before they reach xAI.
+    """在 ``from_date`` / ``to_date`` 到达 xAI 之前校验它们。
 
-    Rules:
-      * Either field, if non-empty, must parse as ``YYYY-MM-DD``.
-      * When both are set, ``from_date <= to_date``.
-      * ``from_date`` must not be later than today UTC — no posts can exist
-        in a window that hasn't started yet, so the call would be guaranteed
-        to return zero citations. ``to_date`` in the future is allowed
-        (callers may legitimately set "from yesterday to tomorrow").
+    规则：
+      * 任一字段如果非空，都必须能解析为 ``YYYY-MM-DD``。
+      * 当两者都设置时，``from_date <= to_date``。
+      * ``from_date`` 不得晚于今天 UTC——一个尚未开始的时间窗口里不可能
+        存在帖子，因此该调用注定返回零引用。``to_date`` 在未来是允许的
+        （调用方可以合法地设置「从昨天到明天」）。
     """
     parsed_from: Optional[date] = None
     parsed_to: Optional[date] = None
@@ -268,7 +263,7 @@ def _http_error_message(exc: requests.HTTPError) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool implementation
+# 工具实现
 # ---------------------------------------------------------------------------
 
 def x_search_tool(
@@ -373,15 +368,13 @@ def x_search_tool(
         citations = list(data.get("citations") or [])
         inline_citations = _extract_inline_citations(data)
 
-        # Degraded-result detection.
+        # 降级结果检测。
         #
-        # xAI returns 200 OK with a synthesized answer even when its X index
-        # has no posts matching the caller's narrowing filters. The answer
-        # then comes from the model's training data, which is misleading
-        # because it looks identical to a real, citation-backed result. When
-        # any narrowing filter is active AND both citation channels came back
-        # empty, mark the response as degraded so callers can decide to
-        # broaden filters, retry, or fall back to a different source.
+        # 即便其 X 索引中没有匹配调用方收窄过滤器的帖子，xAI 仍会返回 200 OK
+        # 和一个合成的答案。该答案随后来自模型的训练数据，这具有误导性，因为
+        # 它看起来与一个真实的、带引用的结果完全一样。当任何收窄过滤器处于
+        # 激活状态且两个引用通道都为空时，把响应标记为降级，以便调用方可以
+        # 决定放宽过滤器、重试，或回退到其他来源。
         active_filters: List[str] = []
         if allowed:
             active_filters.append("allowed_x_handles")

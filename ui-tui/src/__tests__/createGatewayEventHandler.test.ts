@@ -8,8 +8,8 @@ import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { estimateTokensRough } from '../lib/text.js'
 import type { Msg } from '../types.js'
 
-// Mock the external-URL opener so the billing.step_up.verification test can
-// assert it's invoked without spawning a real browser process.
+// Mock 外部 URL 打开器，使 billing.step_up.verification 测试可以
+// 断言它被调用而不会真正启动浏览器进程。
 const openExternalUrlMock = vi.fn((_url: string) => true)
 vi.mock('../lib/openExternalUrl.js', () => ({
   openExternalUrl: (url: string) => openExternalUrlMock(url)
@@ -88,8 +88,8 @@ describe('createGatewayEventHandler', () => {
 
     expect(finalText).toBeDefined()
     expect(trail).toMatchObject({ kind: 'trail', role: 'system', todos, todoIncomplete: true })
-    // Todo archive must sit ABOVE the final assistant text so the panel
-    // doesn't visibly jump across the final answer at end-of-turn.
+    // Todo 归档必须位于最终 assistant 文本上方，这样面板
+    // 在 turn 结束时不会在最终回答上 visibly 跳动。
     expect(appended.indexOf(trail!)).toBeLessThan(appended.indexOf(finalText!))
     expect(getTurnState().todos).toEqual([])
   })
@@ -464,8 +464,8 @@ describe('createGatewayEventHandler', () => {
     const appended: Msg[] = []
     const onEvent = createGatewayEventHandler(buildCtx(appended))
     const raw = 'Hermes here.\n\nLine two.'
-    // Rich-rendered ANSI (`final_response_markdown: render`) used to win,
-    // which left visible escape codes in Ink output. Raw text must win.
+    // Rich 渲染的 ANSI（`final_response_markdown: render`）曾经会胜出，
+    // 导致 Ink 输出中出现可见的转义码。原始文本必须优先。
     const rendered = '\u001b[33mHermes here.\u001b[0m\n\n\u001b[2mLine two.\u001b[0m'
 
     onEvent({ payload: { rendered, text: raw }, type: 'message.complete' } as any)
@@ -490,9 +490,9 @@ describe('createGatewayEventHandler', () => {
     const appended: Msg[] = []
     const onEvent = createGatewayEventHandler(buildCtx(appended))
 
-    // Stream of partial text deltas; each delta carries an incremental
-    // Rich-ANSI fragment.  Pre-fix code would replace the whole bufRef
-    // with the latest fragment, dropping prior text.
+    // 部分文本 delta 流；每个 delta 携带一个增量
+    // Rich-ANSI 片段。修复前的代码会用最新片段替换整个 bufRef，
+    // 导致丢失之前的文本。
     onEvent({ payload: { rendered: '\u001b[33mFi\u001b[0m', text: 'Fi' }, type: 'message.delta' } as any)
     onEvent({ payload: { rendered: '\u001b[33mrst.\u001b[0m', text: 'rst.' }, type: 'message.delta' } as any)
     onEvent({ payload: { text: ' second.' }, type: 'message.delta' } as any)
@@ -509,9 +509,9 @@ describe('createGatewayEventHandler', () => {
     const cleaned = '--- a/foo.ts\n+++ b/foo.ts\n@@\n-old\n+new'
     const block = `\`\`\`diff\n${cleaned}\n\`\`\``
 
-    // Narration → tool → tool-complete → more narration → message-complete.
-    // The diff MUST land between the two narration segments, not tacked
-    // onto the final one.
+    // 叙述 → 工具 → 工具完成 → 更多叙述 → 消息完成。
+    // diff 必须落在两段叙述之间，而不是
+    // 附加在最后一段上。
     onEvent({ payload: { text: 'Editing the file' }, type: 'message.delta' } as any)
     onEvent({ payload: { context: 'foo.ts', name: 'patch', tool_id: 'tool-1' }, type: 'tool.start' } as any)
     onEvent({ payload: { inline_diff: diff, summary: 'patched', tool_id: 'tool-1' }, type: 'tool.complete' } as any)

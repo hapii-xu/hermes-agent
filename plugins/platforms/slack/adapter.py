@@ -1,11 +1,11 @@
 """
-Slack platform adapter.
+Slack 平台适配器。
 
-Uses slack-bolt (Python) with Socket Mode for:
-- Receiving messages from channels and DMs
-- Sending responses back
-- Handling slash commands
-- Thread support
+使用 slack-bolt (Python) 和 Socket Mode 实现：
+- 从频道和私信接收消息
+- 发送回复
+- 处理斜杠命令
+- 线程支持
 """
 
 import asyncio
@@ -57,12 +57,12 @@ from gateway.platforms.base import (
 
 logger = logging.getLogger(__name__)
 
-# ContextVar carrying the user_id of the slash-command invoker.
-# Set in _handle_slash_command, read in send() to match the correct
-# stashed response_url when multiple users issue commands on the same
-# channel concurrently.  ContextVars propagate to child asyncio.Tasks
-# (Python 3.7+), so the value set in _handle_slash_command's task is
-# visible in _process_message_background's child task.
+# 携带斜杠命令调用者 user_id 的 ContextVar。
+# 在 _handle_slash_command 中设置，在 send() 中读取以匹配正确的
+# 暂存 response_url，当多个用户在同一频道并发发出命令时。
+# ContextVars 会传播到子 asyncio.Task（Python 3.7+），
+# 因此在 _handle_slash_command 的任务中设置的值
+# 在 _process_message_background 的子任务中可见。
 _slash_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "_slash_user_id",
     default=None,
@@ -71,19 +71,19 @@ _slash_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 
 @dataclass
 class _ThreadContextCache:
-    """Cache entry for fetched thread context."""
+    """已获取线程上下文的缓存条目。"""
 
     content: str
     fetched_at: float = field(default_factory=time.monotonic)
     message_count: int = 0
-    parent_text: str = ""  # Raw text of the thread parent (for reply_to_text injection)
+    parent_text: str = ""  # 线程父消息的原始文本（用于 reply_to_text 注入）
 
 
 def check_slack_requirements() -> bool:
-    """Check if Slack dependencies are available.
+    """检查 Slack 依赖是否可用。
 
-    Lazy-installs slack-bolt/slack-sdk via ``tools.lazy_deps.ensure("platform.slack")``
-    on first call if not present. Rebinds all module-level globals on success.
+    首次调用时通过 ``tools.lazy_deps.ensure("platform.slack")`` 懒安装
+    slack-bolt/slack-sdk（如果尚未安装）。成功后重新绑定所有模块级全局变量。
     """
     if SLACK_AVAILABLE:
         return True
@@ -108,16 +108,15 @@ def check_slack_requirements() -> bool:
 
 
 def _extract_text_from_slack_blocks(blocks: list) -> str:
-    """Extract readable text from Slack Block Kit blocks, including quoted/forwarded content.
+    """从 Slack Block Kit blocks 中提取可读文本，包括引用/转发内容。
 
-    Slack's modern WYSIWYG composer sends messages with a ``blocks`` array
-    containing ``rich_text`` elements. When a user forwards or quotes another
-    message, the quoted content appears as nested ``rich_text_quote`` elements
-    that are *not* included in the plain ``text`` field of the event.
+    Slack 的现代所见即所得编辑器发送消息时带有包含 ``rich_text`` 元素的
+    ``blocks`` 数组。当用户转发或引用另一条消息时，引用内容作为嵌套的
+    ``rich_text_quote`` 元素出现，这些元素*不*包含在事件的纯 ``text`` 字段中。
 
-    This helper walks the rich-text tree recursively and returns readable lines,
-    preserving quotes, list items, and preformatted blocks so the agent can see
-    forwarded/quoted content instead of only the lossy plain-text field.
+    此辅助函数递归遍历富文本树并返回可读行，
+    保留引用、列表项和预格式化代码块，以便代理可以看到
+    转发/引用的内容，而不仅仅是有损的纯文本字段。
     """
     if not blocks:
         return ""

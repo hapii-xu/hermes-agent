@@ -1,16 +1,16 @@
-"""Agent-facing tool: respond to a native JS dialog captured by the CDP supervisor.
+"""面向 agent 的工具：响应被 CDP 监督器捕获的原生 JS 对话框。
 
-This tool is response-only — the agent first reads ``pending_dialogs`` from
-``browser_snapshot`` output, then calls ``browser_dialog(action=...)`` to
-accept or dismiss.
+本工具只做响应 —— agent 先从 ``browser_snapshot`` 输出中读取
+``pending_dialogs``，再调用 ``browser_dialog(action=...)`` 来
+接受或关闭。
 
-Gated on the same ``_browser_cdp_check`` as ``browser_cdp`` so it only
-appears when a CDP endpoint is reachable (Browserbase with a
-``connectUrl``, local Chromium-family browser via ``/browser connect``, or
-``browser.cdp_url`` set in config).
+与 ``browser_cdp`` 一样以 ``_browser_cdp_check`` 作为门控，
+所以只有当 CDP 端点可达时它才出现（带有 ``connectUrl`` 的
+Browserbase、通过 ``/browser connect`` 连接的本地 Chromium 系浏览器，
+或在配置中设置了 ``browser.cdp_url``）。
 
-See ``website/docs/developer-guide/browser-supervisor.md`` for the full
-design.
+完整设计见
+``website/docs/developer-guide/browser-supervisor.md``。
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def browser_dialog(
     dialog_id: Optional[str] = None,
     task_id: Optional[str] = None,
 ) -> str:
-    """Respond to a pending dialog on the active task's CDP supervisor."""
+    """响应当前活动任务 CDP 监督器上的一个待处理对话框。"""
     effective_task_id = task_id or "default"
     supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
     if supervisor is None:
@@ -118,16 +118,15 @@ def browser_dialog(
 
 
 def _browser_dialog_check() -> bool:
-    """Gate: same as ``browser_cdp`` — only offered when CDP is reachable.
+    """门控：与 ``browser_cdp`` 相同 —— 仅在 CDP 可达时才提供。
 
-    Kept identical so the two tools appear and disappear together. The
-    supervisor itself is started lazily by ``browser_navigate`` /
-    ``/browser connect`` / Browserbase session creation, so a reachable
-    CDP URL is enough to commit to showing the tool.
+    保持一致，这样两个工具会一起出现和消失。监督器本身由
+    ``browser_navigate`` / ``/browser connect`` / 创建 Browserbase
+    会话时延迟启动，因此一个可达的 CDP URL 就足以确定要展示该工具。
     """
     try:
         from tools.browser_cdp_tool import _browser_cdp_check  # type: ignore[import-not-found]
-    except Exception as exc:  # pragma: no cover — defensive
+    except Exception as exc:  # pragma: no cover —— 防御性
         logger.debug("browser_dialog check: browser_cdp_tool import failed: %s", exc)
         return False
     return _browser_cdp_check()

@@ -1,17 +1,16 @@
-"""OpenAI-compatible facade over Google AI Studio's native Gemini API.
+"""Google AI Studio 原生 Gemini API 的 OpenAI 兼容适配层。
 
-Hermes keeps ``api_mode='chat_completions'`` for the ``gemini`` provider so the
-main agent loop can keep using its existing OpenAI-shaped message flow.
-This adapter is the transport shim that converts those OpenAI-style
-``messages[]`` / ``tools[]`` requests into Gemini's native
-``models/{model}:generateContent`` schema and converts the responses back.
+Hermes 为 ``gemini`` provider 保持 ``api_mode='chat_completions'``，
+这样主 agent 循环可以继续沿用现有的 OpenAI 风格消息流。
+本适配器是传输转换层，将 OpenAI 风格的 ``messages[]`` / ``tools[]``
+请求转换为 Gemini 原生的 ``models/{model}:generateContent`` 格式，
+并将响应转换回来。
 
-Why this exists
----------------
-Google's OpenAI-compatible endpoint has been brittle for Hermes's multi-turn
-agent/tool loop (auth churn, tool-call replay quirks, thought-signature
-requirements).  The native Gemini API is the canonical path and avoids the
-OpenAI-compat layer entirely.
+为什么需要这个模块
+--------------------
+Google 的 OpenAI 兼容端点在 Hermes 的多轮 agent/tool 循环中一直不太稳定
+（认证频繁刷新、tool call 重放异常、thought-signature 要求等）。
+原生 Gemini API 是官方推荐路径，可以完全绕过 OpenAI 兼容层。
 """
 
 from __future__ import annotations
@@ -33,16 +32,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
-# Published max output-token ceiling shared by every current Gemini text model
-# (2.5 + 3.x: flash, flash-lite, pro). Used as the default when the caller
-# passes max_tokens=None, because Gemini's native API otherwise applies a low
-# internal default and truncates output (unlike OpenAI-compat endpoints where
-# an omitted limit means full budget).
+# 所有当前 Gemini 文本模型（2.5 + 3.x：flash、flash-lite、pro）共用的
+# 已发布最大输出 token 上限。当调用方传入 max_tokens=None 时用作默认值，
+# 因为 Gemini 原生 API 否则会应用一个较低的内部默认值并截断输出
+# （不像 OpenAI 兼容端点那样，省略限制意味着使用完整预算）。
 GEMINI_DEFAULT_MAX_OUTPUT_TOKENS = 65535
 
 
 def bare_gemini_model_id(model: str) -> str:
-    """Strip Gemini's own provider prefix from an aggregator-style model id."""
+    """从聚合器风格的 model id 中去掉 Gemini 自身的 provider 前缀。"""
     name = (model or "").strip()
     lowered = name.lower()
     for prefix in ("google/", "gemini/"):
@@ -52,7 +50,7 @@ def bare_gemini_model_id(model: str) -> str:
 
 
 def is_native_gemini_base_url(base_url: str) -> bool:
-    """Return True when the endpoint speaks Gemini's native REST API."""
+    """当端点使用 Gemini 原生 REST API 时返回 True。"""
     normalized = str(base_url or "").strip().rstrip("/").lower()
     if not normalized:
         return False
@@ -68,13 +66,13 @@ def probe_gemini_tier(
     model: str = "gemini-2.5-flash",
     timeout: float = 10.0,
 ) -> str:
-    """Probe a Google AI Studio API key and return its tier.
+    """探测 Google AI Studio API key 并返回其层级。
 
-    Returns one of:
+    返回以下值之一：
 
-    - ``"free"``    -- key is on the free tier (unusable with Hermes)
-    - ``"paid"``    -- key is on a paid tier
-    - ``"unknown"`` -- probe failed; callers should proceed without blocking.
+    - ``"free"``    -- key 属于免费层（Hermes 无法使用）
+    - ``"paid"``    -- key 属于付费层
+    - ``"unknown"`` -- 探测失败；调用方应继续执行而不阻塞。
     """
     key = (api_key or "").strip()
     if not key:
@@ -111,9 +109,9 @@ def probe_gemini_tier(
             rpd_val = int(rpd_header)
         except (TypeError, ValueError):
             rpd_val = None
-        # Published free-tier daily caps (Dec 2025):
-        #   gemini-2.5-pro: 100, gemini-2.5-flash: 250, flash-lite: 1000
-        # Tier 1 starts at ~1500+ for Flash. We treat <= 1000 as free.
+        # 已发布的免费层每日上限（2025年12月）：
+        #   gemini-2.5-pro: 100，gemini-2.5-flash: 250，flash-lite: 1000
+        # Tier 1 的 Flash 从约 1500+ 开始。我们将 <= 1000 视为免费层。
         if rpd_val is not None and rpd_val <= 1000:
             return "free"
         if rpd_val is not None and rpd_val > 1000:
@@ -136,7 +134,7 @@ def probe_gemini_tier(
 
 
 def is_free_tier_quota_error(error_message: str) -> bool:
-    """Return True when a Gemini 429 message indicates free-tier exhaustion."""
+    """当 Gemini 429 错误消息表明免费层配额耗尽时返回 True。"""
     if not error_message:
         return False
     return "free_tier" in error_message.lower()
@@ -153,7 +151,7 @@ _FREE_TIER_GUIDANCE = (
 
 
 class GeminiAPIError(Exception):
-    """Error shape compatible with Hermes retry/error classification."""
+    """与 Hermes 重试/错误分类机制兼容的错误结构。"""
 
     def __init__(
         self,

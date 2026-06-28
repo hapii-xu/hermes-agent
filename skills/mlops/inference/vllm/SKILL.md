@@ -1,6 +1,6 @@
 ---
 name: serving-llms-vllm
-description: "vLLM: high-throughput LLM serving, OpenAI API, quantization."
+description: "vLLM：高吞吐 LLM 服务、OpenAI API、量化。"
 version: 1.0.0
 author: Orchestra Research
 license: MIT
@@ -12,22 +12,22 @@ metadata:
 
 ---
 
-# vLLM - High-Performance LLM Serving
+# vLLM - 高性能 LLM 服务
 
-## When to use
+## 何时使用
 
-Use when deploying production LLM APIs, optimizing inference latency/throughput, or serving models with limited GPU memory. Supports OpenAI-compatible endpoints, quantization (GPTQ/AWQ/FP8), and tensor parallelism.
+在部署生产级 LLM API、优化推理延迟/吞吐量，或在有限的 GPU 显存下服务模型时使用。支持 OpenAI 兼容的端点、量化（GPTQ/AWQ/FP8）以及张量并行（tensor parallelism）。
 
-## Quick start
+## 快速开始
 
-vLLM achieves 24x higher throughput than standard transformers through PagedAttention (block-based KV cache) and continuous batching (mixing prefill/decode requests).
+vLLM 通过 PagedAttention（基于块的 KV cache）和连续批处理（continuous batching，混合 prefill/decode 请求）实现了比标准 transformers 高 24 倍的吞吐量。
 
-**Installation**:
+**安装**：
 ```bash
 pip install vllm
 ```
 
-**Basic offline inference**:
+**基础离线推理**：
 ```python
 from vllm import LLM, SamplingParams
 
@@ -38,11 +38,11 @@ outputs = llm.generate(["Explain quantum computing"], sampling)
 print(outputs[0].outputs[0].text)
 ```
 
-**OpenAI-compatible server**:
+**OpenAI 兼容服务器**：
 ```bash
 vllm serve meta-llama/Llama-3-8B-Instruct
 
-# Query with OpenAI SDK
+# 使用 OpenAI SDK 查询
 python -c "
 from openai import OpenAI
 client = OpenAI(base_url='http://localhost:8000/v1', api_key='EMPTY')
@@ -53,11 +53,11 @@ print(client.chat.completions.create(
 "
 ```
 
-## Common workflows
+## 常见工作流
 
-### Workflow 1: Production API deployment
+### 工作流 1：生产 API 部署
 
-Copy this checklist and track progress:
+复制这份清单并跟踪进度：
 
 ```
 Deployment Progress:
@@ -68,25 +68,25 @@ Deployment Progress:
 - [ ] Step 5: Verify performance metrics
 ```
 
-**Step 1: Configure server settings**
+**第 1 步：配置服务器设置**
 
-Choose configuration based on your model size:
+根据你的模型大小选择配置：
 
 ```bash
-# For 7B-13B models on single GPU
+# 适用于单 GPU 上的 7B-13B 模型
 vllm serve meta-llama/Llama-3-8B-Instruct \
   --gpu-memory-utilization 0.9 \
   --max-model-len 8192 \
   --port 8000
 
-# For 30B-70B models with tensor parallelism
+# 适用于 30B-70B 模型配合张量并行
 vllm serve meta-llama/Llama-2-70b-hf \
   --tensor-parallel-size 4 \
   --gpu-memory-utilization 0.9 \
   --quantization awq \
   --port 8000
 
-# For production with caching and metrics
+# 用于生产环境，带缓存和指标
 vllm serve meta-llama/Llama-3-8B-Instruct \
   --gpu-memory-utilization 0.9 \
   --enable-prefix-caching \
@@ -96,39 +96,39 @@ vllm serve meta-llama/Llama-3-8B-Instruct \
   --host 0.0.0.0
 ```
 
-**Step 2: Test with limited traffic**
+**第 2 步：用有限的流量进行测试**
 
-Run load test before production:
+上线前先做负载测试：
 
 ```bash
-# Install load testing tool
+# 安装负载测试工具
 pip install locust
 
-# Create test_load.py with sample requests
-# Run: locust -f test_load.py --host http://localhost:8000
+# 用示例请求创建 test_load.py
+# 运行：locust -f test_load.py --host http://localhost:8000
 ```
 
-Verify TTFT (time to first token) < 500ms and throughput > 100 req/sec.
+确认 TTFT（time to first token，首 token 延迟）< 500ms，吞吐量 > 100 req/sec。
 
-**Step 3: Enable monitoring**
+**第 3 步：启用监控**
 
-vLLM exposes Prometheus metrics on port 9090:
+vLLM 会在 9090 端口暴露 Prometheus 指标：
 
 ```bash
 curl http://localhost:9090/metrics | grep vllm
 ```
 
-Key metrics to monitor:
-- `vllm:time_to_first_token_seconds` - Latency
-- `vllm:num_requests_running` - Active requests
-- `vllm:gpu_cache_usage_perc` - KV cache utilization
+需要监控的关键指标：
+- `vllm:time_to_first_token_seconds` - 延迟
+- `vllm:num_requests_running` - 活跃请求数
+- `vllm:gpu_cache_usage_perc` - KV cache 利用率
 
-**Step 4: Deploy to production**
+**第 4 步：部署到生产环境**
 
-Use Docker for consistent deployment:
+使用 Docker 进行一致的部署：
 
 ```bash
-# Run vLLM in Docker
+# 在 Docker 中运行 vLLM
 docker run --gpus all -p 8000:8000 \
   vllm/vllm-openai:latest \
   --model meta-llama/Llama-3-8B-Instruct \
@@ -136,19 +136,19 @@ docker run --gpus all -p 8000:8000 \
   --enable-prefix-caching
 ```
 
-**Step 5: Verify performance metrics**
+**第 5 步：核验性能指标**
 
-Check that deployment meets targets:
-- TTFT < 500ms (for short prompts)
-- Throughput > target req/sec
-- GPU utilization > 80%
-- No OOM errors in logs
+检查部署是否达标：
+- TTFT < 500ms（针对短提示）
+- 吞吐量 > 目标 req/sec
+- GPU 利用率 > 80%
+- 日志中没有 OOM 错误
 
-### Workflow 2: Offline batch inference
+### 工作流 2：离线批量推理
 
-For processing large datasets without server overhead.
+用于在不产生服务器开销的情况下处理大型数据集。
 
-Copy this checklist:
+复制这份清单：
 
 ```
 Batch Processing:
@@ -158,10 +158,10 @@ Batch Processing:
 - [ ] Step 4: Process results
 ```
 
-**Step 1: Prepare input data**
+**第 1 步：准备输入数据**
 
 ```python
-# Load prompts from file
+# 从文件加载提示词
 prompts = []
 with open("prompts.txt") as f:
     prompts = [line.strip() for line in f]
@@ -169,14 +169,14 @@ with open("prompts.txt") as f:
 print(f"Loaded {len(prompts)} prompts")
 ```
 
-**Step 2: Configure LLM engine**
+**第 2 步：配置 LLM 引擎**
 
 ```python
 from vllm import LLM, SamplingParams
 
 llm = LLM(
     model="meta-llama/Llama-3-8B-Instruct",
-    tensor_parallel_size=2,  # Use 2 GPUs
+    tensor_parallel_size=2,  # 使用 2 块 GPU
     gpu_memory_utilization=0.9,
     max_model_len=4096
 )
@@ -189,22 +189,22 @@ sampling = SamplingParams(
 )
 ```
 
-**Step 3: Run batch inference**
+**第 3 步：运行批量推理**
 
-vLLM automatically batches requests for efficiency:
+vLLM 会自动对请求进行批处理以提高效率：
 
 ```python
-# Process all prompts in one call
+# 一次性处理所有提示词
 outputs = llm.generate(prompts, sampling)
 
-# vLLM handles batching internally
-# No need to manually chunk prompts
+# vLLM 内部会处理批处理
+# 无需手动对提示词分块
 ```
 
-**Step 4: Process results**
+**第 4 步：处理结果**
 
 ```python
-# Extract generated text
+# 提取生成的文本
 results = []
 for output in outputs:
     prompt = output.prompt
@@ -215,7 +215,7 @@ for output in outputs:
         "tokens": len(output.outputs[0].token_ids)
     })
 
-# Save to file
+# 保存到文件
 import json
 with open("results.jsonl", "w") as f:
     for result in results:
@@ -224,9 +224,9 @@ with open("results.jsonl", "w") as f:
 print(f"Processed {len(results)} prompts")
 ```
 
-### Workflow 3: Quantized model serving
+### 工作流 3：量化模型服务
 
-Fit large models in limited GPU memory.
+将大模型塞进有限的 GPU 显存中。
 
 ```
 Quantization Setup:
@@ -236,137 +236,137 @@ Quantization Setup:
 - [ ] Step 4: Verify accuracy
 ```
 
-**Step 1: Choose quantization method**
+**第 1 步：选择量化方法**
 
-- **AWQ**: Best for 70B models, minimal accuracy loss
-- **GPTQ**: Wide model support, good compression
-- **FP8**: Fastest on H100 GPUs
+- **AWQ**：最适合 70B 模型，精度损失极小
+- **GPTQ**：模型支持广泛，压缩效果好
+- **FP8**：在 H100 GPU 上速度最快
 
-**Step 2: Find or create quantized model**
+**第 2 步：查找或创建量化模型**
 
-Use pre-quantized models from HuggingFace:
+使用来自 HuggingFace 的预量化模型：
 
 ```bash
-# Search for AWQ models
-# Example: TheBloke/Llama-2-70B-AWQ
+# 搜索 AWQ 模型
+# 例如：TheBloke/Llama-2-70B-AWQ
 ```
 
-**Step 3: Launch with quantization flag**
+**第 3 步：带量化标志启动**
 
 ```bash
-# Using pre-quantized model
+# 使用预量化模型
 vllm serve TheBloke/Llama-2-70B-AWQ \
   --quantization awq \
   --tensor-parallel-size 1 \
   --gpu-memory-utilization 0.95
 
-# Results: 70B model in ~40GB VRAM
+# 结果：70B 模型只需约 40GB VRAM
 ```
 
-**Step 4: Verify accuracy**
+**第 4 步：核验精度**
 
-Test outputs match expected quality:
+测试输出是否符合预期的质量：
 
 ```python
-# Compare quantized vs non-quantized responses
-# Verify task-specific performance unchanged
+# 比较量化与非量化版本的响应
+# 确认特定任务上的性能没有变化
 ```
 
-## When to use vs alternatives
+## 何时使用 vs 替代方案
 
-**Use vLLM when:**
-- Deploying production LLM APIs (100+ req/sec)
-- Serving OpenAI-compatible endpoints
-- Limited GPU memory but need large models
-- Multi-user applications (chatbots, assistants)
-- Need low latency with high throughput
+**在以下情况使用 vLLM：**
+- 部署生产级 LLM API（100+ req/sec）
+- 服务 OpenAI 兼容端点
+- GPU 显存有限但需要大模型
+- 多用户应用（聊天机器人、助手）
+- 需要低延迟的同时保持高吞吐
 
-**Use alternatives instead:**
-- **llama.cpp**: CPU/edge inference, single-user
-- **HuggingFace transformers**: Research, prototyping, one-off generation
-- **TensorRT-LLM**: NVIDIA-only, need absolute maximum performance
-- **Text-Generation-Inference**: Already in HuggingFace ecosystem
+**在以下情况改用替代方案：**
+- **llama.cpp**：CPU/边缘推理、单用户
+- **HuggingFace transformers**：研究、原型验证、一次性生成
+- **TensorRT-LLM**：仅限 NVIDIA，需要绝对最高的性能
+- **Text-Generation-Inference**：已身处 HuggingFace 生态
 
-## Common issues
+## 常见问题
 
-**Issue: Out of memory during model loading**
+**问题：加载模型时内存不足（Out of memory）**
 
-Reduce memory usage:
+降低内存占用：
 ```bash
 vllm serve MODEL \
   --gpu-memory-utilization 0.7 \
   --max-model-len 4096
 ```
 
-Or use quantization:
+或使用量化：
 ```bash
 vllm serve MODEL --quantization awq
 ```
 
-**Issue: Slow first token (TTFT > 1 second)**
+**问题：首 token 慢（TTFT > 1 秒）**
 
-Enable prefix caching for repeated prompts:
+为重复的提示词启用前缀缓存（prefix caching）：
 ```bash
 vllm serve MODEL --enable-prefix-caching
 ```
 
-For long prompts, enable chunked prefill:
+对于长提示词，启用分块 prefill（chunked prefill）：
 ```bash
 vllm serve MODEL --enable-chunked-prefill
 ```
 
-**Issue: Model not found error**
+**问题：找不到模型（Model not found）错误**
 
-Use `--trust-remote-code` for custom models:
+对自定义模型使用 `--trust-remote-code`：
 ```bash
 vllm serve MODEL --trust-remote-code
 ```
 
-**Issue: Low throughput (<50 req/sec)**
+**问题：吞吐量低（<50 req/sec）**
 
-Increase concurrent sequences:
+增加并发序列数：
 ```bash
 vllm serve MODEL --max-num-seqs 512
 ```
 
-Check GPU utilization with `nvidia-smi` - should be >80%.
+用 `nvidia-smi` 检查 GPU 利用率 —— 应当 >80%。
 
-**Issue: Inference slower than expected**
+**问题：推理比预期慢**
 
-Verify tensor parallelism uses power of 2 GPUs:
+确认张量并行使用的是 2 的幂次个 GPU：
 ```bash
-vllm serve MODEL --tensor-parallel-size 4  # Not 3
+vllm serve MODEL --tensor-parallel-size 4  # 不是 3
 ```
 
-Enable speculative decoding for faster generation:
+启用投机解码（speculative decoding）以加速生成：
 ```bash
 vllm serve MODEL --speculative-model DRAFT_MODEL
 ```
 
-## Advanced topics
+## 进阶主题
 
-**Server deployment patterns**: See [references/server-deployment.md](references/server-deployment.md) for Docker, Kubernetes, and load balancing configurations.
+**服务器部署模式**：参见 [references/server-deployment.md](references/server-deployment.md)，了解 Docker、Kubernetes 和负载均衡配置。
 
-**Performance optimization**: See [references/optimization.md](references/optimization.md) for PagedAttention tuning, continuous batching details, and benchmark results.
+**性能优化**：参见 [references/optimization.md](references/optimization.md)，了解 PagedAttention 调优、连续批处理细节以及基准测试结果。
 
-**Quantization guide**: See [references/quantization.md](references/quantization.md) for AWQ/GPTQ/FP8 setup, model preparation, and accuracy comparisons.
+**量化指南**：参见 [references/quantization.md](references/quantization.md)，了解 AWQ/GPTQ/FP8 设置、模型准备和精度对比。
 
-**Troubleshooting**: See [references/troubleshooting.md](references/troubleshooting.md) for detailed error messages, debugging steps, and performance diagnostics.
+**故障排查**：参见 [references/troubleshooting.md](references/troubleshooting.md)，了解详细的错误信息、调试步骤和性能诊断。
 
-## Hardware requirements
+## 硬件要求
 
-- **Small models (7B-13B)**: 1x A10 (24GB) or A100 (40GB)
-- **Medium models (30B-40B)**: 2x A100 (40GB) with tensor parallelism
-- **Large models (70B+)**: 4x A100 (40GB) or 2x A100 (80GB), use AWQ/GPTQ
+- **小模型（7B-13B）**：1x A10 (24GB) 或 A100 (40GB)
+- **中等模型（30B-40B）**：2x A100 (40GB)，配合张量并行
+- **大模型（70B+）**：4x A100 (40GB) 或 2x A100 (80GB)，使用 AWQ/GPTQ
 
-Supported platforms: NVIDIA (primary), AMD ROCm, Intel GPUs, TPUs
+支持的平台：NVIDIA（主要）、AMD ROCm、Intel GPU、TPU
 
-## Resources
+## 资源
 
-- Official docs: https://docs.vllm.ai
-- GitHub: https://github.com/vllm-project/vllm
-- Paper: "Efficient Memory Management for Large Language Model Serving with PagedAttention" (SOSP 2023)
-- Community: https://discuss.vllm.ai
+- 官方文档：https://docs.vllm.ai
+- GitHub：https://github.com/vllm-project/vllm
+- 论文："Efficient Memory Management for Large Language Model Serving with PagedAttention" (SOSP 2023)
+- 社区：https://discuss.vllm.ai
 
 
 

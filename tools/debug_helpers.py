@@ -1,22 +1,22 @@
-"""Shared debug session infrastructure for Hermes tools.
+"""Hermes 工具共享的调试会话基础设施。
 
-Replaces the identical DEBUG_MODE / _log_debug_call / _save_debug_log /
-get_debug_session_info boilerplate previously duplicated across web_tools,
-vision_tools, mixture_of_agents_tool, and image_generation_tool.
+用于替换此前在 web_tools、vision_tools、mixture_of_agents_tool 和
+image_generation_tool 中重复出现的相同 DEBUG_MODE / _log_debug_call /
+_save_debug_log / get_debug_session_info 模板代码。
 
-Usage in a tool module:
+在工具模块中的用法：
 
     from tools.debug_helpers import DebugSession
 
     _debug = DebugSession("web_tools", env_var="WEB_TOOLS_DEBUG")
 
-    # Log a call (no-op when debug mode is off)
+    # 记录一次调用（调试模式关闭时为空操作）
     _debug.log_call("web_search", {"query": q, "results": len(r)})
 
-    # Save the debug log (no-op when debug mode is off)
+    # 保存调试日志（调试模式关闭时为空操作）
     _debug.save()
 
-    # Expose debug info to external callers
+    # 向外部调用方暴露调试信息
     def get_debug_session_info():
         return _debug.get_session_info()
 """
@@ -34,10 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 class DebugSession:
-    """Per-tool debug session that records tool calls to a JSON log file.
+    """按工具划分的调试会话，将工具调用记录到 JSON 日志文件中。
 
-    Activated by a tool-specific environment variable (e.g. WEB_TOOLS_DEBUG=true).
-    When disabled, all methods are cheap no-ops.
+    由工具专属的环境变量激活（例如 WEB_TOOLS_DEBUG=true）。
+    未启用时，所有方法都是开销极小的空操作。
     """
 
     def __init__(self, tool_name: str, *, env_var: str) -> None:
@@ -58,7 +58,7 @@ class DebugSession:
         return self.enabled
 
     def log_call(self, call_name: str, call_data: Dict[str, Any]) -> None:
-        """Append a tool-call entry to the in-memory log."""
+        """向内存日志追加一条工具调用记录。"""
         if not self.enabled:
             return
         self._calls.append({
@@ -68,7 +68,7 @@ class DebugSession:
         })
 
     def save(self) -> None:
-        """Flush the in-memory log to a JSON file in the logs directory."""
+        """把内存中的日志刷写到 logs 目录下的一个 JSON 文件中。"""
         if not self.enabled:
             return
         try:
@@ -89,7 +89,7 @@ class DebugSession:
             logger.error("Error saving %s debug log: %s", self.tool_name, e)
 
     def get_session_info(self) -> Dict[str, Any]:
-        """Return a summary dict suitable for returning from get_debug_session_info()."""
+        """返回一个摘要字典，适合作为 get_debug_session_info() 的返回值。"""
         if not self.enabled:
             return {
                 "enabled": False,

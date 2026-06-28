@@ -1,17 +1,17 @@
-"""Lazy dependency bootstrapper for non-Python runtime deps.
+"""非 Python 运行时依赖的惰性引导程序。
 
-Detection and prompting live here in Python — not in install.sh — because:
-  1. shutil.which() works on every platform; install.sh needs bash.
-  2. Detection is instant; spawning bash for a "is node installed?" check is waste.
-  3. Python controls the UX (rich prompts, non-interactive fallback, TTY detection).
+检测和提示逻辑放在 Python 中而不是 install.sh 中，原因如下：
+  1. shutil.which() 在所有平台上都能工作；install.sh 需要 bash。
+  2. 检测是瞬时的；为了检查 "node 是否安装" 而启动 bash 是浪费。
+  3. Python 控制用户体验（丰富的提示、非交互式回退、TTY 检测）。
 
-install.sh is still the *installation* backend because it has 1900 lines of
-battle-tested OS detection and package-manager logic (apt/brew/pacman/dnf/
-zypper/Termux/…).  Reimplementing that in Python would be huge duplication.
+install.sh 仍然是 *安装* 后端，因为它有 1900 行经过实战检验的
+操作系统检测和包管理器逻辑（apt/brew/pacman/dnf/
+zypper/Termux/…）。在 Python 中重新实现这些将是巨大的重复。
 
-Deps that degrade gracefully (ripgrep → grep fallback, ffmpeg → skip conversion)
-don't need ensure_dependency wired in — only hard-fail sites do (TUI needs node,
-browser tool needs agent-browser).
+可优雅降级的依赖（ripgrep → grep 回退，ffmpeg → 跳过转换）
+不需要接入 ensure_dependency —— 只有硬性依赖需要（TUI 需要 node，
+浏览器工具需要 agent-browser）。
 """
 from __future__ import annotations
 
@@ -60,10 +60,10 @@ def _has_hermes_agent_browser() -> bool:
     from hermes_constants import get_hermes_home
     home = get_hermes_home()
     if _IS_WINDOWS:
-        # npm -g --prefix puts .cmd shims directly in the prefix dir on Windows
+        # npm -g --prefix 在 Windows 上直接将 .cmd 启动脚本放在 prefix 目录中
         return (home / "node" / "agent-browser.cmd").is_file()
-    # install.sh installs globally into $HERMES_HOME/node/bin/ via npm -g --prefix
-    # Also check legacy node_modules/.bin/ path for git-clone installs.
+    # install.sh 通过 npm -g --prefix 全局安装到 $HERMES_HOME/node/bin/
+    # 同时检查旧版 node_modules/.bin/ 路径（适用于 git-clone 安装）。
     return (
         (home / "node" / "bin" / "agent-browser").is_file()
         or (home / "node_modules" / ".bin" / "agent-browser").is_file()
@@ -74,10 +74,10 @@ def _find_install_script(
     package_dir: Path | None = None,
     repo_root: Path | None = None,
 ) -> tuple[Path | None, str | None]:
-    """Locate the install script — bundled in wheel or in git checkout.
+    """定位安装脚本 —— 打包在 wheel 中或在 git 仓库中。
 
-    On Windows, prefers install.ps1; on POSIX, prefers install.sh.
-    Returns a (path, shell) tuple, or (None, None) if neither is found.
+    在 Windows 上，优先使用 install.ps1；在 POSIX 上，优先使用 install.sh。
+    返回 (path, shell) 元组，如果都未找到则返回 (None, None)。
     """
     if package_dir is None:
         package_dir = Path(__file__).parent
@@ -106,10 +106,10 @@ def ensure_dependency(
     dep: str,
     interactive: bool = True,
 ) -> bool:
-    """Ensure a non-Python dependency is available. Returns True if available."""
+    """确保非 Python 依赖可用。如果可用返回 True。"""
     check = _DEP_CHECKS.get(dep)
     if check is None:
-        # Unknown dep — don't silently forward to install script.
+        # 未知依赖 —— 不要静默转发给安装脚本。
         return False
     if check():
         return True

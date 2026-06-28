@@ -1,20 +1,19 @@
 """
-Single source of truth for provider identity in Hermes Agent.
+Hermes Agent 中 provider 身份的唯一事实来源。
 
-Two data sources, merged at runtime:
+两个数据源，在运行时合并：
 
-1. **models.dev catalog** — 109+ providers with base URLs, env vars, display
-   names, and full model metadata (context, cost, capabilities).  This is
-   the primary database.
+1. **models.dev 目录** — 109+ 个 provider，包含 base URL、env var、显示
+   名称和完整的 model 元数据（context、cost、capabilities）。这是主要
+   数据库。
 
-2. **Hermes overlays** — transport type, auth patterns, aggregator flags,
-   and additional env vars that models.dev doesn't track.  Small dict,
-   maintained here.
+2. **Hermes 覆盖层** — transport 类型、auth 模式、aggregator 标志以及
+   models.dev 未跟踪的额外 env var。数据量小，维护在此处。
 
-3. **User config** (``providers:`` section in config.yaml) — user-defined
-   endpoints and overrides.  Merged on top of everything else.
+3. **用户配置**（config.yaml 中的 ``providers:`` 部分）— 用户定义的
+   endpoint 和覆盖项。合并到所有其他数据之上。
 
-Other modules import from this file.  No parallel registries.
+其他模块从此文件导入。不存在并行注册表。
 """
 
 from __future__ import annotations
@@ -28,19 +27,19 @@ from utils import base_url_host_matches, base_url_hostname
 logger = logging.getLogger(__name__)
 
 
-# -- Hermes overlay ----------------------------------------------------------
-# Hermes-specific metadata that models.dev doesn't provide.
+# -- Hermes 覆盖层 -----------------------------------------------------------
+# models.dev 未提供的 Hermes 特定元数据。
 
 @dataclass(frozen=True)
 class HermesOverlay:
-    """Hermes-specific provider metadata layered on top of models.dev."""
+    """叠加在 models.dev 之上的 Hermes 特定 provider 元数据。"""
 
     transport: str = "openai_chat"        # openai_chat | anthropic_messages | codex_responses
     is_aggregator: bool = False
     auth_type: str = "api_key"            # api_key | oauth_device_code | oauth_external | external_process
-    extra_env_vars: Tuple[str, ...] = ()  # env vars models.dev doesn't list
-    base_url_override: str = ""           # override if models.dev URL is wrong/missing
-    base_url_env_var: str = ""            # env var for user-custom base URL
+    extra_env_vars: Tuple[str, ...] = ()  # models.dev 未列出的 env var
+    base_url_override: str = ""           # 当 models.dev URL 错误或缺失时覆盖
+    base_url_env_var: str = ""            # 用户自定义 base URL 的 env var
 
 
 HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
@@ -196,10 +195,10 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
         base_url_override="https://ollama.com/v1",
         base_url_env_var="OLLAMA_BASE_URL",
     ),
-    # Azure Foundry: supports both OpenAI-style and Anthropic-style endpoints.
-    # The transport is determined at runtime from config.yaml model.api_mode.
+    # Azure Foundry：同时支持 OpenAI 风格和 Anthropic 风格的 endpoint。
+    # transport 在运行时由 config.yaml 的 model.api_mode 决定。
     "azure-foundry": HermesOverlay(
-        transport="openai_chat",  # default; overridden by api_mode in config
+        transport="openai_chat",  # 默认值；会被 config 中的 api_mode 覆盖
         base_url_env_var="AZURE_FOUNDRY_BASE_URL",
     ),
     "bedrock": HermesOverlay(
@@ -209,32 +208,32 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
 }
 
 
-# -- Resolved provider -------------------------------------------------------
-# The merged result of models.dev + overlay + user config.
+# -- 已解析的 provider -------------------------------------------------------
+# models.dev + 覆盖层 + 用户配置合并后的结果。
 
 @dataclass
 class ProviderDef:
-    """Complete provider definition — merged from all sources."""
+    """完整的 provider 定义 — 从所有来源合并。"""
 
     id: str
     name: str
     transport: str                        # openai_chat | anthropic_messages | codex_responses
-    api_key_env_vars: Tuple[str, ...]     # all env vars to check for API key
+    api_key_env_vars: Tuple[str, ...]     # 用于检查 API key 的所有 env var
     base_url: str = ""
     base_url_env_var: str = ""
     is_aggregator: bool = False
     auth_type: str = "api_key"
     doc: str = ""
-    source: str = ""                      # "models.dev", "hermes", "user-config"
+    source: str = ""                      # "models.dev"、"hermes"、"user-config"
 
 
-# -- Aliases ------------------------------------------------------------------
-# Maps human-friendly / legacy names to canonical provider IDs.
-# Uses models.dev IDs where possible.
+# -- 别名 ---------------------------------------------------------------------
+# 将用户友好 / 旧版名称映射到规范 provider ID。
+# 尽可能使用 models.dev ID。
 
 ALIASES: Dict[str, str] = {
     # openrouter
-    "openai": "openrouter",     # bare "openai" → route through aggregator
+    "openai": "openrouter",     # 裸 "openai" → 通过 aggregator 路由
 
     # zai
     "glm": "zai",
@@ -257,7 +256,7 @@ ALIASES: Dict[str, str] = {
     "build-nvidia": "nvidia",
     "nemotron": "nvidia",
 
-    # kimi-for-coding (models.dev ID)
+    # kimi-for-coding（models.dev ID）
     "kimi": "kimi-for-coding",
     "kimi-coding": "kimi-for-coding",
     "kimi-coding-cn": "kimi-for-coding",
@@ -275,12 +274,12 @@ ALIASES: Dict[str, str] = {
     "claude": "anthropic",
     "claude-code": "anthropic",
 
-    # github-copilot (models.dev ID)
+    # github-copilot（models.dev ID）
     "copilot": "github-copilot",
     "github": "github-copilot",
     "github-copilot-acp": "copilot-acp",
 
-    # opencode (models.dev ID for OpenCode Zen)
+    # opencode（OpenCode Zen 的 models.dev ID）
     "opencode-zen": "opencode",
     "zen": "opencode",
 
@@ -288,7 +287,7 @@ ALIASES: Dict[str, str] = {
     "go": "opencode-go",
     "opencode-go-sub": "opencode-go",
 
-    # kilo (models.dev ID for KiloCode)
+    # kilo（KiloCode 的 models.dev ID）
     "kilocode": "kilo",
     "kilo-code": "kilo",
     "kilo-gateway": "kilo",
@@ -338,11 +337,11 @@ ALIASES: Dict[str, str] = {
     "gmi-cloud": "gmi",
     "gmicloud": "gmi",
 
-    # Local server aliases → virtual "local" concept (resolved via user config)
+    # 本地 server 别名 → 虚拟 "local" 概念（通过用户配置解析）
     "lmstudio": "lmstudio",
     "lm-studio": "lmstudio",
     "lm_studio": "lmstudio",
-    "ollama": "custom",  # bare "ollama" = local; use "ollama-cloud" for cloud
+    "ollama": "custom",  # 裸 "ollama" = 本地；使用 "ollama-cloud" 访问云端
     "vllm": "local",
     "llamacpp": "local",
     "llama.cpp": "local",
@@ -350,9 +349,8 @@ ALIASES: Dict[str, str] = {
 }
 
 
-# -- Display labels -----------------------------------------------------------
-# Built dynamically from models.dev + overlays.  Fallback for providers
-# not in the catalog.
+# -- 显示标签 -----------------------------------------------------------------
+# 从 models.dev + 覆盖层动态构建。为不在目录中的 provider 提供回退值。
 
 _LABEL_OVERRIDES: Dict[str, str] = {
     "nous": "Nous Portal",
@@ -370,7 +368,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
 }
 
 
-# -- Transport → API mode mapping ---------------------------------------------
+# -- Transport → API mode 映射 ------------------------------------------------
 
 TRANSPORT_TO_API_MODE: Dict[str, str] = {
     "openai_chat": "chat_completions",
@@ -380,35 +378,34 @@ TRANSPORT_TO_API_MODE: Dict[str, str] = {
 }
 
 
-# -- Helper functions ---------------------------------------------------------
+# -- 辅助函数 -----------------------------------------------------------------
 
 def normalize_provider(name: str) -> str:
-    """Resolve aliases and normalise casing to a canonical provider id.
+    """将别名和大小写规范化为规范的 provider id。
 
-    Returns the canonical id string.  Does *not* validate that the id
-    corresponds to a known provider.
+    返回规范的 id 字符串。*不*验证该 id 是否对应已知的 provider。
     """
     key = name.strip().lower()
     return ALIASES.get(key, key)
 
 
 def get_provider(name: str) -> Optional[ProviderDef]:
-    """Look up a built-in provider by id or alias.
+    """通过 id 或别名查找内置 provider。
 
-    Resolution order:
-      1. Hermes overlays (for providers not in models.dev: nous, openai-codex, etc.)
-      2. models.dev catalog + Hermes overlay
+    解析顺序：
+      1. Hermes 覆盖层（用于不在 models.dev 中的 provider：nous、openai-codex 等）
+      2. models.dev 目录 + Hermes 覆盖层
 
-    User-defined providers from config.yaml (``providers:`` / ``custom_providers:``)
-    are resolved by :func:`resolve_provider_full`, which layers ``resolve_user_provider``
-    and ``resolve_custom_provider`` on top of this function. Callers that need
-    user-config support should use ``resolve_provider_full`` instead.
+    来自 config.yaml 的用户自定义 provider（``providers:`` / ``custom_providers:``）
+    由 :func:`resolve_provider_full` 解析，该函数在此基础上叠加了
+    ``resolve_user_provider`` 和 ``resolve_custom_provider``。需要
+    用户配置支持的调用者应改用 ``resolve_provider_full``。
 
-    Returns a fully-resolved ProviderDef or None.
+    返回完全解析的 ProviderDef，未找到则返回 None。
     """
     canonical = normalize_provider(name)
 
-    # Try to get models.dev data
+    # 尝试获取 models.dev 数据
     try:
         from agent.models_dev import get_provider_info as _mdev_provider
         mdev_info = _mdev_provider(canonical)
@@ -418,14 +415,14 @@ def get_provider(name: str) -> Optional[ProviderDef]:
     overlay = HERMES_OVERLAYS.get(canonical)
 
     if mdev_info is not None:
-        # Merge models.dev + overlay
+        # 合并 models.dev + 覆盖层
         transport = overlay.transport if overlay else "openai_chat"
         is_agg = overlay.is_aggregator if overlay else False
         auth = overlay.auth_type if overlay else "api_key"
         base_url_env = overlay.base_url_env_var if overlay else ""
         base_url_override = overlay.base_url_override if overlay else ""
 
-        # Combine env vars: models.dev env + hermes extra
+        # 合并 env var：models.dev env + hermes 额外项
         env_vars = list(mdev_info.env)
         if overlay and overlay.extra_env_vars:
             for ev in overlay.extra_env_vars:
@@ -446,7 +443,7 @@ def get_provider(name: str) -> Optional[ProviderDef]:
         )
 
     if overlay is not None:
-        # Hermes-only provider (not in models.dev)
+        # 仅 Hermes 的 provider（不在 models.dev 中）
         return ProviderDef(
             id=canonical,
             name=_LABEL_OVERRIDES.get(canonical, canonical),
@@ -463,14 +460,14 @@ def get_provider(name: str) -> Optional[ProviderDef]:
 
 
 def get_label(provider_id: str) -> str:
-    """Get a human-readable display name for a provider."""
+    """获取 provider 的可读显示名称。"""
     canonical = normalize_provider(provider_id)
 
-    # Check label overrides first
+    # 优先检查 label 覆盖
     if canonical in _LABEL_OVERRIDES:
         return _LABEL_OVERRIDES[canonical]
 
-    # Try models.dev
+    # 尝试 models.dev
     pdef = get_provider(canonical)
     if pdef:
         return pdef.name
@@ -481,7 +478,7 @@ def get_label(provider_id: str) -> str:
 
 
 def is_aggregator(provider: str) -> bool:
-    """Return True when the provider is a multi-model aggregator."""
+    """当 provider 是多模型 aggregator 时返回 True。"""
     provider_norm = normalize_provider(provider or "")
     if provider_norm.startswith("custom:"):
         return True
@@ -489,34 +486,33 @@ def is_aggregator(provider: str) -> bool:
     return pdef.is_aggregator if pdef else False
 
 
-# Flat-namespace resellers (e.g. opencode-go, opencode-zen) are flagged
-# ``is_aggregator=True`` because their live ``/v1/models`` returns bare model
-# IDs ("deepseek-v4-flash") rather than ``vendor/model`` routing slugs — the
-# model-switch resolver relies on that flag to search their flat catalog
-# (see model_switch.py step d). But they are NOT routing aggregators: every
-# model they list is a first-party model served under their own subscription,
-# not a passthrough route to another provider's endpoint. The picker dedup
-# (build_models_payload) must treat them differently from true routers like
-# OpenRouter — a reseller's first-party "minimax-m3" must never be stripped
-# just because a user's custom proxy also happens to serve a same-named model.
+# 扁平命名空间的转售商（例如 opencode-go、opencode-zen）被标记为
+# ``is_aggregator=True``，因为它们的实时 ``/v1/models`` 返回的是裸 model
+# ID（"deepseek-v4-flash"），而不是 ``vendor/model`` 格式的路由 slug —
+# model-switch 解析器依赖该标志来搜索它们的扁平目录
+# （参见 model_switch.py 步骤 d）。但它们并非路由 aggregator：它们列出的
+# 每个 model 都是在自己的订阅下提供的一方 model，而不是指向其他 provider
+# endpoint 的透传路由。picker 去重（build_models_payload）必须将它们与
+# OpenRouter 这样的真正路由器区分对待 — 转售商的一方 "minimax-m3" 绝不能
+# 因为用户的自定义代理也恰好提供同名 model 就被剔除。
 _FLAT_NAMESPACE_RESELLERS: frozenset[str] = frozenset({
-    # Use normalized provider IDs: normalize_provider("opencode-zen") -> "opencode".
+    # 使用规范化的 provider ID：normalize_provider("opencode-zen") -> "opencode"。
     "opencode-go",
     "opencode",
 })
 
 
 def is_routing_aggregator(provider: str) -> bool:
-    """Return True only for TRUE routing aggregators (e.g. OpenRouter, named
-    ``custom:*`` proxies) — those that route bare/vendor-slugged model names
-    to *other* providers' endpoints.
+    """仅对真正的路由 aggregator（例如 OpenRouter、名为
+    ``custom:*`` 的代理）返回 True — 这些 aggregator 将裸 / vendor-slug
+    格式的 model 名称路由到*其他* provider 的 endpoint。
 
-    Distinct from :func:`is_aggregator`, which also reports True for
-    flat-namespace resellers (opencode-go/zen) whose catalog is entirely
-    first-party. Use this gate when the question is "would selecting this
-    model silently re-route the call away from the user's intended provider?"
-    — i.e. the picker dedup. Resellers answer no: their listed models are
-    their own, so their rows must not be deduped against user proxies.
+    不同于 :func:`is_aggregator`，后者对扁平命名空间转售商
+    （opencode-go/zen）也返回 True，而这些转售商的目录完全是
+    一方的。当需要判断"选择此 model 是否会默默将调用重新路由到
+    用户意图 provider 之外的地方？"时，使用此检查 — 即 picker
+    去重逻辑。转售商的答案为否：它们列出的 model 是它们自己的，
+    因此它们的行不能针对用户代理进行去重。
     """
     provider_norm = normalize_provider(provider or "")
     if provider_norm in _FLAT_NAMESPACE_RESELLERS:
@@ -525,17 +521,17 @@ def is_routing_aggregator(provider: str) -> bool:
 
 
 def determine_api_mode(provider: str, base_url: str = "") -> str:
-    """Determine the API mode (wire protocol) for a provider/endpoint.
+    """确定 provider/endpoint 的 API 模式（线路协议）。
 
-    Resolution order:
-      1. Known provider → transport → TRANSPORT_TO_API_MODE.
-      2. URL heuristics for unknown / custom providers.
-      3. Default: 'chat_completions'.
+    解析顺序：
+      1. 已知 provider → transport → TRANSPORT_TO_API_MODE。
+      2. 未知 / 自定义 provider 的 URL 启发式判断。
+      3. 默认值：'chat_completions'。
     """
     pdef = get_provider(provider)
     if pdef is not None:
-        # Even for known providers, check URL heuristics for special endpoints
-        # (e.g. kimi /coding endpoint needs anthropic_messages even on 'custom')
+        # 即使对于已知 provider，也要检查特殊 endpoint 的 URL 启发式判断
+        # （例如 kimi /coding endpoint 即使在 'custom' 上也需要 anthropic_messages）
         if base_url:
             url_lower = base_url.rstrip("/").lower()
             if "api.kimi.com/coding" in url_lower:
@@ -546,11 +542,11 @@ def determine_api_mode(provider: str, base_url: str = "") -> str:
                 return "codex_responses"
         return TRANSPORT_TO_API_MODE.get(pdef.transport, "chat_completions")
 
-    # Direct provider checks for providers not in HERMES_OVERLAYS
+    # 对不在 HERMES_OVERLAYS 中的 provider 进行直接 provider 检查
     if provider == "bedrock":
         return "bedrock_converse"
 
-    # URL-based heuristics for custom / unknown providers
+    # 基于 URL 的启发式判断，用于自定义 / 未知 provider
     if base_url:
         url_lower = base_url.rstrip("/").lower()
         hostname = base_url_hostname(base_url)
@@ -566,17 +562,17 @@ def determine_api_mode(provider: str, base_url: str = "") -> str:
     return "chat_completions"
 
 
-# -- Provider from user config ------------------------------------------------
+# -- 来自用户配置的 Provider ------------------------------------------------
 
 def resolve_user_provider(name: str, user_config: Dict[str, Any]) -> Optional[ProviderDef]:
-    """Resolve a provider from the user's config.yaml ``providers:`` section.
+    """从用户的 config.yaml ``providers:`` 部分解析 provider。
 
     Args:
-        name: Provider name as given by the user.
-        user_config: The ``providers:`` dict from config.yaml.
+        name: 用户提供的 Provider 名称。
+        user_config: config.yaml 中的 ``providers:`` 字典。
 
     Returns:
-        ProviderDef if found, else None.
+        找到则返回 ProviderDef，否则返回 None。
     """
     if not user_config or not isinstance(user_config, dict):
         return None
@@ -585,7 +581,7 @@ def resolve_user_provider(name: str, user_config: Dict[str, Any]) -> Optional[Pr
     if not isinstance(entry, dict):
         return None
 
-    # Extract fields
+    # 提取字段
     display_name = entry.get("name", "") or name
     api_url = entry.get("api", "") or entry.get("url", "") or entry.get("base_url", "") or ""
     key_env = entry.get("key_env", "") or ""
@@ -608,11 +604,11 @@ def resolve_user_provider(name: str, user_config: Dict[str, Any]) -> Optional[Pr
 
 
 def custom_provider_slug(display_name: str) -> str:
-    """Build a canonical slug for a custom_providers entry.
+    """为 custom_providers 条目构建规范 slug。
 
-    Matches the convention used by runtime_provider and credential_pool
-    (``custom:<normalized-name>``).  Centralised here so all call-sites
-    produce identical slugs.
+    与 runtime_provider 和 credential_pool 使用的约定一致
+    （``custom:<normalized-name>``）。集中在此处，以便所有调用点
+    生成相同的 slug。
     """
     return "custom:" + display_name.strip().lower().replace(" ", "-")
 
@@ -621,7 +617,7 @@ def resolve_custom_provider(
     name: str,
     custom_providers: Optional[List[Dict[str, Any]]],
 ) -> Optional[ProviderDef]:
-    """Resolve a provider from the user's config.yaml ``custom_providers`` list."""
+    """从用户的 config.yaml ``custom_providers`` 列表中解析 provider。"""
     if not custom_providers or not isinstance(custom_providers, list):
         return None
 
@@ -629,9 +625,9 @@ def resolve_custom_provider(
     if not requested:
         return None
 
-    # If the stored provider is the bare string "custom" (corrupt state
-    # from a prior model-switch bug), fall back to the first custom
-    # provider entry so existing configs self-heal.  (GH #17478)
+    # 如果存储的 provider 是裸字符串 "custom"（先前 model-switch bug 导致的
+    # 损坏状态），回退到第一个自定义 provider 条目，以便现有配置自动修复。
+    # (GH #17478)
     bare_custom_fallback = requested == "custom"
     first_valid = None
 
@@ -649,7 +645,7 @@ def resolve_custom_provider(
         if not display_name or not api_url:
             continue
 
-        # Stash the first valid entry for bare-"custom" fallback
+        # 暂存第一个有效条目，用于裸 "custom" 回退
         if first_valid is None:
             first_valid = (display_name, api_url)
 
@@ -668,7 +664,7 @@ def resolve_custom_provider(
             source="user-config",
         )
 
-    # Self-heal: bare "custom" matched nothing — return first valid entry
+    # 自修复：裸 "custom" 未匹配到任何条目 — 返回第一个有效条目
     if bare_custom_fallback and first_valid:
         dname, aurl = first_valid
         slug = custom_provider_slug(dname)
@@ -691,17 +687,17 @@ def resolve_provider_full(
     user_providers: Optional[Dict[str, Any]] = None,
     custom_providers: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[ProviderDef]:
-    """Full resolution chain: built-in → models.dev → user config.
+    """完整解析链：内置 → models.dev → 用户配置。
 
-    This is the main entry point for --provider flag resolution.
+    这是 --provider 标志解析的主入口点。
 
     Args:
-        name: Provider name or alias.
-        user_providers: The ``providers:`` dict from config.yaml (optional).
-        custom_providers: The ``custom_providers:`` list from config.yaml (optional).
+        name: Provider 名称或别名。
+        user_providers: config.yaml 中的 ``providers:`` 字典（可选）。
+        custom_providers: config.yaml 中的 ``custom_providers:`` 列表（可选）。
 
     Returns:
-        ProviderDef if found, else None.
+        找到则返回 ProviderDef，否则返回 None。
     """
     canonical = normalize_provider(name)
     raw = name.strip().lower()

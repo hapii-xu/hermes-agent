@@ -1,30 +1,25 @@
-"""Bitwarden Secrets Manager (`bws` CLI) integration.
+"""Bitwarden Secrets Manager（`bws` CLI）集成。
 
-Hermes pulls API keys from Bitwarden Secrets Manager at process startup
-so they don't have to live in plaintext in ``~/.hermes/.env``.
+Hermes 在进程启动时从 Bitwarden Secrets Manager 拉取 API 密钥，
+这样就不必将它们以明文形式存储在 ``~/.hermes/.env`` 中。
 
-Design summary
+设计概述
 --------------
 
-* The ``bws`` binary is auto-installed into ``<hermes_home>/bin/bws`` on
-  first use.  Hermes pins one version (``_BWS_VERSION``) and downloads
-  the matching asset from the official GitHub Releases page, verifying
-  the SHA-256 against the release's published checksum file.
-* The access token is stored in ``~/.hermes/.env`` as
-  ``BWS_ACCESS_TOKEN`` (or whatever name the user picked in
-  ``secrets.bitwarden.access_token_env``).  This is the one
-  bootstrap secret — every other provider key can live in Bitwarden.
-* Pulling secrets is a single ``bws secret list <project_id>
-  --output json`` call.  We cache the result in-process for
-  ``cache_ttl_seconds`` so back-to-back ``hermes`` invocations don't
-  hammer the API.
-* Failures NEVER block Hermes startup.  Missing binary, no network,
-  expired token, etc. all emit a one-line warning and continue with
-  whatever credentials ``.env`` already had.
+* ``bws`` 二进制文件在首次使用时自动安装到 ``<hermes_home>/bin/bws``。
+  Hermes 固定一个版本（``_BWS_VERSION``），并从官方 GitHub Releases
+  页面下载匹配的资源，根据发布文件的校验和验证 SHA-256。
+* access token 以 ``BWS_ACCESS_TOKEN`` 的形式存储在 ``~/.hermes/.env`` 中
+  （或用户在 ``secrets.bitwarden.access_token_env`` 中指定的名称）。
+  这是唯一的引导密钥——所有其他 provider 密钥都可以存储在 Bitwarden 中。
+* 拉取密钥只需一次 ``bws secret list <project_id> --output json`` 调用。
+  我们将结果在进程内缓存 ``cache_ttl_seconds`` 秒，这样连续的 ``hermes``
+  调用不会频繁请求 API。
+* 失败永远不会阻塞 Hermes 启动。二进制文件缺失、无网络、token 过期等
+  都只会发出一行警告，并继续使用 ``.env`` 中已有的凭据。
 
-The module is intentionally subprocess-driven rather than going through
-the ``bitwarden-sdk-secrets`` Python package: one cross-platform binary
-is easier to lazy-install than a wheels-with-Rust-extension dependency.
+该模块有意采用子进程驱动方式，而不是使用 ``bitwarden-sdk-secrets`` Python
+包：一个跨平台二进制文件比带有 Rust 扩展的 wheel 依赖更容易惰性安装。
 """
 
 from __future__ import annotations
@@ -50,12 +45,12 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Configuration constants
+# 配置常量
 # ---------------------------------------------------------------------------
 
-# Pinned upstream version.  Bump in a follow-up PR — never auto-resolve
-# "latest" because upstream release shape (asset names, CLI flags) is
-# allowed to change between majors and we want updates to be deliberate.
+# 固定的上游版本。在后续 PR 中更新——永远不要自动解析
+# "latest"，因为上游发布格式（资源名称、CLI 标志）可能在大版本之间
+# 发生变化，我们希望更新是有意为之的。
 _BWS_VERSION = "2.0.0"
 
 _BWS_RELEASE_BASE = (
@@ -63,13 +58,13 @@ _BWS_RELEASE_BASE = (
 )
 _BWS_CHECKSUM_NAME = f"bws-sha256-checksums-{_BWS_VERSION}.txt"
 
-# How long to wait for bws subprocesses and HTTP downloads, in seconds.
+# bws 子进程和 HTTP 下载的超时时间（秒）。
 _BWS_DOWNLOAD_TIMEOUT = 60
 _BWS_RUN_TIMEOUT = 30
 
-# In-process cache so repeated load_hermes_dotenv() calls (CLI startup,
-# gateway hot-reload, test suites) don't re-fetch from BSM.
-_CacheKey = Tuple[str, str, str]  # (access_token_fingerprint, project_id, server_url)
+# 进程内缓存，避免重复的 load_hermes_dotenv() 调用（CLI 启动、
+# 网关热重载、测试套件）重复从 BSM 获取。
+_CacheKey = Tuple[str, str, str]  # (access_token 指纹, project_id, server_url)
 _CACHE: Dict[_CacheKey, "_CachedFetch"] = {}
 
 # Disk-persisted cache so back-to-back CLI invocations (e.g. `hermes chat -q ...`

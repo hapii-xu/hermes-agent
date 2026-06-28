@@ -1,32 +1,32 @@
-"""Browserbase cloud browser provider — plugin form.
+"""Browserbase 云浏览器 provider — 插件形式。
 
-Subclasses :class:`agent.browser_provider.BrowserProvider` (the plugin-facing
-ABC introduced in PR #25214). The legacy in-tree module
-``tools.browser_providers.browserbase`` was removed in the same PR; this file
-is now the canonical implementation.
+继承自 :class:`agent.browser_provider.BrowserProvider`（PR #25214 引入的
+面向插件的 ABC）。旧的内置模块
+``tools.browser_providers.browserbase`` 已在同一 PR 中移除；此文件
+现在是规范实现。
 
-Browserbase requires direct ``BROWSERBASE_API_KEY`` and ``BROWSERBASE_PROJECT_ID``
-credentials. Managed Nous gateway support has been removed — the Nous
-subscription now routes through Browser Use instead (see
-``plugins/browser/browser_use/``).
+Browserbase 需要直接提供 ``BROWSERBASE_API_KEY`` 和 ``BROWSERBASE_PROJECT_ID``
+凭据。托管 Nous 网关支持已移除 — Nous
+订阅现在通过 Browser Use 路由（参见
+``plugins/browser/browser_use/``）。
 
-Config keys this provider responds to::
+此 provider 响应的配置键::
 
     browser:
       cloud_provider: "browserbase"
 
-Auth env vars::
+认证环境变量::
 
     BROWSERBASE_API_KEY=...       # https://browserbase.com
     BROWSERBASE_PROJECT_ID=...
 
-Optional feature knobs::
+可选功能开关::
 
-    BROWSERBASE_BASE_URL=...      # default https://api.browserbase.com
-    BROWSERBASE_PROXIES=true      # default true
+    BROWSERBASE_BASE_URL=...      # 默认 https://api.browserbase.com
+    BROWSERBASE_PROXIES=true      # 默认 true
     BROWSERBASE_ADVANCED_STEALTH=false
-    BROWSERBASE_KEEP_ALIVE=true   # default true
-    BROWSERBASE_SESSION_TIMEOUT=... (seconds, integer, max 21600 = 6h)
+    BROWSERBASE_KEEP_ALIVE=true   # 默认 true
+    BROWSERBASE_SESSION_TIMEOUT=... （秒，整数，最大 21600 = 6小时）
 """
 
 from __future__ import annotations
@@ -44,10 +44,9 @@ logger = logging.getLogger(__name__)
 
 
 class BrowserbaseBrowserProvider(BrowserProvider):
-    """Browserbase (https://browserbase.com) cloud browser backend.
+    """Browserbase (https://browserbase.com) 云浏览器后端。
 
-    Direct credentials only — managed-Nous-gateway support lives on the
-    Browser Use provider now.
+    仅支持直接凭据 — 托管 Nous 网关支持已移至 Browser Use provider。
     """
 
     @property
@@ -62,7 +61,7 @@ class BrowserbaseBrowserProvider(BrowserProvider):
         return self._get_config_or_none() is not None
 
     # ------------------------------------------------------------------
-    # Config resolution
+    # 配置解析
     # ------------------------------------------------------------------
 
     def _get_config_or_none(self) -> Optional[Dict[str, Any]]:
@@ -88,13 +87,13 @@ class BrowserbaseBrowserProvider(BrowserProvider):
         return config
 
     # ------------------------------------------------------------------
-    # Session lifecycle
+    # 会话生命周期
     # ------------------------------------------------------------------
 
     def create_session(self, task_id: str) -> Dict[str, object]:
         config = self._get_config()
 
-        # Optional env-var knobs
+        # 可选的环境变量开关
         enable_proxies = os.environ.get("BROWSERBASE_PROXIES", "true").lower() != "false"
         enable_advanced_stealth = (
             os.environ.get("BROWSERBASE_ADVANCED_STEALTH", "false").lower() == "true"
@@ -133,7 +132,7 @@ class BrowserbaseBrowserProvider(BrowserProvider):
         if enable_advanced_stealth:
             session_config["browserSettings"] = {"advancedStealth": True}
 
-        # --- Create session via API ---
+        # --- 通过 API 创建会话 ---
         headers = {
             "Content-Type": "application/json",
             "X-BB-API-Key": config["api_key"],
@@ -150,7 +149,7 @@ class BrowserbaseBrowserProvider(BrowserProvider):
             proxies_fallback = False
             keepalive_fallback = False
 
-            # Handle 402 — paid features unavailable
+            # 处理 402 — 付费功能不可用
             if response.status_code == 402:
                 if enable_keep_alive:
                     keepalive_fallback = True

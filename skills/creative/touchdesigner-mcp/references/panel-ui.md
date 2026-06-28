@@ -1,79 +1,79 @@
-# Panel & UI Reference
+# 面板与 UI 参考
 
-Interactive control surfaces inside TouchDesigner — buttons, sliders, fields, custom parameter pages, panel callbacks. For HUD overlays (rendered text on visuals) see `layout-compositor.md`.
+TouchDesigner 内部的交互式控制面板 —— 按钮、滑块、字段、自定义参数页面、面板回调。关于 HUD 叠加层（在视觉上渲染文字）见 `layout-compositor.md`。
 
-Use cases:
-- VJ control rack (master fader, scene buttons, FX toggles)
-- Installation operator console
-- Self-contained TOX components with their own parameter UIs
-- Phone-style touch interfaces displayed on a tablet
+用例：
+- VJ 控制机架（主推子、场景按钮、FX 开关）
+- 装置的操作员控制台
+- 带自身参数 UI 的自包含 TOX 组件
+- 显示在平板上的手机风格触摸界面
 
 ---
 
-## Two Layers of UI
+## UI 的两层
 
-| Layer | What it is | Use for |
+| 层 | 它是什么 | 用于 |
 |---|---|---|
-| **Custom Parameters** | Params on any COMP, edited like built-in TD params | Configurable components, presets, "settings" panels |
-| **Panel COMPs** | Visible widgets (button, slider, field) inside a containerCOMP | Interactive control surfaces, real-time UIs |
+| **自定义参数** | 任意 COMP 上的参数，像内置 TD 参数一样编辑 | 可配置组件、预设、“设置”面板 |
+| **Panel COMPs** | containerCOMP 内的可见控件（按钮、滑块、字段） | 交互式控制面板、实时 UI |
 
-Combine both: build a containerCOMP with panel widgets that read/write custom parameters on a parent component.
+两者可结合：构建一个 containerCOMP，其中的面板控件读写父组件上的自定义参数。
 
 ---
 
-## Custom Parameters
+## 自定义参数
 
-Add user-editable params to any COMP. Params persist with the COMP, drive expressions, and survive save/reload.
+给任意 COMP 添加用户可编辑的参数。参数随 COMP 持久化、驱动表达式，保存/重载后依然存在。
 
 ```python
-# Add a custom page to a baseCOMP
+# 给 baseCOMP 添加自定义页
 comp = op('/project1/my_component')
 page = comp.appendCustomPage('Controls')
 
-# Add typed params
-page.appendFloat('Intensity', label='Intensity')[0]   # returns a Par
+# 添加带类型的参数
+page.appendFloat('Intensity', label='Intensity')[0]   # 返回一个 Par
 page.appendInt('Count', label='Count')[0]
 page.appendToggle('Enabled', label='Enabled')[0]
 page.appendMenu('Mode', menuNames=['off', 'soft', 'hard'], menuLabels=['Off', 'Soft', 'Hard'])[0]
 page.appendStr('Title', label='Title')[0]
-page.appendRGB('Color', label='Color')                # returns 3 pars
-page.appendXY('Offset', label='Offset')               # returns 2 pars
+page.appendRGB('Color', label='Color')                # 返回 3 个 Par
+page.appendXY('Offset', label='Offset')               # 返回 2 个 Par
 page.appendPulse('Reset', label='Reset')[0]
 page.appendFile('TextureFile', label='Texture')[0]
 ```
 
-**Read/write from anywhere:**
+**从任意位置读写：**
 
 ```python
 val = op('/project1/my_component').par.Intensity.eval()
 op('/project1/my_component').par.Intensity = 0.7
 ```
 
-**Drive other params via expression:**
+**通过表达式驱动其他参数：**
 
 ```python
 op('bloom1').par.threshold.mode = ParMode.EXPRESSION
 op('bloom1').par.threshold.expr = "op('/project1/my_component').par.Intensity"
 ```
 
-**Pulse handler (Reset button):**
+**脉冲处理（Reset 按钮）：**
 
-Use a `parameterExecuteDAT` watching the COMP's pulse params. See `dat-scripting.md`.
+用 `parameterExecuteDAT` 监视该 COMP 的脉冲参数。见 `dat-scripting.md`。
 
 ---
 
-## Panel COMPs — The Widgets
+## Panel COMPs —— 控件
 
-Each is a COMP that renders as a clickable/draggable widget inside a `containerCOMP`.
+每个都是一个 COMP，在 `containerCOMP` 内渲染为可点击/可拖拽的控件。
 
-| Type | Type Name | Use |
+| 类型 | 类型名 | 用途 |
 |---|---|---|
-| Button | `buttonCOMP` | Click action — momentary or toggle |
-| Slider | `sliderCOMP` | Drag to set 0-1 value (1D or 2D) |
-| Field | `fieldCOMP` | Text input |
-| Container | `containerCOMP` | Layout + visual styling, holds children |
-| Select | `selectCOMP` | Reference and display content from another COMP |
-| List | `listCOMP` | Scrollable list with row callbacks |
+| Button | `buttonCOMP` | 点击动作 —— 瞬时或切换 |
+| Slider | `sliderCOMP` | 拖拽设置 0-1 值（一维或二维） |
+| Field | `fieldCOMP` | 文本输入 |
+| Container | `containerCOMP` | 布局 + 视觉样式，承载子级 |
+| Select | `selectCOMP` | 引用并显示来自另一个 COMP 的内容 |
+| List | `listCOMP` | 带行回调的可滚动列表 |
 
 ### Button
 
@@ -84,8 +84,8 @@ btn.par.buttontype = 'momentary'    # 'momentary' | 'toggleup' | 'togglepress' |
 btn.par.bgcolorr = 0.1; btn.par.bgcolorg = 0.1; btn.par.bgcolorb = 0.1
 btn.par.text = 'Play'
 
-# Read state
-state = btn.panel.state          # 1 when active
+# 读取状态
+state = btn.panel.state          # 激活时为 1
 ```
 
 ### Slider
@@ -97,33 +97,33 @@ sld.par.style = 'vertical'        # 'vertical' | 'horizontal' | 'xy'
 sld.par.value0min = 0.0
 sld.par.value0max = 1.0
 
-# Drive a parameter via expression (always-on, no callback needed)
+# 通过表达式驱动参数（始终生效，无需回调）
 op('/project1/master_level').par.opacity.mode = ParMode.EXPRESSION
 op('/project1/master_level').par.opacity.expr = "op('master_fader').panel.u"
 ```
 
-`panel.u` and `panel.v` give the 0-1 normalized values. For 2D sliders both are populated.
+`panel.u` 和 `panel.v` 给出 0-1 的归一化值。对二维滑块两者都被填充。
 
-### Field (Text Input)
+### Field（文本输入）
 
 ```python
 fld = root.create(fieldCOMP, 'scene_name')
 fld.par.w = 200; fld.par.h = 30
 fld.par.fieldtype = 'string'      # 'string' | 'integer' | 'float'
 
-# Read current text
-text = fld.panel.field            # the text content
+# 读取当前文本
+text = fld.panel.field            # 文本内容
 ```
 
 ### List
 
-For scrollable lists with selectable rows, use the docked `list1_callbacks` DAT to handle row interactions. Set up cells via the `list_definition` table DAT.
+对于带可选行的可滚动列表，用停靠的 `list1_callbacks` DAT 处理行交互。通过 `list_definition` 表格 DAT 设置单元格。
 
 ---
 
-## Container COMP — Layout & Styling
+## Container COMP —— 布局与样式
 
-`containerCOMP` is the primary parent for grouping widgets and arranging layouts.
+`containerCOMP` 是分组控件和编排布局的主要父级。
 
 ```python
 panel = root.create(containerCOMP, 'control_panel')
@@ -133,71 +133,71 @@ panel.par.bgcolorg = 0.05
 panel.par.bgcolorb = 0.05
 panel.par.bgalpha = 1.0
 
-# Layout child panels in vertical stack
-panel.par.align = 'lefttoright'   # 'lefttoright' | 'toptobottom' | etc.
+# 垂直堆叠布局子面板
+panel.par.align = 'lefttoright'   # 'lefttoright' | 'toptobottom' | 等
 ```
 
-Children are positioned automatically based on `par.align`. For absolute positioning use `par.align = 'fillresize'` and set each child's `par.x` / `par.y`.
+子级根据 `par.align` 自动定位。要绝对定位，用 `par.align = 'fillresize'` 并设置每个子级的 `par.x` / `par.y`。
 
-### Layout Strategies
+### 布局策略
 
-| `par.align` | Behavior |
+| `par.align` | 行为 |
 |---|---|
-| `lefttoright` | Children stacked horizontally |
-| `toptobottom` | Children stacked vertically |
-| `righttoleft` / `bottomtotop` | Reversed stacks |
-| `fillresize` | Children sized to fill, manual positioning |
-| `top` / `bottom` / `left` / `right` | Fixed positioning |
+| `lefttoright` | 子级水平堆叠 |
+| `toptobottom` | 子级垂直堆叠 |
+| `righttoleft` / `bottomtotop` | 反向堆叠 |
+| `fillresize` | 子级填充尺寸、手工定位 |
+| `top` / `bottom` / `left` / `right` | 固定定位 |
 
-For complex grids: nest containers — vertical container holding horizontal containers.
+复杂网格：嵌套容器 —— 一个垂直容器内含多个水平容器。
 
 ---
 
-## Panel Callbacks — Reacting to Events
+## 面板回调 —— 响应事件
 
-`panelExecuteDAT` watches a panel and fires Python callbacks on user interaction.
+`panelExecuteDAT` 监视面板并在用户交互时触发 Python 回调。
 
 ```python
 pe = root.create(panelExecuteDAT, 'btn_handler')
 pe.par.panel = '/project1/play_btn'
-pe.par.click = True              # respond to clicks
-pe.par.value = True              # respond to value changes
+pe.par.click = True              # 响应点击
+pe.par.value = True              # 响应值变化
 ```
 
-In its docked DAT:
+在其停靠 DAT 中：
 
 ```python
 def onOffToOn(panelValue):
-    # Click pressed
+    # 按下点击
     op('/project1/scene_timer').par.start.pulse()
     return
 
 def onOnToOff(panelValue):
-    # Click released
+    # 释放点击
     return
 
 def onValueChange(panelValue):
-    # Slider drag, field change, etc.
+    # 滑块拖动、字段改动等
     new_val = panelValue.eval()
     op('/project1/master').par.opacity = new_val
     return
 ```
 
-For pulse params on custom-parameter pages, use a `parameterExecuteDAT` instead.
+对于自定义参数页上的脉冲参数，改用 `parameterExecuteDAT`。
 
 ---
 
-## Building a Complete VJ Control Panel
+## 构建一个完整的 VJ 控制面板
 
-End-to-end pattern:
+端到端模式：
 
 ```python
-# 1. Top-level container
+# 1. 顶层容器
 panel = root.create(containerCOMP, 'vj_control')
 panel.par.w = 800; panel.par.h = 200
 panel.par.align = 'lefttoright'
 
-# 2. Master fader column
+# 2. 主推子列
 master_col = panel.create(containerCOMP, 'master')
 master_col.par.w = 120; master_col.par.h = 200
 master_col.par.align = 'toptobottom'
@@ -209,7 +209,7 @@ master_sld = master_col.create(sliderCOMP, 'fader')
 master_sld.par.w = 60; master_sld.par.h = 150
 master_sld.par.style = 'vertical'
 
-# 3. Scene buttons row
+# 3. 场景按钮行
 scene_col = panel.create(containerCOMP, 'scenes')
 scene_col.par.w = 400; scene_col.par.h = 200
 scene_col.par.align = 'lefttoright'
@@ -217,9 +217,9 @@ for i in range(8):
     b = scene_col.create(buttonCOMP, f'scene_{i+1}')
     b.par.w = 50; b.par.h = 50
     b.par.text = str(i+1)
-    b.par.buttontype = 'radio'      # only one active at a time
+    b.par.buttontype = 'radio'      # 同时只能有一个激活
 
-# 4. FX toggle column
+# 4. FX 切换列
 fx_col = panel.create(containerCOMP, 'fx')
 fx_col.par.w = 280; fx_col.par.h = 200
 fx_col.par.align = 'toptobottom'
@@ -229,7 +229,7 @@ for fx in ['Bloom', 'CRT', 'Glitch', 'Strobe']:
     t.par.text = fx
     t.par.buttontype = 'toggleup'
 
-# 5. Display in a window
+# 5. 显示在窗口中
 win = root.create(windowCOMP, 'control_win')
 win.par.winop = panel.path
 win.par.winw = 800; win.par.winh = 200
@@ -237,45 +237,45 @@ win.par.borders = True
 win.par.winopen.pulse()
 ```
 
-Then wire panel values to ops via expressions or panelExecuteDATs.
+然后通过表达式或 panelExecuteDAT 把面板值接到算子上。
 
 ---
 
-## Showing the Panel — Window or Embedded
+## 显示面板 —— 窗口或内嵌
 
-| Approach | When |
+| 方式 | 何时使用 |
 |---|---|
-| `windowCOMP` pointing at panel | Standalone control surface, separate display |
-| Render the containerCOMP via `renderTOP` | Composite UI over visuals (HUD-style) |
-| Use a `panelCOMP` directly inside a network editor pane | Designer/dev preview only — panel is fully interactive |
+| 指向面板的 `windowCOMP` | 独立控制面板、独立显示器 |
+| 通过 `renderTOP` 渲染 containerCOMP | 在视觉上合成 UI（HUD 风格） |
+| 直接在网络编辑器面板里用 `panelCOMP` | 仅设计者/开发者预览 —— 面板完全可交互 |
 
-For a touch-screen tablet, use a `windowCOMP` on a second display routed to the tablet's HDMI input.
-
----
-
-## Pitfalls
-
-1. **Panel won't respond to clicks** — likely `par.disabled = True` or the parent container has `par.disableinputs = True`. Check the panel hierarchy.
-2. **Slider value not updating** — `panel.u/v` reads the visual position. If you set `par.value0` directly, the visual lags. Use `par.value0` AS the source of truth and let the slider follow.
-3. **Custom param won't appear** — must call `appendCustomPage` first, then append params. Pages with no params don't show.
-4. **Custom param disappears on reload** — params added via Python at runtime persist only if the COMP is saved AFTER. Use a `tox` save (`comp.save('mycomp.tox')`) or commit via `td_execute_python` then save the project.
-5. **Event callback fires twice** — both `onOffToOn` and `onValueChange` may fire on a single button press. Pick one to handle the action; don't double-trigger.
-6. **Pulse params need `.pulse()`** — setting `par.X = True` on a pulse param does nothing. Always use `.pulse()`.
-7. **Field text doesn't commit until Tab/Enter** — fields don't fire callbacks while typing. Use `par.committemode = 'all'` to fire on every keystroke (heavy).
-8. **`par.text` vs panel content** — `buttonCOMP.par.text` is the LABEL on the button. The button's STATE is `panel.state` (0/1). Don't confuse them.
-9. **Touch input on macOS** — multi-touch via direct touch panels works but TD's gesture handling is rudimentary. For complex multi-touch (pinch/rotate), use TouchOSC on a tablet instead.
-10. **Layout doesn't update** — changing `par.align` requires the container to re-cook. Touch a child or pulse the container to trigger.
+对触摸屏平板，在第二显示器上用 `windowCOMP`，并将其路由到平板的 HDMI 输入。
 
 ---
 
-## Quick Recipes
+## 陷阱
 
-| Goal | Setup |
+1. **面板不响应点击** —— 可能是 `par.disabled = True` 或父容器有 `par.disableinputs = True`。检查面板层级。
+2. **滑块值不更新** —— `panel.u/v` 读取的是视觉位置。若直接设置 `par.value0`，视觉会滞后。把 `par.value0` 作为真值来源，让滑块跟随它。
+3. **自定义参数不显示** —— 必须先 `appendCustomPage`，再追加参数。没有参数的页面不会显示。
+4. **自定义参数在重载后消失** —— 运行时通过 Python 添加的参数只有在 COMP 之后被保存才会保留。用 `tox` 保存（`comp.save('mycomp.tox')`）或通过 `td_execute_python` 提交后保存工程。
+5. **事件回调触发两次** —— 单次按钮按下可能同时触发 `onOffToOn` 和 `onValueChange`。只选一个处理动作，避免双重触发。
+6. **脉冲参数需要 `.pulse()`** —— 对脉冲参数设置 `par.X = True` 没有任何效果。始终用 `.pulse()`。
+7. **字段文本在 Tab/Enter 前不提交** —— 字段在输入过程中不触发回调。用 `par.committemode = 'all'` 可在每次按键时触发（开销大）。
+8. **`par.text` 与面板内容** —— `buttonCOMP.par.text` 是按钮上的标签。按钮的状态是 `panel.state`（0/1）。不要混淆。
+9. **macOS 触摸输入** —— 通过直接触摸面板的多点触摸可用，但 TD 的手势处理较初级。对复杂多点触摸（捏合/旋转），改用平板上的 TouchOSC。
+10. **布局不更新** —— 改 `par.align` 需要容器重新 cook。触动一个子级或脉冲化容器以触发。
+
+---
+
+## 快速配方
+
+| 目标 | 设置 |
 |---|---|
-| Master fader | `sliderCOMP` (vertical) → expression on `level.par.opacity` |
-| Scene picker | 8 `buttonCOMP` (radio) → `selectCHOP` on their state → drive `switchTOP.par.index` |
-| FX toggle | `buttonCOMP` (toggleup) → expression on `bypass` of an FX op |
-| Numeric input | `fieldCOMP` (float) → expression on target par |
-| Component settings | Custom params on the component COMP, panel widgets inside drive them |
-| Touch tablet UI | `containerCOMP` with widgets → `windowCOMP` to second display |
-| Status display | `textTOP` rendered into the panel via `selectCOMP` |
+| 主推子 | `sliderCOMP`（垂直）→ 在 `level.par.opacity` 上加表达式 |
+| 场景选择器 | 8 个 `buttonCOMP`（radio）→ 对其状态做 `selectCHOP` → 驱动 `switchTOP.par.index` |
+| FX 开关 | `buttonCOMP`（toggleup）→ 在某个 FX 算子的 `bypass` 上加表达式 |
+| 数值输入 | `fieldCOMP`（float）→ 在目标参数上加表达式 |
+| 组件设置 | 组件 COMP 上的自定义参数，内部的面板控件驱动它们 |
+| 触摸平板 UI | 带控件的 `containerCOMP` → `windowCOMP` 到第二显示器 |
+| 状态显示 | 渲染到面板中的 `textTOP`，通过 `selectCOMP` |

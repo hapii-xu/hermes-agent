@@ -1,20 +1,18 @@
-"""Gateway response filtering helpers.
+"""gateway 响应过滤辅助函数。
 
-These helpers operate at the gateway boundary: they decide whether a completed
-agent turn should be delivered to the chat, not what should be persisted in the
-conversation history.
+这些辅助函数工作在 gateway 边界：它们决定一个已完成的 agent turn 是否应该
+被投递到聊天，而不是决定什么内容应该被持久化到对话历史中。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# Canonical model-emitted control token for intentional silence.
+# 模型发射的、表示刻意沉默的规范控制 token。
 SILENT_REPLY_TOKEN = "NO_REPLY"
 
-# Exact whole-response markers that mean "the agent intentionally chose not to
-# reply".  Keep this list small and explicit; arbitrary empty output remains an
-# error/empty-response path, not silence.
+# 精确的整条响应标记，表示“agent 刻意选择不回复”。请保持本列表精简且明确；
+# 任意空输出仍走 error/empty-response 路径，而不是沉默。
 LIVE_GATEWAY_SILENT_MARKERS = frozenset({
     "[SILENT]",
     "SILENT",
@@ -28,11 +26,10 @@ def _canonical_silence_candidate(text: str) -> str:
 
 
 def is_intentional_silence_response(response: Any) -> bool:
-    """Return True only when ``response`` is exactly a silence marker.
+    """仅当 ``response`` 恰好是一个沉默标记时返回 True。
 
-    Substantive prose that merely mentions ``NO_REPLY`` or ``[SILENT]`` must be
-    delivered normally.  A blank response is also not silence; blank output is
-    handled by the empty-response failure path.
+    那些只是顺带提到 ``NO_REPLY`` 或 ``[SILENT]`` 的实质性正文必须照常投递。
+    空白响应同样不算沉默；空白输出由 empty-response 失败路径处理。
     """
     if not isinstance(response, str):
         return False
@@ -45,7 +42,7 @@ def is_intentional_silence_response(response: Any) -> bool:
 
 
 def is_intentional_silence_agent_result(agent_result: dict | None, response: Any) -> bool:
-    """Silence markers suppress delivery only for successful agent turns."""
+    """沉默标记仅对成功的 agent turn 抑制投递。"""
     if not isinstance(agent_result, dict):
         return False
     if agent_result.get("failed"):

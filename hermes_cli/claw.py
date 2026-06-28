@@ -1,13 +1,13 @@
-"""hermes claw — OpenClaw migration commands.
+"""hermes claw — OpenClaw 迁移命令。
 
-Usage:
-    hermes claw migrate              # Preview then migrate (always shows preview first)
-    hermes claw migrate --dry-run    # Preview only, no changes
-    hermes claw migrate --yes        # Skip confirmation prompt
-    hermes claw migrate --preset full --overwrite --migrate-secrets  # Full run w/ secrets
-    hermes claw migrate --no-backup  # Skip pre-migration snapshot
-    hermes claw cleanup              # Archive leftover OpenClaw directories
-    hermes claw cleanup --dry-run    # Preview what would be archived
+用法：
+    hermes claw migrate              # 预览后迁移（总是先显示预览）
+    hermes claw migrate --dry-run    # 仅预览，不做更改
+    hermes claw migrate --yes        # 跳过确认提示
+    hermes claw migrate --preset full --overwrite --migrate-secrets  # 完整运行，包含 secrets
+    hermes claw migrate --no-backup  # 跳过迁移前快照
+    hermes claw cleanup              # 归档残留的 OpenClaw 目录
+    hermes claw cleanup --dry-run    # 预览将要归档的内容
 """
 
 import importlib.util
@@ -42,7 +42,7 @@ _OPENCLAW_SCRIPT = (
     / "openclaw_to_hermes.py"
 )
 
-# Fallback: user may have installed the skill from the Hub
+# 备选方案：用户可能已从 Hub 安装了该 skill
 _OPENCLAW_SCRIPT_INSTALLED = (
     get_hermes_home()
     / "skills"
@@ -52,14 +52,14 @@ _OPENCLAW_SCRIPT_INSTALLED = (
     / "openclaw_to_hermes.py"
 )
 
-# Known OpenClaw directory names (current + legacy)
+# 已知的 OpenClaw 目录名称（当前 + 旧版）
 _OPENCLAW_DIR_NAMES = (".openclaw", ".clawdbot", ".moltbot")
 
 def _detect_openclaw_processes() -> list[str]:
-    """Detect running OpenClaw processes and services.
+    """检测运行中的 OpenClaw 进程和服务。
 
-    Returns a list of human-readable descriptions of what was found.
-    An empty list means nothing was detected.
+    返回发现的进程/服务的可读描述列表。
+    空列表表示未检测到任何内容。
     """
     found: list[str] = []
 

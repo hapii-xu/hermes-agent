@@ -1,29 +1,29 @@
 # ui-wireframe
 
-Grayscale interface mockup style
+灰度界面线框图风格
 
-## Color Palette
+## 配色
 
-- Primary: Grays - light (#E5E5E5), medium (#9CA3AF), dark (#374151)
-- Background: White (#FFFFFF), light gray
-- Accents: Blue for interactive (#3B82F6), red for emphasis
+- 主色：灰色——浅 (#E5E5E5)、中 (#9CA3AF)、深 (#374151)
+- 背景：白色 (#FFFFFF)、浅灰
+- 点缀：蓝色用于交互 (#3B82F6)、红色用于强调
 
-## Visual Elements
+## 视觉元素
 
-- Wireframe boxes and placeholders
-- X marks for image placeholders
-- Simple line icons
-- Grid-based layout
-- Annotation callouts
-- Redline specifications
+- 线框框和占位符
+- 图片占位符用 X 标记
+- 简单的线性图标
+- 基于网格的布局
+- 标注引出
+- 红线规格标注
 
-## Typography
+## 字体排印
 
-- System fonts
-- Placeholder "Lorem ipsum"
-- UI label style
-- Sans-serif throughout
+- 系统字体
+- 占位文字 "Lorem ipsum"
+- UI 标签风格
+- 全程无衬线字体
 
-## Best For
+## 最适用于
 
-Product designs, UI explanations, app concepts, user flow diagrams
+产品设计、UI 讲解、应用概念、用户流程图

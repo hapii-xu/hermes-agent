@@ -1,31 +1,30 @@
-"""Hindsight memory plugin — MemoryProvider interface.
+"""Hindsight 记忆插件 — MemoryProvider 接口。
 
-Long-term memory with knowledge graph, entity resolution, and multi-strategy
-retrieval. Supports cloud (API key) and local modes.
+具备知识图谱、实体解析和多策略检索能力的长期记忆。支持云端（API key）和本地模式。
 
-Configurable request timeout via HINDSIGHT_TIMEOUT env var or config.json.
-Configurable embedded daemon idle timeout via HINDSIGHT_IDLE_TIMEOUT env var
-or config.json idle_timeout.
+可通过 HINDSIGHT_TIMEOUT 环境变量或 config.json 配置请求超时时间。
+可通过 HINDSIGHT_IDLE_TIMEOUT 环境变量或 config.json 的 idle_timeout 配置
+嵌入式守护进程的空闲超时时间。
 
-Original PR #1811 by benfrank241, adapted to MemoryProvider ABC.
+原始 PR #1811 由 benfrank241 提交，已适配为 MemoryProvider 抽象基类。
 
-Config via environment variables:
-  HINDSIGHT_API_KEY                — API key for Hindsight Cloud
-  HINDSIGHT_BANK_ID                — memory bank identifier (default: hermes)
-  HINDSIGHT_BUDGET                 — recall budget: low/mid/high (default: mid)
-  HINDSIGHT_API_URL                — API endpoint
-  HINDSIGHT_MODE                   — cloud or local (default: cloud)
-  HINDSIGHT_TIMEOUT                — API request timeout in seconds (default: 120)
-  HINDSIGHT_IDLE_TIMEOUT           — embedded daemon idle timeout seconds; 0 disables shutdown (default: 300)
-  HINDSIGHT_EMBED_PORT_HEALTH_GRACE_TIMEOUT — seconds to wait for a slow embedded daemon /health before treating it as stale (default: 30; set via config.json port_health_grace_timeout)
-  HINDSIGHT_RETAIN_TAGS            — comma-separated tags attached to retained memories
-  HINDSIGHT_RETAIN_OBSERVATION_SCOPES — observation scoping for retained memories: per_tag/combined/all_combinations, or a JSON list of tag-lists for custom scopes
-  HINDSIGHT_RETAIN_SOURCE          — metadata source value attached to retained memories
-  HINDSIGHT_RETAIN_USER_PREFIX     — label used before user turns in retained transcripts
-  HINDSIGHT_RETAIN_ASSISTANT_PREFIX — label used before assistant turns in retained transcripts
+通过环境变量配置：
+  HINDSIGHT_API_KEY                — Hindsight Cloud 的 API key
+  HINDSIGHT_BANK_ID                — 记忆库标识符（默认值：hermes）
+  HINDSIGHT_BUDGET                 — 召回预算：low/mid/high（默认值：mid）
+  HINDSIGHT_API_URL                — API 端点
+  HINDSIGHT_MODE                   — cloud 或 local（默认值：cloud）
+  HINDSIGHT_TIMEOUT                — API 请求超时时间，单位为秒（默认值：120）
+  HINDSIGHT_IDLE_TIMEOUT           — 嵌入式守护进程空闲超时时间，单位为秒；0 表示禁用自动关闭（默认值：300）
+  HINDSIGHT_EMBED_PORT_HEALTH_GRACE_TIMEOUT — 等待慢速嵌入式守护进程 /health 响应的秒数，超过此时间则视为过期（默认值：30；通过 config.json 的 port_health_grace_timeout 设置）
+  HINDSIGHT_RETAIN_TAGS            — 附加到保留记忆的逗号分隔标签列表
+  HINDSIGHT_RETAIN_OBSERVATION_SCOPES — 保留记忆的观测范围：per_tag/combined/all_combinations，或自定义范围的 JSON 标签列表
+  HINDSIGHT_RETAIN_SOURCE          — 附加到保留记忆的元数据 source 值
+  HINDSIGHT_RETAIN_USER_PREFIX     — 保留对话记录中用户消息前的标签
+  HINDSIGHT_RETAIN_ASSISTANT_PREFIX — 保留对话记录中助手消息前的标签
 
-Or via $HERMES_HOME/hindsight/config.json (profile-scoped), falling back to
-~/.hindsight/config.json (legacy, shared) for backward compatibility.
+或通过 $HERMES_HOME/hindsight/config.json（按 profile 隔离）配置，
+回退到 ~/.hindsight/config.json（旧版，共享）以保持向后兼容。
 """
 
 from __future__ import annotations
@@ -52,15 +51,15 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_API_URL = "https://api.hindsight.vectorize.io"
 _DEFAULT_LOCAL_URL = "http://localhost:8888"
-# Keep in sync with tools/lazy_deps.py ("memory.hindsight") and plugin.yaml.
+# 保持与 tools/lazy_deps.py ("memory.hindsight") 和 plugin.yaml 同步。
 _MIN_CLIENT_VERSION = "0.6.1"
-_DEFAULT_TIMEOUT = 120  # seconds — cloud API can take 30-40s per request
-_DEFAULT_IDLE_TIMEOUT = 300  # seconds — Hindsight embedded daemon default
-# Mirrors hindsight-integrations/openclaw — Hindsight 0.5.0 added
-# `update_mode='append'` semantics on retain (vectorize-io/hindsight#932).
-# Without it, reusing a stable session-scoped document_id silently
-# overwrites prior turns server-side, so we keep the per-process
-# unique document_id fallback for older APIs.
+_DEFAULT_TIMEOUT = 120  # 秒 — 云端 API 每次请求可能需要 30-40 秒
+_DEFAULT_IDLE_TIMEOUT = 300  # 秒 — Hindsight 嵌入式守护进程默认值
+# 与 hindsight-integrations/openclaw 保持一致 — Hindsight 0.5.0 新增了
+# `update_mode='append'` 语义（vectorize-io/hindsight#932）。
+# 如果没有该功能，复用稳定的 session 级别 document_id 会在服务端
+# 静默覆盖之前的轮次，因此对于旧版 API 我们保留每进程唯一的
+# document_id 回退方案。
 _MIN_VERSION_FOR_UPDATE_MODE_APPEND = "0.5.0"
 _VALID_BUDGETS = {"low", "mid", "high"}
 _PROVIDER_DEFAULT_MODELS = {
@@ -77,7 +76,7 @@ _PROVIDER_DEFAULT_MODELS = {
 
 
 def _parse_int_setting(value: Any, default: int) -> int:
-    """Parse an integer config/env value, falling back on invalid input."""
+    """解析整数类型的配置/环境变量值，输入无效时回退到默认值。"""
     if value is None or value == "":
         return default
     try:
@@ -87,23 +86,22 @@ def _parse_int_setting(value: Any, default: int) -> int:
         return default
 
 
-# Env var the embedded daemon manager reads (at import time, as a module-level
-# constant) to size the grace window it waits for a slow /health before
-# declaring a daemon stale and killing it. Default upstream is 30s; on
-# resource-contended hosts a busy daemon can exceed a single 2s health check
-# and get needlessly killed + restarted (issue #13125 comment thread). We
-# surface it as plugin config so users can raise it without hand-setting an
-# env var, consistent with "config.json, not raw env vars".
+# 嵌入式守护进程管理器在导入时（作为模块级常量）读取的环境变量，
+# 用于设置等待慢速 /health 响应的宽限期，超过此期限则判定守护进程
+# 过期并终止它。上游默认值为 30 秒；在资源紧张的主机上，繁忙的守护进程
+# 可能超过单次 2 秒的健康检查而被不必要地终止并重启（issue #13125 讨论串）。
+# 我们将其作为插件配置暴露出来，这样用户可以在不手动设置环境变量的
+# 情况下调高该值，与"通过 config.json 而非原始环境变量"的理念一致。
 _PORT_HEALTH_GRACE_ENV = "HINDSIGHT_EMBED_PORT_HEALTH_GRACE_TIMEOUT"
 
 
 def _export_port_health_grace_timeout(config: dict[str, Any]) -> None:
-    """Export the embedded-daemon health grace timeout to the process env.
+    """将嵌入式守护进程的健康检查宽限超时时间导出到进程环境变量。
 
-    Must run BEFORE ``hindsight_embed.daemon_embed_manager`` is imported,
-    because the package reads the env var into a module-level constant at
-    import time. We only set it when the user configured a value AND the
-    env var isn't already set, so an explicit env override always wins.
+    必须在 ``hindsight_embed.daemon_embed_manager`` 被导入之前运行，
+    因为该包在导入时会将环境变量读取为模块级常量。我们仅在用户
+    配置了值且环境变量尚未设置时才设置它，这样显式的环境变量
+    覆盖始终优先。
     """
     raw = config.get("port_health_grace_timeout")
     if raw is None or raw == "":
@@ -120,7 +118,7 @@ def _export_port_health_grace_timeout(config: dict[str, Any]) -> None:
             "Negative Hindsight port_health_grace_timeout %r; ignoring.", raw
         )
         return
-    # setdefault: an explicit env var the operator set wins over config.
+    # setdefault：操作者显式设置的环境变量优先于配置。
     os.environ.setdefault(_PORT_HEALTH_GRACE_ENV, repr(seconds))
 
 
