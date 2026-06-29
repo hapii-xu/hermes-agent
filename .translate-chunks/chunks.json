@@ -1,0 +1,713 @@
+[
+ {
+  "id": 1,
+  "roots": [
+   "apple/findmy",
+   "autonomous-ai-agents/codex",
+   "data-science/jupyter-live-kernel",
+   "media/youtube-content",
+   "mlops/huggingface-hub",
+   "research/blogwatcher",
+   "yuanbao"
+  ],
+  "files": [
+   "apple/findmy/SKILL.md",
+   "autonomous-ai-agents/codex/SKILL.md",
+   "data-science/jupyter-live-kernel/SKILL.md",
+   "media/youtube-content/SKILL.md",
+   "media/youtube-content/references/output-formats.md",
+   "mlops/huggingface-hub/SKILL.md",
+   "research/blogwatcher/SKILL.md",
+   "yuanbao/SKILL.md"
+  ],
+  "sizeKB": 32,
+  "count": 8
+ },
+ {
+  "id": 2,
+  "roots": [
+   "autonomous-ai-agents/hermes-agent",
+   "creative/ascii-video",
+   "mlops/evaluation",
+   "software-development/python-debugpy"
+  ],
+  "files": [
+   "autonomous-ai-agents/hermes-agent/SKILL.md",
+   "autonomous-ai-agents/hermes-agent/references/native-mcp.md",
+   "autonomous-ai-agents/hermes-agent/references/webhooks.md",
+   "creative/ascii-video/README.md",
+   "creative/ascii-video/SKILL.md",
+   "creative/ascii-video/references/troubleshooting.md",
+   "mlops/evaluation/DESCRIPTION.md",
+   "software-development/python-debugpy/SKILL.md"
+  ],
+  "sizeKB": 127,
+  "count": 8
+ },
+ {
+  "id": 3,
+  "roots": [
+   "creative/ascii-video",
+   "creative/design-md",
+   "mlops/models"
+  ],
+  "files": [
+   "creative/ascii-video/references/architecture.md",
+   "creative/ascii-video/references/composition.md",
+   "creative/ascii-video/references/inputs.md",
+   "creative/ascii-video/references/optimization.md",
+   "creative/design-md/SKILL.md",
+   "creative/design-md/templates/starter.md",
+   "mlops/models/DESCRIPTION.md"
+  ],
+  "sizeKB": 127,
+  "count": 7
+ },
+ {
+  "id": 4,
+  "roots": [
+   "creative/ascii-video",
+   "mlops/models/audiocraft",
+   "social-media",
+   "software-development/requesting-code-review"
+  ],
+  "files": [
+   "creative/ascii-video/references/effects.md",
+   "mlops/models/audiocraft/SKILL.md",
+   "mlops/models/audiocraft/references/advanced-usage.md",
+   "mlops/models/audiocraft/references/troubleshooting.md",
+   "social-media/DESCRIPTION.md",
+   "software-development/requesting-code-review/SKILL.md"
+  ],
+  "sizeKB": 127,
+  "count": 6
+ },
+ {
+  "id": 5,
+  "roots": [
+   "creative/ascii-video",
+   "mlops/inference/vllm",
+   "productivity/nano-pdf"
+  ],
+  "files": [
+   "creative/ascii-video/references/scenes.md",
+   "creative/ascii-video/references/shaders.md",
+   "mlops/inference/vllm/SKILL.md",
+   "mlops/inference/vllm/references/optimization.md",
+   "mlops/inference/vllm/references/quantization.md",
+   "mlops/inference/vllm/references/server-deployment.md",
+   "mlops/inference/vllm/references/troubleshooting.md",
+   "productivity/nano-pdf/SKILL.md"
+  ],
+  "sizeKB": 126,
+  "count": 8
+ },
+ {
+  "id": 6,
+  "roots": [
+   "creative/baoyu-infographic"
+  ],
+  "files": [
+   "creative/baoyu-infographic/PORT_NOTES.md",
+   "creative/baoyu-infographic/SKILL.md",
+   "creative/baoyu-infographic/references/analysis-framework.md",
+   "creative/baoyu-infographic/references/base-prompt.md",
+   "creative/baoyu-infographic/references/layouts/bento-grid.md",
+   "creative/baoyu-infographic/references/layouts/binary-comparison.md",
+   "creative/baoyu-infographic/references/layouts/bridge.md",
+   "creative/baoyu-infographic/references/layouts/circular-flow.md",
+   "creative/baoyu-infographic/references/layouts/comic-strip.md",
+   "creative/baoyu-infographic/references/layouts/comparison-matrix.md",
+   "creative/baoyu-infographic/references/layouts/dashboard.md",
+   "creative/baoyu-infographic/references/layouts/dense-modules.md",
+   "creative/baoyu-infographic/references/layouts/funnel.md",
+   "creative/baoyu-infographic/references/layouts/hierarchical-layers.md",
+   "creative/baoyu-infographic/references/layouts/hub-spoke.md",
+   "creative/baoyu-infographic/references/layouts/iceberg.md",
+   "creative/baoyu-infographic/references/layouts/isometric-map.md",
+   "creative/baoyu-infographic/references/layouts/jigsaw.md",
+   "creative/baoyu-infographic/references/layouts/linear-progression.md",
+   "creative/baoyu-infographic/references/layouts/periodic-table.md",
+   "creative/baoyu-infographic/references/layouts/story-mountain.md",
+   "creative/baoyu-infographic/references/layouts/structural-breakdown.md",
+   "creative/baoyu-infographic/references/layouts/tree-branching.md",
+   "creative/baoyu-infographic/references/layouts/venn-diagram.md",
+   "creative/baoyu-infographic/references/layouts/winding-roadmap.md",
+   "creative/baoyu-infographic/references/structured-content-template.md",
+   "creative/baoyu-infographic/references/styles/aged-academia.md",
+   "creative/baoyu-infographic/references/styles/bold-graphic.md",
+   "creative/baoyu-infographic/references/styles/chalkboard.md",
+   "creative/baoyu-infographic/references/styles/claymation.md",
+   "creative/baoyu-infographic/references/styles/corporate-memphis.md",
+   "creative/baoyu-infographic/references/styles/craft-handmade.md",
+   "creative/baoyu-infographic/references/styles/cyberpunk-neon.md",
+   "creative/baoyu-infographic/references/styles/hand-drawn-edu.md",
+   "creative/baoyu-infographic/references/styles/ikea-manual.md",
+   "creative/baoyu-infographic/references/styles/kawaii.md",
+   "creative/baoyu-infographic/references/styles/knolling.md",
+   "creative/baoyu-infographic/references/styles/lego-brick.md",
+   "creative/baoyu-infographic/references/styles/morandi-journal.md",
+   "creative/baoyu-infographic/references/styles/origami.md",
+   "creative/baoyu-infographic/references/styles/pixel-art.md",
+   "creative/baoyu-infographic/references/styles/pop-laboratory.md",
+   "creative/baoyu-infographic/references/styles/retro-pop-grid.md",
+   "creative/baoyu-infographic/references/styles/storybook-watercolor.md",
+   "creative/baoyu-infographic/references/styles/subway-map.md",
+   "creative/baoyu-infographic/references/styles/technical-schematic.md",
+   "creative/baoyu-infographic/references/styles/ui-wireframe.md"
+  ],
+  "sizeKB": 72,
+  "count": 47
+ },
+ {
+  "id": 7,
+  "roots": [
+   "autonomous-ai-agents/claude-code",
+   "creative/comfyui"
+  ],
+  "files": [
+   "autonomous-ai-agents/claude-code/SKILL.md",
+   "creative/comfyui/SKILL.md",
+   "creative/comfyui/references/official-cli.md",
+   "creative/comfyui/references/rest-api.md",
+   "creative/comfyui/references/template-integrity.md",
+   "creative/comfyui/references/workflow-format.md",
+   "creative/comfyui/tests/README.md",
+   "creative/comfyui/workflows/README.md"
+  ],
+  "sizeKB": 100,
+  "count": 8
+ },
+ {
+  "id": 8,
+  "roots": [
+   "creative/excalidraw",
+   "github/github-repo-management",
+   "productivity/notion"
+  ],
+  "files": [
+   "creative/excalidraw/SKILL.md",
+   "creative/excalidraw/references/colors.md",
+   "creative/excalidraw/references/dark-mode.md",
+   "creative/excalidraw/references/examples.md",
+   "github/github-repo-management/SKILL.md",
+   "github/github-repo-management/references/github-api-cheatsheet.md",
+   "productivity/notion/SKILL.md",
+   "productivity/notion/references/block-types.md"
+  ],
+  "sizeKB": 63,
+  "count": 8
+ },
+ {
+  "id": 9,
+  "roots": [
+   "creative/manim-video"
+  ],
+  "files": [
+   "creative/manim-video/README.md",
+   "creative/manim-video/SKILL.md",
+   "creative/manim-video/references/animation-design-thinking.md",
+   "creative/manim-video/references/animations.md",
+   "creative/manim-video/references/camera-and-3d.md",
+   "creative/manim-video/references/decorations.md",
+   "creative/manim-video/references/equations.md",
+   "creative/manim-video/references/graphs-and-data.md",
+   "creative/manim-video/references/mobjects.md",
+   "creative/manim-video/references/paper-explainer.md",
+   "creative/manim-video/references/production-quality.md",
+   "creative/manim-video/references/rendering.md",
+   "creative/manim-video/references/scene-planning.md",
+   "creative/manim-video/references/troubleshooting.md",
+   "creative/manim-video/references/updaters-and-trackers.md",
+   "creative/manim-video/references/visual-design.md"
+  ],
+  "sizeKB": 100,
+  "count": 16
+ },
+ {
+  "id": 10,
+  "roots": [
+   "creative/p5js"
+  ],
+  "files": [
+   "creative/p5js/SKILL.md",
+   "creative/p5js/references/animation.md",
+   "creative/p5js/references/color-systems.md",
+   "creative/p5js/references/core-api.md",
+   "creative/p5js/references/export-pipeline.md",
+   "creative/p5js/references/troubleshooting.md",
+   "creative/p5js/references/visual-effects.md",
+   "creative/p5js/references/webgl-and-3d.md"
+  ],
+  "sizeKB": 119,
+  "count": 8
+ },
+ {
+  "id": 11,
+  "roots": [
+   "creative/popular-web-designs"
+  ],
+  "files": [
+   "creative/popular-web-designs/SKILL.md",
+   "creative/popular-web-designs/templates/airtable.md",
+   "creative/popular-web-designs/templates/coinbase.md",
+   "creative/popular-web-designs/templates/intercom.md",
+   "creative/popular-web-designs/templates/kraken.md",
+   "creative/popular-web-designs/templates/miro.md",
+   "creative/popular-web-designs/templates/revolut.md",
+   "creative/popular-web-designs/templates/webflow.md",
+   "creative/popular-web-designs/templates/wise.md"
+  ],
+  "sizeKB": 61,
+  "count": 9
+ },
+ {
+  "id": 12,
+  "roots": [
+   "creative/popular-web-designs",
+   "productivity/ocr-and-documents"
+  ],
+  "files": [
+   "creative/popular-web-designs/templates/apple.md",
+   "creative/popular-web-designs/templates/claude.md",
+   "creative/popular-web-designs/templates/cursor.md",
+   "creative/popular-web-designs/templates/ibm.md",
+   "creative/popular-web-designs/templates/superhuman.md",
+   "creative/popular-web-designs/templates/vercel.md",
+   "productivity/ocr-and-documents/DESCRIPTION.md",
+   "productivity/ocr-and-documents/SKILL.md"
+  ],
+  "sizeKB": 127,
+  "count": 8
+ },
+ {
+  "id": 13,
+  "roots": [
+   "creative/popular-web-designs",
+   "social-media/xurl"
+  ],
+  "files": [
+   "creative/popular-web-designs/templates/clickhouse.md",
+   "creative/popular-web-designs/templates/cohere.md",
+   "creative/popular-web-designs/templates/elevenlabs.md",
+   "creative/popular-web-designs/templates/mongodb.md",
+   "creative/popular-web-designs/templates/runwayml.md",
+   "creative/popular-web-designs/templates/sentry.md",
+   "creative/popular-web-designs/templates/supabase.md",
+   "social-media/xurl/SKILL.md"
+  ],
+  "sizeKB": 125,
+  "count": 8
+ },
+ {
+  "id": 14,
+  "roots": [
+   "creative/popular-web-designs",
+   "productivity/google-workspace"
+  ],
+  "files": [
+   "creative/popular-web-designs/templates/cal.md",
+   "creative/popular-web-designs/templates/clay.md",
+   "creative/popular-web-designs/templates/framer.md",
+   "creative/popular-web-designs/templates/lovable.md",
+   "creative/popular-web-designs/templates/mintlify.md",
+   "creative/popular-web-designs/templates/notion.md",
+   "productivity/google-workspace/SKILL.md",
+   "productivity/google-workspace/references/gmail-search-syntax.md"
+  ],
+  "sizeKB": 125,
+  "count": 8
+ },
+ {
+  "id": 15,
+  "roots": [
+   "creative/popular-web-designs",
+   "creative/sketch"
+  ],
+  "files": [
+   "creative/popular-web-designs/templates/hashicorp.md",
+   "creative/popular-web-designs/templates/mistral.ai.md",
+   "creative/popular-web-designs/templates/nvidia.md",
+   "creative/popular-web-designs/templates/ollama.md",
+   "creative/popular-web-designs/templates/opencode.ai.md",
+   "creative/popular-web-designs/templates/warp.md",
+   "creative/popular-web-designs/templates/x.ai.md",
+   "creative/sketch/SKILL.md"
+  ],
+  "sizeKB": 126,
+  "count": 8
+ },
+ {
+  "id": 16,
+  "roots": [
+   "creative/popular-web-designs"
+  ],
+  "files": [
+   "creative/popular-web-designs/templates/airbnb.md",
+   "creative/popular-web-designs/templates/bmw.md",
+   "creative/popular-web-designs/templates/figma.md",
+   "creative/popular-web-designs/templates/minimax.md",
+   "creative/popular-web-designs/templates/pinterest.md",
+   "creative/popular-web-designs/templates/replicate.md",
+   "creative/popular-web-designs/templates/spacex.md",
+   "creative/popular-web-designs/templates/spotify.md",
+   "creative/popular-web-designs/templates/together.ai.md"
+  ],
+  "sizeKB": 121,
+  "count": 9
+ },
+ {
+  "id": 17,
+  "roots": [
+   "creative/popular-web-designs",
+   "dogfood"
+  ],
+  "files": [
+   "creative/popular-web-designs/templates/composio.md",
+   "creative/popular-web-designs/templates/linear.app.md",
+   "creative/popular-web-designs/templates/sanity.md",
+   "creative/popular-web-designs/templates/stripe.md",
+   "creative/popular-web-designs/templates/voltagent.md",
+   "dogfood/SKILL.md",
+   "dogfood/references/issue-taxonomy.md",
+   "dogfood/templates/dogfood-report-template.md"
+  ],
+  "sizeKB": 126,
+  "count": 8
+ },
+ {
+  "id": 18,
+  "roots": [
+   "autonomous-ai-agents",
+   "computer-use",
+   "creative/popular-web-designs"
+  ],
+  "files": [
+   "autonomous-ai-agents/DESCRIPTION.md",
+   "computer-use/SKILL.md",
+   "creative/popular-web-designs/templates/expo.md",
+   "creative/popular-web-designs/templates/posthog.md",
+   "creative/popular-web-designs/templates/raycast.md",
+   "creative/popular-web-designs/templates/resend.md",
+   "creative/popular-web-designs/templates/uber.md",
+   "creative/popular-web-designs/templates/zapier.md"
+  ],
+  "sizeKB": 127,
+  "count": 8
+ },
+ {
+  "id": 19,
+  "roots": [
+   "creative/touchdesigner-mcp",
+   "github/github-code-review"
+  ],
+  "files": [
+   "creative/touchdesigner-mcp/SKILL.md",
+   "creative/touchdesigner-mcp/references/mcp-tools.md",
+   "creative/touchdesigner-mcp/references/network-patterns.md",
+   "creative/touchdesigner-mcp/references/pitfalls.md",
+   "github/github-code-review/SKILL.md",
+   "github/github-code-review/references/review-output-template.md"
+  ],
+  "sizeKB": 127,
+  "count": 6
+ },
+ {
+  "id": 20,
+  "roots": [
+   "creative/touchdesigner-mcp"
+  ],
+  "files": [
+   "creative/touchdesigner-mcp/references/3d-scene.md",
+   "creative/touchdesigner-mcp/references/animation.md",
+   "creative/touchdesigner-mcp/references/audio-reactive.md",
+   "creative/touchdesigner-mcp/references/dat-scripting.md",
+   "creative/touchdesigner-mcp/references/external-data.md",
+   "creative/touchdesigner-mcp/references/midi-osc.md",
+   "creative/touchdesigner-mcp/references/operators.md",
+   "creative/touchdesigner-mcp/references/panel-ui.md",
+   "creative/touchdesigner-mcp/references/particles.md",
+   "creative/touchdesigner-mcp/references/projection-mapping.md",
+   "creative/touchdesigner-mcp/references/python-api.md",
+   "creative/touchdesigner-mcp/references/replicator.md",
+   "creative/touchdesigner-mcp/references/troubleshooting.md"
+  ],
+  "sizeKB": 121,
+  "count": 13
+ },
+ {
+  "id": 21,
+  "roots": [
+   "creative/touchdesigner-mcp",
+   "email/himalaya"
+  ],
+  "files": [
+   "creative/touchdesigner-mcp/references/geometry-comp.md",
+   "creative/touchdesigner-mcp/references/glsl.md",
+   "creative/touchdesigner-mcp/references/layout-compositor.md",
+   "creative/touchdesigner-mcp/references/operator-tips.md",
+   "creative/touchdesigner-mcp/references/postfx.md",
+   "email/himalaya/SKILL.md",
+   "email/himalaya/references/configuration.md",
+   "email/himalaya/references/message-composition.md"
+  ],
+  "sizeKB": 36,
+  "count": 8
+ },
+ {
+  "id": 22,
+  "roots": [
+   "apple/apple-notes",
+   "apple/apple-reminders",
+   "apple/imessage",
+   "github/codebase-inspection",
+   "media/gif-search",
+   "media/songsee",
+   "productivity/petdex",
+   "smart-home/openhue"
+  ],
+  "files": [
+   "apple/apple-notes/SKILL.md",
+   "apple/apple-reminders/SKILL.md",
+   "apple/imessage/SKILL.md",
+   "github/codebase-inspection/SKILL.md",
+   "media/gif-search/SKILL.md",
+   "media/songsee/SKILL.md",
+   "productivity/petdex/SKILL.md",
+   "smart-home/openhue/SKILL.md"
+  ],
+  "sizeKB": 23,
+  "count": 8
+ },
+ {
+  "id": 23,
+  "roots": [
+   "autonomous-ai-agents/opencode",
+   "creative/architecture-diagram",
+   "github/github-auth",
+   "media/heartmula",
+   "productivity/maps",
+   "productivity/teams-meeting-pipeline",
+   "research/polymarket"
+  ],
+  "files": [
+   "autonomous-ai-agents/opencode/SKILL.md",
+   "creative/architecture-diagram/SKILL.md",
+   "github/github-auth/SKILL.md",
+   "media/heartmula/SKILL.md",
+   "productivity/maps/SKILL.md",
+   "productivity/teams-meeting-pipeline/SKILL.md",
+   "research/polymarket/SKILL.md",
+   "research/polymarket/references/api-endpoints.md"
+  ],
+  "sizeKB": 48,
+  "count": 8
+ },
+ {
+  "id": 24,
+  "roots": [
+   "creative/songwriting-and-ai-music",
+   "github/github-issues",
+   "research/arxiv",
+   "software-development/plan",
+   "software-development/spike",
+   "software-development/test-driven-development"
+  ],
+  "files": [
+   "creative/songwriting-and-ai-music/SKILL.md",
+   "github/github-issues/SKILL.md",
+   "github/github-issues/templates/bug-report.md",
+   "github/github-issues/templates/feature-request.md",
+   "research/arxiv/SKILL.md",
+   "software-development/plan/SKILL.md",
+   "software-development/spike/SKILL.md",
+   "software-development/test-driven-development/SKILL.md"
+  ],
+  "sizeKB": 59,
+  "count": 8
+ },
+ {
+  "id": 25,
+  "roots": [
+   "creative/ascii-art",
+   "github/github-pr-workflow",
+   "software-development/hermes-agent-skill-authoring",
+   "software-development/simplify-code"
+  ],
+  "files": [
+   "creative/ascii-art/SKILL.md",
+   "github/github-pr-workflow/SKILL.md",
+   "github/github-pr-workflow/references/ci-troubleshooting.md",
+   "github/github-pr-workflow/references/conventional-commits.md",
+   "github/github-pr-workflow/templates/pr-body-bugfix.md",
+   "github/github-pr-workflow/templates/pr-body-feature.md",
+   "software-development/hermes-agent-skill-authoring/SKILL.md",
+   "software-development/simplify-code/SKILL.md"
+  ],
+  "sizeKB": 51,
+  "count": 8
+ },
+ {
+  "id": 26,
+  "roots": [
+   "creative/humanizer",
+   "creative/pretext",
+   "mlops/evaluation/lm-evaluation-harness"
+  ],
+  "files": [
+   "creative/humanizer/SKILL.md",
+   "creative/pretext/SKILL.md",
+   "creative/pretext/references/patterns.md",
+   "mlops/evaluation/lm-evaluation-harness/SKILL.md",
+   "mlops/evaluation/lm-evaluation-harness/references/api-evaluation.md",
+   "mlops/evaluation/lm-evaluation-harness/references/benchmark-guide.md",
+   "mlops/evaluation/lm-evaluation-harness/references/custom-tasks.md",
+   "mlops/evaluation/lm-evaluation-harness/references/distributed-eval.md"
+  ],
+  "sizeKB": 114,
+  "count": 8
+ },
+ {
+  "id": 27,
+  "roots": [
+   "creative/claude-design",
+   "mlops/evaluation/weights-and-biases",
+   "mlops/models/segment-anything"
+  ],
+  "files": [
+   "creative/claude-design/SKILL.md",
+   "mlops/evaluation/weights-and-biases/SKILL.md",
+   "mlops/evaluation/weights-and-biases/references/artifacts.md",
+   "mlops/evaluation/weights-and-biases/references/integrations.md",
+   "mlops/evaluation/weights-and-biases/references/sweeps.md",
+   "mlops/models/segment-anything/SKILL.md",
+   "mlops/models/segment-anything/references/advanced-usage.md",
+   "mlops/models/segment-anything/references/troubleshooting.md"
+  ],
+  "sizeKB": 123,
+  "count": 8
+ },
+ {
+  "id": 28,
+  "roots": [
+   "mlops/inference/llama-cpp",
+   "software-development/systematic-debugging"
+  ],
+  "files": [
+   "mlops/inference/llama-cpp/SKILL.md",
+   "mlops/inference/llama-cpp/references/advanced-usage.md",
+   "mlops/inference/llama-cpp/references/hub-discovery.md",
+   "mlops/inference/llama-cpp/references/optimization.md",
+   "mlops/inference/llama-cpp/references/quantization.md",
+   "mlops/inference/llama-cpp/references/server.md",
+   "mlops/inference/llama-cpp/references/troubleshooting.md",
+   "software-development/systematic-debugging/SKILL.md"
+  ],
+  "sizeKB": 59,
+  "count": 8
+ },
+ {
+  "id": 29,
+  "roots": [
+   "apple",
+   "creative",
+   "data-science",
+   "email",
+   "media",
+   "note-taking",
+   "smart-home"
+  ],
+  "files": [
+   "apple/DESCRIPTION.md",
+   "creative/DESCRIPTION.md",
+   "data-science/DESCRIPTION.md",
+   "email/DESCRIPTION.md",
+   "media/DESCRIPTION.md",
+   "note-taking/DESCRIPTION.md",
+   "smart-home/DESCRIPTION.md"
+  ],
+  "sizeKB": 1,
+  "count": 7
+ },
+ {
+  "id": 30,
+  "roots": [
+   "creative/p5js",
+   "productivity/powerpoint",
+   "software-development/node-inspect-debugger"
+  ],
+  "files": [
+   "creative/p5js/README.md",
+   "creative/p5js/references/interaction.md",
+   "creative/p5js/references/shapes-and-geometry.md",
+   "creative/p5js/references/typography.md",
+   "productivity/powerpoint/SKILL.md",
+   "productivity/powerpoint/editing.md",
+   "productivity/powerpoint/pptxgenjs.md",
+   "software-development/node-inspect-debugger/SKILL.md"
+  ],
+  "sizeKB": 66,
+  "count": 8
+ },
+ {
+  "id": 31,
+  "roots": [
+   "github",
+   "mlops",
+   "mlops/inference",
+   "note-taking/obsidian",
+   "productivity",
+   "research/llm-wiki",
+   "research/research-paper-writing"
+  ],
+  "files": [
+   "github/DESCRIPTION.md",
+   "mlops/DESCRIPTION.md",
+   "mlops/inference/DESCRIPTION.md",
+   "note-taking/obsidian/SKILL.md",
+   "productivity/DESCRIPTION.md",
+   "research/llm-wiki/SKILL.md",
+   "research/research-paper-writing/SKILL.md"
+  ],
+  "sizeKB": 127,
+  "count": 7
+ },
+ {
+  "id": 32,
+  "roots": [
+   "productivity/airtable",
+   "research",
+   "research/research-paper-writing"
+  ],
+  "files": [
+   "productivity/airtable/SKILL.md",
+   "research/DESCRIPTION.md",
+   "research/research-paper-writing/references/autoreason-methodology.md",
+   "research/research-paper-writing/references/experiment-patterns.md",
+   "research/research-paper-writing/references/human-evaluation.md",
+   "research/research-paper-writing/references/writing-guide.md",
+   "research/research-paper-writing/templates/aaai2026/README.md",
+   "research/research-paper-writing/templates/acl/formatting.md"
+  ],
+  "sizeKB": 127,
+  "count": 8
+ },
+ {
+  "id": 33,
+  "roots": [
+   "research/research-paper-writing"
+  ],
+  "files": [
+   "research/research-paper-writing/references/checklists.md",
+   "research/research-paper-writing/references/citation-workflow.md",
+   "research/research-paper-writing/references/paper-types.md",
+   "research/research-paper-writing/references/reviewer-guidelines.md",
+   "research/research-paper-writing/references/sources.md",
+   "research/research-paper-writing/templates/README.md",
+   "research/research-paper-writing/templates/acl/README.md",
+   "research/research-paper-writing/templates/colm2025/README.md"
+  ],
+  "sizeKB": 78,
+  "count": 8
+ }
+]

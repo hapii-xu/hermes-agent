@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>输入命令处理全链路 — Claude Code 入口系列</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange:    #D77757;
+      --orange-lt: #f0e0d8;
+      --orange-dk: #b55e3a;
+      --blue:      #5769F7;
+      --blue-lt:   #dde0fe;
+      --blue-dk:   #3a4ed4;
+      --green:     #22a766;
+      --green-lt:  #d2f0e3;
+      --purple:    #8b5cf6;
+      --purple-lt: #ede9fe;
+      --bg:        #faf8f5;
+      --bg2:       #f3f0eb;
+      --bg3:       #ebe7e0;
+      --text:      #2d2a26;
+      --text-2:    #5a5650;
+      --text-3:    #8a8480;
+      --border:    #ddd8d0;
+      --shadow:    0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius:    8px;
+      --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'SF Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+
+    /* ── Layout ───────────────────────────────────────────── */
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+
+    h2 {
+      font-size: 1.35rem; font-weight: 700; color: var(--orange-dk);
+      border-bottom: 2px solid var(--orange-lt);
+      padding-bottom: 8px; margin-bottom: 24px; letter-spacing: .01em;
+    }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: .95rem; font-weight: 600; color: var(--text-2); margin: 14px 0 8px; }
+    p  { color: var(--text-2); margin-bottom: 10px; }
+    a  { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Hero ─────────────────────────────────────────────── */
+    .hero {
+      background: linear-gradient(135deg, #fff9f6 0%, #f5f1ff 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 24px 48px; text-align: center;
+    }
+    .hero-badge {
+      display: inline-block; background: var(--orange); color: #fff;
+      font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: 2.4rem; font-weight: 800; color: var(--text);
+      letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px;
+    }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+
+    .nav-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; list-style: none; }
+    .nav-links a {
+      display: inline-block; padding: 6px 16px; background: #fff;
+      border: 1.5px solid var(--border); border-radius: 20px;
+      font-size: .82rem; font-weight: 600; color: var(--text-2);
+      transition: border-color .15s, color .15s, box-shadow .15s;
+    }
+    .nav-links a:hover {
+      border-color: var(--orange); color: var(--orange-dk);
+      box-shadow: 0 2px 6px rgba(215,119,87,.15); text-decoration: none;
+    }
+
+    /* ── Code Blocks ──────────────────────────────────────── */
+    pre {
+      background: #1e1b16; color: #d4cfc8; border-radius: var(--radius);
+      padding: 16px 20px; font-family: var(--font-mono); font-size: .8rem;
+      line-height: 1.75; overflow-x: auto; margin: 12px 0;
+      border-left: 3px solid var(--orange);
+    }
+    code { font-family: var(--font-mono); }
+    .kw  { color: #7c9bff; font-weight: 600; }
+    .str { color: #6cc77a; }
+    .fn  { color: #f0906a; }
+    .cmt { color: #6e6a62; font-style: italic; }
+    .type{ color: #e0a020; }
+    .num { color: #c792ea; }
+    p code, li code, td code {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk);
+    }
+
+    /* ── Tables ───────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th {
+      background: var(--bg2); color: var(--text); font-weight: 700;
+      text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); white-space: nowrap;
+    }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+
+    /* ── Flow Box (ASCII diagram) ─────────────────────────── */
+    .flow-box {
+      background: #1e1b16; color: #d4cfc8; border-radius: var(--radius-lg);
+      padding: 24px 28px; font-family: var(--font-mono); font-size: .8rem;
+      line-height: 1.9; overflow-x: auto; border-left: 4px solid var(--orange);
+      box-shadow: var(--shadow);
+    }
+    .flow-box .fc { color: #f0906a; }     /* function/file name */
+    .flow-box .fk { color: #7c9bff; }     /* keyword */
+    .flow-box .fa { color: #6cc77a; }     /* arrow / condition */
+    .flow-box .fc2{ color: #e0a020; }     /* secondary highlight */
+    .flow-box .fd { color: #6e6a62; font-style: italic; } /* dim comment */
+
+    /* ── Cards ────────────────────────────────────────────── */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .card {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 18px; box-shadow: var(--shadow);
+      transition: box-shadow .15s, border-color .15s;
+    }
+    .card:hover { box-shadow: var(--shadow-lg); border-color: var(--orange-lt); }
+    .card-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; background: var(--orange); color: #fff;
+      border-radius: 50%; font-size: .75rem; font-weight: 700; margin-bottom: 10px;
+    }
+    .card h4 { margin: 0 0 6px; font-size: .93rem; }
+    .card p  { font-size: .85rem; margin: 0; }
+
+    /* ── Details / collapsible ────────────────────────────── */
+    details.know-card {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 10px;
+    }
+    details.know-card[open] { border-color: var(--orange-lt); }
+    details.know-card > summary {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 20px; cursor: pointer; user-select: none; list-style: none; outline: none;
+    }
+    details.know-card > summary::-webkit-details-marker { display: none; }
+    details.know-card > summary:hover { background: var(--bg); }
+    .know-num {
+      flex-shrink: 0; width: 28px; height: 28px;
+      background: var(--orange-lt); color: var(--orange-dk);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 700;
+    }
+    details.know-card[open] .know-num { background: var(--orange); color: #fff; }
+    .know-title { flex: 1; font-weight: 700; font-size: .97rem; }
+    .know-arrow { width: 18px; height: 18px; color: var(--text-3); transition: transform .2s; flex-shrink: 0; }
+    details.know-card[open] .know-arrow { transform: rotate(90deg); color: var(--orange); }
+    .know-body { padding: 0 20px 20px 62px; }
+    .know-body p { margin-bottom: 8px; }
+
+    /* ── Sequence Diagram (pure CSS/HTML) ─────────────────── */
+    .seq-wrap {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 24px; overflow-x: auto; box-shadow: var(--shadow);
+    }
+
+    /* ── Tags / badges ────────────────────────────────────── */
+    .tag {
+      display: inline-block; background: var(--blue-lt); color: var(--blue-dk);
+      font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 10px; letter-spacing: .04em;
+    }
+    .tag-orange { background: var(--orange-lt); color: var(--orange-dk); }
+    .tag-green  { background: var(--green-lt);  color: #1a7a4e; }
+    .tag-purple { background: var(--purple-lt); color: #5b21b6; }
+    .tag-gray   { background: var(--bg3);       color: var(--text-3); }
+
+    .badge-yes { display:inline-block; background: var(--green-lt); color: #1a7a4e; font-size:.7rem; font-weight:700; padding:2px 7px; border-radius:8px; }
+    .badge-no  { display:inline-block; background: var(--bg3);      color: var(--text-3); font-size:.7rem; font-weight:700; padding:2px 7px; border-radius:8px; }
+
+    /* ── Misc ─────────────────────────────────────────────── */
+    .section-desc { color: var(--text-2); font-size: .92rem; margin-bottom: 20px; }
+    ul.key-list   { padding-left: 20px; color: var(--text-2); }
+    ul.key-list li { margin-bottom: 4px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+
+    .step-list { list-style: none; padding: 0; }
+    .step-list li {
+      display: flex; gap: 14px; align-items: flex-start;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .step-list li:last-child { border-bottom: none; }
+    .step-n {
+      flex-shrink: 0; min-width: 26px; height: 26px; margin-top: 1px;
+      background: var(--orange); color: #fff; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .72rem; font-weight: 700;
+    }
+    .step-content { flex: 1; }
+    .step-content strong { display: block; color: var(--text); margin-bottom: 2px; }
+    .step-content span   { font-size: .87rem; color: var(--text-2); }
+
+    .info-box {
+      background: var(--blue-lt); border-left: 3px solid var(--blue);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk);
+    }
+    .warn-box {
+      background: var(--orange-lt); border-left: 3px solid var(--orange);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--orange-dk);
+    }
+
+    /* ── Command type color badges ─────────────────────────── */
+    .type-local  { background:#e8f5e9; color:#2e7d32; font-size:.7rem; font-weight:700; padding:2px 7px; border-radius:8px; display:inline-block; }
+    .type-jsx    { background:#fff3e0; color:#e65100; font-size:.7rem; font-weight:700; padding:2px 7px; border-radius:8px; display:inline-block; }
+    .type-prompt { background:#e3f2fd; color:#1565c0; font-size:.7rem; font-weight:700; padding:2px 7px; border-radius:8px; display:inline-block; }
+
+    /* ── Responsive ───────────────────────────────────────── */
+    @media (max-width: 700px) {
+      .hero h1 { font-size: 1.6rem; }
+      .card-grid { grid-template-columns: 1fr; }
+      .know-body { padding-left: 20px; }
+    }
+
+    /* ── Visual Flowchart ─────────────────────────────────────── */
+    .vflow {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow);
+      padding: 28px 28px 32px; overflow-x: auto; margin: 12px 0;
+    }
+    .vf-chain { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+    .vf-step  { display: flex; align-items: flex-start; gap: 16px; width: 100%; }
+    .vf-gap {
+      display: flex; align-items: center; height: 36px;
+      padding-left: 18px; gap: 10px;
+    }
+    .vf-gap::before {
+      content: ''; width: 2px; height: 28px; background: var(--border);
+      display: block; flex: none;
+    }
+    .vf-gap-label { font-size: .72rem; color: var(--text-3); font-style: italic; }
+    .vf-node {
+      background: #fff; border: 2px solid var(--orange);
+      border-radius: var(--radius); padding: 10px 18px;
+      font-family: var(--font-mono); font-size: .87rem; font-weight: 700;
+      color: var(--text); min-width: 240px; max-width: 360px;
+      flex: none; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .vf-node.is-start { background: var(--orange-lt); }
+    .vf-node-path { display: block; font-size: .68rem; font-weight: 400; color: var(--text-3); font-style: italic; margin-top: 4px; }
+    .vf-node-desc { display: block; font-size: .75rem; font-weight: 400; color: var(--text-2); margin-top: 3px; }
+    .vf-brs {
+      flex: 1; display: flex; flex-direction: column; gap: 6px;
+      padding: 8px 0 8px 14px; border-left: 2px dashed var(--border);
+    }
+    .vf-br-item { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+    .vf-br-item::before { content: '─'; color: var(--border); font-size: .9rem; flex: none; }
+    .vf-br-cond {
+      display: inline-block; background: var(--orange-lt);
+      border: 1px solid var(--orange); border-radius: 10px;
+      padding: 2px 10px; font-family: var(--font-mono);
+      font-size: .73rem; font-weight: 600; color: var(--orange-dk);
+      white-space: nowrap; flex: none;
+    }
+    .vf-br-arrow { color: var(--text-3); font-weight: 700; flex: none; }
+    .vf-br-act   { font-family: var(--font-mono); font-size: .77rem; font-weight: 600; color: var(--blue-dk); white-space: nowrap; }
+    .vf-br-note  { font-size: .7rem; color: var(--text-3); font-style: italic; white-space: nowrap; }
+    .vf-split { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; width: 100%; }
+    .vf-split-col { flex: 1; min-width: 155px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .vf-split-line { width: 2px; height: 18px; background: var(--border); }
+    .vf-split-cond {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 3px 12px; font-family: var(--font-mono); font-size: .72rem;
+      color: var(--text-2); text-align: center; white-space: nowrap;
+    }
+    .vf-split-box {
+      border: 2px solid; border-radius: var(--radius);
+      padding: 9px 14px; font-family: var(--font-mono); font-size: .82rem;
+      font-weight: 700; text-align: center; width: 100%;
+    }
+    .vf-split-box.s-bash  { background: var(--orange-lt); border-color: var(--orange); color: var(--orange-dk); }
+    .vf-split-box.s-slash { background: var(--purple-lt); border-color: var(--purple); color: #5b21b6; }
+    .vf-split-box.s-text  { background: var(--green-lt);  border-color: var(--green);  color: #1a7a4e; }
+    /* getCommands pipeline */
+    .vf-pipeline { display: flex; flex-direction: column; gap: 8px; }
+    .vf-pipe-item {
+      display: flex; align-items: flex-start; gap: 14px;
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .vf-pipe-num {
+      flex: none; width: 24px; height: 24px; background: var(--orange);
+      color: #fff; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: .75rem; font-weight: 700; margin-top: 1px;
+    }
+    .vf-pipe-body { flex: 1; }
+    .vf-pipe-fn   { font-family: var(--font-mono); font-size: .85rem; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .vf-pipe-desc { font-size: .8rem; color: var(--text-2); margin-bottom: 4px; }
+    .vf-pipe-conds { display: flex; flex-wrap: wrap; gap: 5px; }
+    .vf-pipe-tag  { background: var(--bg3); border-radius: 8px; padding: 2px 8px; font-family: var(--font-mono); font-size: .7rem; color: var(--text-3); }
+    .vf-pipe-tag.flag { background: var(--blue-lt); color: var(--blue-dk); }
+    .vf-merge-icon { text-align: center; font-size: .85rem; color: var(--text-3); padding: 4px 0; letter-spacing: .05em; }
+    .vf-pipe-result {
+      background: var(--orange-lt); border: 2px solid var(--orange);
+      border-radius: var(--radius); padding: 10px 16px;
+      font-family: var(--font-mono); font-size: .87rem; font-weight: 700;
+      color: var(--orange-dk); text-align: center;
+    }
+    @media (max-width: 600px) {
+      .vf-step { flex-direction: column; }
+      .vf-brs  { border-left: none; padding-left: 0; margin-top: 8px; }
+      .vf-split { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- HERO                                                       -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<header class="hero">
+  <div class="hero-badge">入口系列 · 输入处理篇</div>
+  <h1>输入命令处理<span>全链路</span></h1>
+  <p>用户按下 Enter 后发生了什么？从 PromptInput 触发 onSubmit，经队列、handlePromptSubmit、processUserInput，
+     到 slash / bash / 普通文本三叉路由，再到 80+ 个命令的分类执行——完整覆盖每一层决策。</p>
+  <ul class="nav-links">
+    <li><a href="#overview">全局流程</a></li>
+    <li><a href="#prompt-input">PromptInput 触发</a></li>
+    <li><a href="#queue">队列机制</a></li>
+    <li><a href="#handle-submit">handlePromptSubmit</a></li>
+    <li><a href="#routing">三叉路由</a></li>
+    <li><a href="#slash-chain">Slash 命令链</a></li>
+    <li><a href="#cmd-types">三种命令类型</a></li>
+    <li><a href="#get-commands">命令注册</a></li>
+    <li><a href="#catalog">命令目录</a></li>
+    <li><a href="#synthetic-tags">合成消息标签</a></li>
+    <li><a href="#seq-rename">/rename 时序</a></li>
+    <li><a href="#seq-resume">/resume 时序</a></li>
+  </ul>
+</header>
+
+<div class="page-wrap">
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 1 — 全局流程总览                                         -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="overview">
+  <h2>一、全局流程总览</h2>
+  <p class="section-desc">从 Enter 键到 API 调用（或命令直接执行）的完整旅程，共经过 4 层模块。</p>
+
+  <div class="vflow">
+    <div class="vf-chain">
+
+      <!-- ① 用户键盘输入 -->
+      <div class="vf-step">
+        <div class="vf-node is-start">⌨ 用户键盘输入</div>
+      </div>
+      <div class="vf-gap"></div>
+
+      <!-- ② PromptInput.tsx -->
+      <div class="vf-step">
+        <div class="vf-node">
+          PromptInput.tsx
+          <span class="vf-node-desc">Enter / keybinding / 历史搜索选择</span>
+        </div>
+        <div class="vf-brs">
+          <div class="vf-br-item">
+            <span class="vf-br-cond">immediate 命令 + 正在加载中？</span>
+            <span class="vf-br-arrow">→</span>
+            <span class="vf-br-act">load() + call()</span>
+            <span class="vf-br-note">跳过队列</span>
+          </div>
+          <div class="vf-br-item">
+            <span class="vf-br-cond">远程模式下非本地命令？</span>
+            <span class="vf-br-arrow">→</span>
+            <span class="vf-br-act">activeRemote.sendMessage()</span>
+            <span class="vf-br-note">跳过本地处理</span>
+          </div>
+        </div>
+      </div>
+      <div class="vf-gap"><span class="vf-gap-label">正常路径</span></div>
+
+      <!-- ③ REPL.onSubmit() -->
+      <div class="vf-step">
+        <div class="vf-node">REPL.onSubmit()</div>
+        <div class="vf-brs">
+          <div class="vf-br-item">
+            <span class="vf-br-cond">正在加载中？</span>
+            <span class="vf-br-arrow">→</span>
+            <span class="vf-br-act">enqueue() 入队</span>
+            <span class="vf-br-note">等待当前轮次完成</span>
+          </div>
+        </div>
+      </div>
+      <div class="vf-gap"></div>
+
+      <!-- ④ handlePromptSubmit() -->
+      <div class="vf-step">
+        <div class="vf-node">
+          handlePromptSubmit()
+          <span class="vf-node-path">src/utils/handlePromptSubmit.ts</span>
+          <span class="vf-node-desc">扩展粘贴文本占位符 · 过滤孤立图片</span>
+        </div>
+      </div>
+      <div class="vf-gap"></div>
+
+      <!-- ⑤ executeUserInput() -->
+      <div class="vf-step">
+        <div class="vf-node">
+          executeUserInput()
+          <span class="vf-node-desc">queryGuard.reserve() 防并发锁</span>
+          <span class="vf-node-desc">for 循环处理每条 QueuedCommand</span>
+        </div>
+      </div>
+      <div class="vf-gap"></div>
+
+      <!-- ⑥ processUserInput() + 三叉路由 -->
+      <div class="vf-step" style="flex-direction:column">
+        <div class="vf-node">
+          processUserInput()
+          <span class="vf-node-path">src/utils/processUserInput/processUserInput.ts</span>
+        </div>
+        <div class="vf-split">
+          <div class="vf-split-col">
+            <div class="vf-split-line"></div>
+            <div class="vf-split-cond">mode === 'bash'</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-bash">processBashCommand()</div>
+          </div>
+          <div class="vf-split-col">
+            <div class="vf-split-line"></div>
+            <div class="vf-split-cond">startsWith('/')</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-slash">processSlashCommand()</div>
+          </div>
+          <div class="vf-split-col">
+            <div class="vf-split-line"></div>
+            <div class="vf-split-cond">普通文本</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-text">processTextPrompt()</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 2 — PromptInput 触发                                     -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="prompt-input">
+  <h2>二、PromptInput 触发（起点）</h2>
+
+  <h3>两种触发路径</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-num">A</div>
+      <h4>Enter 键直接提交</h4>
+      <p><code>TextInput</code>（来自 <code>@anthropic/ink</code>）内置 Enter 监听，通过 <code>onSubmit</code> prop 上报给 <code>PromptInput.tsx</code>，再转发给 REPL。</p>
+      <pre style="margin-top:10px"><span class="cmt">// PromptInput.tsx（简化）</span>
+&lt;<span class="fn">TextInput</span>
+  <span class="type">value</span>={input}
+  <span class="type">onSubmit</span>={v =&gt; <span class="kw">void</span> <span class="fn">onSubmit</span>(v)}
+/&gt;</pre>
+    </div>
+    <div class="card">
+      <div class="card-num">B</div>
+      <h4>历史搜索选择</h4>
+      <p>用户在历史搜索模式下选中一条记录，Hook 直接调用 <code>onSubmit</code> 并还原 pastedContents（历史粘贴图片）。</p>
+      <pre style="margin-top:10px"><span class="fn">useHistorySearch</span>(entry =&gt; {
+  <span class="fn">setPastedContents</span>(entry.pastedContents)
+  <span class="kw">void</span> <span class="fn">onSubmit</span>(entry.display)
+})</pre>
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px">REPL.onSubmit 内部的提前 return 判断</h3>
+  <p class="section-desc">按顺序判断，任意命中则提前 return，不进入 handlePromptSubmit。</p>
+  <ul class="step-list">
+    <li>
+      <div class="step-n">1</div>
+      <div class="step-content">
+        <strong>路由到 pipe 目标</strong>
+        <span>输入被发往已选中的 pipe 对端（另一个 Claude CLI 节点），不走本地处理。</span>
+      </div>
+    </li>
+    <li>
+      <div class="step-n">2</div>
+      <div class="step-content">
+        <strong>immediate 命令 + 正在加载中</strong>
+        <span>命令定义了 <code>immediate: true</code> 且 <code>queryGuard.isActive</code> 时，直接 <code>load()</code> → <code>call(onDone)</code> → <code>setToolJSX()</code>，不等待当前轮次结束。</span>
+      </div>
+    </li>
+    <li>
+      <div class="step-n">3</div>
+      <div class="step-content">
+        <strong>speculation 接受</strong>
+        <span>用户接受了预测输入（speculation），走 <code>handleSpeculationAccept()</code>。</span>
+      </div>
+    </li>
+    <li>
+      <div class="step-n">4</div>
+      <div class="step-content">
+        <strong>远程模式下的非本地命令</strong>
+        <span><code>activeRemote.isRemoteMode</code> 为 true 且不是本地 local-jsx 命令时，<code>activeRemote.sendMessage()</code> 发往远端 WebSocket。</span>
+      </div>
+    </li>
+    <li>
+      <div class="step-n">5</div>
+      <div class="step-content">
+        <strong>正常路径 → handlePromptSubmit</strong>
+        <span>所有判断未命中，进入正常的本地处理流程。</span>
+      </div>
+    </li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 3 — 队列机制                                             -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="queue">
+  <h2>三、队列机制</h2>
+  <p class="section-desc">文件：<code>src/utils/messageQueueManager.ts</code> — 模块级单例，不是 React state。React 通过 <code>useSyncExternalStore</code> 订阅队列变化。</p>
+
+  <h3>QueuedCommand 结构</h3>
+  <pre><span class="kw">type</span> <span class="type">QueuedCommand</span> = {
+  value:              <span class="type">string</span> | <span class="type">Array</span>&lt;<span class="type">ContentBlockParam</span>&gt;  <span class="cmt">// 文本 or 多模态块</span>
+  mode:               <span class="type">PromptInputMode</span>                     <span class="cmt">// 'prompt' | 'bash' | 'orphaned-permission' 等</span>
+  priority?:          <span class="str">'now'</span> | <span class="str">'next'</span> | <span class="str">'later'</span>
+  uuid?:              <span class="type">UUID</span>
+  pastedContents?:    <span class="type">Record</span>&lt;<span class="type">number</span>, <span class="type">PastedContent</span>&gt;       <span class="cmt">// 粘贴的图片</span>
+  skipSlashCommands?: <span class="type">boolean</span>                             <span class="cmt">// bridge 消息防止重新解析</span>
+  bridgeOrigin?:      <span class="type">boolean</span>
+  isMeta?:            <span class="type">boolean</span>                             <span class="cmt">// 模型可见但用户不可见</span>
+}</pre>
+
+  <h3>队列函数对比</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>函数</th><th>默认 priority</th><th>典型调用方</th></tr></thead>
+      <tbody>
+        <tr><td><code>enqueue()</code></td><td><code>'next'</code></td><td>用户在 loading 期间输入的命令；并发保护时的入队</td></tr>
+        <tr><td><code>enqueuePendingNotification()</code></td><td><code>'later'</code></td><td>后台任务完成通知、Chrome 扩展消息、fork 子 agent 结果</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:8px">优先级顺序：<code>now(0) &gt; next(1) &gt; later(2)</code>，同级 FIFO。</p>
+
+  <h3>value 为 Array&lt;ContentBlockParam&gt; 的场景</h3>
+  <div class="info-box">
+    正常用户输入（键盘输入、粘贴图片）<code>value</code> 始终是 <strong>string</strong>，图片通过 <code>pastedContents</code> 单独传递。<br>
+    <code>value</code> 为数组只在以下两种外部注入场景：
+  </div>
+  <div class="card-grid" style="margin-top:12px">
+    <div class="card">
+      <h4>Claude for Chrome 扩展</h4>
+      <p>扩展截图 + 文字发给 Claude Code，已打包成 <code>[{type:'text',...}, {type:'image',...}]</code>。由 <code>usePromptsFromClaudeInChrome</code> hook 调用 <code>enqueuePendingNotification()</code> 注入。</p>
+    </div>
+    <div class="card">
+      <h4>Bridge / RCS 入站消息</h4>
+      <p>从 claude.ai 网页端或远程控制服务器（RCS）发来的含图片附件消息，由 <code>useReplBridge</code> hook 调用 <code>enqueue()</code> 注入，<code>content</code> 字段已是 <code>ContentBlockParam[]</code>。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 4 — handlePromptSubmit 前置处理                          -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="handle-submit">
+  <h2>四、handlePromptSubmit 前置处理</h2>
+  <p class="section-desc">文件：<code>src/utils/handlePromptSubmit.ts</code></p>
+
+  <div class="vflow">
+    <div class="vf-chain">
+
+      <!-- 入口 + 快速出口 -->
+      <div class="vf-step">
+        <div class="vf-node is-start">handlePromptSubmit(params)</div>
+        <div class="vf-brs">
+          <div class="vf-br-item">
+            <span class="vf-br-cond">queuedCommands 已传入？</span>
+            <span class="vf-br-arrow">→</span>
+            <span class="vf-br-act">直接 executeUserInput()</span>
+            <span class="vf-br-note">跳过以下步骤</span>
+          </div>
+        </div>
+      </div>
+      <div class="vf-gap"></div>
+
+      <!-- 7 步流水线 -->
+      <div class="vf-step" style="flex-direction:column">
+        <div class="vf-pipeline">
+
+          <div class="vf-pipe-item">
+            <div class="vf-pipe-num">1</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">过滤孤立图片</div>
+              <div class="vf-pipe-desc"><code>referencedIds = parseReferences(input)</code></div>
+              <div class="vf-pipe-conds">
+                <span class="vf-pipe-tag">保留 input 中有 [Image #N] 引用的图片</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vf-pipe-item">
+            <div class="vf-pipe-num">2</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">空输入检查</div>
+              <div class="vf-pipe-conds">
+                <span class="vf-pipe-tag flag">空输入？</span>
+                <span class="vf-pipe-tag">→ return</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vf-pipe-item">
+            <div class="vf-pipe-num">3</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">退出命令识别</div>
+              <div class="vf-pipe-conds">
+                <span class="vf-pipe-tag"><code>exit</code></span>
+                <span class="vf-pipe-tag"><code>quit</code></span>
+                <span class="vf-pipe-tag"><code>:q</code></span>
+                <span class="vf-pipe-tag"><code>:wq</code></span>
+                <span class="vf-pipe-tag flag">匹配？</span>
+                <span class="vf-pipe-tag">→ handlePromptSubmit('/exit') 或 process.exit()</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vf-pipe-item">
+            <div class="vf-pipe-num">4</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">扩展粘贴文本占位符</div>
+              <div class="vf-pipe-desc"><code>expandPastedTextRefs(input)</code> → <code>finalInput</code></div>
+              <div class="vf-pipe-conds">
+                <span class="vf-pipe-tag">[Pasted text #N] → 实际文本内容</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vf-pipe-item">
+            <div class="vf-pipe-num">5</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">immediate 命令 + 正在加载中</div>
+              <div class="vf-pipe-conds">
+                <span class="vf-pipe-tag flag">命中？</span>
+                <span class="vf-pipe-tag">→ 直接执行，return</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vf-pipe-item">
+            <div class="vf-pipe-num">6</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">queryGuard.isActive（正在加载中）</div>
+              <div class="vf-pipe-conds">
+                <span class="vf-pipe-tag flag">为 true？</span>
+                <span class="vf-pipe-tag">→ enqueue({ value: finalInput, ... })，return</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vf-pipe-item" style="border-color:var(--orange);background:var(--orange-lt)">
+            <div class="vf-pipe-num">7</div>
+            <div class="vf-pipe-body">
+              <div class="vf-pipe-fn">正常路径</div>
+              <div class="vf-pipe-desc">构造 QueuedCommand → <strong>executeUserInput([cmd], ...)</strong></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>executeUserInput</h3>
+  <pre><span class="kw">async function</span> <span class="fn">executeUserInput</span>(params): <span class="type">Promise</span>&lt;<span class="kw">void</span>&gt; {
+  <span class="cmt">// 1. 创建 AbortController</span>
+  <span class="cmt">// 2. queryGuard.reserve()  ← 防止并发执行</span>
+  <span class="kw">for</span> (<span class="kw">const</span> [i, cmd] <span class="kw">of</span> queuedCommands.entries()) {
+    <span class="kw">const</span> result = <span class="kw">await</span> <span class="fn">processUserInput</span>({
+      input: cmd.value,  mode: cmd.mode,
+      pastedContents: isFirst ? cmd.pastedContents : <span class="kw">undefined</span>,
+      skipAttachments:  !isFirst,            <span class="cmt">// 后续命令跳过附件</span>
+    })
+    newMessages.push(...result.messages)
+  }
+  <span class="fn">onQuery</span>(newMessages, abortController, shouldQuery, ...)  <span class="cmt">// 触发 API 调用</span>
+}</pre>
+
+  <div class="warn-box">
+    <strong>注意：</strong>多条排队命令时，只有 <strong>第一条命令</strong> 的 <code>shouldQuery</code>、<code>model</code>、<code>effort</code> 有效；
+    且只有第一条命令传入 <code>pastedContents</code>（后续命令 <code>skipAttachments=true</code>）。
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 5 — processUserInput 三叉路由                            -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="routing">
+  <h2>五、processUserInput 三叉路由</h2>
+  <p class="section-desc">文件：<code>src/utils/processUserInput/processUserInput.ts</code></p>
+
+  <div class="vflow">
+    <div class="vf-chain">
+
+      <!-- 输入类型规范化 -->
+      <div class="vf-step">
+        <div class="vf-node" style="max-width:400px">
+          <span style="color:var(--text-3);font-weight:400;font-size:.7rem">input:</span>
+          string | Array&lt;ContentBlockParam&gt;
+        </div>
+        <div class="vf-brs">
+          <div class="vf-br-item">
+            <span class="vf-br-cond">Array 路径</span>
+            <span class="vf-br-arrow">→</span>
+            <span class="vf-br-act">提取末尾 text block</span>
+            <span class="vf-br-note">+ maybeResizeAndDownsampleImageBlock()</span>
+          </div>
+          <div class="vf-br-item">
+            <span class="vf-br-cond">string 路径</span>
+            <span class="vf-br-arrow">→</span>
+            <span class="vf-br-act">inputString = input</span>
+          </div>
+        </div>
+      </div>
+      <div class="vf-gap"><span class="vf-gap-label">判断路由（按此顺序）</span></div>
+
+      <!-- 三叉路由 -->
+      <div class="vf-step" style="flex-direction:column">
+        <div class="vf-split">
+          <div class="vf-split-col">
+            <div class="vf-split-cond">mode === 'bash'</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-bash">
+              processBashCommand()
+              <div style="font-size:.65rem;font-weight:400;margin-top:4px;opacity:.8">processBashCommand.tsx</div>
+            </div>
+          </div>
+          <div class="vf-split-col">
+            <div class="vf-split-cond" style="font-size:.66rem">startsWith('/') &amp;&amp; !skipSlashCommands</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-slash">
+              processSlashCommand()
+              <div style="font-size:.65rem;font-weight:400;margin-top:4px;opacity:.8">processSlashCommand.tsx</div>
+            </div>
+          </div>
+          <div class="vf-split-col">
+            <div class="vf-split-cond">其他（普通文本）</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-text">
+              processTextPrompt()
+              <div style="font-size:.65rem;font-weight:400;margin-top:4px;opacity:.8">shouldQuery: true，直接发往 API</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <h3>路由 1：bash 模式（! 前缀）</h3>
+  <p>用户输入 <code>!ls -la</code>，PromptInput 将 mode 设为 <code>'bash'</code>，value 为 <code>ls -la</code>（已去掉 <code>!</code>）。</p>
+  <pre><span class="cmt">// processBashCommand.ts</span>
+<span class="kw">const</span> userMessage = <span class="fn">createUserMessage</span>({
+  content: <span class="str">`&lt;bash-input&gt;<span class="fn">${inputString}</span>&lt;/bash-input&gt;`</span>,
+})
+<span class="cmt">// shouldQuery: true — 发给模型让 BashTool 执行</span>
+<span class="cmt">// 模型返回后由 BashTool 在本地运行 shell 命令</span></pre>
+
+  <h3>路由 2：slash 命令</h3>
+  <p>见下一节详细展开。</p>
+
+  <h3>路由 3：普通文本</h3>
+  <p><code>processTextPrompt()</code> 将输入包装成 UserMessage，<code>shouldQuery: true</code>，直接进入 API 调用流程。</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 6 — Slash 命令完整处理链                                 -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="slash-chain">
+  <h2>六、Slash 命令完整处理链</h2>
+
+  <h3>Step 1：解析（parseSlashCommand）</h3>
+  <p class="section-desc">文件：<code>src/utils/slashCommandParsing.ts</code></p>
+  <pre><span class="fn">parseSlashCommand</span>(<span class="str">'/rename aa'</span>)
+<span class="cmt">// → { commandName: 'rename', args: 'aa', isMcp: false }</span>
+
+<span class="fn">parseSlashCommand</span>(<span class="str">'/mcp:tool (MCP) arg1'</span>)
+<span class="cmt">// → { commandName: 'mcp:tool (MCP)', args: 'arg1', isMcp: true }</span>
+
+<span class="fn">parseSlashCommand</span>(<span class="str">'/'</span>)
+<span class="cmt">// → null（无命令名）</span></pre>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>解析规则</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>不以 <code>/</code> 开头</td><td>返回 <code>null</code></td></tr>
+        <tr><td>去掉 <code>/</code>，按空格拆分</td><td><code>words = rest.split(' ')</code></td></tr>
+        <tr><td><code>words[1] === '(MCP)'</code></td><td><code>isMcp=true</code>，commandName 追加 <code> (MCP)</code>，args 从第 3 个词起</td></tr>
+        <tr><td>否则</td><td><code>commandName = words[0]</code>，<code>args = words.slice(1).join(' ')</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Step 2：查找命令（findCommand）</h3>
+  <p>从 <code>getCommands()</code> 返回的完整列表里查找（含别名匹配）。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>情况</th><th>行为</th></tr></thead>
+      <tbody>
+        <tr><td>命令名合法且存在</td><td>进入 <code>getMessagesForSlashCommand()</code></td></tr>
+        <tr><td>命令名合法但不存在</td><td>报错：<code>Unknown skill: xxx</code>，<code>shouldQuery: false</code></td></tr>
+        <tr><td>看起来像文件路径（<code>/var/...</code>）</td><td>当作普通文本发给模型，<code>shouldQuery: true</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Step 3：执行（getMessagesForSlashCommand）</h3>
+  <p>按 <code>command.type</code> 分三条路：</p>
+  <div class="vflow">
+    <div class="vf-chain">
+      <div class="vf-step">
+        <div class="vf-node is-start">command.type</div>
+      </div>
+      <div class="vf-gap"></div>
+      <div class="vf-step" style="flex-direction:column">
+        <div class="vf-split">
+
+          <!-- local -->
+          <div class="vf-split-col">
+            <div class="vf-split-cond">'local'</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-bash" style="text-align:left">
+              <div style="font-weight:700;margin-bottom:6px">mod.call(args, context)</div>
+              <div style="font-size:.7rem;line-height:1.8;opacity:.85">
+                返回三种形态之一：<br>
+                { type: 'text', value }<br>
+                { type: 'compact', ... }<br>
+                { type: 'skip' }
+              </div>
+              <div style="font-size:.7rem;margin-top:7px;font-weight:700">shouldQuery: false</div>
+            </div>
+          </div>
+
+          <!-- local-jsx -->
+          <div class="vf-split-col">
+            <div class="vf-split-cond">'local-jsx'</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-slash" style="text-align:left">
+              <div style="font-weight:700;margin-bottom:6px">mod.call(onDone, context, args)</div>
+              <div style="font-size:.7rem;line-height:1.8;opacity:.85">
+                可返回 JSX 显示交互 UI<br>
+                或直接调 onDone() 完成
+              </div>
+              <div style="font-size:.7rem;margin-top:7px;font-weight:700">shouldQuery: onDone options（默认 false）</div>
+            </div>
+          </div>
+
+          <!-- prompt -->
+          <div class="vf-split-col">
+            <div class="vf-split-cond">'prompt'</div>
+            <div class="vf-split-line"></div>
+            <div class="vf-split-box s-text" style="text-align:left">
+              <div style="font-weight:700;margin-bottom:8px">skill 展开给模型执行</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="background:#fff;border:1px solid var(--green);border-radius:6px;padding:7px 10px;font-size:.72rem">
+                  <span style="color:#1a7a4e;font-weight:700">context ≠ 'fork'</span><br>
+                  <span style="font-family:var(--font-mono)">getMessagesForPromptSlashCommand()</span><br>
+                  <span style="color:var(--text-3);font-style:italic">shouldQuery: true</span>
+                </div>
+                <div style="background:#fff;border:1px solid var(--green);border-radius:6px;padding:7px 10px;font-size:.72rem">
+                  <span style="color:#1a7a4e;font-weight:700">context === 'fork'</span><br>
+                  <span style="font-family:var(--font-mono)">executeForkedSlashCommand()</span><br>
+                  <span style="color:var(--text-3);font-style:italic">独立 sub-agent 运行</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 7 — 三种命令类型详解                                     -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="cmd-types">
+  <h2>七、三种命令类型详解</h2>
+
+  <!-- local -->
+  <details class="know-card" open>
+    <summary>
+      <div class="know-num">1</div>
+      <div class="know-title"><span class="type-local">local</span> &nbsp;纯逻辑，无 UI</div>
+      <svg class="know-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+    </summary>
+    <div class="know-body">
+      <p>同步/async 纯逻辑，不显示 UI。结果自动包裹在 <code>&lt;local-command-stdout&gt;</code> 里展示。<code>shouldQuery: false</code> — 不发 API 请求。</p>
+      <pre><span class="cmt">// 模块导出签名</span>
+<span class="kw">export async function</span> <span class="fn">call</span>(
+  args:    <span class="type">string</span>,
+  context: <span class="type">ToolUseContext</span>
+): <span class="type">Promise</span>&lt;<span class="type">LocalCommandResult</span>&gt;
+
+<span class="cmt">// LocalCommandResult 三种形态：</span>
+{ type: <span class="str">'text'</span>,    value: <span class="type">string</span> }           <span class="cmt">// 普通文字输出</span>
+{ type: <span class="str">'compact'</span>,  compactionResult, displayText? }  <span class="cmt">// 压缩会话</span>
+{ type: <span class="str">'skip'</span> }                                 <span class="cmt">// 不产生任何消息</span></pre>
+      <p><strong>典型命令：</strong><code>/clear</code>（清空对话）、<code>/compact</code>（压缩）、<code>/share</code>（上传 Gist）</p>
+    </div>
+  </details>
+
+  <!-- local-jsx -->
+  <details class="know-card" open>
+    <summary>
+      <div class="know-num">2</div>
+      <div class="know-title"><span class="type-jsx">local-jsx</span> &nbsp;可带交互 UI</div>
+      <svg class="know-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+    </summary>
+    <div class="know-body">
+      <p>可返回 React JSX 组件，显示交互 UI；也可直接调 <code>onDone()</code> 完成。</p>
+      <pre><span class="cmt">// 模块导出签名</span>
+<span class="kw">export async function</span> <span class="fn">call</span>(
+  onDone:  <span class="type">LocalJSXCommandOnDone</span>,
+  context: <span class="type">ToolUseContext</span> &amp; <span class="type">LocalJSXCommandContext</span>,
+  args:    <span class="type">string</span>
+): <span class="type">Promise</span>&lt;<span class="type">ReactNode</span> | <span class="kw">null</span>&gt;</pre>
+
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>完成路径</th><th>场景</th><th>例子</th></tr></thead>
+          <tbody>
+            <tr><td>直接调 <code>onDone(result, opts)</code></td><td>同步完成，不显示 UI</td><td><code>/rename aa</code>（有参数时）</td></tr>
+            <tr><td>返回 JSX，用户操作后调 <code>onDone</code></td><td>需要交互选择</td><td><code>/resume</code>（无参数，弹列表）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p style="margin-top:12px"><code>onDone</code> 的 <code>options.display</code>：</p>
+      <ul class="key-list">
+        <li><code>'system'</code> — 结果包裹在 <code>&lt;local-command-stdout&gt;</code>，不发 API</li>
+        <li><code>'skip'</code> — 完全不产生消息</li>
+        <li>默认 — 结果作为 UserMessage，<code>shouldQuery</code> 由 options 决定</li>
+      </ul>
+
+      <div class="info-box" style="margin-top:12px">
+        <strong>immediate: true</strong> 的特殊行为：当 Claude 正在处理其他请求时，该命令<strong>绕过队列立即执行</strong>，不等待当前轮次结束。适用于 <code>/exit</code>、<code>/rename</code>、<code>/status</code> 等不需要上下文的命令。
+      </div>
+    </div>
+  </details>
+
+  <!-- prompt -->
+  <details class="know-card" open>
+    <summary>
+      <div class="know-num">3</div>
+      <div class="know-title"><span class="type-prompt">prompt</span> &nbsp;Skill，展开给模型执行</div>
+      <svg class="know-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+    </summary>
+    <div class="know-body">
+      <p>将 skill 文件内容展开，作为 UserMessage 发给模型，让模型执行。<strong>不在</strong> <code>src/commands/*/index.ts</code> 里定义，由运行时动态加载。</p>
+      <pre><span class="cmt">// 动态加载的 skill 结构</span>
+{
+  type: <span class="str">'prompt'</span>,
+  name: <span class="str">'commit'</span>,
+  context?: <span class="str">'inline'</span> | <span class="str">'fork'</span>,    <span class="cmt">// fork = 在子 agent 运行</span>
+  <span class="fn">getPromptForCommand</span>(args, ctx): <span class="type">Promise</span>&lt;<span class="type">ContentBlockParam</span>[]&gt;
+}</pre>
+
+      <h4>context: 'fork' 的执行流程</h4>
+      <div class="vflow" style="margin-top:8px">
+        <div class="vf-chain">
+          <div class="vf-step">
+            <div class="vf-node is-start">executeForkedSlashCommand()</div>
+          </div>
+          <div class="vf-gap"></div>
+          <div class="vf-step" style="flex-direction:column">
+            <div class="vf-split">
+
+              <div class="vf-split-col">
+                <div class="vf-split-cond">kairosEnabled</div>
+                <div class="vf-split-line"></div>
+                <div class="vf-split-box s-bash" style="text-align:left">
+                  <div style="font-weight:700;margin-bottom:6px">后台异步模式</div>
+                  <div style="font-size:.7rem;line-height:1.9;font-family:var(--font-mono)">
+                    void (async () =&gt; { runAgent(...) })()<br>
+                    立即 return { messages:[], shouldQuery: false }<br>
+                    完成后 enqueuePendingNotification(result)
+                  </div>
+                </div>
+              </div>
+
+              <div class="vf-split-col">
+                <div class="vf-split-cond">普通模式</div>
+                <div class="vf-split-line"></div>
+                <div class="vf-split-box s-slash" style="text-align:left">
+                  <div style="font-weight:700;margin-bottom:6px">同步等待模式</div>
+                  <div style="font-size:.7rem;line-height:1.9;font-family:var(--font-mono)">
+                    for await (const msg of runAgent(...))<br>
+                    setToolJSX(进度 UI)<br>
+                    完成后返回 { messages:[结果消息], shouldQuery: false }
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 8 — getCommands 注册机制                                 -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="get-commands">
+  <h2>八、getCommands() 命令注册机制</h2>
+  <p class="section-desc">文件：<code>src/commands.ts</code></p>
+
+  <div class="vflow">
+    <div class="vf-pipeline">
+
+      <div class="vf-pipe-item">
+        <div class="vf-pipe-num">1</div>
+        <div class="vf-pipe-body">
+          <div class="vf-pipe-fn">COMMANDS()</div>
+          <div class="vf-pipe-desc">内置命令（约 80 个），部分条件注册</div>
+          <div class="vf-pipe-conds">
+            <span class="vf-pipe-tag flag">feature('BRIDGE_MODE')</span>
+            <span class="vf-pipe-tag">→ bridge, remoteControlServer</span>
+            <span class="vf-pipe-tag flag">feature('DAEMON')</span>
+            <span class="vf-pipe-tag">→ daemon</span>
+            <span class="vf-pipe-tag flag">feature('BG_SESSIONS')</span>
+            <span class="vf-pipe-tag">→ bg session 相关</span>
+            <span class="vf-pipe-tag flag">USER_TYPE === 'ant'</span>
+            <span class="vf-pipe-tag">→ ~20 个内部命令</span>
+            <span class="vf-pipe-tag">!isUsing3PServices()</span>
+            <span class="vf-pipe-tag">→ login, logout</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="vf-pipe-item">
+        <div class="vf-pipe-num">2</div>
+        <div class="vf-pipe-body">
+          <div class="vf-pipe-fn">getSkillDirCommands(cwd)</div>
+          <div class="vf-pipe-desc">用户 skill 目录</div>
+          <div class="vf-pipe-conds">
+            <span class="vf-pipe-tag">~/.claude/skills/*.md</span>
+            <span class="vf-pipe-tag">.claude/skills/*.md</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="vf-pipe-item">
+        <div class="vf-pipe-num">3</div>
+        <div class="vf-pipe-body">
+          <div class="vf-pipe-fn">getPluginSkills()</div>
+          <div class="vf-pipe-desc">已安装插件的 skill</div>
+        </div>
+      </div>
+
+      <div class="vf-pipe-item">
+        <div class="vf-pipe-num">4</div>
+        <div class="vf-pipe-body">
+          <div class="vf-pipe-fn">getBundledSkills()</div>
+          <div class="vf-pipe-desc">打包进产物的内置 skill</div>
+        </div>
+      </div>
+
+      <div class="vf-pipe-item">
+        <div class="vf-pipe-num">5</div>
+        <div class="vf-pipe-body">
+          <div class="vf-pipe-fn">getMcpCommands()</div>
+          <div class="vf-pipe-desc">MCP 服务器动态注册的命令</div>
+        </div>
+      </div>
+
+      <div class="vf-merge-icon">↑ 五路合并，优先级：内置命令 &gt; skill（同名时内置优先）</div>
+      <div class="vf-pipe-result">getCommands(cwd, options) 返回完整命令列表</div>
+    </div>
+  </div>
+
+  <div class="warn-box">
+    <strong>优先级规则：</strong>skill 不覆盖同名内置命令，内置命令始终优先。
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 9 — 命令完整目录                                         -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="catalog">
+  <h2>九、命令完整目录</h2>
+
+  <h3><span class="type-local">local</span> 类型 — 纯逻辑，无 UI</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>命令名</th><th>别名</th><th>描述</th></tr></thead>
+      <tbody>
+        <tr><td><code>attach</code></td><td>—</td><td>通过命名管道 attach 到子 Claude CLI</td></tr>
+        <tr><td><code>clear</code></td><td>reset, new</td><td>清空对话历史</td></tr>
+        <tr><td><code>compact</code></td><td>—</td><td>压缩对话，保留摘要（可带指令参数）</td></tr>
+        <tr><td><code>detach</code></td><td>—</td><td>从子 CLI 断开</td></tr>
+        <tr><td><code>env</code></td><td>—</td><td>显示当前环境、runtime、feature flag 状态</td></tr>
+        <tr><td><code>files</code></td><td>—</td><td>列出 context 中所有文件</td></tr>
+        <tr><td><code>heapdump</code></td><td>—</td><td>导出 JS heap 到 ~/Desktop</td></tr>
+        <tr><td><code>history</code></td><td>hist</td><td>查看已连接子 CLI 的会话历史</td></tr>
+        <tr><td><code>keybindings</code></td><td>—</td><td>打开/创建快捷键配置文件</td></tr>
+        <tr><td><code>peers</code></td><td>who</td><td>列出连接的 Claude Code 节点</td></tr>
+        <tr><td><code>poor</code></td><td>—</td><td>切换穷鬼模式（跳过 extract_memories 等）</td></tr>
+        <tr><td><code>release-notes</code></td><td>—</td><td>查看发版说明</td></tr>
+        <tr><td><code>rewind</code></td><td>checkpoint</td><td>回退到检查点</td></tr>
+        <tr><td><code>send</code></td><td>—</td><td>向子 CLI 发送消息</td></tr>
+        <tr><td><code>share</code></td><td>—</td><td>上传会话日志到 GitHub Gist</td></tr>
+        <tr><td><code>vim</code></td><td>—</td><td>切换 Vim / Normal 编辑模式</td></tr>
+        <tr><td><code>voice</code></td><td>—</td><td>切换语音输入模式</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-top:28px"><span class="type-jsx">local-jsx</span> 类型 — 可带交互 UI</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>命令名</th><th>别名</th><th>immediate</th><th>描述</th></tr></thead>
+      <tbody>
+        <tr><td><code>add-dir</code></td><td>—</td><td></td><td>添加工作目录</td></tr>
+        <tr><td><code>agents</code></td><td>—</td><td></td><td>管理 agent 配置</td></tr>
+        <tr><td><code>agents-platform</code></td><td>schedule-agent</td><td></td><td>管理远程 agent 触发器（需要 API key）</td></tr>
+        <tr><td><code>autofix-pr</code></td><td>—</td><td></td><td>自动修复 PR 的 CI 失败</td></tr>
+        <tr><td><code>branch</code></td><td>—</td><td></td><td>创建对话分支</td></tr>
+        <tr><td><code>btw</code></td><td>—</td><td><span class="badge-yes">✓</span></td><td>快速侧问，不中断主对话</td></tr>
+        <tr><td><code>chrome</code></td><td>—</td><td></td><td>Claude in Chrome 设置</td></tr>
+        <tr><td><code>color</code></td><td>—</td><td><span class="badge-yes">✓</span></td><td>设置 prompt bar 颜色</td></tr>
+        <tr><td><code>config</code></td><td>settings</td><td></td><td>打开配置面板</td></tr>
+        <tr><td><code>context</code></td><td>—</td><td></td><td>可视化 context 用量</td></tr>
+        <tr><td><code>copy</code></td><td>—</td><td></td><td>复制最新回复到剪贴板</td></tr>
+        <tr><td><code>daemon</code></td><td>—</td><td></td><td>管理后台 session 和 daemon</td></tr>
+        <tr><td><code>desktop</code></td><td>app</td><td></td><td>在 Claude Desktop 中继续会话</td></tr>
+        <tr><td><code>diff</code></td><td>—</td><td></td><td>查看未提交变更和 per-turn diff</td></tr>
+        <tr><td><code>doctor</code></td><td>—</td><td></td><td>诊断 Claude Code 安装和设置</td></tr>
+        <tr><td><code>effort</code></td><td>—</td><td>动态</td><td>设置模型 effort 级别（low/medium/high/max/auto）</td></tr>
+        <tr><td><code>exit</code></td><td>quit</td><td><span class="badge-yes">✓</span></td><td>退出 REPL</td></tr>
+        <tr><td><code>export</code></td><td>—</td><td></td><td>导出对话到文件/剪贴板</td></tr>
+        <tr><td><code>fork</code></td><td>—</td><td></td><td>Fork 当前会话为新 sub-agent</td></tr>
+        <tr><td><code>goal</code></td><td>—</td><td></td><td>设置持久目标驱动自动续写</td></tr>
+        <tr><td><code>help</code></td><td>—</td><td></td><td>显示帮助和可用命令</td></tr>
+        <tr><td><code>ide</code></td><td>—</td><td></td><td>管理 IDE 集成</td></tr>
+        <tr><td><code>install-github-app</code></td><td>—</td><td></td><td>为仓库设置 GitHub Actions</td></tr>
+        <tr><td><code>lang</code></td><td>—</td><td><span class="badge-yes">✓</span></td><td>设置显示语言（en/zh/auto）</td></tr>
+        <tr><td><code>login</code></td><td>—</td><td></td><td>登录账户</td></tr>
+        <tr><td><code>logout</code></td><td>—</td><td></td><td>退出账户</td></tr>
+        <tr><td><code>mcp</code></td><td>—</td><td><span class="badge-yes">✓</span></td><td>管理 MCP 服务器（enable/disable）</td></tr>
+        <tr><td><code>memory</code></td><td>—</td><td></td><td>编辑 Claude memory 文件</td></tr>
+        <tr><td><code>memory-stores</code></td><td>memstore</td><td></td><td>管理远程 memory store</td></tr>
+        <tr><td><code>mobile</code></td><td>ios, android</td><td></td><td>显示下载移动应用的二维码</td></tr>
+        <tr><td><code>mode</code></td><td>—</td><td></td><td>切换交互模式</td></tr>
+        <tr><td><code>model</code></td><td>—</td><td></td><td>查看/切换当前模型</td></tr>
+        <tr><td><code>onboarding</code></td><td>—</td><td></td><td>重新运行首次设置向导</td></tr>
+        <tr><td><code>permissions</code></td><td>allowed-tools</td><td></td><td>管理工具权限规则</td></tr>
+        <tr><td><code>plan</code></td><td>—</td><td></td><td>开启 plan 模式或查看计划</td></tr>
+        <tr><td><code>remote-control</code></td><td>rc</td><td><span class="badge-yes">✓</span></td><td>连接终端供远程控制</td></tr>
+        <tr><td><code>remote-control-server</code></td><td>rcs</td><td><span class="badge-yes">✓</span></td><td>启动持久 Remote Control 服务器</td></tr>
+        <tr><td><code>rename</code></td><td>—</td><td><span class="badge-yes">✓</span></td><td>重命名当前对话（有参数时直接执行）</td></tr>
+        <tr><td><code>resume</code></td><td>continue</td><td></td><td>恢复历史对话（无参数时弹出列表 UI）</td></tr>
+        <tr><td><code>session</code></td><td>remote</td><td></td><td>显示远程 session URL 和二维码</td></tr>
+        <tr><td><code>skills</code></td><td>—</td><td></td><td>列出可用 skill</td></tr>
+        <tr><td><code>status</code></td><td>—</td><td><span class="badge-yes">✓</span></td><td>显示版本/模型/账户/API 状态</td></tr>
+        <tr><td><code>tag</code></td><td>—</td><td></td><td>为当前 session 切换标签</td></tr>
+        <tr><td><code>tasks</code></td><td>bashes</td><td></td><td>列出并管理后台任务</td></tr>
+        <tr><td><code>teleport</code></td><td>tp</td><td></td><td>从 claude.ai 恢复 Claude Code 会话</td></tr>
+        <tr><td><code>theme</code></td><td>—</td><td></td><td>更改 UI 主题</td></tr>
+        <tr><td><code>triggers</code></td><td>cron</td><td></td><td>管理远程 agent 触发器</td></tr>
+        <tr><td><code>usage</code></td><td>cost, stats</td><td></td><td>显示会话费用和计划用量统计</td></tr>
+        <tr><td><code>web-tools</code></td><td>—</td><td></td><td>配置 web search/fetch 后端</td></tr>
+        <tr><td><code>workflows</code></td><td>—</td><td></td><td>Workflow 监控面板</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-top:28px"><span class="type-prompt">prompt</span> 类型 — Skill，动态加载</h3>
+  <div class="info-box">
+    <code>prompt</code> 类型命令不在 <code>src/commands/*/index.ts</code> 中定义，由运行时动态加载。
+  </div>
+  <div class="table-wrap" style="margin-top:12px">
+    <table>
+      <thead><tr><th>来源</th><th>路径 / 描述</th></tr></thead>
+      <tbody>
+        <tr><td>用户 skill</td><td><code>~/.claude/skills/*.md</code>、<code>.claude/skills/*.md</code></td></tr>
+        <tr><td>插件 skill</td><td>已安装插件提供（<code>getPluginSkills()</code>）</td></tr>
+        <tr><td>内置 skill</td><td>编译进产物（<code>getBundledSkills()</code>）</td></tr>
+        <tr><td>MCP skill</td><td>MCP 服务器动态注册（<code>getMcpCommands()</code>）</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:10px"><code>context: 'fork'</code> 的 skill 会在独立 sub-agent 中运行，如 <code>/commit</code>、<code>/code-review</code>。</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 10 — 合成消息标签                                        -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="synthetic-tags">
+  <h2>十、合成消息标签（Synthetic Message Tags）</h2>
+  <p class="section-desc">
+    命令执行产生的消息不是普通用户文字，而是带 XML 标签的合成内容。
+    这些标签让系统可以精确识别消息来源，避免误将命令输出当作"真实对话"。
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>标签</th><th>来源</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td><code>&lt;bash-input&gt;cmd&lt;/bash-input&gt;</code></td><td><code>! cmd</code> bash 模式</td><td>用户执行的 shell 命令</td></tr>
+        <tr><td><code>&lt;command-name&gt;/rename&lt;/command-name&gt;</code></td><td>slash 命令面包屑</td><td>记录执行了哪个命令（含斜杠）</td></tr>
+        <tr><td><code>&lt;command-message&gt;rename&lt;/command-message&gt;</code></td><td>slash 命令面包屑</td><td>命令名（不含斜杠）</td></tr>
+        <tr><td><code>&lt;command-args&gt;aa&lt;/command-args&gt;</code></td><td>slash 命令面包屑</td><td>命令参数</td></tr>
+        <tr><td><code>&lt;local-command-stdout&gt;...&lt;/local-command-stdout&gt;</code></td><td>local / local-jsx 输出</td><td>命令的标准输出</td></tr>
+        <tr><td><code>&lt;local-command-stderr&gt;...&lt;/local-command-stderr&gt;</code></td><td>命令执行出错</td><td>错误信息</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Session 标题生成的过滤逻辑</h3>
+  <p>REPL 在生成 session 标题时，会跳过以上标签开头的消息（不视为"真实用户对话"）：</p>
+  <pre><span class="cmt">// REPL.tsx:3379-3385</span>
+<span class="kw">if</span> (
+  text &&
+  !text.<span class="fn">startsWith</span>(<span class="str">`&lt;${LOCAL_COMMAND_STDOUT_TAG}&gt;`</span>) &&
+  !text.<span class="fn">startsWith</span>(<span class="str">`&lt;${COMMAND_MESSAGE_TAG}&gt;`</span>)    &&
+  !text.<span class="fn">startsWith</span>(<span class="str">`&lt;${COMMAND_NAME_TAG}&gt;`</span>)      &&
+  !text.<span class="fn">startsWith</span>(<span class="str">`&lt;${BASH_INPUT_TAG}&gt;`</span>)
+) {
+  <span class="kw">void</span> <span class="fn">generateSessionTitle</span>(text, ...)  <span class="cmt">// 只有真实散文才生成标题</span>
+}</pre>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 11 — /rename aa 时序图                                   -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="seq-rename">
+  <h2>十一、完整时序图：<code>/rename aa</code></h2>
+  <p class="section-desc">
+    <code>immediate: true</code> 的 local-jsx 命令，有参数时不显示 UI，同步完成。
+  </p>
+
+  <div class="seq-wrap">
+    <pre style="border-left: none; background: transparent; color: var(--text-2); font-size:.8rem; line-height:2">
+<span style="color:var(--orange-dk);font-weight:700">用户</span>          <span style="color:var(--blue-dk);font-weight:700">PromptInput</span>     <span style="color:var(--blue-dk);font-weight:700">REPL.onSubmit</span>    <span style="color:var(--blue-dk);font-weight:700">handlePromptSubmit</span>    <span style="color:var(--orange-dk);font-weight:700">processUserInput</span>    <span style="color:var(--orange-dk);font-weight:700">processSlashCommand</span>    <span style="color:var(--green);font-weight:700">rename.ts</span>    <span style="color:var(--green);font-weight:700">sessionStorage</span>
+  │                 │                  │                     │                         │                       │                      │                │
+  │──/rename aa──▶  │                  │                     │                         │                       │                      │                │
+  │                 │──onSubmit()────▶  │                     │                         │                       │                      │                │
+  │                 │                  │──handlePromptSubmit──▶                         │                       │                      │                │
+  │                 │                  │                     │──expandPastedTextRefs──▶ │                       │                      │                │
+  │                 │                  │                     │──executeUserInput()────▶ │                       │                      │                │
+  │                 │                  │                     │                         │──processUserInput()──▶ │                       │                │
+  │                 │                  │                     │                         │   startsWith('/')      │                       │                │
+  │                 │                  │                     │                         │──────────────────────▶ │                       │                │
+  │                 │                  │                     │                         │                       │──parseSlashCommand──▶ │                │
+  │                 │                  │                     │                         │                       │   { commandName:'rename', args:'aa' }   │
+  │                 │                  │                     │                         │                       │──findCommand('rename')                  │
+  │                 │                  │                     │                         │                       │──getMessagesForSlashCommand             │
+  │                 │                  │                     │                         │                       │   command.type='local-jsx'              │
+  │                 │                  │                     │                         │                       │──command.load()──────▶ │                │
+  │                 │                  │                     │                         │                       │──mod.call(onDone,'aa')▶ │               │
+  │                 │                  │                     │                         │                       │                       │──saveCustomTitle▶ │
+  │                 │                  │                     │                         │                       │                       │  写入 JSONL     │
+  │                 │                  │                     │                         │                       │                       │──saveAgentName──▶ │
+  │                 │                  │                     │                         │                       │                       │──setAppState()   │
+  │                 │                  │                     │                         │                       │◀──onDone("Session renamed to: aa")──   │
+  │                 │                  │                     │◀─────────────────────── │◀──────────────────── │                                         │
+  │                 │                  │                     │  { messages:[stdout], shouldQuery:false }        │                                        │
+  │◀─ 终端显示结果 ─ │◀──────────────── │◀──────────────────── │                         │                       │                      │                │
+    </pre>
+  </div>
+
+  <h3 style="margin-top:24px">关键细节</h3>
+  <ul class="key-list">
+    <li><strong>不发 API 请求</strong>：<code>shouldQuery: false</code>，整个流程纯本地</li>
+    <li><strong>两处持久化</strong>：<code>saveCustomTitle</code>（session 标题）+ <code>saveAgentName</code>（prompt bar 显示名）都写入同一个 JSONL 文件</li>
+    <li><strong>即时 UI 更新</strong>：<code>context.setAppState()</code> 让 prompt bar 立刻显示新名字，不需要等文件写入</li>
+    <li><strong>immediate 优先</strong>：若 Claude 正在回复，<code>immediate: true</code> 让 rename 跳过队列立即执行</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- § 12 — /resume 时序图                                      -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="seq-resume">
+  <h2>十二、完整时序图：<code>/resume</code>（无参数）</h2>
+  <p class="section-desc">
+    local-jsx 命令，无参数时返回 JSX 组件显示会话列表，用户选择后触发恢复逻辑。
+  </p>
+
+  <div class="seq-wrap">
+    <pre style="border-left: none; background: transparent; color: var(--text-2); font-size:.8rem; line-height:2">
+<span style="color:var(--orange-dk);font-weight:700">用户</span>    <span style="color:var(--blue-dk);font-weight:700">PromptInput</span>    <span style="color:var(--blue-dk);font-weight:700">REPL</span>    <span style="color:var(--blue-dk);font-weight:700">handlePromptSubmit</span>    <span style="color:var(--orange-dk);font-weight:700">processSlashCommand</span>    <span style="color:var(--green);font-weight:700">resume.tsx</span>    <span style="color:var(--green);font-weight:700">sessionStorage</span>
+  │              │           │            │                         │                       │                  │
+  │──/resume──▶  │           │            │                         │                       │                  │
+  │              │──onSubmit▶ │           │                         │                       │                  │
+  │              │           │──handlePromptSubmit─────────────────▶                        │                  │
+  │              │           │            │──processSlashCommand───▶ │                      │                  │
+  │              │           │            │                         │──command.load()──────▶ │                 │
+  │              │           │            │                         │──mod.call(onDone,'')──▶ │                │
+  │              │           │            │                         │                       │──loadAllProjects─▶│
+  │              │           │            │                         │                       │◀─ 会话列表        │
+  │              │           │            │                         │◀── return &lt;LogSelector/&gt; ─────────────   │
+  │              │           │◀─setToolJSX({ jsx, isLocalJSXCommand:true })──────────────── │                 │
+  │◀─ 显示会话列表（隐藏输入框）──│           │                         │                       │                  │
+  │              │           │            │                         │                       │                  │
+  │──选择某条────▶│           │            │                         │                       │                  │
+  │              │           │──────────────────────────────────────────────────────────────▶ handleSelect()  │
+  │              │           │            │                         │                       │──loadFullLog()───▶│
+  │              │           │            │                         │                       │◀─ 完整历史消息     │
+  │              │           │            │                         │                       │──adoptResumedSessionFile()
+  │              │           │            │                         │                       │──onDone(result, { shouldQuery:false })
+  │              │           │◀─ setMessages(restoredMessages) ──── │◀─────────────────── │                   │
+  │◀─ 恢复历史对话（输入框重新显示）──                                                         │                  │
+    </pre>
+  </div>
+
+  <h3 style="margin-top:24px">关键细节</h3>
+  <ul class="key-list">
+    <li><strong>两阶段完成</strong>：第一阶段返回 JSX 展示 UI，第二阶段等用户选择后才调 <code>onDone()</code></li>
+    <li><strong>阻止重命名</strong>：恢复后 <code>haikuTitleAttemptedRef.current = true</code>，防止从半段对话重新生成 session 标题</li>
+    <li><strong>文件指针切换</strong>：<code>adoptResumedSessionFile()</code> 让后续消息写入恢复的 session 的 JSONL 文件，而不是原来的文件</li>
+    <li><strong>不发 API 请求</strong>：整个恢复过程 <code>shouldQuery: false</code>，完全本地操作</li>
+  </ul>
+</section>
+
+<hr class="divider">
+
+<p style="text-align:center; color:var(--text-3); font-size:.85rem; padding-bottom: 20px">
+  入口系列 · 输入处理篇 — Claude Code 学习文档
+</p>
+
+</div><!-- .page-wrap -->
+</body>
+</html>

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>03 · 核心 Agent 循环与工具系统 — Hermes Agent 学习系列</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D77757; --orange-lt: #f0e0d8; --orange-dk: #b55e3a;
+      --blue: #5769F7; --blue-lt: #dde0fe; --blue-dk: #3a4ed4;
+      --green: #22a766; --green-lt: #d2f0e3;
+      --purple: #8b5cf6; --purple-lt: #ede9fe;
+      --bg: #faf8f5; --bg2: #f3f0eb; --bg3: #ebe7e0;
+      --text: #2d2a26; --text-2: #5a5650; --text-3: #8a8480;
+      --border: #ddd8d0; --shadow: 0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius: 8px; --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--orange-dk); border-bottom: 2px solid var(--orange-lt); padding-bottom: 8px; margin-bottom: 24px; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: .95rem; font-weight: 600; color: var(--text-2); margin: 14px 0 8px; }
+    p { color: var(--text-2); margin-bottom: 10px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { background: linear-gradient(135deg, #fff9f6 0%, #f5f1ff 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 48px; text-align: center; }
+    .hero-badge { display: inline-block; background: var(--orange); color: #fff; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; color: var(--text); letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; list-style: none; }
+    .nav-links a { display: inline-block; padding: 6px 16px; background: #fff; border: 1.5px solid var(--border); border-radius: 20px; font-size: .82rem; font-weight: 600; color: var(--text-2); transition: border-color .15s, color .15s; }
+    .nav-links a:hover { border-color: var(--orange); color: var(--orange-dk); text-decoration: none; }
+    pre { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius); padding: 16px 20px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.75; overflow-x: auto; margin: 12px 0; border-left: 3px solid var(--orange); }
+    code { font-family: var(--font-mono); }
+    p code, li code, td code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk); }
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th { background: var(--bg2); color: var(--text); font-weight: 700; text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .section-desc { color: var(--text-2); font-size: .92rem; margin-bottom: 20px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    .info-box { background: var(--blue-lt); border-left: 3px solid var(--blue); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk); }
+    .warn-box { background: var(--orange-lt); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--orange-dk); }
+    .flow-box { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius-lg); padding: 24px 28px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.9; overflow-x: auto; border-left: 4px solid var(--orange); box-shadow: var(--shadow); margin: 12px 0; }
+    .flow-box .fc { color: #f0906a; }
+    .flow-box .fk { color: #7c9bff; }
+    .flow-box .fa { color: #6cc77a; }
+    .flow-box .fd { color: #6e6a62; font-style: italic; }
+    ul.key-list { padding-left: 20px; color: var(--text-2); }
+    ul.key-list li { margin-bottom: 6px; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+    .card h4 { margin: 0 0 6px; color: var(--text); font-size: .93rem; }
+    .card p { font-size: .85rem; margin: 0; }
+    .tag { display: inline-block; background: var(--blue-lt); color: var(--blue-dk); font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 10px; letter-spacing: .04em; }
+    .tag-orange { background: var(--orange-lt); color: var(--orange-dk); }
+    .tag-green { background: var(--green-lt); color: #1a7a4e; }
+    details.know-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 10px; }
+    details.know-card[open] { border-color: var(--orange-lt); }
+    details.know-card > summary { display: flex; align-items: center; gap: 14px; padding: 14px 20px; cursor: pointer; user-select: none; list-style: none; }
+    details.know-card > summary::-webkit-details-marker { display: none; }
+    details.know-card > summary:hover { background: var(--bg); }
+    .know-num { flex-shrink: 0; width: 28px; height: 28px; background: var(--orange-lt); color: var(--orange-dk); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; }
+    details.know-card[open] .know-num { background: var(--orange); color: #fff; }
+    .know-title { flex: 1; font-weight: 700; font-size: .97rem; }
+    .know-arrow { width: 18px; height: 18px; color: var(--text-3); transition: transform .2s; flex-shrink: 0; }
+    details.know-card[open] .know-arrow { transform: rotate(90deg); color: var(--orange); }
+    .know-body { padding: 0 20px 20px 62px; }
+    @media (max-width: 700px) { .hero h1 { font-size: 1.6rem; } .card-grid { grid-template-columns: 1fr; } .know-body { padding-left: 20px; } }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">学习系列 · 第 03 章</div>
+  <h1>核心 Agent 循环与<span>工具系统</span></h1>
+  <p>本章聚焦 Hermes 的"心脏"——一个用户 turn（轮次）是如何被驱动的：构建 prompt → 调模型 → 解析 tool calls → 执行工具 → 喂回结果 → 循环。</p>
+  <ul class="nav-links">
+    <li><a href="#loop">Agent 主循环</a></li>
+    <li><a href="#cache">Prompt 构建与缓存</a></li>
+    <li><a href="#compress">上下文压缩</a></li>
+    <li><a href="#tools">工具系统</a></li>
+    <li><a href="#ladder">足迹阶梯</a></li>
+    <li><a href="#delegate">子 agent 委派</a></li>
+    <li><a href="#index">关键文件索引</a></li>
+    <li><a href="index.html">← 返回索引</a></li>
+  </ul>
+</header>
+
+<div class="page-wrap">
+
+<section id="loop">
+  <h2>一、Agent 主循环：一个 turn 的生命周期</h2>
+
+  <h3>1.1 总览流程图</h3>
+  <div class="flow-box">
+<span class="fc">用户消息</span>
+   │
+   ▼
+<span class="fc">run_conversation()</span>            <span class="fd">agent/conversation_loop.py:495  ← 薄入口</span>
+   │
+   ├─ <span class="fc">build_turn_context()</span>    <span class="fd">agent/turn_context.py:118       ← 「序幕 / 每轮一次的准备」</span>
+   │     · stdio 守护、重置重试计数器、清洗 surrogate 字符
+   │     · 恢复或重建系统提示（缓存前缀）
+   │     · turn 之间的 MCP 工具刷新（cache-safe）
+   │     · 预飞（preflight）压缩检查
+   │     · pre_llm_call 插件钩子、外部记忆预取
+   │
+   ▼
+<span class="fk">while</span> 主循环                    <span class="fd">agent/conversation_loop.py:589</span>
+   │  条件：api_call_count < max_iterations
+   │        且 iteration_budget.remaining > 0
+   │
+   ├─ 中断检查（用户发了新消息？）         :594
+   ├─ 消费迭代预算 consume()              :610
+   ├─ /steer 漂移：在构建 api_messages 前注入  :650
+   ├─ 构建 api_messages（系统提示 + 历史）
+   ├─ 调用模型（streaming / 非 streaming，带重试）
+   │
+   ├─ <span class="fa">若 assistant_message.tool_calls：</span>     :3834
+   │     · 校验工具名是否在 valid_tool_names
+   │     · append assistant 消息 + 落盘到 session DB :4080
+   │     · agent._execute_tool_calls(...)         :4101
+   │     · should_compress() → 压缩上下文          :4182
+   │     · continue（进入下一轮）                  :4198
+   │
+   └─ <span class="fa">否则（无 tool calls）→ 这是最终回复</span>          :4200
+         · final_response = assistant_message.content
+         · 处理空回复 / 仅 think 块 / 部分流恢复 / nudge
+         · break
+   │
+   ▼
+<span class="fc">finalize_turn()</span>                <span class="fd">agent/turn_finalizer.py:30</span>
+   · 预算耗尽则做一次「无工具」的总结调用 _handle_max_iterations
+   · kanban worker 失败上报、记忆复盘、组装 result dict
+   │
+   ▼
+返回 {final_response, messages, ...}
+  </div>
+
+  <h3>1.2 三个角色文件的分工</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>职责</th></tr></thead>
+      <tbody>
+        <tr><td><code>agent/conversation_loop.py</code></td><td>主循环本体（<code>run_conversation</code>，<code>:495</code>）。<code>AIAgent.run_conversation</code> 现在只是薄转发器。</td></tr>
+        <tr><td><code>agent/turn_context.py</code></td><td><strong>序幕</strong>：<code>build_turn_context()</code>（<code>:118</code>）执行每轮一次的全部准备，返回 <code>TurnContext</code> dataclass（<code>:92</code>）。</td></tr>
+        <tr><td><code>agent/turn_finalizer.py</code></td><td><strong>尾声</strong>：<code>finalize_turn()</code>（<code>:30</code>）处理预算耗尽总结、失败上报、组装返回 dict。</td></tr>
+        <tr><td><code>agent/tool_executor.py</code></td><td>工具批次的真正执行（并发 / 串行）。</td></tr>
+        <tr><td><code>agent/tool_dispatch_helpers.py</code></td><td>纯函数辅助：并行安全判定、工具结果消息构造等。</td></tr>
+        <tr><td><code>agent/iteration_budget.py</code></td><td>线程安全的迭代预算计数器。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>1.3 迭代预算（Iteration Budget）</h3>
+  <p><code>agent/iteration_budget.py</code> 定义了 <code>IterationBudget</code> 类（<code>:17</code>）——一个加锁的消费/退还计数器：</p>
+  <ul class="key-list">
+    <li>父 agent 上限 = <code>max_iterations</code>（默认 90），每个子 agent 上限 = <code>delegation.max_iterations</code>（默认 50）。</li>
+    <li><code>consume()</code>（<code>:37</code>）尝试消费一次，超限返回 <code>False</code>。</li>
+    <li><code>refund()</code>（<code>:45</code>）退还一次——专用于 <code>execute_code</code> 轮次（这种 RPC 式调用不该吃预算）。</li>
+    <li>预算耗尽时有 <code>_budget_grace_call</code>「宽限调用」机制：再给模型一次机会做总结。</li>
+  </ul>
+
+  <h3>1.4 工具调用的并发 vs 串行</h3>
+  <p>是否能并发，由 <code>agent/tool_dispatch_helpers.py</code> 的 <code>_should_parallelize_tool_batch()</code>（<code>:104</code>）裁决，规则保守：</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>条件</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>批次只有 1 个调用</td><td>串行</td></tr>
+        <tr><td>含 <code>clarify</code>（<code>_NEVER_PARALLEL_TOOLS</code>）</td><td>串行</td></tr>
+        <tr><td>路径作用域工具（<code>read_file/write_file/patch</code>），且目标路径子树重叠</td><td>串行（防文件竞争）</td></tr>
+        <tr><td>工具在只读白名单 <code>_PARALLEL_SAFE_TOOLS</code> 中（含 <code>read_file</code>、<code>search_files</code>、<code>web_search</code>、<code>session_search</code>、<code>vision_analyze</code> 等）</td><td>并发</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box">
+    来自不可信来源（如浏览器抓取、第三方内容）的工具结果会被 <code>_maybe_wrap_untrusted</code>（<code>:402</code>）包裹，缓解 prompt injection。每次工具进展后增量落盘 session DB（<code>_flush_session_db_after_tool_progress</code>，<code>tool_executor.py:72</code>），保证进程中途崩溃也能恢复。
+  </div>
+</section>
+
+<section id="cache">
+  <h2>二、Prompt 构建与系统提示：缓存的神圣性</h2>
+
+  <h3>2.1 系统提示的「恢复或重建」</h3>
+  <p>主循环的序幕调用 <code>_restore_or_build_system_prompt()</code>（<code>agent/conversation_loop.py:254</code>）。核心逻辑：</p>
+  <ul class="key-list">
+    <li><strong>续接会话</strong>：从 session DB 读出上一轮存的 <code>system_prompt</code> 列，如果存在且<strong>运行时身份匹配</strong>（<code>_stored_prompt_matches_runtime</code>，<code>:378</code>），就<strong>逐字复用</strong>它（<code>:303-307</code>），让 Anthropic 缓存前缀精确命中。</li>
+    <li><strong>首轮 / 损坏恢复</strong>：调用 <code>agent._build_system_prompt(system_message)</code> 重建（<code>:333</code>），并立刻写回 session DB（<code>:366-368</code>）。</li>
+    <li><strong>gateway 路径每轮都新建一个 <code>AIAgent</code></strong>，完全依赖这次 DB 往返来复用前缀。所以读写失败被刻意提到 WARNING 级别——一次静默失败就意味着该会话此后每轮都重建系统提示、成本飙升。</li>
+  </ul>
+
+  <h3>2.2 缓存断点怎么打（<code>agent/prompt_caching.py</code>）</h3>
+  <p><code>apply_anthropic_cache_control()</code>（<code>:49</code>）在消息上放置最多 <strong>4 个 cache_control 断点</strong>：系统提示 + 最后 3 条非系统消息，统一 TTL（<code>5m</code> 或 <code>1h</code>）。</p>
+  <div class="info-box">
+    <strong>关键设计：</strong>断点放在<strong>最后 3 条</strong>意味着前缀（系统提示 + 早期历史）保持稳定，每轮只有尾部增量是新写入。能在单会话多轮对话里把输入 token 成本降约 <strong>75%</strong>。
+  </div>
+
+  <h3>2.3 为什么系统提示必须 byte-stable</h3>
+  <p><code>AGENTS.md</code> 多处强调（<code>:19-23</code>、<code>:88-91</code>、<code>:1101-1113</code>）的具体规则：</p>
+  <ul class="key-list">
+    <li><strong>不得</strong>中途改动过去上下文、中途换工具集、中途重载记忆或重建系统提示。</li>
+    <li>系统提示必须在整个会话生命周期内<strong>逐字节稳定</strong>。</li>
+    <li>会改动系统提示状态的 slash 命令必须<strong>缓存感知</strong>：默认延迟失效（下次会话才生效），提供 <code>--now</code> 显式立即失效。</li>
+    <li>skill slash 命令注入为 <strong>user 消息</strong>而非系统提示，正是为了保住缓存（<code>AGENTS.md:370</code>）。</li>
+    <li><strong>唯一允许改动上下文的时机：上下文压缩</strong>（见第三节）。</li>
+  </ul>
+</section>
+
+<section id="compress">
+  <h2>三、上下文管理 / 压缩</h2>
+
+  <h3>3.1 可插拔的 ContextEngine 抽象</h3>
+  <p><code>agent/context_engine.py</code> 定义抽象基类 <code>ContextEngine</code>（<code>:32</code>）。通过 <code>config.yaml</code> 的 <code>context.engine</code> 选择（默认 <code>"compressor"</code>），第三方引擎（如 LCM）可经插件系统替换。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>方法</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr><td><code>update_from_response(usage)</code> <code>:71</code></td><td>每次 API 响应后更新 token 统计</td></tr>
+        <tr><td><code>should_compress(prompt_tokens)</code> <code>:83</code></td><td>本轮是否该压缩</td></tr>
+        <tr><td><code>compress(messages, ...)</code> <code>:87</code></td><td>压缩并返回新消息列表</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>默认参数（<code>:64-66</code>）：<code>threshold_percent=0.75</code>、<code>protect_first_n=3</code>（系统提示之外再保护 3 条头部消息）、<code>protect_last_n=6</code>。</p>
+
+  <h3>3.2 内置压缩器 ContextCompressor</h3>
+  <p><code>agent/context_compressor.py</code> 的 <code>ContextCompressor(ContextEngine)</code>（<code>:612</code>）是默认引擎：</p>
+  <ul class="key-list">
+    <li><code>should_compress()</code>（<code>:964</code>）：<code>tokens >= threshold_tokens</code> 才压缩；带<strong>防抖（anti-thrashing）</strong>保护——若最近两次压缩各自节省不足 10%，则跳过，避免每次只删 1-2 条消息的无限循环。</li>
+    <li><code>_prune_old_tool_results()</code>（<code>:990</code>）：<strong>廉价预处理（无 LLM 调用）</strong>——把旧的工具结果替换成一行信息化摘要，并对相同工具结果去重、截断超大 tool_call 参数。</li>
+  </ul>
+
+  <h3>3.3 压缩的编排</h3>
+  <p><code>agent/conversation_compression.py</code> 的 <code>compress_context()</code>（<code>:281</code>）是真正的压缩编排入口：</p>
+  <ul class="key-list">
+    <li>懒加载可行性检查：首次压缩时才探测辅助 provider + 上下文长度，省掉短会话的冷启动开销。</li>
+    <li>用 <strong>state.db 支撑的 per-session 锁</strong>防止两次压缩并发。</li>
+    <li>支持 <code>in_place</code> 模式：原地重写消息列表 + 重建系统提示，但<strong>保持同一 session_id</strong>，消除 session 轮转引发的一类 bug。</li>
+    <li>支持 <code>focus_topic</code>（受 Claude Code <code>/compact &lt;focus&gt;</code> 启发）做引导式压缩。</li>
+  </ul>
+
+  <h3>3.4 主循环里的两个压缩触发点</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>预飞（preflight）</h4>
+      <p>在序幕里、第一次 API 调用前做粗估检查（<code>turn_context.py</code> 调度，<code>context_engine.should_compress_preflight</code>，<code>context_engine.py:110</code>）。</p>
+    </div>
+    <div class="card">
+      <h4>响应后</h4>
+      <p>每轮工具执行后（<code>conversation_loop.py:4160-4192</code>），用 API 真实上报的 <code>last_prompt_tokens</code> 决定是否压缩。注意：<strong>只用 prompt_tokens</strong>，因为思考型模型的 completion/reasoning token 会虚高、导致过早压缩。</p>
+    </div>
+  </div>
+</section>
+
+<section id="tools">
+  <h2>四、工具系统</h2>
+
+  <h3>4.1 工具如何定义与注册</h3>
+  <p>中央注册表是 <code>tools/registry.py</code>（docstring <code>:1-15</code>）。每个工具文件在<strong>模块级</strong>调用 <code>registry.register(...)</code> 声明自己。</p>
+  <pre><span style="color:#7c9bff">registry</span>.<span style="color:#f0906a">register</span>(
+    name=<span style="color:#6cc77a">"example_tool"</span>,          <span style="color:#6e6a62"># 工具名</span>
+    toolset=<span style="color:#6cc77a">"example"</span>,            <span style="color:#6e6a62"># 归属的 toolset</span>
+    schema={...},                 <span style="color:#6e6a62"># 发给模型的 JSON schema</span>
+    handler=<span style="color:#7c9bff">lambda</span> args, **kw: ...,<span style="color:#6e6a62"># 调度入口，必须返回 JSON 字符串</span>
+    check_fn=check_requirements,  <span style="color:#6e6a62"># 可用性门控（service-gated）</span>
+    requires_env=[<span style="color:#6cc77a">"EXAMPLE_API_KEY"</span>],
+)</pre>
+
+  <div class="info-box">
+    <strong>自动发现：</strong><code>discover_builtin_tools()</code>（<code>registry.py:57</code>）用 AST 扫描 <code>tools/*.py</code>，凡含顶层 <code>registry.register(...)</code> 调用的模块就自动 import——无需维护手动 import 列表。<br><br>
+    但「被发现」≠「被暴露」。工具只有当其名字出现在某个 toolset 里时才会真正暴露给 agent。新增 core tool 需改 <strong>2 个文件</strong>：<code>tools/your_tool.py</code> + 在 <code>toolsets.py</code> 里把工具名加入相应 toolset。
+  </div>
+
+  <h3>4.2 Toolset：分组与组合</h3>
+  <p>所有 toolset 定义在 <code>toolsets.py</code>（<code>:88</code>）的单一 <code>TOOLSETS</code> dict。<code>_HERMES_CORE_TOOLS</code>（<code>:30-73</code>）是多数平台继承的默认包，包含：</p>
+  <ul class="key-list">
+    <li>Web：<code>web_search</code>/<code>web_extract</code></li>
+    <li>终端+进程：<code>terminal</code>/<code>process</code>/<code>read_terminal</code></li>
+    <li>文件：<code>read_file</code>/<code>write_file</code>/<code>patch</code>/<code>search_files</code></li>
+    <li>技能：<code>skills_list</code>/<code>skill_view</code>/<code>skill_manage</code></li>
+    <li>规划与记忆：<code>todo</code>/<code>memory</code></li>
+    <li>浏览器自动化（一组 <code>browser_*</code>）、TTS、<code>session_search</code>、<code>clarify</code>、<code>execute_code</code>/<code>delegate_task</code>、<code>cronjob</code></li>
+    <li>门控工具：HA（<code>HASS_TOKEN</code>）、<code>computer_use</code>（macOS）</li>
+  </ul>
+
+  <p><code>resolve_toolset()</code>（<code>toolsets.py:657</code>）递归解析——一个 toolset 可经 <code>includes</code> 引用其他 toolset，函数带循环/钻石依赖检测，支持 <code>"all"</code>/<code>"*"</code> 特殊别名展开所有工具。</p>
+
+  <h3>4.3 代表性工具分类速览</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>类别</th><th>工具文件</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>文件</td><td><code>tools/file_tools.py</code></td><td><code>read_file</code>/<code>write_file</code>/<code>patch</code>/<code>search_files</code>，路径作用域工具（并发时防竞争）</td></tr>
+        <tr><td>终端</td><td><code>tools/terminal_tool.py</code></td><td>在 local/Docker/Modal/SSH/Singularity/Daytona 多后端执行命令</td></tr>
+        <tr><td>浏览器</td><td><code>tools/browser_tool.py</code></td><td>基于 agent-browser CLI，后端可选 Browser Use（云）/Browserbase/本地 Chromium</td></tr>
+        <tr><td>编程式工具调用</td><td><code>tools/code_execution_tool.py</code></td><td><code>execute_code</code>：让模型写 Python 脚本经 RPC 调 Hermes 工具，把多步工具链压成一次推理回合（PTC）</td></tr>
+        <tr><td>委派</td><td><code>tools/delegate_tool.py</code> + <code>tools/async_delegation.py</code></td><td>spawn 隔离子 agent（见第六节）</td></tr>
+        <tr><td>跨平台消息</td><td><code>tools/send_message_tool.py</code></td><td>向 Telegram/Discord/Slack 等已连接平台的用户/渠道发消息</td></tr>
+        <tr><td>记忆</td><td><code>tools/memory_tool.py</code></td><td>有界、基于文件、跨会话的精选记忆：<code>MEMORY.md</code> + <code>USER.md</code></td></tr>
+        <tr><td>规划</td><td><code>tools/todo_tool.py</code></td><td>内存中任务列表，每会话一个，压缩后重新注入对话</td></tr>
+        <tr><td>技能</td><td><code>tools/skills_tool.py</code> / <code>skill_manager_tool.py</code></td><td>列出/查看 SKILL.md 文档；管理技能生命周期</td></tr>
+        <tr><td>视觉/Web</td><td><code>tools/vision_tools.py</code> / <code>web_tools.py</code></td><td>视觉分析（多 provider 路由）/ Web 搜索抓取</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="ladder">
+  <h2>五、Footprint Ladder（足迹阶梯）</h2>
+  <p class="section-desc">每个 model tool 都随<strong>每一次</strong> API 调用发送，所以新增 core tool 的门槛极高。新增能力时应选<strong>最高（足迹最小）</strong>且能正确解决问题的那一级（<code>AGENTS.md:171-200</code>）。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>级别</th><th>名称</th><th>何时用</th><th>足迹</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>扩展现有代码</strong></td><td>能力只是已有东西的变体</td><td>零新增</td></tr>
+        <tr><td>2</td><td><strong>CLI 命令 + skill</strong></td><td>可表达为 shell 命令的配置/状态/基建管理</td><td>零 model-tool 足迹</td></tr>
+        <tr><td>3</td><td><strong>Service-gated tool（<code>check_fn</code>）</strong></td><td>需结构化参数/返回，且仅当前置条件配置好才出现</td><td>否则零足迹</td></tr>
+        <tr><td>4</td><td><strong>Plugin</strong></td><td>第三方/小众/用户特定能力，不进内核</td><td>在 <code>~/.hermes/plugins/</code>，运行时发现</td></tr>
+        <tr><td>5</td><td><strong>MCP server（进 catalog）</strong></td><td>确实需要是工具但非内核基础</td><td>零永久 core-schema 足迹</td></tr>
+        <tr><td>6</td><td><strong>新 core tool（最后手段）</strong></td><td>基础性的、几乎对每个用户都广泛有用、且 terminal+file 无法触达</td><td>永久 schema 足迹</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn-box">
+    <strong>实践含义：</strong>自定义/本地工具<strong>不要改 Hermes core</strong>：走 plugin 路线（<code>~/.hermes/plugins/&lt;name&gt;/plugin.yaml</code> + <code>__init__.py</code>，<code>ctx.register_tool(...)</code>），plugin toolset 自动发现，无需碰 <code>tools/</code> 或 <code>toolsets.py</code>（<code>AGENTS.md:500-506</code>）。
+  </div>
+</section>
+
+<section id="delegate">
+  <h2>六、子 agent / 委派</h2>
+
+  <h3>6.1 delegate_task：派生隔离子 agent</h3>
+  <p><code>tools/delegate_tool.py</code> 派生子 <code>AIAgent</code> 实例，每个子 agent 拥有：</p>
+  <ul class="key-list">
+    <li>全新对话（<strong>不含</strong>父 agent 历史）；</li>
+    <li>自己的 <code>task_id</code>（独立终端会话、文件操作缓存）；</li>
+    <li>受限工具集（始终剥离被屏蔽工具）；</li>
+    <li>由委派目标 + 上下文构建的聚焦型系统提示。</li>
+  </ul>
+  <div class="info-box">
+    <strong>关键隔离性：</strong>父 agent 的上下文只能看到「委派调用本身 + 汇总结果」，<strong>永远看不到</strong>子 agent 的中间工具调用或推理过程。这既保护父 agent 的 prompt 缓存前缀，又压缩了上下文（<code>delegate_tool.py:15-16</code>）。
+  </div>
+
+  <h3>6.2 两种形态 + 角色</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>形态 / 角色</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>单任务</strong></td><td>传 <code>goal</code>（+ 可选 <code>context</code>、<code>toolsets</code>）。</td></tr>
+        <tr><td><strong>批量（并行）</strong></td><td>传 <code>tasks: [...]</code>，每个起一个并发子 agent；并发上限 <code>delegation.max_concurrent_children</code>（默认 3）。</td></tr>
+        <tr><td><strong>role="leaf"（默认）</strong></td><td>聚焦工人。<strong>不能</strong>调 <code>delegate_task</code>、<code>clarify</code>、<code>memory</code>、<code>send_message</code>、<code>execute_code</code>。</td></tr>
+        <tr><td><strong>role="orchestrator"</strong></td><td>保留 <code>delegate_task</code> 以便自己再派生工人；受 <code>delegation.max_spawn_depth</code>（默认 2）约束。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>6.3 同步 vs 异步（background）</h3>
+  <ul class="key-list">
+    <li><strong>默认同步</strong>：父等待子 agent 的 summary 返回再继续自己的循环。</li>
+    <li><strong><code>background=true</code></strong>：立即返回一个 delegation id，结果稍后经<strong>异步委派完成队列</strong>重新进入对话。</li>
+    <li>异步实现在 <code>tools/async_delegation.py</code>：用守护线程池 <code>_DaemonThreadPoolExecutor</code>（<code>:46</code>）执行；<code>_push_completion_event()</code>（<code>:272</code>）把完成事件推回。</li>
+  </ul>
+
+  <div class="warn-box">
+    <strong>子 agent 审批：</strong>子 agent 跑在线程池工作线程，不继承 CLI 的交互式审批回调，否则会与持有 stdin 的父 TUI 死锁。修复是经 <code>ThreadPoolExecutor(initializer=...)</code> 给每个工作线程装一个非交互回调（<code>delegate_tool.py:57-71</code>）：默认 <code>_subagent_auto_deny</code>（安全），<code>delegation.subagent_auto_approve=true</code> 时才用 auto-approve。
+  </div>
+</section>
+
+<section id="index">
+  <h2>附：本章关键文件索引</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>主题</th><th>文件</th></tr></thead>
+      <tbody>
+        <tr><td>主循环</td><td><code>agent/conversation_loop.py</code>（<code>run_conversation</code> <code>:495</code>，<code>while</code> <code>:589</code>）</td></tr>
+        <tr><td>序幕</td><td><code>agent/turn_context.py</code>（<code>build_turn_context</code> <code>:118</code>）</td></tr>
+        <tr><td>尾声</td><td><code>agent/turn_finalizer.py</code>（<code>finalize_turn</code> <code>:30</code>）</td></tr>
+        <tr><td>工具执行</td><td><code>agent/tool_executor.py</code>（并发 <code>:283</code> / 串行 <code>:852</code>）</td></tr>
+        <tr><td>预算</td><td><code>agent/iteration_budget.py</code></td></tr>
+        <tr><td>缓存断点</td><td><code>agent/prompt_caching.py</code>（<code>apply_anthropic_cache_control</code> <code>:49</code>）</td></tr>
+        <tr><td>提示恢复</td><td><code>agent/conversation_loop.py:254</code>（<code>_restore_or_build_system_prompt</code>）</td></tr>
+        <tr><td>上下文引擎抽象</td><td><code>agent/context_engine.py</code></td></tr>
+        <tr><td>内置压缩器</td><td><code>agent/context_compressor.py</code>（<code>should_compress</code> <code>:964</code>）</td></tr>
+        <tr><td>压缩编排</td><td><code>agent/conversation_compression.py</code>（<code>compress_context</code> <code>:281</code>）</td></tr>
+        <tr><td>工具注册表</td><td><code>tools/registry.py</code>（<code>register</code> <code>:231</code>，自动发现 <code>:57</code>）</td></tr>
+        <tr><td>工具集</td><td><code>toolsets.py</code>（<code>_HERMES_CORE_TOOLS</code> <code>:30</code>，<code>resolve_toolset</code> <code>:657</code>）</td></tr>
+        <tr><td>委派</td><td><code>tools/delegate_tool.py</code>、<code>tools/async_delegation.py</code></td></tr>
+        <tr><td>设计铁律</td><td><code>AGENTS.md</code>（缓存神圣 <code>:19</code>；Footprint Ladder <code>:171</code>；Toolsets <code>:935</code>；Delegation <code>:954</code>）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider">
+<p style="text-align:center; color:var(--text-3); font-size:.85rem; padding-bottom:20px">
+  学习系列 · 第 03 章 — <a href="index.html">返回索引</a> · <a href="04-核心特色功能.html">下一章 →</a>
+</p>
+
+</div>
+</body>
+</html>

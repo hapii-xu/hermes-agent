@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>02 · 架构与启动流程 — Hermes Agent 学习系列</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D77757; --orange-lt: #f0e0d8; --orange-dk: #b55e3a;
+      --blue: #5769F7; --blue-lt: #dde0fe; --blue-dk: #3a4ed4;
+      --green: #22a766; --green-lt: #d2f0e3;
+      --purple: #8b5cf6; --purple-lt: #ede9fe;
+      --bg: #faf8f5; --bg2: #f3f0eb; --bg3: #ebe7e0;
+      --text: #2d2a26; --text-2: #5a5650; --text-3: #8a8480;
+      --border: #ddd8d0; --shadow: 0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius: 8px; --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--orange-dk); border-bottom: 2px solid var(--orange-lt); padding-bottom: 8px; margin-bottom: 24px; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: .95rem; font-weight: 600; color: var(--text-2); margin: 14px 0 8px; }
+    p { color: var(--text-2); margin-bottom: 10px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { background: linear-gradient(135deg, #fff9f6 0%, #f5f1ff 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 48px; text-align: center; }
+    .hero-badge { display: inline-block; background: var(--orange); color: #fff; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; color: var(--text); letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; list-style: none; }
+    .nav-links a { display: inline-block; padding: 6px 16px; background: #fff; border: 1.5px solid var(--border); border-radius: 20px; font-size: .82rem; font-weight: 600; color: var(--text-2); transition: border-color .15s, color .15s; }
+    .nav-links a:hover { border-color: var(--orange); color: var(--orange-dk); text-decoration: none; }
+    pre { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius); padding: 16px 20px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.75; overflow-x: auto; margin: 12px 0; border-left: 3px solid var(--orange); }
+    code { font-family: var(--font-mono); }
+    p code, li code, td code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk); }
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th { background: var(--bg2); color: var(--text); font-weight: 700; text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .section-desc { color: var(--text-2); font-size: .92rem; margin-bottom: 20px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    .info-box { background: var(--blue-lt); border-left: 3px solid var(--blue); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk); }
+    .warn-box { background: var(--orange-lt); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--orange-dk); }
+    .flow-box { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius-lg); padding: 24px 28px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.9; overflow-x: auto; border-left: 4px solid var(--orange); box-shadow: var(--shadow); }
+    .flow-box .fc { color: #f0906a; }
+    .flow-box .fk { color: #7c9bff; }
+    .flow-box .fa { color: #6cc77a; }
+    .flow-box .fd { color: #6e6a62; font-style: italic; }
+    ul.key-list { padding-left: 20px; color: var(--text-2); }
+    ul.key-list li { margin-bottom: 4px; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+    .card:hover { box-shadow: var(--shadow-lg); border-color: var(--orange-lt); }
+    .card h4 { margin: 0 0 6px; color: var(--text); font-size: .93rem; }
+    .card p { font-size: .85rem; margin: 0; }
+    .tag { display: inline-block; background: var(--orange-lt); color: var(--orange-dk); font-size: .7rem; font-weight: 700; padding: 2px 7px; border-radius: 8px; }
+    @media (max-width: 700px) { .hero h1 { font-size: 1.6rem; } .card-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">学习系列 · 第 02 章</div>
+  <h1>架构与<span>启动流程</span></h1>
+  <p>从「用户在终端敲下 <code>hermes</code>」开始，一路追到 agent 核心被拉起的全过程，并把项目的整体架构分层、进程模型、关键顶层模块、配置体系讲清楚。</p>
+  <ul class="nav-links">
+    <li><a href="#entry">三个入口脚本</a></li>
+    <li><a href="#boot">启动链路</a></li>
+    <li><a href="#arch">架构分层</a></li>
+    <li><a href="#process">进程模型</a></li>
+    <li><a href="#godfiles">关键模块速查</a></li>
+    <li><a href="#config">配置体系</a></li>
+    <li><a href="index.html">← 返回索引</a></li>
+  </ul>
+</header>
+
+<div class="page-wrap">
+
+<section id="entry">
+  <h2>一、三个入口脚本（<code>[project.scripts]</code>）</h2>
+  <p>入口在 <code>pyproject.toml:296-299</code> 定义：</p>
+  <pre><span style="color:#7c9bff">[project.scripts]</span>
+hermes       = <span style="color:#6cc77a">"hermes_cli.main:main"</span>
+hermes-agent = <span style="color:#6cc77a">"run_agent:main"</span>
+hermes-acp   = <span style="color:#6cc77a">"acp_adapter.entry:main"</span></pre>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>命令</th><th>入口函数</th><th>职责</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>hermes</code></td>
+          <td><code>hermes_cli/main.py:12022</code> 的 <code>main()</code></td>
+          <td><strong>面向人类用户的主 CLI</strong>。日常入口：交互式聊天、<code>gateway</code> / <code>setup</code> / <code>cron</code> / <code>model</code> / <code>doctor</code> / <code>mcp</code> 等所有子命令的总调度。内部用 argparse 构建一棵庞大的子命令树。</td>
+        </tr>
+        <tr>
+          <td><code>hermes-agent</code></td>
+          <td><code>run_agent.py:5357</code> 的 <code>main()</code></td>
+          <td><strong>agent 核心的直接运行器 / 库入口</strong>。把 <code>AIAgent</code>（<code>run_agent.py:334</code>）作为独立可嵌入的"带工具调用的对话循环"暴露出来。可用 fire 当 CLI 跑，也被 <code>cli.py</code>、<code>batch_runner.py</code>、RL 环境作为库导入。它是"裸 agent"，不带 TUI/REPL。</td>
+        </tr>
+        <tr>
+          <td><code>hermes-acp</code></td>
+          <td><code>acp_adapter/entry.py</code> 的 <code>main()</code></td>
+          <td><strong>ACP（Agent Client Protocol）服务器适配器</strong>，用于编辑器集成（如 acp-bridge）。stdout 留给 ACP 的 JSON-RPC 传输，等价于 <code>hermes acp</code> 子命令。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="info-box">
+    <strong>三者的共同点：</strong>每个入口文件的<strong>第一件事</strong>都是 <code>import hermes_bootstrap</code>，且都用 <code>try/except ModuleNotFoundError</code> 包裹——原因见第五节。
+  </div>
+</section>
+
+<section id="boot">
+  <h2>二、启动链路：敲下 <code>hermes</code> 之后发生了什么</h2>
+  <p class="section-desc">以最常见的「交互式聊天」为例（直接 <code>hermes</code> 或 <code>hermes chat</code>）：</p>
+
+  <div class="flow-box">
+<span class="fc">用户在 shell 敲 `hermes`</span>
+        │
+        ▼
+<span class="fk">[1]</span> <span class="fc">pyproject 的 console_script</span> → <span class="fc">hermes_cli/main.py:main()</span>  (line 12022)
+        │  ① import hermes_bootstrap      <span class="fd">→ Windows 上设 UTF-8 stdio（POSIX 空操作）</span>
+        │  ② _set_process_title()         <span class="fd">→ ps/top 里显示 "hermes" 而非 python3.11</span>
+        │  ③ configure_windows_stdio()    <span class="fd">→ 二次确保 Windows stdio UTF-8</span>
+        │  ④ _cleanup_quarantined_exes / _recover_from_interrupted_install
+        │       <span class="fd">→ 自愈上一次 `hermes update` 留下的半成品</span>
+        │  ⑤ Termux 快速启动短路（_try_termux_fast_*_launch）
+        │
+        ▼
+<span class="fk">[2]</span> <span class="fc">build_top_level_parser()</span>  (hermes_cli/_parser.py)
+        │  构建 argparse 子命令树；无子命令时默认 func = cmd_chat
+        │
+        ▼
+<span class="fk">[3]</span> 解析 argv → 分发到对应的 cmd_* 函数
+        │  <span class="fa">走 cmd_chat()</span>  (hermes_cli/main.py:2203)
+        │
+        ▼
+<span class="fk">[4]</span> <span class="fc">cmd_chat()</span>
+        │  · 解析 -c/--continue、--resume（按标题或 ID 解析历史会话）
+        │  · 首次运行守卫：_has_any_provider_configured()，没配 provider 就引导 `hermes setup`
+        │  · 同步内置 skills、处理 --yolo / --safe-mode / --source 等开关
+        │  · _resolve_use_tui(args) 决定走 TUI 还是经典 CLI
+        │
+        ├──(TUI)──▶ <span class="fc">_launch_tui(...)</span>             (main.py:2350)
+        │
+        └──(CLI)──▶ <span class="fc">from cli import main as cli_main; cli_main(**kwargs)</span>   (main.py:2369)
+                        │
+                        ▼
+<span class="fk">[5]</span> <span class="fc">cli.py:main()</span>  (cli.py:14986)
+        │  · 构造 cli = HermesCLI(...)            (cli.py:15132)
+        │  · cli._init_agent(...)                 (cli.py:11447) ← 真正创建 agent
+        │       <span class="fd">内部把 run_agent.AIAgent(...) 实例挂到 cli.agent</span>
+        │
+        ▼
+<span class="fk">[6]</span> 进入 <span class="fc">prompt_toolkit</span> 应用循环
+        │  HermesCLI.run()  (cli.py:12401) → app.run()  (cli.py:14773)
+        │  每次用户提交输入 → cli.agent.run_conversation(...)
+        │
+        ▼
+<span class="fk">[7]</span> <span class="fc">AIAgent.run_conversation()</span>  (run_agent.py:5307)
+           对话循环 = 调模型 → 解析 tool_calls → 执行工具 → 回填结果 → 直到收敛
+           工具通过 model_tools.handle_function_call 分发到 tools/ 下的各处理器
+           <span class="fd">真正的循环细节在 agent/conversation_loop.py（4656 行）</span>
+  </div>
+
+  <div class="info-box" style="margin-top:20px">
+    <strong>三个层次的分工：</strong>
+    <ul style="margin-top:8px; padding-left:20px">
+      <li><code>hermes_cli/main.py</code> 只做「路由 + 环境自愈」，不含 agent 逻辑。</li>
+      <li><code>cli.py</code> 提供 TUI/REPL 外壳（prompt_toolkit），并持有一个 <code>AIAgent</code> 实例。</li>
+      <li><code>run_agent.py</code> 的 <code>AIAgent</code> 才是 agent 核心——可脱离 CLI 单独运行，也被 gateway、batch、RL 复用。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="arch">
+  <h2>三、整体架构分层与「窄腰」设计</h2>
+
+  <div class="flow-box">
+<span style="color:#e0a020">┌──────────────────────────────────────────────────────────────────┐</span>
+<span style="color:#e0a020">│</span>  <span class="fk">边缘 (edges)</span> <span class="fd">—— 能力在这里疯狂生长，鼓励扩张</span>                       <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>                                                                    <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">hermes_cli/</span>     CLI 子命令（setup/model/cron/mcp/doctor/...）      <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">gateway/</span>        消息网关：Telegram/Discord/Slack/Matrix... ~20 平台 <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">cron/</span>           内置定时调度器（croniter）                          <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">plugins/</span>        运行时发现的插件（平台适配器、搜索 provider 等）     <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">skills/</span>         技能（指令式 Markdown + 脚本），可自我创建/改进      <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">tools/</span>          ~100+ 工具实现，各自向 registry 自注册              <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">├──────────────────────────────────────────────────────────────────┤</span>
+<span style="color:#e0a020">│</span>  <span class="fk">窄腰 (narrow waist)</span> <span class="fd">—— 极度克制，每加一个核心工具都很贵</span>           <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>                                                                    <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">agent/</span>          agent 核心（对话循环、上下文、记忆、压缩、prompt）   <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">run_agent.py</span>    AIAgent：带工具调用的对话循环                       <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">model_tools.py</span>  工具注册表之上的薄编排层（决定哪些工具上桌）         <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">│</span>  <span class="fc">toolsets.py</span>     工具集（命名分组，跨平台共享）                       <span style="color:#e0a020">│</span>
+<span style="color:#e0a020">└──────────────────────────────────────────────────────────────────┘</span>
+  </div>
+
+  <h3>「窄腰（narrow waist）」核心要点</h3>
+  <ul class="key-list">
+    <li><strong>按对话的 prompt 缓存是神圣的</strong>（<code>AGENTS.md:19-23</code>）：任何中途改写历史、换工具集、重建系统提示的行为都会<strong>击穿缓存</strong>，让用户成本翻倍——所以坚决不做（唯一例外是上下文压缩）。</li>
+    <li><strong>核心是窄腰，能力住在边缘</strong>（<code>AGENTS.md:24-27</code>）：每一个核心 model tool 都会在每次 API 调用时被发送，所以新增核心工具的门槛极高。</li>
+    <li><strong>「在边缘扩张，在窄腰克制」</strong>（<code>AGENTS.md:43-50</code>）：产品面（平台/渠道/provider/模型/桌面功能）鼓励大胆增长，唯独核心 agent + model tool schema 要省到底，因为它在每次 API 调用上都要付费。</li>
+  </ul>
+</section>
+
+<section id="process">
+  <h2>四、进程模型</h2>
+  <p>Hermes 是<strong>多进程</strong>架构。<code>hermes_logging.py:37-44</code> 的注释直接点名了同时写 <code>agent.log</code> 的多个独立进程：「TUI、gateway、<code>hy_memory</code> server、MCP servers，以及按需的 CLI 命令」。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>进程</th><th>由谁启动</th><th>职责</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>CLI / TUI 进程</strong></td>
+          <td><code>hermes</code> / <code>hermes chat</code></td>
+          <td>前台交互式会话。持有一个 <code>AIAgent</code>，跑 prompt_toolkit 循环。</td>
+        </tr>
+        <tr>
+          <td><strong>gateway 进程</strong></td>
+          <td><code>hermes gateway start</code> → <code>gateway/run.py:start_gateway</code></td>
+          <td>常驻服务，单进程驱动所有消息平台适配器 + cron 投递。每个会话在内部用 agent core。</td>
+        </tr>
+        <tr>
+          <td><strong>MCP server 进程</strong></td>
+          <td><code>hermes mcp serve</code>（<code>mcp_serve.py</code>）</td>
+          <td>stdio MCP 服务器，把「消息对话」作为 MCP 工具暴露给 Claude Code / Cursor 等外部 MCP 客户端。</td>
+        </tr>
+        <tr>
+          <td><strong>memory server 进程</strong>（<code>hy_memory</code>）</td>
+          <td>记忆后端按需拉起</td>
+          <td>独立的记忆服务进程（与 <code>agent/memory_manager.py</code> 配合）。</td>
+        </tr>
+        <tr>
+          <td><strong>子进程（短命）</strong></td>
+          <td>agent 工具调用</td>
+          <td>execute_code 沙箱、<code>delegate</code> 委派的子 agent、linter 等，由 agent 在工具执行时 <code>subprocess</code> 派生。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>跨进程协作的关键细节</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>日志</h4>
+      <p>所有进程都写 <code>~/.hermes/logs/</code>。Windows 上多进程同时持有 <code>agent.log</code> 句柄，标准库的 <code>RotatingFileHandler</code> 会触发 <code>WinError 32</code>，所以 Windows 专门换成 <code>concurrent-log-handler</code>（跨进程文件锁，<code>hermes_logging.py:37-60</code>）。</p>
+    </div>
+    <div class="card">
+      <h4>UTF-8 引导</h4>
+      <p><code>hermes_bootstrap</code> 在每个入口顶端设置 <code>PYTHONUTF8</code> / <code>PYTHONIOENCODING</code>，<strong>子进程继承</strong>这些环境变量，从而让派生出的每个 Python 子进程也走 UTF-8（<code>hermes_bootstrap.py:9-26, 71-75</code>）。</p>
+    </div>
+  </div>
+</section>
+
+<section id="godfiles">
+  <h2>五、关键顶层模块速查表</h2>
+  <p class="section-desc">行数即「体量」，上万行者为典型 god file（<code>AGENTS.md:64-70</code> 明确把 <code>cli.py</code> / <code>run_agent.py</code> / <code>gateway/run.py</code> 列为可被重构拆分的 god file，且这类大型机械重构是<strong>受欢迎</strong>的工作）。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>模块</th><th>行数</th><th>一句话职责</th><th>god file?</th></tr></thead>
+      <tbody>
+        <tr><td><code>cli.py</code></td><td>~15,487</td><td>交互式终端外壳：prompt_toolkit TUI/REPL、<code>HermesCLI</code> 类、<code>main()</code> 入口，持有 <code>AIAgent</code>。</td><td><span class="tag">是（最大）</span></td></tr>
+        <tr><td><code>hermes_cli/main.py</code></td><td>~13,230</td><td><code>hermes</code> 命令的 argparse 路由 + 子命令注册 + 启动期环境自愈。</td><td><span class="tag">是</span></td></tr>
+        <tr><td><code>run_agent.py</code></td><td>~5,573</td><td><code>AIAgent</code> 类与对话循环；agent 核心，可作库/CLI 独立运行。</td><td><span class="tag">是</span></td></tr>
+        <tr><td><code>hermes_state.py</code></td><td>~5,103</td><td>基于 SQLite 的会话状态存储（WAL 并发 + FTS5 全文检索），存会话元数据/消息历史/模型配置。</td><td><span class="tag">是</span></td></tr>
+        <tr><td><code>model_tools.py</code></td><td>~1,256</td><td>工具注册表之上的<strong>薄编排层</strong>：触发工具发现、决定哪些工具上桌、分发 <code>handle_function_call</code>。</td><td>偏大</td></tr>
+        <tr><td><code>mcp_serve.py</code></td><td>~903</td><td><code>hermes mcp serve</code> 的 stdio MCP 服务器，把对话作为 MCP 工具暴露。</td><td>中等</td></tr>
+        <tr><td><code>toolsets.py</code></td><td>~933</td><td>工具集定义 + 跨平台共享的核心工具列表 <code>_HERMES_CORE_TOOLS</code>。</td><td>中等</td></tr>
+        <tr><td><code>hermes_constants.py</code></td><td>~733</td><td><strong>无依赖、导入安全</strong>的共享常量（<code>get_hermes_home()</code> / <code>get_config_path()</code> 等）；可从任意处导入无循环风险。</td><td>否</td></tr>
+        <tr><td><code>hermes_bootstrap.py</code></td><td>~187</td><td>Windows UTF-8 stdio 引导 + <code>harden_import_path()</code>；必须第一个被导入，POSIX 空操作。</td><td>否</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn-box">
+    <strong>为什么 hermes_bootstrap 用 try/except ModuleNotFoundError 包裹？</strong><br>
+    <code>hermes update</code> 若在 <code>git reset --hard</code> 和 <code>uv pip install -e .</code> 之间崩溃，新代码引用了它但可编辑安装的 <code>.pth</code> 仍指向旧模块集——加保护可避免「导入即崩溃、连 <code>hermes update</code> 都跑不起来」的死锁（<code>hermes_cli/main.py:46-62</code>）。
+  </div>
+</section>
+
+<section id="config">
+  <h2>六、配置体系：<code>config.yaml</code> vs <code>.env</code></h2>
+  <p>出处：<code>AGENTS.md:103-107</code>。两者职责<strong>严格分离</strong>，这是项目的硬规则：</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th><code>config.yaml</code></th><th><code>.env</code></th></tr></thead>
+      <tbody>
+        <tr><td><strong>存什么</strong></td><td><strong>所有行为设置</strong>：默认模型、provider、超时、阈值、功能开关、显示偏好……</td><td><strong>只存机密</strong>：API key、token、密码。</td></tr>
+        <tr><td><strong>位置</strong></td><td><code>~/.hermes/config.yaml</code>（profile 感知）</td><td><code>~/.hermes/.env</code></td></tr>
+        <tr><td><strong>谁改</strong></td><td><code>hermes setup</code> / <code>hermes model</code> 等命令，或手改 YAML</td><td>用户填入凭证</td></tr>
+        <tr><td><strong>优先级</strong></td><td>—</td><td><code>.env</code> 里的环境变量<strong>优先于</strong> config（<code>cli-config.yaml.example:3</code>）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn-box">
+    <strong>硬性约束：</strong>
+    <ul style="margin-top:8px; padding-left:20px">
+      <li><strong>禁止为非机密配置新增 <code>HERMES_*</code> 环境变量</strong>。一切行为开关都进 <code>config.yaml</code>；即使内部机制需要一个环境变量做桥接，面向用户的文档也必须指向 <code>config.yaml</code>。</li>
+      <li>任何告诉用户「把 X 设进 .env」的 PR 会被拒——除非 X 是凭证。</li>
+    </ul>
+  </div>
+
+  <h3>一眼看懂的对应关系</h3>
+  <div class="flow-box">
+<span class="fc">hermes</span> (人用 CLI)         → <span class="fc">hermes_cli/main.py:main</span> → <span class="fc">cmd_chat</span> → <span class="fc">cli.py:main</span> → <span class="fc">HermesCLI</span> → <span class="fc">AIAgent</span>
+<span class="fc">hermes-agent</span> (裸 agent)   → <span class="fc">run_agent.py:main</span> → <span class="fc">AIAgent.run_conversation</span>
+<span class="fc">hermes-acp</span> (编辑器集成)    → <span class="fc">acp_adapter/entry.py:main</span> → <span class="fd">ACP server (stdout=JSON-RPC)</span>
+<span class="fc">hermes gateway start</span>      → <span class="fc">gateway/run.py:start_gateway</span> <span class="fd">（独立常驻进程）</span>
+<span class="fc">hermes mcp serve</span>          → <span class="fc">mcp_serve.py</span> <span class="fd">（独立 MCP server 进程）</span>
+  </div>
+</section>
+
+<hr class="divider">
+<p style="text-align:center; color:var(--text-3); font-size:.85rem; padding-bottom:20px">
+  学习系列 · 第 02 章 — <a href="index.html">返回索引</a> · <a href="03-核心Agent循环与工具系统.html">下一章 →</a>
+</p>
+
+</div>
+</body>
+</html>

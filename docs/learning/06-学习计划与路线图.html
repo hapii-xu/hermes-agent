@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>06 · 学习计划与路线图 — Hermes Agent 学习系列</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D77757; --orange-lt: #f0e0d8; --orange-dk: #b55e3a;
+      --blue: #5769F7; --blue-lt: #dde0fe; --blue-dk: #3a4ed4;
+      --green: #22a766; --green-lt: #d2f0e3;
+      --purple: #8b5cf6; --purple-lt: #ede9fe;
+      --bg: #faf8f5; --bg2: #f3f0eb; --bg3: #ebe7e0;
+      --text: #2d2a26; --text-2: #5a5650; --text-3: #8a8480;
+      --border: #ddd8d0; --shadow: 0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius: 8px; --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--orange-dk); border-bottom: 2px solid var(--orange-lt); padding-bottom: 8px; margin-bottom: 24px; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: .95rem; font-weight: 600; color: var(--text-2); margin: 14px 0 8px; }
+    p { color: var(--text-2); margin-bottom: 10px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { background: linear-gradient(135deg, #fff9f6 0%, #f0f9f5 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 48px; text-align: center; }
+    .hero-badge { display: inline-block; background: var(--orange); color: #fff; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; color: var(--text); letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; list-style: none; }
+    .nav-links a { display: inline-block; padding: 6px 16px; background: #fff; border: 1.5px solid var(--border); border-radius: 20px; font-size: .82rem; font-weight: 600; color: var(--text-2); transition: border-color .15s, color .15s; }
+    .nav-links a:hover { border-color: var(--orange); color: var(--orange-dk); text-decoration: none; }
+    code { font-family: var(--font-mono); }
+    p code, li code, td code, span code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk); }
+    pre { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius); padding: 16px 20px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.75; overflow-x: auto; margin: 12px 0; border-left: 3px solid var(--orange); }
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th { background: var(--bg2); color: var(--text); font-weight: 700; text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    .info-box { background: var(--blue-lt); border-left: 3px solid var(--blue); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk); }
+    .warn-box { background: var(--orange-lt); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--orange-dk); }
+    .green-box { background: var(--green-lt); border-left: 3px solid var(--green); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: #16694a; }
+    ul.key-list { padding-left: 20px; color: var(--text-2); }
+    ul.key-list li { margin-bottom: 6px; }
+    /* Phase cards */
+    .phase { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 24px; box-shadow: var(--shadow); }
+    .phase-header { display: flex; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--border); }
+    .phase-num { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; font-weight: 800; flex-shrink: 0; }
+    .phase-num.prep { background: var(--bg3); color: var(--text-3); }
+    .phase-num.p1 { background: var(--blue-lt); color: var(--blue-dk); }
+    .phase-num.p2 { background: var(--orange-lt); color: var(--orange-dk); border: 2px solid var(--orange); }
+    .phase-num.p3 { background: var(--green-lt); color: #16694a; }
+    .phase-num.p4 { background: var(--purple-lt); color: #5b21b6; }
+    .phase-num.p5 { background: #fff3e0; color: #c45000; }
+    .phase-title { flex: 1; }
+    .phase-title h3 { margin: 0 0 2px; font-size: 1.05rem; }
+    .phase-title .meta { font-size: .8rem; color: var(--text-3); }
+    .phase-badge { font-size: .7rem; font-weight: 700; padding: 3px 10px; border-radius: 10px; background: var(--orange-lt); color: var(--orange-dk); white-space: nowrap; }
+    .phase-badge.core { background: var(--orange); color: #fff; }
+    .phase-body { padding: 20px 24px; }
+    .phase-goal { background: var(--bg2); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: .88rem; }
+    .phase-goal strong { color: var(--text); }
+    .task-list { list-style: none; padding: 0; margin: 0; }
+    .task-list li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--bg3); font-size: .88rem; color: var(--text-2); }
+    .task-list li:last-child { border-bottom: none; }
+    .task-n { flex-shrink: 0; width: 22px; height: 22px; background: var(--bg2); border: 1.5px solid var(--border); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .68rem; font-weight: 700; color: var(--text-3); margin-top: 1px; }
+    .accept { background: var(--green-lt); border-radius: var(--radius); padding: 10px 14px; margin-top: 14px; font-size: .85rem; color: #16694a; }
+    .accept strong { color: #166534; }
+    /* Tips grid */
+    .tips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .tip-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+    .tip-card .tip-n { font-size: .75rem; font-weight: 800; color: var(--orange); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .tip-card h4 { margin: 0 0 6px; font-size: .9rem; }
+    .tip-card p { font-size: .83rem; margin: 0; }
+    /* Timeline row */
+    .timeline-row { display: flex; align-items: center; gap: 0; overflow-x: auto; padding: 20px 0; }
+    .tl-phase { text-align: center; flex: 1; min-width: 90px; }
+    .tl-dot { width: 14px; height: 14px; border-radius: 50%; margin: 0 auto 6px; }
+    .tl-label { font-size: .72rem; color: var(--text-3); margin-bottom: 2px; }
+    .tl-title { font-size: .78rem; font-weight: 700; color: var(--text-2); }
+    .tl-days { font-size: .7rem; color: var(--text-3); }
+    .tl-line { flex: 1; height: 2px; background: var(--border); min-width: 20px; }
+    @media (max-width: 700px) { .hero h1 { font-size: 1.6rem; } .tips-grid { grid-template-columns: 1fr; } .phase-header { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">学习系列 · 第 06 章</div>
+  <h1>学习计划与<span>路线图</span></h1>
+  <p>把"读这个项目"变成一条有节奏、可执行的路径——分阶段学习计划、每阶段的目标 / 动手任务 / 验收标准，以及通用读码技巧。</p>
+  <ul class="nav-links">
+    <li><a href="#overview">时间线总览</a></li>
+    <li><a href="#prep">学前准备</a></li>
+    <li><a href="#p1">阶段一：架构</a></li>
+    <li><a href="#p2">阶段二：Agent 循环</a></li>
+    <li><a href="#p3">阶段三：自我改进</a></li>
+    <li><a href="#p4">阶段四：网关插件</a></li>
+    <li><a href="#p5">阶段五：动手改</a></li>
+    <li><a href="#tips">读码技巧</a></li>
+    <li><a href="index.html">← 返回索引</a></li>
+  </ul>
+</header>
+
+<div class="page-wrap">
+
+<section id="overview">
+  <h2>时间线总览（约 2 周）</h2>
+
+  <div class="info-box">
+    <strong>阶段二是绝对核心。</strong>时间紧的话，其余可按兴趣取舍；但如果你只有 3 天，把全部时间砸在阶段二的 Agent 循环上——那是整个项目最值得投入的部分。
+  </div>
+
+  <div class="timeline-row">
+    <div class="tl-phase">
+      <div class="tl-dot" style="background:#a0abad"></div>
+      <div class="tl-label">准备</div>
+      <div class="tl-title">跑起来</div>
+      <div class="tl-days">0.5 天</div>
+    </div>
+    <div class="tl-line"></div>
+    <div class="tl-phase">
+      <div class="tl-dot" style="background:var(--blue)"></div>
+      <div class="tl-label">阶段一</div>
+      <div class="tl-title">启动架构</div>
+      <div class="tl-days">1–2 天</div>
+    </div>
+    <div class="tl-line"></div>
+    <div class="tl-phase">
+      <div class="tl-dot" style="background:var(--orange)"></div>
+      <div class="tl-label">阶段二 ★</div>
+      <div class="tl-title">Agent 循环</div>
+      <div class="tl-days">3–4 天</div>
+    </div>
+    <div class="tl-line"></div>
+    <div class="tl-phase">
+      <div class="tl-dot" style="background:var(--green)"></div>
+      <div class="tl-label">阶段三</div>
+      <div class="tl-title">自我改进</div>
+      <div class="tl-days">2–3 天</div>
+    </div>
+    <div class="tl-line"></div>
+    <div class="tl-phase">
+      <div class="tl-dot" style="background:var(--purple)"></div>
+      <div class="tl-label">阶段四</div>
+      <div class="tl-title">网关/插件</div>
+      <div class="tl-days">2 天</div>
+    </div>
+    <div class="tl-line"></div>
+    <div class="tl-phase">
+      <div class="tl-dot" style="background:#e65100"></div>
+      <div class="tl-label">阶段五</div>
+      <div class="tl-title">改一处</div>
+      <div class="tl-days">2–3 天</div>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>阶段</th><th>内容</th><th>对应文档</th><th>预估时间</th></tr></thead>
+      <tbody>
+        <tr><td>学前</td><td>跑起来 + 读总览</td><td><code>README.md</code>、<code>01</code>、<code>05</code>、<code>AGENTS.md</code> 前两章</td><td>0.5 天</td></tr>
+        <tr><td>一</td><td>启动与架构</td><td><code>02-架构与启动流程</code></td><td>1–2 天</td></tr>
+        <tr><td>二 ★</td><td><strong>Agent 循环与工具系统（重点）</strong></td><td><code>03-核心Agent循环与工具系统</code></td><td>3–4 天</td></tr>
+        <tr><td>三</td><td>自我改进闭环</td><td><code>04-核心特色功能</code>（前半）</td><td>2–3 天</td></tr>
+        <tr><td>四</td><td>网关 / cron / 插件</td><td><code>04-核心特色功能</code>（后半）</td><td>2 天</td></tr>
+        <tr><td>五</td><td>改一处、测一处</td><td><code>05-开发调试与测试</code></td><td>2–3 天</td></tr>
+        <tr><td colspan="3" style="text-align:right; font-weight:700">合计</td><td><strong>约 2 周</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="prep">
+  <h2>学前准备（约 0.5 天）</h2>
+
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num prep">0</div>
+      <div class="phase-title">
+        <h3>跑起来，建立"能动手"的环境</h3>
+        <div class="meta">对应文档：<code>01-项目总览</code>、<code>05-开发调试与测试</code>、<code>AGENTS.md</code></div>
+      </div>
+      <span class="phase-badge">0.5 天</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-goal"><strong>目标：</strong>把项目跑起来，建立"能动手"的环境。</div>
+      <ul class="task-list">
+        <li><span class="task-n">1</span>通读 <code>README.md</code> 与 <code>01-项目总览.md</code>，建立全局心智模型。</li>
+        <li><span class="task-n">2</span>按 <code>05-开发调试与测试.md</code> 搭好 uv 环境，成功执行 <code>hermes doctor</code>。</li>
+        <li><span class="task-n">3</span>跑通一次最小对话：<code>hermes</code> → 配置模型 <code>hermes model</code> → 随便聊一句。</li>
+        <li><span class="task-n">4</span>浏览 <code>AGENTS.md</code> 的前两章（"What Hermes Is" + "Contribution Rubric"），重点记住两条铁律：<strong>提示缓存神圣</strong> + <strong>窄腰设计</strong>。</li>
+      </ul>
+      <div class="accept"><strong>验收：</strong>能在本地启动 CLI 并完成一轮真实对话；能说出两条设计铁律是什么、为什么。</div>
+    </div>
+  </div>
+</section>
+
+<section id="p1">
+  <h2>阶段一 · 看懂"骨架"：启动与架构（约 1–2 天）</h2>
+
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num p1">1</div>
+      <div class="phase-title">
+        <h3>搞清启动链路，从 <code>main()</code> 走到 agent 核心</h3>
+        <div class="meta">对应文档：<a href="02-架构与启动流程.html">02-架构与启动流程</a></div>
+      </div>
+      <span class="phase-badge">1–2 天</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-goal"><strong>目标：</strong>搞清 <code>hermes</code> 敲下去之后，控制流如何从 <code>hermes_cli/main.py</code> 一路走到 agent 核心。</div>
+      <ul class="task-list">
+        <li><span class="task-n">1</span>从 <code>hermes_cli/main.py:main</code> 开始，用编辑器"跳转定义"顺着读，<strong>画出你自己的启动调用图</strong>（对照文档里的流程图校正）。</li>
+        <li><span class="task-n">2</span>在启动链路上挑 1–2 个函数，打日志或断点（见 <code>05</code> 的 debug 方法），实际跑一遍观察执行顺序。</li>
+        <li><span class="task-n">3</span>列出根目录每个"god file"的职责（对照 <code>01</code> 的速查表，自己补充）。</li>
+      </ul>
+      <div class="accept"><strong>验收：</strong>能口述 <code>hermes</code> → CLI 解析 → bootstrap → agent 启动的主链路；能指出 <code>config.yaml</code> 与 <code>.env</code> 各自管什么。</div>
+    </div>
+  </div>
+</section>
+
+<section id="p2">
+  <h2>阶段二 · 看懂"心脏"：Agent 循环与工具系统（约 3–4 天，绝对重点）</h2>
+
+  <div class="warn-box">
+    <strong>这是整个项目最值得花时间的部分。</strong>理解了这里，其余所有章节都会变得清晰——记忆/技能/curator/网关/cron，全都是在这个 turn-by-turn 的主循环之上叠砖头。
+  </div>
+
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num p2">2</div>
+      <div class="phase-title">
+        <h3>理解一个 turn 的完整生命周期，以及工具的定义/注册/执行流程</h3>
+        <div class="meta">对应文档：<a href="03-核心Agent循环与工具系统.html">03-核心 Agent 循环与工具系统</a></div>
+      </div>
+      <span class="phase-badge core">3–4 天 ★ 核心</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-goal"><strong>目标：</strong>理解一个 turn 的完整生命周期，以及工具是如何定义、注册、执行的。</div>
+      <ul class="task-list">
+        <li><span class="task-n">1</span>精读 <code>agent/conversation_loop.py</code>，在"构建 prompt → 调模型 → 解析 tool call → 执行工具 → 回灌结果"每个阶段打断点，跑一次带工具调用的对话（比如让 agent 读一个文件），逐步观察。</li>
+        <li><span class="task-n">2</span>跟读一个具体工具从声明（<code>model_tools.py</code> / <code>toolsets.py</code>）到执行（<code>tools/</code> 下对应实现，经 <code>agent/tool_executor.py</code>）的全过程。推荐挑 <code>tools/file_tools.py</code> 这种简单的。</li>
+        <li><span class="task-n">3</span>读 <code>agent/prompt_caching.py</code> + <code>agent/system_prompt.py</code>，理解"为什么系统提示必须 byte-stable"，并在代码里找出<strong>一个</strong>为保护缓存而做的具体约束。</li>
+        <li><span class="task-n">4</span>读 <code>agent/context_engine.py</code> / <code>context_compressor.py</code>，理解长对话如何压缩。</li>
+      </ul>
+      <div class="accept"><strong>验收：</strong>能画出 turn 生命周期图；能解释新增一个工具要动哪些文件；能说清提示缓存为什么神圣、压缩为什么是唯一例外。</div>
+    </div>
+  </div>
+</section>
+
+<section id="p3">
+  <h2>阶段三 · 看懂"灵魂"：自我改进闭环（约 2–3 天）</h2>
+
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num p3">3</div>
+      <div class="phase-title">
+        <h3>理解记忆 + 技能 + curator 的闭环</h3>
+        <div class="meta">对应文档：<a href="04-核心特色功能.html">04-核心特色功能</a>（学习闭环部分）</div>
+      </div>
+      <span class="phase-badge">2–3 天</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-goal"><strong>目标：</strong>理解 Hermes 区别于普通 agent 的核心——记忆 + 技能 + curator 的闭环。</div>
+      <ul class="task-list">
+        <li><span class="task-n">1</span>读 <code>agent/memory_manager.py</code> + <code>agent/curator.py</code>，找出"周期性 nudge 自己持久化知识"的触发点。</li>
+        <li><span class="task-n">2</span>打开 <code>skills/</code> 下任意一个技能，读它的 <code>SKILL.md</code>，理解技能格式（兼容 agentskills.io）。然后读 <code>agent/skill_commands.py</code> / <code>skill_preprocessing.py</code>，理解技能如何被加载进上下文。</li>
+        <li><span class="task-n">3</span>读 <code>agent/learn_prompt.py</code>，理解"复杂任务后自动造技能"的逻辑。</li>
+        <li><span class="task-n">4</span>（可选）实际让 agent 完成一个稍复杂的任务，观察它是否生成/更新了技能或记忆。</li>
+      </ul>
+      <div class="accept"><strong>验收：</strong>能讲清"记忆—技能—curator"三者如何构成闭环；能说出一个技能文件的最小结构。</div>
+    </div>
+  </div>
+</section>
+
+<section id="p4">
+  <h2>阶段四 · 看懂"触角"：网关 / cron / 插件（约 2 天）</h2>
+
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num p4">4</div>
+      <div class="phase-title">
+        <h3>理解 Hermes 如何"活在你常用的地方"以及如何被扩展</h3>
+        <div class="meta">对应文档：<a href="04-核心特色功能.html">04-核心特色功能</a>（网关 / cron / 插件部分）</div>
+      </div>
+      <span class="phase-badge">2 天</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-goal"><strong>目标：</strong>理解 Hermes 如何"活在你常用的地方"以及如何被扩展。</div>
+      <ul class="task-list">
+        <li><span class="task-n">1</span>读 <code>gateway/run.py</code> + <code>gateway/platform_registry.py</code> + <code>gateway/platforms/</code> 下一个平台适配器（如 telegram），理解单进程多平台模型。</li>
+        <li><span class="task-n">2</span>读 <code>cron/</code> 与 <code>tools/cronjob_tools.py</code>，理解定时任务如何被调度与投递。</li>
+        <li><span class="task-n">3</span>挑 <code>plugins/</code> 下一个插件（如某个 memory 后端），看它的 <code>plugin.yaml</code> 与代码，理解插件接入约定。</li>
+      </ul>
+      <div class="accept"><strong>验收：</strong>能解释一条消息从某平台进来、到 agent 处理、再回复出去的路径；能说出"加一个新平台 / 新记忆后端"大致要做什么。</div>
+    </div>
+  </div>
+</section>
+
+<section id="p5">
+  <h2>阶段五 · 融会贯通：改一处、测一处（约 2–3 天）</h2>
+
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num p5">5</div>
+      <div class="phase-title">
+        <h3>从"读"过渡到"改"，用一个小改动跑通完整的开发—测试闭环</h3>
+        <div class="meta">对应文档：<a href="05-开发调试与测试.html">05-开发调试与测试</a></div>
+      </div>
+      <span class="phase-badge">2–3 天</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-goal"><strong>目标：</strong>从"读"过渡到"改"，用一个小改动跑通完整的开发—测试闭环。</div>
+      <h4>动手任务（任选其一）：</h4>
+      <ul class="task-list">
+        <li><span class="task-n">A</span>给某个现有工具加一个小参数 / 小行为，并补一个<strong>行为契约测试</strong>（参考 <code>tests/agent/</code> 风格，不要写快照测试）。</li>
+        <li><span class="task-n">B</span>修一个你在 issue 列表里能复现的小 bug（按 <code>AGENTS.md</code> 的"好的修复"标准：复现 → 定位到具体行 → 修整个 bug 类）。</li>
+        <li><span class="task-n">C</span>写一个最小的自定义 skill 放进 <code>skills/</code>，让 agent 能调用它。</li>
+      </ul>
+      <div class="accept"><strong>验收：</strong><code>scripts/run_tests.sh</code> 跑过相关测试；改动符合两条铁律（不破坏缓存、不无谓地往核心塞东西）；能讲清你改了什么、为什么。</div>
+    </div>
+  </div>
+</section>
+
+<section id="tips">
+  <h2>通用读码技巧</h2>
+
+  <div class="tips-grid">
+    <div class="tip-card">
+      <div class="tip-n">技巧 1</div>
+      <h4>善用项目自带文档</h4>
+      <p><code>AGENTS.md</code> 和 <code>CONTRIBUTING.md</code> 是"为什么这么设计"的一手资料。很多反直觉代码都有注释解释原因（尤其是 Windows 兼容、供应链、缓存相关）。遇到"这代码怎么这么绕"先搜注释。</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-n">技巧 2</div>
+      <h4>从入口顺着读，别从中间切入</h4>
+      <p>大文件（<code>cli.py</code> 700KB）不要试图通读，用"跳转定义 / Grep 找函数"按调用链读。<code>hermes_cli/main.py:main</code> 是一切的起点。</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-n">技巧 3</div>
+      <h4>善用 Grep 找定义</h4>
+      <p>常用模式：<code>def main</code>、<code>class Xxx</code>、工具函数名。<code>rg "def handle_tool_call"</code> 比在编辑器里猜文件位置快得多。</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-n">技巧 4</div>
+      <h4>跑起来 + 打断点胜过空读</h4>
+      <p>在关键函数加日志/断点，用真实对话驱动一次，执行顺序立刻清晰（见 <a href="05-开发调试与测试.html">05</a> 的 debugpy 方法）。一次真实运行胜过半小时静态阅读。</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-n">技巧 5</div>
+      <h4>读测试理解契约</h4>
+      <p><code>tests/</code> 下的测试是"这段代码到底承诺了什么"的最佳说明书。比注释更可信——注释会撒谎，测试会报红。</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-n">技巧 6</div>
+      <h4>注意两条铁律的"投影"</h4>
+      <p>看到任何"重建 prompt / 换工具集 / 注入用户消息"的代码，先问"这会不会破坏缓存"——项目里大量防御代码都是为它服务的。理解铁律是理解其余所有设计决策的钥匙。</p>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:24px">
+    <strong>顺序建议：</strong>建议不要跳过顺序。第一阶段的骨架理解是第二阶段心脏理解的前提；第二阶段的 turn 生命周期理解是第三阶段记忆/技能理解的前提。跳着读会让你在某处突然遇到很多"为什么"却找不到答案。
+  </div>
+</section>
+
+<section>
+  <h2>快速索引：各章与阶段的对应关系</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>学习文档</th><th>对应阶段</th><th>核心问题</th></tr></thead>
+      <tbody>
+        <tr><td><a href="01-项目总览.html">01 · 项目总览</a></td><td>学前 + 阶段一</td><td>这是个什么项目？有什么设计哲学？</td></tr>
+        <tr><td><a href="02-架构与启动流程.html">02 · 架构与启动流程</a></td><td>阶段一</td><td>敲 <code>hermes</code> 之后发生了什么？</td></tr>
+        <tr><td><a href="03-核心Agent循环与工具系统.html">03 · 核心 Agent 循环与工具系统</a></td><td>阶段二 ★</td><td>每一轮对话是怎么跑的？工具怎么工作？</td></tr>
+        <tr><td><a href="04-核心特色功能.html">04 · 核心特色功能</a></td><td>阶段三 + 阶段四</td><td>记忆/技能/curator/网关/cron/插件怎么运作？</td></tr>
+        <tr><td><a href="05-开发调试与测试.html">05 · 开发调试与测试</a></td><td>学前 + 阶段五</td><td>怎么搭环境？怎么 debug？怎么跑测试？</td></tr>
+        <tr><td><a href="06-学习计划与路线图.html">06 · 学习计划与路线图（本章）</a></td><td>贯穿全程</td><td>怎么把这些组织成一条可执行的学习路径？</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider">
+<div style="text-align:center; padding-bottom:20px">
+  <p style="color:var(--text-3); font-size:.85rem; margin-bottom:10px">学习系列 · 第 06 章（最终章）— <a href="index.html">← 返回索引</a></p>
+  <p style="color:var(--text-3); font-size:.82rem">全 6 章学习文档已完结。祝学习愉快，读码顺利！</p>
+</div>
+
+</div>
+</body>
+</html>

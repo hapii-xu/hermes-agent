@@ -1,0 +1,323 @@
+{
+ "total_files": 106,
+ "total_lines": 83625,
+ "large_files": 19,
+ "small_files": 87,
+ "num_chunks": 26,
+ "chunks": [
+  {
+   "method": "edit",
+   "files": [
+    "mcp_tool.py"
+   ],
+   "lines": 4745,
+   "desc": "solo-large mcp_tool.py",
+   "id": 1
+  },
+  {
+   "method": "edit",
+   "files": [
+    "browser_tool.py"
+   ],
+   "lines": 4005,
+   "desc": "solo-large browser_tool.py",
+   "id": 2
+  },
+  {
+   "method": "edit",
+   "files": [
+    "skills_hub.py"
+   ],
+   "lines": 3888,
+   "desc": "solo-large skills_hub.py",
+   "id": 3
+  },
+  {
+   "method": "edit",
+   "files": [
+    "delegate_tool.py"
+   ],
+   "lines": 3198,
+   "desc": "solo-large delegate_tool.py",
+   "id": 4
+  },
+  {
+   "method": "edit",
+   "files": [
+    "tts_tool.py"
+   ],
+   "lines": 2844,
+   "desc": "paired-large (1 files, 2844 lines)",
+   "id": 5
+  },
+  {
+   "method": "edit",
+   "files": [
+    "terminal_tool.py"
+   ],
+   "lines": 2816,
+   "desc": "paired-large (1 files, 2816 lines)",
+   "id": 6
+  },
+  {
+   "method": "edit",
+   "files": [
+    "file_operations.py"
+   ],
+   "lines": 2423,
+   "desc": "paired-large (1 files, 2423 lines)",
+   "id": 7
+  },
+  {
+   "method": "edit",
+   "files": [
+    "process_registry.py",
+    "approval.py"
+   ],
+   "lines": 4120,
+   "desc": "paired-large (2 files, 4120 lines)",
+   "id": 8
+  },
+  {
+   "method": "edit",
+   "files": [
+    "code_execution_tool.py",
+    "file_tools.py"
+   ],
+   "lines": 3650,
+   "desc": "paired-large (2 files, 3650 lines)",
+   "id": 9
+  },
+  {
+   "method": "edit",
+   "files": [
+    "transcription_tools.py",
+    "computer_use/cua_backend.py"
+   ],
+   "lines": 3588,
+   "desc": "paired-large (2 files, 3588 lines)",
+   "id": 10
+  },
+  {
+   "method": "edit",
+   "files": [
+    "send_message_tool.py",
+    "checkpoint_manager.py"
+   ],
+   "lines": 3359,
+   "desc": "paired-large (2 files, 3359 lines)",
+   "id": 11
+  },
+  {
+   "method": "edit",
+   "files": [
+    "skills_tool.py",
+    "vision_tools.py"
+   ],
+   "lines": 3229,
+   "desc": "paired-large (2 files, 3229 lines)",
+   "id": 12
+  },
+  {
+   "method": "edit",
+   "files": [
+    "image_generation_tool.py",
+    "kanban_tools.py"
+   ],
+   "lines": 3106,
+   "desc": "paired-large (2 files, 3106 lines)",
+   "id": 13
+  },
+  {
+   "method": "write",
+   "files": [
+    "browser_supervisor.py",
+    "web_tools.py",
+    "environments/docker.py"
+   ],
+   "lines": 4164,
+   "desc": "small-pack (3 files, 4164 lines)",
+   "id": 14
+  },
+  {
+   "method": "write",
+   "files": [
+    "skill_manager_tool.py",
+    "voice_mode.py",
+    "skills_sync.py"
+   ],
+   "lines": 3575,
+   "desc": "small-pack (3 files, 3575 lines)",
+   "id": 15
+  },
+  {
+   "method": "write",
+   "files": [
+    "memory_tool.py",
+    "skills_guard.py",
+    "cronjob_tools.py",
+    "discord_tool.py"
+   ],
+   "lines": 4166,
+   "desc": "small-pack (4 files, 4166 lines)",
+   "id": 16
+  },
+  {
+   "method": "write",
+   "files": [
+    "computer_use/tool.py",
+    "lazy_deps.py",
+    "skill_usage.py",
+    "environments/base.py"
+   ],
+   "lines": 3621,
+   "desc": "small-pack (4 files, 3621 lines)",
+   "id": 17
+  },
+  {
+   "method": "write",
+   "files": [
+    "fuzzy_match.py",
+    "environments/local.py",
+    "tirith_security.py",
+    "session_search_tool.py",
+    "browser_camofox.py"
+   ],
+   "lines": 4108,
+   "desc": "small-pack (5 files, 4108 lines)",
+   "id": 18
+  },
+  {
+   "method": "write",
+   "files": [
+    "mcp_oauth.py",
+    "yuanbao_tools.py",
+    "tool_search.py",
+    "patch_parser.py",
+    "mcp_oauth_manager.py",
+    "registry.py"
+   ],
+   "lines": 4068,
+   "desc": "small-pack (6 files, 4068 lines)",
+   "id": 19
+  },
+  {
+   "method": "write",
+   "files": [
+    "browser_cdp_tool.py",
+    "video_generation_tool.py",
+    "async_delegation.py",
+    "mixture_of_agents_tool.py",
+    "x_search_tool.py",
+    "homeassistant_tool.py",
+    "write_approval.py"
+   ],
+   "lines": 3761,
+   "desc": "small-pack (7 files, 3761 lines)",
+   "id": 20
+  },
+  {
+   "method": "write",
+   "files": [
+    "schema_sanitizer.py",
+    "environments/modal.py",
+    "credential_files.py",
+    "feishu_drive_tool.py",
+    "url_safety.py",
+    "microsoft_graph_client.py",
+    "environments/file_sync.py",
+    "environments/ssh.py",
+    "file_state.py",
+    "blueprints.py"
+   ],
+   "lines": 4098,
+   "desc": "small-pack (10 files, 4098 lines)",
+   "id": 21
+  },
+  {
+   "method": "write",
+   "files": [
+    "todo_tool.py",
+    "environments/managed_modal.py",
+    "website_policy.py",
+    "clarify_gateway.py",
+    "computer_use/doctor.py",
+    "environments/daytona.py",
+    "environments/singularity.py",
+    "threat_patterns.py",
+    "env_probe.py",
+    "read_extract.py"
+   ],
+   "lines": 2703,
+   "desc": "small-pack (10 files, 2703 lines)",
+   "id": 22
+  },
+  {
+   "method": "write",
+   "files": [
+    "microsoft_graph_auth.py",
+    "tool_result_storage.py",
+    "computer_use/schema.py",
+    "computer_use/vision_routing.py",
+    "environments/modal_utils.py",
+    "managed_tool_gateway.py",
+    "clarify_tool.py",
+    "computer_use/permissions.py",
+    "tool_backend_helpers.py",
+    "computer_use/backend.py"
+   ],
+   "lines": 2032,
+   "desc": "small-pack (10 files, 2032 lines)",
+   "id": 23
+  },
+  {
+   "method": "write",
+   "files": [
+    "osv_check.py",
+    "slash_confirm.py",
+    "env_passthrough.py",
+    "fal_common.py",
+    "browser_dialog_tool.py",
+    "feishu_doc_tool.py",
+    "skills_ast_audit.py",
+    "xai_http.py",
+    "thread_context.py",
+    "budget_config.py"
+   ],
+   "lines": 1443,
+   "desc": "small-pack (10 files, 1443 lines)",
+   "id": 24
+  },
+  {
+   "method": "write",
+   "files": [
+    "tool_output_limits.py",
+    "debug_helpers.py",
+    "neutts_synth.py",
+    "interrupt.py",
+    "read_terminal_tool.py",
+    "skill_provenance.py",
+    "browser_camofox_state.py",
+    "ansi_strip.py",
+    "path_security.py",
+    "computer_use/__init__.py"
+   ],
+   "lines": 764,
+   "desc": "small-pack (10 files, 764 lines)",
+   "id": 25
+  },
+  {
+   "method": "write",
+   "files": [
+    "binary_extensions.py",
+    "computer_use_tool.py",
+    "openrouter_client.py",
+    "__init__.py",
+    "environments/__init__.py"
+   ],
+   "lines": 151,
+   "desc": "small-pack (5 files, 151 lines)",
+   "id": 26
+  }
+ ]
+}

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>05 · 开发调试与测试 — Hermes Agent 学习系列</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D77757; --orange-lt: #f0e0d8; --orange-dk: #b55e3a;
+      --blue: #5769F7; --blue-lt: #dde0fe; --blue-dk: #3a4ed4;
+      --green: #22a766; --green-lt: #d2f0e3;
+      --purple: #8b5cf6; --purple-lt: #ede9fe;
+      --bg: #faf8f5; --bg2: #f3f0eb; --bg3: #ebe7e0;
+      --text: #2d2a26; --text-2: #5a5650; --text-3: #8a8480;
+      --border: #ddd8d0; --shadow: 0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius: 8px; --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--orange-dk); border-bottom: 2px solid var(--orange-lt); padding-bottom: 8px; margin-bottom: 24px; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: .95rem; font-weight: 600; color: var(--text-2); margin: 14px 0 8px; }
+    p { color: var(--text-2); margin-bottom: 10px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { background: linear-gradient(135deg, #fff9f6 0%, #f5f1ff 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 48px; text-align: center; }
+    .hero-badge { display: inline-block; background: var(--orange); color: #fff; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; color: var(--text); letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; list-style: none; }
+    .nav-links a { display: inline-block; padding: 6px 16px; background: #fff; border: 1.5px solid var(--border); border-radius: 20px; font-size: .82rem; font-weight: 600; color: var(--text-2); transition: border-color .15s, color .15s; }
+    .nav-links a:hover { border-color: var(--orange); color: var(--orange-dk); text-decoration: none; }
+    pre { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius); padding: 16px 20px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.75; overflow-x: auto; margin: 12px 0; border-left: 3px solid var(--orange); }
+    code { font-family: var(--font-mono); }
+    p code, li code, td code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk); }
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th { background: var(--bg2); color: var(--text); font-weight: 700; text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .section-desc { color: var(--text-2); font-size: .92rem; margin-bottom: 20px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    .info-box { background: var(--blue-lt); border-left: 3px solid var(--blue); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk); }
+    .warn-box { background: var(--orange-lt); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--orange-dk); }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+    .card h4 { margin: 0 0 6px; color: var(--text); font-size: .93rem; }
+    .card p { font-size: .85rem; margin: 0; }
+    ul.key-list { padding-left: 20px; color: var(--text-2); }
+    ul.key-list li { margin-bottom: 6px; }
+    .step-list { list-style: none; padding: 0; }
+    .step-list li { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .step-list li:last-child { border-bottom: none; }
+    .step-n { flex-shrink: 0; min-width: 26px; height: 26px; background: var(--orange); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; }
+    .step-content { flex: 1; }
+    .step-content strong { display: block; color: var(--text); margin-bottom: 2px; }
+    .step-content span { font-size: .87rem; color: var(--text-2); }
+    .tag { display: inline-block; background: var(--bg3); color: var(--text-3); font-size: .7rem; font-weight: 700; padding: 2px 7px; border-radius: 8px; }
+    .tag-orange { background: var(--orange-lt); color: var(--orange-dk); }
+    .tag-warn { background: #fff3e0; color: #e65100; }
+    @media (max-width: 700px) { .hero h1 { font-size: 1.6rem; } .card-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">学习系列 · 第 05 章</div>
+  <h1>开发<span>调试与测试</span></h1>
+  <p>这是一份"动手实操"指南，目标是让你在 Windows 11 + PowerShell 环境下，把 Hermes Agent 这个项目真正<strong>跑起来、调起来、测起来</strong>。</p>
+  <ul class="nav-links">
+    <li><a href="#env">环境搭建</a></li>
+    <li><a href="#run">如何运行</a></li>
+    <li><a href="#debug">如何 Debug</a></li>
+    <li><a href="#logs">日志系统</a></li>
+    <li><a href="#tests">测试体系</a></li>
+    <li><a href="#quality">代码质量</a></li>
+    <li><a href="#checklist">上手清单</a></li>
+    <li><a href="index.html">← 返回索引</a></li>
+  </ul>
+</header>
+
+<div class="page-wrap">
+
+<section id="env">
+  <h2>一、环境搭建（uv）</h2>
+
+  <h3>1.1 为什么是 uv</h3>
+  <p>项目用 <code>uv</code>（Astral 出品的 Rust 写的 Python 包管理器）管理依赖，而不是 pip/poetry。Windows 一键安装脚本（<code>iex (irm https://hermes-agent.nousresearch.com/install.ps1)</code>）会自动装好 <code>uv</code>、Python 3.11、Node.js、ripgrep、ffmpeg，以及一份<strong>便携版 Git Bash（MinGit）</strong>，解压到 <code>%LOCALAPPDATA%\hermes\git</code>，不需要管理员权限。</p>
+
+  <div class="warn-box">
+    <strong>Windows 杀软误报：</strong>部分杀软（Bitdefender / Windows Defender）会把 <code>%LOCALAPPDATA%\hermes\bin\uv.exe</code> 当成病毒隔离，这是<strong>误报</strong>——它就是 Astral 的 <code>uv</code>。需要把 <code>bin</code> <strong>文件夹</strong>加白名单（别加文件哈希，因为升级后哈希会变）。
+  </div>
+
+  <h3>1.2 两条安装路径</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>路径 A（推荐 / 贡献者标准路径）</h4>
+      <p>先跑标准安装器，再在它克隆出的完整 git 仓库里加装开发依赖。这样你的开发环境布局和 CLI、<code>hermes update</code>、懒加载依赖、gateway 假设的布局完全一致（README.md:220-230）。完整仓库位于 <code>$HERMES_HOME/hermes-agent</code>。</p>
+    </div>
+    <div class="card">
+      <h4>路径 B（手动 clone，本机当前就是这种）</h4>
+      <p>适合一次性 clone、容器或 CI。PowerShell 命令：<br>
+      <code>uv venv .venv --python 3.11</code><br>
+      <code>.\.venv\Scripts\Activate.ps1</code><br>
+      <code>uv pip install -e ".[all,dev]"</code></p>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:12px">
+    <strong>Python 版本上限：</strong><code>requires-python = ">=3.11,<3.14"</code>（<code>pyproject.toml:20</code>）。上限是<strong>有意为之</strong>，不是摆设：封到 <code>&lt;3.14</code> 让 uv 直接报清晰错误而不是闷头编译（pydantic-core 等 Rust 后端在 3.14 上还没有 cp314 wheel）。
+  </div>
+
+  <h3>1.3 <code>[all,dev]</code> extras 速查</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>extra</th><th>内容</th><th>何时需要</th></tr></thead>
+      <tbody>
+        <tr><td><code>dev</code></td><td><code>debugpy</code>、<code>pytest</code>、<code>pytest-asyncio</code>、<code>mcp</code>、<code>starlette</code>、<code>ty</code>、<code>ruff</code>、<code>setuptools</code></td><td><strong>开发/调试/测试/lint 必装</strong></td></tr>
+        <tr><td><code>all</code></td><td>无法懒加载的 extra 聚合（cron/cli/pty/mcp/web/google/youtube…）</td><td>想要功能尽量全时装</td></tr>
+        <tr><td><code>messaging</code></td><td>telegram / discord / slack / aiohttp 等</td><td>跑消息网关时</td></tr>
+        <tr><td><code>web</code></td><td>fastapi / uvicorn / starlette</td><td><code>hermes dashboard</code></td></tr>
+        <tr><td><code>voice</code>、<code>matrix</code>、<code>mistral</code>…</td><td>各后端专属</td><td>用到对应后端时</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>1.4 依赖锁定策略（供应链安全）</h3>
+  <p><code>dependencies</code> 里每个直接依赖都是<strong>精确钉死 <code>==X.Y.Z</code>，没有范围</strong>。原因：</p>
+  <ul class="key-list">
+    <li>范围允许 PyPI 随时推一个新的传递依赖版本，<strong>绕过我方代码评审</strong>。精确 pin 意味着新版本只能通过"我方主动改 pin + 重新生成 <code>uv.lock</code>"才会到达用户。</li>
+    <li>这条策略是 <strong>2026-05-12</strong> 收紧的，起因是 Mini Shai-Hulud 蠕虫攻击了 PyPI 上的 <code>mistralai 2.4.6</code>。</li>
+    <li><strong>改依赖的正确姿势</strong>：改 <code>pyproject.toml</code> 里的 pin <strong>并</strong> <code>uv lock</code> 重新生成 <code>uv.lock</code>。不要随意把范围加回来。</li>
+  </ul>
+
+  <h3>1.5 Windows 原生支持的关键依赖</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>依赖</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr><td><code>pywinpty>=2.0.0,<3</code></td><td>Windows 下的伪终端（PTY），对应 POSIX 的 <code>ptyprocess</code>。终端工具靠它。</td></tr>
+        <tr><td><code>tzdata</code></td><td>Windows 系统不自带 IANA 时区库，Python 的 <code>zoneinfo</code> 对任何非 UTC 时区都会抛 <code>ZoneInfoNotFoundError</code>，靠这个数据包补上。</td></tr>
+        <tr><td><code>concurrent-log-handler</code></td><td>Windows 日志轮转专用（见日志系统一节）。</td></tr>
+        <tr><td><code>psutil</code></td><td>跨平台进程/PID 管理，替代在 Windows 上会"静默杀错进程"的 <code>os.kill(pid, 0)</code>。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="run">
+  <h2>二、如何运行</h2>
+
+  <h3>核心命令一览</h3>
+  <pre><span style="color:#6e6a62"># 入口点定义在 [project.scripts]（pyproject.toml:296-299）</span>
+<span style="color:#6cc77a">hermes</span>              <span style="color:#6e6a62"># 交互式 CLI —— 开一段对话（最常用）</span>
+<span style="color:#6cc77a">hermes model</span>        <span style="color:#6e6a62"># 选 LLM 提供商和模型</span>
+<span style="color:#6cc77a">hermes tools</span>        <span style="color:#6e6a62"># 配置启用哪些工具</span>
+<span style="color:#6cc77a">hermes config set</span>   <span style="color:#6e6a62"># 设置单个配置项</span>
+<span style="color:#6cc77a">hermes gateway</span>      <span style="color:#6e6a62"># 启动消息网关（Telegram / Discord 等）</span>
+<span style="color:#6cc77a">hermes setup</span>        <span style="color:#6e6a62"># 完整 setup 向导（一次配好所有东西）</span>
+<span style="color:#6cc77a">hermes doctor</span>       <span style="color:#6e6a62"># 诊断安装/配置问题（debug 第一站）</span>
+<span style="color:#6cc77a">hermes update</span>       <span style="color:#6e6a62"># 升级到最新版</span>
+<span style="color:#6cc77a">hermes debug share</span>  <span style="color:#6e6a62"># 上传脱敏后的调试报告，拿到可分享 URL</span></pre>
+
+  <p>如果你用的是<strong>手动 clone（路径 B）</strong>且 <code>hermes</code> 没进 PATH，从激活的 venv 里直接调用：</p>
+  <pre><span style="color:#d4cfc8">.\.venv\Scripts\hermes.exe doctor</span>
+<span style="color:#6e6a62"># 或</span>
+<span style="color:#d4cfc8">.\.venv\Scripts\python.exe -m hermes_cli.main doctor</span></pre>
+
+  <h3>配置文件位置（HERMES_HOME）</h3>
+  <p>所有用户配置、日志、会话库都放在 <code>HERMES_HOME</code> 指向的目录：</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>路径</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>config.yaml</code></td><td>设置（模型、终端、toolsets、压缩等）</td></tr>
+        <tr><td><code>.env</code></td><td>API key 和密钥（<strong>仅密钥</strong>）</td></tr>
+        <tr><td><code>auth.json</code></td><td>OAuth 凭据（Nous Portal）</td></tr>
+        <tr><td><code>logs/</code></td><td><code>agent.log</code> / <code>errors.log</code> / <code>gateway.log</code> 等</td></tr>
+        <tr><td><code>state.db</code></td><td>SQLite 会话数据库（FTS5 全文检索）</td></tr>
+        <tr><td><code>skills/</code> <code>memories/</code> <code>sessions/</code> <code>cron/</code></td><td>技能 / 记忆 / 网关路由 / 定时任务</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <pre><span style="color:#6e6a62"># 开发用配置初始化（PowerShell 版）</span>
+<span style="color:#d4cfc8">$h = "$HOME\.hermes"</span>
+<span style="color:#d4cfc8">New-Item -ItemType Directory -Force "$h\cron","$h\sessions","$h\logs","$h\memories","$h\skills" | Out-Null</span>
+<span style="color:#d4cfc8">Copy-Item cli-config.yaml.example "$h\config.yaml"</span>
+<span style="color:#d4cfc8">if (-not (Test-Path "$h\.env")) { New-Item -ItemType File "$h\.env" }</span>
+<span style="color:#d4cfc8">Add-Content "$h\.env" "OPENROUTER_API_KEY=***"</span>   <span style="color:#6e6a62"># 至少配一个 LLM provider key</span></pre>
+</section>
+
+<section id="debug">
+  <h2>三、如何 Debug</h2>
+
+  <h3>3.1 第一站：<code>hermes doctor</code></h3>
+  <p>任何"装好了但跑不起来"的问题，先跑 <code>hermes doctor</code>（实现见 <code>hermes_cli/doctor.py</code>）。它会检查 LLM provider key、系统依赖、浏览器可运行性等，并按平台给出对应的安装命令（Windows 上给 <code>uv pip install</code> / <code>winget</code>）。</p>
+
+  <h3>3.2 用 debugpy 挂调试器</h3>
+  <p><code>debugpy==1.8.20</code> 在 <code>dev</code> extra 里（<code>pyproject.toml:157</code>）。仓库里<strong>没有</strong>内建的"自动启动 debugpy 监听端口"的开关，需要你<strong>手动注入</strong>。两种方式：</p>
+
+  <h4>方式一：在代码里临时插入监听（适合调长生命周期进程，如 gateway）</h4>
+  <pre><span style="color:#7c9bff">import</span> debugpy
+debugpy.<span style="color:#f0906a">listen</span>((<span style="color:#6cc77a">"127.0.0.1"</span>, 5678))
+<span style="color:#f0906a">print</span>(<span style="color:#6cc77a">"debugpy listening on 5678, waiting for client..."</span>, flush=<span style="color:#7c9bff">True</span>)
+debugpy.<span style="color:#f0906a">wait_for_client</span>()   <span style="color:#6e6a62"># 阻塞直到 VS Code attach</span></pre>
+  <p>然后在 VS Code 用 "Python: Attach" 连 <code>127.0.0.1:5678</code>。</p>
+
+  <h4>方式二：从命令行用 debugpy 启动 CLI</h4>
+  <pre><span style="color:#d4cfc8">.\.venv\Scripts\python.exe -m debugpy --listen 5678 --wait-for-client -m hermes_cli.main chat -q "Hello"</span></pre>
+
+  <h3>3.3 分模块的 DEBUG 环境变量开关</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>环境变量</th><th>作用</th><th>代码位置</th></tr></thead>
+      <tbody>
+        <tr><td><code>HERMES_LOG_LEVEL</code></td><td>调整日志级别（如 <code>DEBUG</code>），让更多细节写进日志文件</td><td><code>hermes_cli/auth.py:2473</code></td></tr>
+        <tr><td><code>HERMES_PLUGINS_DEBUG=1</code></td><td>插件发现过程的详细日志，输出到 stderr + <code>agent.log</code></td><td><code>hermes_cli/plugins.py:78-115</code></td></tr>
+        <tr><td><code>HERMES_DEBUG_INTERRUPT</code></td><td>记录中断的 set/check 调用</td><td><code>tools/interrupt.py:24-54</code></td></tr>
+        <tr><td><code>WEB_TOOLS_DEBUG=true</code></td><td>web_search/web_extract 详细日志，存 JSON 到 <code>logs/</code></td><td><code>tools/web_tools.py:335</code></td></tr>
+        <tr><td><code>VISION_TOOLS_DEBUG=true</code></td><td>视觉工具 debug 会话</td><td><code>tools/vision_tools.py:48</code></td></tr>
+        <tr><td><code>HERMES_VOICE_DEBUG=1</code></td><td>语音链路 debug 面包屑</td><td><code>hermes_cli/voice.py:227-239</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <pre><span style="color:#6e6a62"># PowerShell 里临时开一个开关</span>
+<span style="color:#d4cfc8">$env:WEB_TOOLS_DEBUG = "true"; hermes chat -q "搜一下今天的新闻"</span></pre>
+
+  <p>这些开关背后是统一的基础设施 <code>tools/debug_helpers.py</code> 的 <code>DebugSession</code> 类（<code>debug_helpers.py:36-58</code>）：关闭时所有方法都是几乎零开销的空操作；开启时把每次工具调用记成 JSON 写到 <code>~/.hermes/logs/</code>。</p>
+
+  <h3>3.4 流式诊断（stream_diag）</h3>
+  <p>当流式 chat-completions 请求在中途断掉，<code>agent/stream_diag.py</code> 会收集"为什么断"的诊断信息：哪个 Cloudflare 边缘节点、OpenRouter 下游用了哪个 provider、断前收到多少字节/chunk、HTTP 状态、底层 httpx 异常类。排查"模型回到一半断流"时，去 <code>agent.log</code> 搜 <code>cf-ray</code>、<code>x-openrouter-provider</code> 等字段。</p>
+</section>
+
+<section id="logs">
+  <h2>四、日志系统</h2>
+  <p>集中式配置在 <code>hermes_logging.py</code>，单一入口 <code>setup_logging()</code>。生成的文件都在 <code>~/.hermes/logs/</code>：</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><code>agent.log</code></td><td>INFO+，所有 agent/工具/会话活动（<strong>主日志，兜底</strong>）</td></tr>
+        <tr><td><code>errors.log</code></td><td>WARNING+，只有错误和警告（<strong>快速排查首选</strong>）</td></tr>
+        <tr><td><code>gateway.log</code></td><td>gateway 专属事件（<code>mode="gateway"</code> 时）</td></tr>
+        <tr><td><code>gui.log</code></td><td>dashboard / websocket / TUI-gateway 事件</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>每条日志带 <code>[session_id]</code> 标签（<code>set_session_context()</code> 注入），可按会话过滤关联。所有 handler 用 <code>RedactingFormatter</code>，<strong>密钥永远不会落盘</strong>。</p>
+
+  <pre><span style="color:#6e6a62"># PowerShell 实时看日志</span>
+<span style="color:#d4cfc8">Get-Content "$HOME\.hermes\logs\agent.log" -Wait -Tail 50</span>    <span style="color:#6e6a62"># 类似 tail -f</span>
+<span style="color:#d4cfc8">Get-Content "$HOME\.hermes\logs\errors.log" -Tail 30</span>         <span style="color:#6e6a62"># 只看错误</span></pre>
+
+  <div class="warn-box">
+    <strong>Windows 日志轮转的坑（<code>hermes_logging.py:37-58</code>，必读）：</strong><br>
+    stdlib 的 <code>RotatingFileHandler.doRollover()</code> 用 <code>os.rename()</code>，当<strong>另一个进程</strong>以追加模式持有 <code>agent.log</code> 句柄时会抛 <code>PermissionError [WinError 32]</code>——而 Hermes 里这几乎是常态（TUI、gateway、<code>hy_memory</code>、MCP server 都从独立进程写日志）。<br><br>
+    解决方案：<strong>仅在 Windows</strong> 把 <code>RotatingFileHandler</code> 别名为 <code>concurrent-log-handler</code> 的 <code>ConcurrentRotatingFileHandler</code>（用 portalocker/pywin32 做跨进程文件锁），POSIX 上保持 stdlib 不变。参见 issue #44873。
+  </div>
+
+  <h3><code>hermes debug share</code></h3>
+  <p>要把环境信息 + 日志发给别人求助，用 <code>hermes debug share</code>（<code>hermes_cli/debug.py</code>）。它<strong>默认在上传前对日志脱敏</strong>（<code>redact_sensitive_text(force=True)</code>），把 <code>logs/*.log</code> 里的凭据擦掉再传到 paste 服务，返回一个 6 小时后自动删除的 URL。</p>
+</section>
+
+<section id="tests">
+  <h2>五、测试体系</h2>
+
+  <h3>5.1 tests/ 目录结构</h3>
+  <pre><span style="color:#d4cfc8">tests/</span>
+├── <span style="color:#f0906a">agent/</span>        run_agent / AIAgent 相关
+├── <span style="color:#f0906a">cli/</span>          交互式 CLI 行为
+├── <span style="color:#f0906a">hermes_cli/</span>   CLI 命令实现
+├── <span style="color:#f0906a">gateway/</span>      消息网关
+├── <span style="color:#f0906a">cron/</span>         定时任务
+├── <span style="color:#f0906a">tools/</span>        各工具（terminal/browser/mcp/file_sync…，数量最多）
+├── <span style="color:#f0906a">e2e/</span>          端到端真实路径
+├── <span style="color:#f0906a">integration/</span>  需要外部服务（API key / Modal / Daytona）—— 默认跳过
+├── <span style="color:#f0906a">stress/</span>       压力测试
+├── <span style="color:#f0906a">fakes/</span>        测试替身（如 fake_ha_server.py）
+└── <span style="color:#f0906a">fixtures/ conftest.py</span></pre>
+
+  <h3>5.2 跑测试：<code>scripts/run_tests.sh</code>（务必用它）</h3>
+  <div class="warn-box">
+    <strong>铁律（AGENTS.md:1252）：永远用 <code>scripts/run_tests.sh</code>，不要直接调 <code>pytest</code>。</strong><br>
+    因为脚本强制了与 CI 一致的"洁净环境"，否则一台 16+ 核、设了 API key 的开发机会和 CI 产生分歧，多次造成"本地过 CI 挂"或反过来的事故。<br>这是 <strong>bash 脚本</strong>，Windows 上要用项目自带的 Git Bash 跑（<code>%LOCALAPPDATA%\hermes\git</code>）。
+  </div>
+
+  <p>脚本做的事：</p>
+  <ul class="key-list">
+    <li>通过 <code>scripts/run_tests_parallel.py</code> 做<strong>每文件隔离</strong>——每个测试文件在自己新生成的 <code>python -m pytest &lt;file&gt;</code> 子进程里跑，杜绝模块级状态泄漏。</li>
+    <li>强制 <code>TZ=UTC</code>、<code>LANG=C.UTF-8</code>、<code>PYTHONHASHSEED=0</code>（确定性）。</li>
+    <li>用 <code>env -i</code> 清空环境再 opt-in，<strong>任何凭据变量都不会泄露</strong>进测试（<code>run_tests.sh:62-80</code>）。</li>
+  </ul>
+
+  <pre><span style="color:#6e6a62"># Git Bash 里运行</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh</span>                                  <span style="color:#6e6a62"># 全量，CI 对齐</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh tests/gateway/</span>                   <span style="color:#6e6a62"># 单个目录</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh tests/agent/test_foo.py</span>          <span style="color:#6e6a62"># 单个文件</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh tests/agent/test_foo.py::test_x</span>  <span style="color:#6e6a62"># 单个用例</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh -j 4</span>                             <span style="color:#6e6a62"># 限制并行度</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh -- -v --tb=long</span>                  <span style="color:#6e6a62"># `--` 之后透传给 pytest</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh --no-isolate tests/foo/</span>          <span style="color:#6e6a62"># 关闭子进程隔离（调试时更快）</span></pre>
+
+  <h3>5.3 pytest 配置（<code>pyproject.toml</code>）</h3>
+  <ul class="key-list">
+    <li><code>testpaths = ["tests"]</code></li>
+    <li><strong>markers</strong>：<code>integration</code>（需要外部服务）、<code>real_concurrent_gate</code></li>
+    <li><code>addopts = "-m 'not integration'"</code> —— <strong>默认就跳过 integration 测试</strong>。要专门跑：<code>scripts/run_tests.sh -- -m integration</code>。</li>
+    <li>异步测试用 <code>pytest-asyncio==1.3.0</code>，可以直接写 <code>async def test_...</code>。</li>
+  </ul>
+
+  <h3>5.4 测试理念（AGENTS.md，写测试前必读）</h3>
+  <div class="warn-box">
+    <strong>行为契约 > 快照（Behavior contracts over snapshots）：</strong><br>
+    测试要断言"两份数据<strong>之间的关系/不变量</strong>"，而不是冻结某个当前值。反例叫 <strong>change-detector test</strong>——每次模型目录更新、配置版本号 +1、枚举数量变化就挂，纯属浪费工程时间。<br><br>
+    <strong>不要写：</strong><code>assert "gemini-2.5-pro" in _PROVIDER_MODELS["gemini"]</code>、<code>assert len(...) == 8</code><br>
+    <strong>要写：</strong><code>assert "gemini" in _PROVIDER_MODELS</code>、"目录里每个模型都有 context-length 条目"这类不变量。<br><br>
+    <strong>判断法则：像当前数据快照的就删，像两份数据必须满足的契约的就留。</strong>
+  </div>
+
+  <div class="info-box">
+    <strong>E2E 真实路径 > 全绿的 mock 单测（AGENTS.md:84-87）：</strong><br>
+    凡是碰到解析链、配置传播、安全边界、远程后端、文件/网络 I/O 的，要用<strong>真实 import</strong> 跑<strong>真实路径</strong>（针对临时 <code>HERMES_HOME</code>），别用 mock —— mock 会藏住集成 bug。<br><br>
+    <strong>临时 HOME 的坑：</strong>mock <code>Path.home()</code> 的测试<strong>也要</strong>设 <code>HERMES_HOME</code>，否则代码走的是 <code>HERMES_HOME</code> 而非 <code>home()</code>。
+  </div>
+
+  <h3>5.5 跨平台测试（Windows 相关）</h3>
+  <pre><span style="color:#6e6a62"># POSIX-only 的系统调用需要 skip 标记</span>
+<span style="color:#f0906a">@pytest.mark.skipif</span>(sys.platform == <span style="color:#6cc77a">"win32"</span>, reason=<span style="color:#6cc77a">"symlink/POSIX-only"</span>)
+<span style="color:#7c9bff">def</span> <span style="color:#f0906a">test_symlink_behavior</span>():
+    ...</pre>
+  <p>常见需要跳过的：符号链接、<code>0o600</code> 文件模式、<code>signal.SIGALRM</code>、<code>os.setsid</code>/<code>os.fork</code>。Windows 专属回归测试反过来用 <code>skipif(sys.platform != "win32", ...)</code>。</p>
+</section>
+
+<section id="quality">
+  <h2>六、代码质量工具</h2>
+
+  <h3>6.1 ruff（只开一条规则）</h3>
+  <p><code>[tool.ruff]</code>（<code>pyproject.toml:364-383</code>）的配置非常特殊：<strong>几乎所有 lint 都关了，只开 <code>PLW1514</code>（unspecified-encoding）</strong>。</p>
+  <div class="warn-box">
+    <strong>原因：</strong>裸 <code>open()</code> / <code>read_text()</code> / <code>write_text()</code> 在文本模式下默认用系统 locale 编码，<strong>Windows 上（US locale）是 cp1252</strong>，会静默损坏任何非 ASCII 文件内容——他们在一次调试里连踩三个 Windows 沙箱回归才加了这条强制规则。<br><br>
+    <strong>写文件时一定要显式指定编码：</strong><br>
+    <code>path.read_text(encoding="utf-8")</code><br>
+    <code>open(path, "w", encoding="utf-8")</code>
+  </div>
+  <pre><span style="color:#d4cfc8">.\.venv\Scripts\ruff.exe check .</span></pre>
+
+  <h3>6.2 ty（类型检查）</h3>
+  <p><code>ty==0.0.21</code>（Astral 的类型检查器）在 dev extra 里。配置：<code>python-version = "3.13"</code>、<code>unknown-argument = "warn"</code>。</p>
+  <pre><span style="color:#d4cfc8">.\.venv\Scripts\ty.exe check .</span></pre>
+
+  <h3>6.3 scripts/ 目录里有用的脚本</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>脚本</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>scripts/run_tests.sh</code></td><td><strong>测试入口</strong></td></tr>
+        <tr><td><code>scripts/lint_diff.py</code></td><td>对比两个 git ref 之间的 ruff + ty 诊断差异，产出 Markdown 摘要（给 CI / PR 评论用）。</td></tr>
+        <tr><td><code>scripts/check-windows-footguns.py</code></td><td><strong>Windows 跨平台陷阱检查器</strong>，grep 出会在 Windows 静默挂掉的写法（如 <code>os.kill(pid,0)</code>）。<strong>提 PR 前跑一下</strong>。</td></tr>
+        <tr><td><code>scripts/check_subprocess_stdin.py</code></td><td>子进程 stdin 相关检查</td></tr>
+        <tr><td><code>scripts/build_model_catalog.py</code> / <code>build_skills_index.py</code></td><td>构建模型目录 / 技能索引</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <pre><span style="color:#6e6a62"># check-windows-footguns.py 用法（你在 Windows 上开发尤其该跑）</span>
+<span style="color:#d4cfc8">python scripts\check-windows-footguns.py</span>            <span style="color:#6e6a62"># 扫已 staged 的改动</span>
+<span style="color:#d4cfc8">python scripts\check-windows-footguns.py --all</span>      <span style="color:#6e6a62"># 全树审计</span>
+<span style="color:#d4cfc8">python scripts\check-windows-footguns.py --diff main</span></pre>
+</section>
+
+<section id="checklist">
+  <h2>七、上手清单</h2>
+
+  <h3>第一次跑起来</h3>
+  <pre><span style="color:#6e6a62"># 1. 进仓库，建并激活 3.11 venv</span>
+<span style="color:#d4cfc8">cd C:\Users\hapii\Documents\GitHub\hermes-agent</span>
+<span style="color:#d4cfc8">uv venv .venv --python 3.11</span>
+<span style="color:#d4cfc8">.\.venv\Scripts\Activate.ps1</span>
+
+<span style="color:#6e6a62"># 2. 装开发依赖</span>
+<span style="color:#d4cfc8">uv pip install -e ".[all,dev]"</span>
+
+<span style="color:#6e6a62"># 3. 初始化 ~/.hermes 配置 + 填一个 LLM key（见 §2）</span>
+<span style="color:#6e6a62">#    至少 echo OPENROUTER_API_KEY 到 ~/.hermes/.env</span>
+
+<span style="color:#6e6a62"># 4. 自检</span>
+<span style="color:#d4cfc8">.\.venv\Scripts\hermes.exe doctor</span>
+
+<span style="color:#6e6a62"># 5. 第一段对话</span>
+<span style="color:#d4cfc8">.\.venv\Scripts\hermes.exe chat -q "Hello"</span>
+
+<span style="color:#6e6a62"># 6. 跑一小撮测试验证环境（Git Bash 里）</span>
+<span style="color:#d4cfc8">scripts/run_tests.sh tests/tools/test_windows_compat.py</span></pre>
+
+  <h3>debug 一个工具调用的示例思路</h3>
+  <p>假设你怀疑 <code>web_search</code> 工具行为异常，排查路径：</p>
+  <ol class="step-list">
+    <li><span class="step-n">1</span><div class="step-content"><strong>先看现象</strong><span><code>Get-Content $HOME\.hermes\logs\errors.log -Tail 30</code> 看有没有报错；再翻 <code>agent.log</code> 找对应 <code>[session_id]</code>。</span></div></li>
+    <li><span class="step-n">2</span><div class="step-content"><strong>开工具级 debug 开关</strong><span><code>$env:WEB_TOOLS_DEBUG = "true"</code>，再复现一次。<code>DebugSession</code> 会把每次调用（query、结果数等）写成 JSON 到 <code>~/.hermes/logs/</code>。</span></div></li>
+    <li><span class="step-n">3</span><div class="step-content"><strong>挂调试器看实参/控制流</strong><span>在 <code>tools/web_tools.py</code> 里要断的位置插入 <code>debugpy.listen</code> 三行，或用 <code>python -m debugpy --listen 5678 --wait-for-client -m hermes_cli.main chat -q "..."</code>，VS Code attach 到 5678。</span></div></li>
+    <li><span class="step-n">4</span><div class="step-content"><strong>若是流式中断</strong><span>去 <code>agent/stream_diag.py</code> 关注的响应头（<code>x-openrouter-provider</code> 等）在 <code>agent.log</code> 里找断流原因。</span></div></li>
+    <li><span class="step-n">5</span><div class="step-content"><strong>写一个行为契约测试固化修复</strong><span>放到 <code>tests/tools/</code>，断言"输入 → 输出关系"的不变量，用真实 import 跑真实路径。涉及外部 API 的标 <code>@pytest.mark.integration</code>。</span></div></li>
+    <li><span class="step-n">6</span><div class="step-content"><strong>提交前自检</strong><span><code>ruff check .</code>、<code>ty check .</code>、<code>python scripts\check-windows-footguns.py --diff main</code>，再用 Git Bash 跑 <code>scripts/run_tests.sh tests/tools/</code>。</span></div></li>
+  </ol>
+</section>
+
+<hr class="divider">
+<p style="text-align:center; color:var(--text-3); font-size:.85rem; padding-bottom:20px">
+  学习系列 · 第 05 章 — <a href="index.html">返回索引</a> · <a href="06-学习计划与路线图.html">下一章 →</a>
+</p>
+
+</div>
+</body>
+</html>

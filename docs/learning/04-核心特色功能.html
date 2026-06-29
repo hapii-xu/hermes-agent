@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>04 · 核心特色功能 — Hermes Agent 学习系列</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D77757; --orange-lt: #f0e0d8; --orange-dk: #b55e3a;
+      --blue: #5769F7; --blue-lt: #dde0fe; --blue-dk: #3a4ed4;
+      --green: #22a766; --green-lt: #d2f0e3;
+      --purple: #8b5cf6; --purple-lt: #ede9fe;
+      --bg: #faf8f5; --bg2: #f3f0eb; --bg3: #ebe7e0;
+      --text: #2d2a26; --text-2: #5a5650; --text-3: #8a8480;
+      --border: #ddd8d0; --shadow: 0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius: 8px; --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--orange-dk); border-bottom: 2px solid var(--orange-lt); padding-bottom: 8px; margin-bottom: 24px; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: .95rem; font-weight: 600; color: var(--text-2); margin: 14px 0 8px; }
+    p { color: var(--text-2); margin-bottom: 10px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { background: linear-gradient(135deg, #fff9f6 0%, #f5f1ff 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 48px; text-align: center; }
+    .hero-badge { display: inline-block; background: var(--orange); color: #fff; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; color: var(--text); letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; list-style: none; }
+    .nav-links a { display: inline-block; padding: 6px 16px; background: #fff; border: 1.5px solid var(--border); border-radius: 20px; font-size: .82rem; font-weight: 600; color: var(--text-2); transition: border-color .15s, color .15s; }
+    .nav-links a:hover { border-color: var(--orange); color: var(--orange-dk); text-decoration: none; }
+    pre { background: #1e1b16; color: #d4cfc8; border-radius: var(--radius); padding: 16px 20px; font-family: var(--font-mono); font-size: .8rem; line-height: 1.75; overflow-x: auto; margin: 12px 0; border-left: 3px solid var(--orange); }
+    code { font-family: var(--font-mono); }
+    p code, li code, td code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk); }
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th { background: var(--bg2); color: var(--text); font-weight: 700; text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .section-desc { color: var(--text-2); font-size: .92rem; margin-bottom: 20px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    .info-box { background: var(--blue-lt); border-left: 3px solid var(--blue); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk); }
+    .warn-box { background: var(--orange-lt); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--orange-dk); }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); transition: box-shadow .15s, border-color .15s; }
+    .card:hover { box-shadow: var(--shadow-lg); border-color: var(--orange-lt); }
+    .card h4 { margin: 0 0 6px; color: var(--text); font-size: .93rem; }
+    .card p { font-size: .85rem; margin: 0; }
+    ul.key-list { padding-left: 20px; color: var(--text-2); }
+    ul.key-list li { margin-bottom: 6px; }
+    .loop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin: 14px 0; }
+    .loop-item { padding: 16px 18px; background: #fff; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .loop-item:last-child { border-right: none; }
+    .loop-item h4 { color: var(--orange-dk); margin: 0 0 4px; font-size: .88rem; }
+    .loop-item p { font-size: .8rem; margin: 0; }
+    .step-list { list-style: none; padding: 0; }
+    .step-list li { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .step-list li:last-child { border-bottom: none; }
+    .step-n { flex-shrink: 0; min-width: 26px; height: 26px; background: var(--orange); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; }
+    .step-content { flex: 1; }
+    .step-content strong { display: block; color: var(--text); margin-bottom: 2px; }
+    .step-content span { font-size: .87rem; color: var(--text-2); }
+    .platform-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+    .platform-tag { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 3px 10px; font-size: .78rem; color: var(--text-2); }
+    @media (max-width: 700px) { .hero h1 { font-size: 1.6rem; } .card-grid { grid-template-columns: 1fr; } .loop-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">学习系列 · 第 04 章</div>
+  <h1>核心<span>特色功能</span></h1>
+  <p>学习闭环（记忆/技能/curator）、消息网关 20+ 平台、内置 cron 调度器、插件与 providers 体系——这些是 Hermes 区别于"普通 agent"的三大灵魂功能。</p>
+  <ul class="nav-links">
+    <li><a href="#loop">学习闭环</a></li>
+    <li><a href="#memory">记忆系统</a></li>
+    <li><a href="#skills">技能系统</a></li>
+    <li><a href="#curator">Curator 策展</a></li>
+    <li><a href="#search">跨会话搜索</a></li>
+    <li><a href="#gateway">消息网关</a></li>
+    <li><a href="#cron">定时任务</a></li>
+    <li><a href="#plugins">插件与 providers</a></li>
+    <li><a href="#scenario">完整场景</a></li>
+    <li><a href="index.html">← 返回索引</a></li>
+  </ul>
+</header>
+
+<div class="page-wrap">
+
+<section id="loop">
+  <h2>一、学习闭环（self-improving loop）</h2>
+  <p>学习闭环由四块构成，它们各管一段、首尾相接：</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>环节</th><th>负责模块</th><th>沉淀的东西</th><th>触发时机</th></tr></thead>
+      <tbody>
+        <tr><td><strong>记忆系统</strong></td><td><code>agent/memory_manager.py</code>、<code>agent/memory_provider.py</code>、<code>plugins/memory/*</code></td><td>用户画像、环境事实、跨会话记忆</td><td>每轮后台同步 + nudge</td></tr>
+        <tr><td><strong>技能系统</strong></td><td><code>skills/</code>、<code>agent/skill_*.py</code>、<code>agent/learn_prompt.py</code></td><td>可复用的程序性知识（SKILL.md）</td><td>自动创建 + <code>/learn</code> 手动</td></tr>
+        <tr><td><strong>后台复盘</strong></td><td><code>agent/background_review.py</code>、<code>agent/turn_finalizer.py</code></td><td>把"刚刚这轮"学到的写进记忆/技能</td><td>每 N 轮 nudge fork</td></tr>
+        <tr><td><strong>Curator 策展</strong></td><td><code>agent/curator.py</code></td><td>维护整个技能库的健康度</td><td>空闲时周期触发</td></tr>
+        <tr><td><strong>跨会话召回</strong></td><td><code>tools/session_search_tool.py</code></td><td>把历史会话变成可检索语料</td><td>按需 FTS5 检索</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box">
+    <strong>为什么这让 Hermes 能自我改进？</strong>闭环的每一环都把"这次会话学到的东西"沉淀成下次会话开场就已知的状态。每次会话不是从零开始，而是从"上次结束时对你的理解"开始——理解只增不减，越用越深。
+  </div>
+</section>
+
+<section id="memory">
+  <h2>二、记忆系统：持久画像如何跨会话积累</h2>
+
+  <h3>两层内置记忆</h3>
+  <p>内置记忆是两个 Markdown 文件，定义见 <code>tools/memory_tool.py:6</code>：</p>
+  <div class="card-grid">
+    <div class="card">
+      <h4>MEMORY.md</h4>
+      <p>agent 的个人笔记与观察（环境事实、项目约定等）。</p>
+    </div>
+    <div class="card">
+      <h4>USER.md</h4>
+      <p>agent 对<strong>用户</strong>的了解（偏好、沟通风格、期望）。</p>
+    </div>
+  </div>
+  <p style="margin-top:12px"><code>MemoryStore</code>（<code>tools/memory_tool.py:109</code>）负责从这两个文件加载条目，并在系统提示词里快照注入。这意味着 agent 每次会话开场，系统提示词里就已经带着"它对你的全部了解"——这是跨会话连续性的最底层机制。</p>
+
+  <h3>可插拔的外部记忆后端</h3>
+  <p>抽象基类是 <code>agent/memory_provider.py:43</code> 的 <code>MemoryProvider(ABC)</code>，核心生命周期方法：</p>
+  <ul class="key-list">
+    <li><code>initialize()</code> 连接/建表/预热</li>
+    <li><code>system_prompt_block()</code> 注入静态记忆文本</li>
+    <li><code>prefetch(query)</code> 每轮<strong>前</strong>后台召回</li>
+    <li><code>sync_turn(user, asst)</code> 每轮<strong>后</strong>异步写入</li>
+    <li><code>get_tool_schemas()</code> / <code>handle_tool_call()</code> 暴露并分发记忆工具</li>
+    <li>可选钩子：<code>on_session_end</code>（会话结束抽取）、<code>on_pre_compress</code>（压缩前抢救）、<code>on_delegation</code>（观察子 agent 工作）</li>
+  </ul>
+
+  <div class="warn-box">
+    <strong>单 provider 约束：</strong>同一时间只允许一个外部 provider（<code>agent/memory_manager.py:6-8</code>），注册第二个会被拒绝并告警——这是为了避免工具 schema 膨胀和后端冲突。
+  </div>
+
+  <h3>内置记忆后端插件</h3>
+  <div class="platform-grid">
+    <span class="platform-tag">honcho（辩证式用户建模）</span>
+    <span class="platform-tag">hindsight</span>
+    <span class="platform-tag">mem0</span>
+    <span class="platform-tag">byterover</span>
+    <span class="platform-tag">openviking</span>
+    <span class="platform-tag">retaindb</span>
+    <span class="platform-tag">supermemory</span>
+    <span class="platform-tag">holographic</span>
+  </div>
+  <p>以 <strong>Honcho</strong> 为例（<code>plugins/memory/honcho/__init__.py:191</code>）：实现"辩证式用户建模"——在后台跑多轮辩证 prompt 来推断"你是谁"，并在每轮前通过 <code>prefetch</code> 把召回结果喂进上下文。这正是 README 里 "Honcho dialectic user modeling" 的实现。</p>
+</section>
+
+<section id="skills">
+  <h2>三、技能系统：完成复杂任务后自动沉淀程序性知识</h2>
+  <p>如果说记忆是"agent 知道什么"，技能就是"agent 会做什么"——程序性记忆。</p>
+
+  <h3>技能格式（兼容 agentskills.io 标准）</h3>
+  <p>每个技能是一个 <code>SKILL.md</code>，带 YAML frontmatter + 正文。仓库内置 72 个 <code>SKILL.md</code>，按领域分目录（<code>skills/creative</code>、<code>skills/software-development</code>、<code>skills/github</code>、<code>skills/research</code>、<code>skills/mlops</code> 等约 18 个大类）。</p>
+
+  <pre><span style="color:#6e6a62">---</span>
+<span style="color:#7c9bff">name:</span> <span style="color:#6cc77a">test-driven-development</span>
+<span style="color:#7c9bff">description:</span> <span style="color:#6cc77a">"TDD：强制执行 RED-GREEN-REFACTOR，先写测试再写代码。"</span>
+<span style="color:#7c9bff">version:</span> <span style="color:#6cc77a">1.1.0</span>
+<span style="color:#7c9bff">author:</span> <span style="color:#6cc77a">Hermes Agent (adapted from obra/superpowers)</span>
+<span style="color:#7c9bff">platforms:</span> [linux, macos, windows]
+<span style="color:#7c9bff">metadata:</span>
+  <span style="color:#7c9bff">hermes:</span>
+    <span style="color:#7c9bff">tags:</span> [testing, tdd, development, quality]
+<span style="color:#6e6a62">---</span></pre>
+
+  <div class="warn-box">
+    <strong>最关键的一条规则（<code>agent/learn_prompt.py:40-44</code>）：</strong><code>description</code> 必须 ≤60 字符——因为系统提示词里的技能索引会把描述截断到 60 字，超出部分会被静默截掉、永远无法路由。<strong>所有技能的简短描述常驻系统提示词</strong>，agent 据此决定何时加载哪个技能的完整正文。
+  </div>
+
+  <h3>技能的调用与预处理</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4><code>agent/skill_commands.py</code></h4>
+      <p>CLI 与 gateway 共享的 <code>/skill-name</code> 斜杠命令分发。调用时把这一轮展开成嵌入完整技能正文 + 脚手架的"模型可见消息"。</p>
+    </div>
+    <div class="card">
+      <h4><code>agent/skill_preprocessing.py</code></h4>
+      <p>SKILL.md 的模板预处理。支持 <code>${HERMES_SKILL_DIR}</code> / <code>${HERMES_SESSION_ID}</code> 变量替换和内联 shell 片段 <code>!`date`</code>（输出截断到 4000 字）。</p>
+    </div>
+    <div class="card">
+      <h4><code>agent/skill_bundles.py</code></h4>
+      <p>技能"捆绑包"。一个 YAML 把多个技能聚合到一个斜杠命令下，<code>/&lt;bundle&gt;</code> 一次加载 N 个技能。冲突时 bundle 优先于同名 skill。</p>
+    </div>
+  </div>
+
+  <h3>自动创建 / 自我改进——<code>/learn</code> 与后台复盘</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>手动 <code>/learn</code>（<code>agent/learn_prompt.py</code>）</h4>
+      <p>用户可以把 <code>/learn</code> 指向任何能描述的东西——代码目录、API 文档 URL、"我刚刚带你走过的流程"。<code>build_learn_prompt</code> 构造一个 prompt，指示<strong>当前活着的 agent</strong>用它已有的工具去搜集素材并通过 <code>skill_manage</code> 写出符合标准的 SKILL.md。没有独立的"蒸馏引擎"，无额外模型工具足迹。</p>
+    </div>
+    <div class="card">
+      <h4>自动后台复盘（<code>agent/background_review.py</code>）</h4>
+      <p>每完成 N 轮工具调用，<code>turn_finalizer</code> 触发一次后台技能复盘。机制是 fork 一个 agent，<strong>重放整轮对话</strong>，问它"该不该保存/更新某个技能？"——写入直接落到技能库，主会话和 prompt cache 完全不受污染。</p>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:16px">
+    <strong>后台复盘的产品意图（<code>agent/background_review.py:170-204</code>）：</strong><br>
+    "Review the conversation above and update the skill library. <strong>Be ACTIVE — most sessions produce at least one skill update.</strong> A pass that does nothing is a missed learning opportunity, not a neutral outcome."<br><br>
+    用户的挫败信号（"stop doing X"、"this is too verbose"、"remember this"）是<strong>一等技能信号</strong>——应当把偏好直接编码进相关技能，让下次会话开场就已经知道。
+  </div>
+
+  <h3>nudge 节奏的配置</h3>
+  <ul class="key-list">
+    <li>技能 nudge：<code>agent._skill_nudge_interval</code>（默认 10，配置键 <code>skills.creation_nudge_interval</code>，<code>agent/agent_init.py:1197-1200</code>），每次实际用了 <code>skill_manage</code> 就重置计数。</li>
+    <li>记忆 nudge：<code>agent._memory_nudge_interval</code>（默认 10，配置键 <code>memory.nudge_interval</code>，<code>agent/agent_init.py:1105-1113</code>）。</li>
+  </ul>
+</section>
+
+<section id="curator">
+  <h2>四、Curator：周期性策展整个技能库</h2>
+  <p>后台复盘负责"往库里加东西"，<strong>Curator 负责"维护这个库不烂掉"</strong>（<code>agent/curator.py</code>）。</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>触发方式</h4>
+      <p>空闲触发，无 cron 守护进程。当 agent 空闲且距上次运行超过 <code>interval_hours</code>（默认 7 天）时，<code>maybe_run_curator()</code> 派生一个 fork 出来的 agent 做审查。</p>
+    </div>
+    <div class="card">
+      <h4>职责</h4>
+      <p>根据技能活动时间戳自动转换生命周期状态（stale→archive 等）；对 agent 创建的技能执行 pin / archive / consolidate / patch；状态持久化在 <code>~/.hermes/skills/.curator_state</code>。</p>
+    </div>
+  </div>
+
+  <h3>严格不变量（安全设计）</h3>
+  <ul class="key-list">
+    <li><strong>只操作 agent 创建的技能</strong>（绝不动用户手写的技能，靠 <code>tools/skill_usage.is_agent_created</code> 判定）。</li>
+    <li><strong>从不自动删除——只归档，归档可恢复。</strong></li>
+    <li>被 pin 的技能跳过所有自动转换。</li>
+    <li>使用辅助模型客户端，从不触碰主会话 prompt cache。</li>
+    <li><code>DEFAULT_CONSOLIDATE = False</code>（<code>:62</code>）：确定性的非活动剪枝照常跑，但需要 LLM 开销的"主观合并"流程默认关闭，避免烧钱。</li>
+  </ul>
+</section>
+
+<section id="search">
+  <h2>五、跨会话搜索：FTS5 + 锚点窗口召回</h2>
+  <p><code>tools/session_search_tool.py</code> 是单一形态工具，三种模式由参数推断：</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>模式</th><th>触发条件</th><th>行为</th><th>LLM 开销</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>发现（DISCOVERY）</strong></td>
+          <td>传 <code>query</code></td>
+          <td>跑 SQLite FTS5 全文索引，按会话血缘对命中去重，返回前 N 个会话，每个附带匹配位置 ±5 条的窗口，外加 bookend（会话最早/最晚各 3 条 user+assistant）。</td>
+          <td>零</td>
+        </tr>
+        <tr>
+          <td><strong>滚动（SCROLL）</strong></td>
+          <td>传 <code>session_id</code> + <code>around_message_id</code></td>
+          <td>返回锚点 ±window 的窗口，可反复把窗口边缘消息当新锚点向前/后翻。</td>
+          <td>零</td>
+        </tr>
+        <tr>
+          <td><strong>浏览（BROWSE）</strong></td>
+          <td>不传参数</td>
+          <td>按时间倒序返回最近会话列表。</td>
+          <td>零</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn-box">
+    <strong>注意：</strong>README 提到 "FTS5 session search <strong>with LLM summarization</strong>"，而当前实现注释（<code>tools/session_search_tool.py:23-26</code>）明确说"把所有模式合并为单一调用形态，<strong>没有 summary LLM 路径</strong>"。早期 PR（#20238）曾有 fast/summary 双模式，现已合并精简。<strong>README 的 LLM 摘要措辞与现状略有出入，以代码为准。</strong>
+  </div>
+
+  <div class="info-box">
+    子 agent 委派的会话默认从搜索/浏览里隐藏（<code>tools/session_search_tool.py:35</code>：<code>subagent</code>、<code>tool</code> 来源被排除），保证检索到的是真正的用户会话历史。
+  </div>
+</section>
+
+<section id="gateway">
+  <h2>六、消息网关 <code>gateway/</code></h2>
+  <blockquote style="border-left:3px solid var(--orange); padding-left:16px; margin-bottom:16px; color:var(--text-2); font-style:italic">"Lives where you do：Telegram, Discord, Slack, WhatsApp, Signal, and CLI — all from a single gateway process."</blockquote>
+
+  <h3>单进程多平台</h3>
+  <p>入口是 <code>gateway/run.py</code>：<code>start_gateway()</code> 启动所有已配置的平台适配器，<code>GatewayRunner</code> 管理网关生命周期。它是一个<strong>长驻守护进程</strong>（<code>gateway/run.py:52</code> 注释强调）。</p>
+
+  <h3>平台适配器注册表</h3>
+  <p>网关不靠硬编码的 if/elif 链发现平台，而是用注册表 <code>gateway/platform_registry.py</code>。<code>PlatformEntry</code>（<code>:38</code>）是单个平台的元数据 + 工厂：<code>name</code>、<code>label</code>、<code>adapter_factory</code>（接收 <code>PlatformConfig</code> 返回 adapter 实例）、<code>check_fn</code>（依赖是否可用）等。插件侧通过 <code>platform_registry.register(PlatformEntry(...))</code> 注册。</p>
+
+  <h3>已支持的平台</h3>
+  <div class="platform-grid">
+    <span class="platform-tag">Telegram</span>
+    <span class="platform-tag">Discord</span>
+    <span class="platform-tag">Slack</span>
+    <span class="platform-tag">WhatsApp</span>
+    <span class="platform-tag">Signal</span>
+    <span class="platform-tag">Email</span>
+    <span class="platform-tag">Feishu</span>
+    <span class="platform-tag">Teams</span>
+    <span class="platform-tag">Line</span>
+    <span class="platform-tag">Matrix</span>
+    <span class="platform-tag">Mattermost</span>
+    <span class="platform-tag">IRC</span>
+    <span class="platform-tag">SMS</span>
+    <span class="platform-tag">DingTalk</span>
+    <span class="platform-tag">WeCom</span>
+    <span class="platform-tag">Google Chat</span>
+    <span class="platform-tag">Home Assistant</span>
+    <span class="platform-tag">NTFY</span>
+    <span class="platform-tag">QQbot</span>
+    <span class="platform-tag">微信/元宝</span>
+  </div>
+
+  <h3>跨平台会话连续性</h3>
+  <p>会话管理在 <code>gateway/session.py</code>（<code>:1-9</code>），负责：会话上下文跟踪、对话持久化到磁盘、重置策略评估、动态系统提示注入（让 agent 知道自己当前在哪个上下文里）。配合 PII 脱敏（把发送者 ID 哈希成 <code>user_&lt;12hex&gt;</code>）。</p>
+  <div class="info-box">
+    因为会话状态是平台无关地持久化的，所以你可以在 Telegram 起个话题、切到 Discord 继续——这就是 README 说的 "cross-platform conversation continuity"。
+  </div>
+</section>
+
+<section id="cron">
+  <h2>七、定时任务 <code>cron/</code></h2>
+  <blockquote style="border-left:3px solid var(--orange); padding-left:16px; margin-bottom:16px; color:var(--text-2); font-style:italic">"Scheduled automations：Built-in cron scheduler with delivery to any platform … all in natural language, running unattended."</blockquote>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>调度执行（<code>cron/scheduler.py</code>）</h4>
+      <p><code>tick()</code>：检查到期任务并运行，网关每 60 秒从后台线程调用一次。用文件锁 <code>~/.hermes/cron/.tick.lock</code> 保证多进程重叠时只有一个 tick 在跑（Unix <code>fcntl</code>，Windows 回退 <code>msvcrt</code>）。</p>
+    </div>
+    <div class="card">
+      <h4>任务存储（<code>cron/jobs.py</code>）</h4>
+      <p>任务存于 <code>~/.hermes/cron/jobs.json</code>，每次运行的输出落到 <code>~/.hermes/cron/output/{job_id}/{timestamp}.md</code>。用 <code>croniter</code> 解析 cron 表达式。jobs.json 的临界区用跨进程文件锁保护。</p>
+    </div>
+    <div class="card">
+      <h4>面向 agent 的工具（<code>tools/cronjob_tools.py</code>）</h4>
+      <p>暴露一个<strong>压缩的、面向动作的</strong>单工具（避免 schema/上下文膨胀），内部封装 <code>create_job</code> / <code>list_jobs</code> / <code>update_job</code> / <code>pause_job</code> / <code>resume_job</code> / <code>remove_job</code> / <code>parse_schedule</code> 等。</p>
+    </div>
+    <div class="card">
+      <h4>自然语言与蓝图</h4>
+      <p><code>cron/blueprint_catalog.py</code>、<code>cron/suggestions.py</code> 提供任务蓝图与建议（常见自动化模板：日报、夜间备份、周审计）。<code>cron/scheduler_provider.py</code> 让 cron provider 可插拔。</p>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:16px">
+    <strong>工作原理：</strong>agent 用自然语言描述"每天早上 8 点给我发昨天的 GitHub 摘要到 Telegram"，工具把它落成一条 cron job，调度器到点 fork 一个 agent 执行并把结果<strong>投递到指定平台</strong>。安全上，<code>tools/cronjob_tools.py:48-</code> 起有针对"用户提供的 cron 提示词"和"agent 自己写的提示词"两个威胁面的扫描器。
+  </div>
+</section>
+
+<section id="plugins">
+  <h2>八、插件与 providers：一切皆可插拔</h2>
+
+  <h3><code>plugins/</code>——按能力域分目录的插件树</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>插件目录</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><code>plugins/model-providers/</code></td><td>模型提供商（deepseek、gemini、nous、openrouter、novita、nvidia、xai、kimi-coding、minimax 等约 20 家）</td></tr>
+        <tr><td><code>plugins/memory/</code></td><td>记忆后端（见第二节）</td></tr>
+        <tr><td><code>plugins/platforms/</code></td><td>聊天平台适配器（见第六节）</td></tr>
+        <tr><td><code>plugins/web/</code></td><td>网页搜索 provider（brave_free、ddgs、exa、firecrawl）</td></tr>
+        <tr><td><code>plugins/image_gen/</code>、<code>video_gen/</code></td><td>图像/视频生成后端</td></tr>
+        <tr><td><code>plugins/observability/</code></td><td>可观测性（langfuse）</td></tr>
+        <tr><td><code>plugins/browser</code>、<code>context_engine</code>、<code>cron_providers</code>、<code>kanban</code> 等</td><td>各类专项后端</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><code>providers/</code>——推理 provider 的注册表与 ABC</h3>
+  <p>注意区分（<code>providers/README.md:1-25</code>）：<code>providers/</code> 只放<strong>注册表和 <code>ProviderProfile</code> 数据类</strong>（<code>providers/base.py</code>）；<strong>具体的 profile 本体作为插件住在 <code>plugins/model-providers/&lt;name&gt;/</code></strong>。注册表在首次访问时惰性发现这些插件（<code>get_provider_profile()</code> / <code>list_providers()</code>）。</p>
+
+  <div class="info-box">
+    每个 provider 只声明一次 <code>ProviderProfile</code>，其余所有层（鉴权解析、传输 kwargs、模型列举、运行时路由）都从 profile 读，不再各自维护平行数据。这就是 README 说的 <code>hermes model</code> 一键切换、"no code changes, no lock-in" 的实现基础。<br><br>
+    <strong>一句话区分：<code>plugins/</code> 是"插件实现住的地方"，<code>providers/</code> 是"模型 provider 的注册中枢"。</strong>
+  </div>
+</section>
+
+<section id="scenario">
+  <h2>九、把闭环连起来：一次完整的"自我改进"</h2>
+  <p class="section-desc">用一个场景串起本章，体会每一环的衔接：</p>
+
+  <ol class="step-list">
+    <li>
+      <span class="step-n">1</span>
+      <div class="step-content">
+        <strong>语音发起，网关转写</strong>
+        <span>你在 <strong>Telegram</strong>（§6 网关）发语音说"以后给我写 commit message 别用感叹号"。语音被转写成文本。会话状态持久化（<code>gateway/session.py</code>），跨平台可续。</span>
+      </div>
+    </li>
+    <li>
+      <span class="step-n">2</span>
+      <div class="step-content">
+        <strong>后台复盘 fork，双线沉淀</strong>
+        <span>这一轮结束，计数器到阈值 → <strong>后台复盘 fork</strong>（§3，<code>background_review.py</code>）重放对话，识别出"用户纠正了风格"这个一等技能信号，把偏好 <strong>patch 进相关技能</strong>，同时把"你不喜欢感叹号"写进 <strong><code>USER.md</code></strong>（§2）。主会话毫无感知，prompt cache 不受污染。</span>
+      </div>
+    </li>
+    <li>
+      <span class="step-n">3</span>
+      <div class="step-content">
+        <strong>Curator 整理技能库</strong>
+        <span>一周后空闲时，<strong>Curator</strong>（§4）巡检技能库，把这条偏好所在的技能往 class-level 形状收拢，归档掉过时的窄技能。</span>
+      </div>
+    </li>
+    <li>
+      <span class="step-n">4</span>
+      <div class="step-content">
+        <strong>新会话开场即已知</strong>
+        <span>下次你在 <strong>Discord</strong> 开新会话——系统提示词开场就带着 <code>USER.md</code> 的画像和那条技能的描述索引。<strong>你不用再说一遍</strong>，agent 已经知道。</span>
+      </div>
+    </li>
+    <li>
+      <span class="step-n">5</span>
+      <div class="step-content">
+        <strong>跨会话搜索召回</strong>
+        <span>三个月后你忘了当时怎么配的某个流程，用<strong>会话搜索</strong>（§5，FTS5）一搜就翻回当时的上下文。</span>
+      </div>
+    </li>
+    <li>
+      <span class="step-n">6</span>
+      <div class="step-content">
+        <strong>cron 无人值守</strong>
+        <span>你还可以让它把"每周技能审计报告"设成 <strong>cron</strong>（§7），无人值守地发到你手机。</span>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="refs">
+  <h2>附：关键文件速查</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>主题</th><th>文件</th></tr></thead>
+      <tbody>
+        <tr><td>记忆管理器（唯一集成点）</td><td><code>agent/memory_manager.py</code></td></tr>
+        <tr><td>记忆 provider 抽象</td><td><code>agent/memory_provider.py</code></td></tr>
+        <tr><td>内置 MEMORY.md/USER.md</td><td><code>tools/memory_tool.py</code></td></tr>
+        <tr><td>记忆后端插件</td><td><code>plugins/memory/{honcho,hindsight,mem0,...}/</code></td></tr>
+        <tr><td><code>/learn</code> 手动建技能</td><td><code>agent/learn_prompt.py</code></td></tr>
+        <tr><td>技能斜杠命令分发</td><td><code>agent/skill_commands.py</code></td></tr>
+        <tr><td>技能模板预处理</td><td><code>agent/skill_preprocessing.py</code></td></tr>
+        <tr><td>自动后台复盘（自我改进引擎）</td><td><code>agent/background_review.py</code>、<code>agent/turn_finalizer.py</code></td></tr>
+        <tr><td>Curator 策展</td><td><code>agent/curator.py</code></td></tr>
+        <tr><td>跨会话搜索（FTS5）</td><td><code>tools/session_search_tool.py</code></td></tr>
+        <tr><td>网关入口</td><td><code>gateway/run.py</code></td></tr>
+        <tr><td>平台注册表</td><td><code>gateway/platform_registry.py</code></td></tr>
+        <tr><td>cron 调度器</td><td><code>cron/scheduler.py</code></td></tr>
+        <tr><td>cron agent 工具</td><td><code>tools/cronjob_tools.py</code></td></tr>
+        <tr><td>模型 provider 注册表</td><td><code>providers/</code>（profile 本体在 <code>plugins/model-providers/</code>）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider">
+<p style="text-align:center; color:var(--text-3); font-size:.85rem; padding-bottom:20px">
+  学习系列 · 第 04 章 — <a href="index.html">返回索引</a> · <a href="05-开发调试与测试.html">下一章 →</a>
+</p>
+
+</div>
+</body>
+</html>

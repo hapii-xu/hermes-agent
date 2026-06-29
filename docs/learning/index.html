@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hermes Agent · 学习文档索引</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #D77757; --orange-lt: #f0e0d8; --orange-dk: #b55e3a;
+      --blue: #5769F7; --blue-lt: #dde0fe; --blue-dk: #3a4ed4;
+      --green: #22a766; --green-lt: #d2f0e3;
+      --purple: #8b5cf6; --purple-lt: #ede9fe;
+      --bg: #faf8f5; --bg2: #f3f0eb; --bg3: #ebe7e0;
+      --text: #2d2a26; --text-2: #5a5650; --text-3: #8a8480;
+      --border: #ddd8d0; --shadow: 0 2px 8px rgba(45,42,38,.08);
+      --shadow-lg: 0 4px 20px rgba(45,42,38,.12);
+      --radius: 8px; --radius-lg: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    section { margin-top: 56px; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--orange-dk); border-bottom: 2px solid var(--orange-lt); padding-bottom: 8px; margin-bottom: 24px; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    p { color: var(--text-2); margin-bottom: 10px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { background: linear-gradient(135deg, #fff9f6 0%, #f5f1ff 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 48px; text-align: center; }
+    .hero-badge { display: inline-block; background: var(--orange); color: #fff; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; color: var(--text); letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .hero h1 span { color: var(--orange); }
+    .hero p { font-size: 1.05rem; color: var(--text-2); max-width: 680px; margin: 0 auto 28px; }
+    .section-desc { color: var(--text-2); font-size: .92rem; margin-bottom: 20px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    p code, li code, td code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--orange-dk); font-family: var(--font-mono); }
+    /* Doc cards */
+    .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .doc-card {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 20px 22px; box-shadow: var(--shadow); text-decoration: none;
+      transition: box-shadow .15s, border-color .15s, transform .15s;
+      display: block;
+    }
+    .doc-card:hover { box-shadow: var(--shadow-lg); border-color: var(--orange-lt); transform: translateY(-2px); text-decoration: none; }
+    .doc-num { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--orange); color: #fff; border-radius: 50%; font-size: .8rem; font-weight: 700; margin-bottom: 12px; }
+    .doc-card h3 { margin: 0 0 8px; font-size: 1rem; color: var(--text); }
+    .doc-card p { font-size: .85rem; margin: 0; color: var(--text-2); }
+    .doc-time { display: inline-block; margin-top: 10px; background: var(--bg2); border-radius: 8px; padding: 2px 8px; font-size: .72rem; color: var(--text-3); }
+    /* Rule cards */
+    .rule-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .rule-card { background: #fff; border: 2px solid var(--orange); border-radius: var(--radius-lg); padding: 20px 22px; box-shadow: var(--shadow); }
+    .rule-num { font-size: 2rem; font-weight: 800; color: var(--orange-lt); line-height: 1; margin-bottom: 8px; }
+    .rule-card h3 { font-size: .95rem; color: var(--orange-dk); margin: 0 0 8px; }
+    .rule-card p { font-size: .85rem; margin: 0; }
+    /* Ladder */
+    .ladder { list-style: none; padding: 0; }
+    .ladder li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .ladder li:last-child { border-bottom: none; }
+    .ladder-n { flex: none; width: 24px; height: 24px; background: var(--orange); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; margin-top: 2px; }
+    .ladder-body { flex: 1; }
+    .ladder-body strong { display: block; color: var(--text); margin-bottom: 2px; font-size: .92rem; }
+    .ladder-body span { font-size: .82rem; color: var(--text-2); }
+    /* Quick start */
+    .steps { list-style: none; padding: 0; counter-reset: step; }
+    .steps li { counter-increment: step; display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .steps li:last-child { border-bottom: none; }
+    .steps li::before { content: counter(step); flex: none; width: 28px; height: 28px; background: var(--orange); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700; margin-top: 1px; }
+    .steps li > div { flex: 1; }
+    .steps li strong { display: block; color: var(--text); margin-bottom: 3px; }
+    .steps li span { font-size: .87rem; color: var(--text-2); }
+    /* Refs */
+    .ref-list { list-style: none; padding: 0; }
+    .ref-list li { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 10px; }
+    .ref-list li:last-child { border-bottom: none; }
+    .ref-icon { font-size: 1rem; flex: none; margin-top: 2px; }
+    .ref-body strong { display: block; color: var(--text); margin-bottom: 2px; font-size: .92rem; }
+    .ref-body span { font-size: .82rem; color: var(--text-2); }
+    .info-box { background: var(--blue-lt); border-left: 3px solid var(--blue); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 16px; margin: 12px 0; font-size: .88rem; color: var(--blue-dk); }
+    @media (max-width: 700px) { .hero h1 { font-size: 1.6rem; } .doc-grid, .rule-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">Hermes Agent · 学习系列</div>
+  <h1>学习<span>文档</span>索引</h1>
+  <p>这是一套为"认真学习 Hermes Agent 项目"而整理的中文学习资料。通过多 agent 并行分析代码库汇总而成，覆盖项目总览、启动与架构、核心 agent 循环、自我改进闭环等特色功能、开发调试与测试，以及分阶段学习计划。</p>
+</header>
+
+<div class="page-wrap">
+
+<section id="docs">
+  <h2>阅读顺序</h2>
+  <p class="section-desc">建议按编号顺序阅读，每份文档对应一个学习阶段。</p>
+
+  <div class="doc-grid">
+    <a class="doc-card" href="01-项目总览.html">
+      <div class="doc-num">01</div>
+      <h3>项目总览</h3>
+      <p>它是什么、解决什么问题、整体结构地图、两条设计铁律、技术栈速览。</p>
+      <span class="doc-time">阅读时间 ~15 分钟</span>
+    </a>
+    <a class="doc-card" href="02-架构与启动流程.html">
+      <div class="doc-num">02</div>
+      <h3>架构与启动流程</h3>
+      <p><code>hermes</code> 敲下去之后发生了什么、入口脚本、分层架构、进程模型、关键顶层模块。</p>
+      <span class="doc-time">阅读时间 ~25 分钟</span>
+    </a>
+    <a class="doc-card" href="03-核心Agent循环与工具系统.html">
+      <div class="doc-num">03</div>
+      <h3>核心 Agent 循环与工具系统</h3>
+      <p>一个 turn 的生命周期、提示缓存神圣性、上下文压缩、工具注册与分组、子 agent 委派。</p>
+      <span class="doc-time">阅读时间 ~40 分钟</span>
+    </a>
+    <a class="doc-card" href="04-核心特色功能.html">
+      <div class="doc-num">04</div>
+      <h3>核心特色功能</h3>
+      <p>学习闭环（记忆/技能/curator）、消息网关 20+ 平台、内置 cron 调度器、插件体系。</p>
+      <span class="doc-time">阅读时间 ~35 分钟</span>
+    </a>
+    <a class="doc-card" href="05-开发调试与测试.html">
+      <div class="doc-num">05</div>
+      <h3>开发调试与测试</h3>
+      <p>uv 环境搭建、如何运行、debugpy 调试、日志系统、测试体系、代码质量工具。</p>
+      <span class="doc-time">阅读时间 ~30 分钟</span>
+    </a>
+    <a class="doc-card" href="06-学习计划与路线图.html">
+      <div class="doc-num">06</div>
+      <h3>学习计划与路线图</h3>
+      <p>分阶段学习计划、每阶段动手任务、验收标准、通用读码技巧、时间预算参考。</p>
+      <span class="doc-time">阅读时间 ~15 分钟</span>
+    </a>
+  </div>
+</section>
+
+<section id="quickstart">
+  <h2>快速开始</h2>
+  <ol class="steps">
+    <li>
+      <div>
+        <strong>建立全局心智模型</strong>
+        <span>先读 <a href="01-项目总览.html">01 · 项目总览</a>，搞清楚"这是什么"。</span>
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>把项目跑起来</strong>
+        <span>按 <a href="05-开发调试与测试.html">05 · 开发调试与测试</a> 搭好 uv 环境，执行 <code>hermes doctor</code> 自检通过。</span>
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>按节奏逐章深入</strong>
+        <span>参考 <a href="06-学习计划与路线图.html">06 · 学习计划</a> 的阶段节奏，配合动手任务与验收标准。</span>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="rules">
+  <h2>两条贯穿全局的设计铁律（先记住）</h2>
+  <p class="section-desc">理解这两条，才能读懂代码里大量看似"绕"的设计。出处：<code>AGENTS.md</code> 开头。</p>
+
+  <div class="rule-grid">
+    <div class="rule-card">
+      <div class="rule-num">①</div>
+      <h3>逐对话的提示缓存是神圣的</h3>
+      <p>系统提示在整个对话生命周期内必须<strong>逐字节稳定（byte-stable）</strong>，否则缓存失效、成本暴涨。唯一例外是上下文压缩。</p>
+    </div>
+    <div class="rule-card">
+      <div class="rule-num">②</div>
+      <h3>核心是"窄腰"，能力长在边缘</h3>
+      <p>每个核心工具都会出现在每次 API 调用里，所以新增核心工具是<strong>最后手段</strong>。优先在边缘扩张。</p>
+    </div>
+  </div>
+</section>
+
+<section id="ladder">
+  <h2>足迹阶梯（Footprint Ladder）</h2>
+  <p class="section-desc">新增能力时，选<strong>最高（足迹最小）</strong>且能正确解决问题的那一级。出处：<code>AGENTS.md:171-196</code>。</p>
+  <ol class="ladder">
+    <li><span class="ladder-n">1</span><div class="ladder-body"><strong>扩展已有代码</strong><span>能力只是现有东西的变体，零新增足迹。</span></div></li>
+    <li><span class="ladder-n">2</span><div class="ladder-body"><strong>CLI 命令 + skill</strong><span>可用 shell 命令表达的配置/状态/基建管理；零 model-tool 足迹。</span></div></li>
+    <li><span class="ladder-n">3</span><div class="ladder-body"><strong>Service-gated 工具（<code>check_fn</code>）</strong><span>需结构化参数/返回，仅当前置条件满足时出现；否则零足迹。</span></div></li>
+    <li><span class="ladder-n">4</span><div class="ladder-body"><strong>Plugin</strong><span>第三方/小众/用户特定能力，住在 <code>~/.hermes/plugins/</code>，运行时发现。</span></div></li>
+    <li><span class="ladder-n">5</span><div class="ladder-body"><strong>MCP server（进 catalog）</strong><span>确实需要是工具但非内核基础，零永久 core-schema 足迹。</span></div></li>
+    <li><span class="ladder-n">6</span><div class="ladder-body"><strong>新 core tool（最后手段）</strong><span>能力基础性、几乎所有用户都需要、terminal+file 无法触达——才考虑。</span></div></li>
+  </ol>
+</section>
+
+<section id="refs">
+  <h2>一手参考资料（项目自带）</h2>
+  <ul class="ref-list">
+    <li>
+      <span class="ref-icon">📄</span>
+      <div class="ref-body">
+        <strong>AGENTS.md（项目根目录，~71KB）</strong>
+        <span>给 AI/开发者的开发指南，是理解"为什么这么设计"的最权威资料。</span>
+      </div>
+    </li>
+    <li>
+      <span class="ref-icon">📄</span>
+      <div class="ref-body">
+        <strong>CONTRIBUTING.md</strong>
+        <span>开发环境、代码风格、PR 流程。</span>
+      </div>
+    </li>
+    <li>
+      <span class="ref-icon">📄</span>
+      <div class="ref-body">
+        <strong>README.md</strong>
+        <span>用户向介绍与安装。</span>
+      </div>
+    </li>
+  </ul>
+
+  <div class="info-box" style="margin-top:20px">
+    本套文档基于代码库快照分析整理，代码引用采用 <code>file_path:line_number</code> 形式，可在编辑器中点击跳转。若与最新代码不符，以代码为准。
+  </div>
+</section>
+
+<hr class="divider">
+<p style="text-align:center; color:var(--text-3); font-size:.85rem; padding-bottom:20px">
+  Hermes Agent 学习系列 · 索引页
+</p>
+
+</div>
+</body>
+</html>
